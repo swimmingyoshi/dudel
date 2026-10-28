@@ -1,0 +1,149 @@
+{
+  "scope": "Single-run generated supported storage lifecycle versus v4, with OS caches affected by prior writes/reads. No cache flush, cold-disk claim, UI/tablet latency, process RSS/peak memory or power-loss certification. Source/registry capacities are component accounting, sink allocations exclude encoder/index/source memory. Append bytes exclude root overwrites. All source files are temporary generated data.",
+  "cases": [
+    {
+      "name": "supported_sparse_4mp_20_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 20,
+      "logical_rgba_bytes": 335544320,
+      "source_pixel_capacity_bytes": 10485760,
+      "source_registry_live_bytes": 14697256,
+      "source_pixel_capacity_after_bytes": 10485760,
+      "v4_save_ms": 10.8729,
+      "v4_load_ms": 35.103,
+      "v4_bytes": 68003,
+      "indexed_first_save_ms": 67.01360000000001,
+      "indexed_load_ms": 35.5137,
+      "indexed_bytes": 199599,
+      "thumbnail_load_ms": 1.1305,
+      "unchanged_save_ms": 63.66760000000001,
+      "unchanged_append_bytes": 1084,
+      "unchanged": {
+        "objects": 45,
+        "changed": 0,
+        "reused": 45,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 131104
+      },
+      "edit_save_ms": 62.776700000000005,
+      "edit_load_ms": 28.183699999999998,
+      "edit_append_bytes": 6911,
+      "edit": {
+        "objects": 45,
+        "changed": 3,
+        "reused": 42,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 131104
+      },
+      "compaction_ms": 25.7222,
+      "compaction": {
+        "before_bytes": 207594,
+        "after_bytes": 199617,
+        "records": 45,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 29.319499999999998,
+      "exact_round_trips": true
+    },
+    {
+      "name": "supported_dense_pattern_4mp_20_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 20,
+      "logical_rgba_bytes": 335544320,
+      "source_pixel_capacity_bytes": 335544320,
+      "source_registry_live_bytes": 339805416,
+      "source_pixel_capacity_after_bytes": 335544320,
+      "v4_save_ms": 4699.0299,
+      "v4_load_ms": 1806.3273,
+      "v4_bytes": 288909836,
+      "indexed_first_save_ms": 4695.498,
+      "indexed_load_ms": 1665.9250000000002,
+      "indexed_bytes": 288580562,
+      "thumbnail_load_ms": 2.6795999999999998,
+      "unchanged_save_ms": 4648.2731,
+      "unchanged_append_bytes": 30844,
+      "unchanged": {
+        "objects": 1285,
+        "changed": 0,
+        "reused": 1285,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 450548
+      },
+      "edit_save_ms": 5177.222699999999,
+      "edit_load_ms": 1726.605,
+      "edit_append_bytes": 365984,
+      "edit": {
+        "objects": 1285,
+        "changed": 3,
+        "reused": 1282,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 450548
+      },
+      "compaction_ms": 3903.3261,
+      "compaction": {
+        "before_bytes": 288977390,
+        "after_bytes": 288580562,
+        "records": 1285,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 1643.5466999999999,
+      "exact_round_trips": true
+    },
+    {
+      "name": "maximum_supported_dense_noise_4mp_32_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 32,
+      "logical_rgba_bytes": 536870912,
+      "source_pixel_capacity_bytes": 536870912,
+      "source_registry_live_bytes": 541170912,
+      "source_pixel_capacity_after_bytes": 536870912,
+      "v4_save_ms": 6182.0797,
+      "v4_load_ms": 3510.9429,
+      "v4_bytes": 476256953,
+      "indexed_first_save_ms": 7106.5767,
+      "indexed_load_ms": 3556.3663,
+      "indexed_bytes": 476723821,
+      "thumbnail_load_ms": 2.6481999999999997,
+      "unchanged_save_ms": 6271.617499999999,
+      "unchanged_append_bytes": 49276,
+      "unchanged": {
+        "objects": 2053,
+        "changed": 0,
+        "reused": 2053,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 465368
+      },
+      "edit_save_ms": 6281.6703,
+      "edit_load_ms": 3221.8737,
+      "edit_append_bytes": 510808,
+      "edit": {
+        "objects": 2053,
+        "changed": 3,
+        "reused": 2050,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 465368
+      },
+      "compaction_ms": 6918.324799999999,
+      "compaction": {
+        "before_bytes": 477283905,
+        "after_bytes": 476723826,
+        "records": 2053,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 3262.4988999999996,
+      "exact_round_trips": true
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+    "base_revision":  "2227f4689f5cf4136179840213519ec4f8f1d48e",
+    "working_tree":  [
+                         " M CANDIDATE_TEST_CHECKLIST.md",
+                         " M DELIVERY_PLAN.md",
+                         " M QUICK_START.md",
+                         " M README.md",
+                         " M RELEASE_CHECKLIST.md",
+                         " M RELEASE_MILESTONE.md",
+                         " M RELEASE_NOTES.md",
+                         " M scripts/Package.ps1",
+                         " M scripts/RELEASE_README.md",
+                         " M scripts/package_source.py",
+                         " M src/affine_preview.rs",
+                         " M src/main.rs",
+                         " M src/performance.rs",
+                         " M src/reference_layers.rs",
+                         " M src/reference_stack.rs",
+                         " M src/references.rs",
+                         " M src/snapshot_memory.rs",
+                         " M src/tabs.rs",
+                         " M src/workflow_tests.rs",
+                         " M src/workspace.rs",
+                         "?? RELEASE_STATUS.md",
+                         "?? research/CSP_RELEASE_REVIEW_2026-10-19.md",
+                         "?? research/RELEASE_IMPROVEMENTS_2026-10-19.md"
+                     ],
+    "candidate":  "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261019-233855-419",
+    "executable_sha256":  "FEBE26870D90DC5470EA0A73689CE77B85FBF17745ACBAAE6380A081C2A5B30D",
+    "validation":  {
+                       "default_passed":  885,
+                       "all_features_passed":  894,
+                       "ignored_each":  3,
+                       "python_passed":  34,
+                       "format":  "passed",
+                       "clippy_default":  "passed",
+                       "clippy_all_features":  "passed",
+                       "release_build":  "passed",
+                       "log":  "target/qa/csp-improvements-final-20261019.log"
+                   },
+    "archives":  [
+                     {
+                         "path":  "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261019-233855-419.zip",
+                         "sha256":  "3661DA46AB355755466D79EF957B27E9D3DBD3135672FED9A7F47F068F27D5EC",
+                         "members":  982,
+                         "bytes":  13475487
+                     },
+                     {
+                         "path":  "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261019-233855-419-source.zip",
+                         "sha256":  "F2FA5D8E77DFC6EA5621116B64C2FDDE625C6958633E3DFA02B083B1334AB3F5",
+                         "members":  25080,
+                         "bytes":  109570514
+                     }
+                 ],
+    "hosted_ci":  "not run for these working-source changes",
+    "independent_offline_rebuild":  "not performed for this candidate",
+    "long_study_started":  false,
+    "release_accepted":  false,
+    "compiled_inputs_verified":  160,
+    "matching_notice_files":  881,
+    "dependencies":  458,
+    "native_captures":  [
+                            {
+                                "path":  "<repo>\\target\\qa\\release-improvements-20261019\\projects-100.png",
+                                "sha256":  "5A8EA974FBDF112EB796B7AB836E2C6F12009E2E7B31A2B925CDB5C9CA16DFA5",
+                                "exit_code":  0,
+                                "renderer":  "DX12",
+                                "review":  "visually reviewed; application scale, not OS DPI acceptance"
+                            },
+                            {
+                                "path":  "<repo>\\target\\qa\\release-improvements-20261019\\projects-200.png",
+                                "sha256":  "0FA30EF0A2F78C243E6C4EA9E43737BBC86F7B9324AD39909080736DBAC032A2",
+                                "exit_code":  0,
+                                "renderer":  "DX12",
+                                "review":  "visually reviewed; application scale, not OS DPI acceptance"
+                            },
+                            {
+                                "path":  "<repo>\\target\\qa\\release-improvements-20261019\\affine-100.png",
+                                "sha256":  "92A8AAA3EF014338295E7EA13D36074F43BBD3EFFF8E1300D6316AD899C0F591",
+                                "exit_code":  0,
+                                "renderer":  "DX12",
+                                "review":  "visually reviewed; application scale, not OS DPI acceptance"
+                            },
+                            {
+                                "path":  "<repo>\\target\\qa\\release-improvements-20261019\\affine-200.png",
+                                "sha256":  "03DB463D865433C6D33D7DB1D972004E8FF349A29CE54C397E28904466A01468",
+                                "exit_code":  0,
+                                "renderer":  "DX12",
+                                "review":  "visually reviewed; application scale, not OS DPI acceptance"
+                            }
+                        ],
+    "frozen_study_executable_sha256":  "8D2C768E9179B61A9D05FD884E791C763465C6A3C8FB46E763399670ABE9279C",
+    "status":  "passed",
+    "packaged_native_smoke":  {
+                                  "exit_code":  0,
+                                  "renderer":  "DX12",
+                                  "image":  "<repo>\\target\\qa\\release-improvements-20261019\\packaged-projects-100.png",
+                                  "image_sha256":  "B5C669B5B11C3AE64237FA901999CF4478927B22190A12ABA706F962ABFE24B8",
+                                  "visually_reviewed":  true
+                              },
+    "study_preflight":  "passed CheckOnly; no long study started"
+}

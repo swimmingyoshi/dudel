@@ -1,0 +1,8 @@
+# dispatch 0.2.0
+
+Authors listed by the matching upstream release: Steven Sheldon.
+
+That release declares `MIT` in Cargo.toml but provides no separate license file. The original source and manifest are preserved; LICENSE_REFERENCE is the canonical SPDX text, not an invented upstream copyright notice. Source lib.rs was byte-compared against the fixed release revision.
+
+Upstream: https://raw.githubusercontent.com/SSheldon/rust-dispatch/82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748/
+License reference: https://spdx.org/licenses/MIT.txt

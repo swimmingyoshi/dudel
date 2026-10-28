@@ -1,0 +1,41 @@
+{
+  "executable_sha256": "83A749CC9BA0D99E3A36DD549702F9671AEA4A57F4696D254B5B1B2D626EA7A4",
+  "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+  "configured_minimum_rounds": 2,
+  "actual_rounds": 6,
+  "minimum_observed_seconds": 180,
+  "observed_session_seconds": 182.0632087,
+  "mask_edits_verified": 96,
+  "brush_strokes_verified": 6,
+  "save_open_pairs": 6,
+  "workload_brush_names": [
+    "G-pen",
+    "Pencil",
+    "QA textured stamp"
+  ],
+  "continuity": {
+    "clocks": {
+      "biased_elapsed_seconds": 184.68800000002375,
+      "awake_elapsed_seconds": 184.69419470004505,
+      "estimated_suspend_seconds": 0,
+      "suspension_tolerance_seconds": 2
+    },
+    "callbacks": {
+      "maximum_unexplained_callback_ms": 135.42719999999997,
+      "gap_limit_ms": 2000,
+      "traced_seconds": 182.0632078000008,
+      "scope": "Continuity only; subtracts known diagnostic driver and current UI prefix. Not frame/queue performance or physical latency acceptance."
+    }
+  },
+  "power_request": {
+    "requested": true,
+    "restored": true,
+    "flags": 2147483651
+  },
+  "source_report": "target/qa/release-gates-20261018/offline-rebuild/extracted/dudel-0.1.0-candidate-20261018-161309-657-source/target/qa/current-probe/run-1-sustained-100.json",
+  "source_report_sha256": "BD3D17B0F1827787816C2390BA4A5782015C5B6B061B64F2F36C90D687C6C6EC",
+  "native_capture": "target/qa/release-gates-20261018/offline-rebuild/extracted/dudel-0.1.0-candidate-20261018-161309-657-source/target/qa/current-probe/run-1-sustained-100.png",
+  "native_capture_visually_reviewed": true,
+  "scope": "Four-layer mixed-brush scripted semantic/instrumentation probe; current packaged binary; not physical input, resource targets or two-hour acceptance",
+  "release_gate_accepted": false
+}

@@ -1,0 +1,374 @@
+[
+  {
+    "report": "benchmarks\\band-pool-dx12-sustained-100.json",
+    "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+    "rounds": 12,
+    "warmup_rounds": 3,
+    "mask_edits_verified": 192,
+    "brush_strokes_verified": 12,
+    "elapsed_seconds": 403.7091449,
+    "tail": {
+      "private_mib": {
+        "net": 19.70703125,
+        "slope_per_round": 1.7581380208333333
+      },
+      "rust_live_mib": {
+        "net": 0.00640869140625,
+        "slope_per_round": 0.001019287109375
+      },
+      "default_heap_busy_mib": {
+        "net": 2.1459884643554688,
+        "slope_per_round": 0.2734445412953695
+      },
+      "size_184_blocks": {
+        "net": 11605,
+        "slope_per_round": 1450.65
+      }
+    },
+    "final_idle_series": [
+      {
+        "round": 0,
+        "private_mib": 524.30078125,
+        "rust_live_mib": 74.53323650360107,
+        "default_heap_busy_mib": 87.22934913635254,
+        "size_184_blocks": 1484,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 1,
+        "private_mib": 525.93359375,
+        "rust_live_mib": 74.53317546844482,
+        "default_heap_busy_mib": 87.44866275787354,
+        "size_184_blocks": 2934,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 2,
+        "private_mib": 540.265625,
+        "rust_live_mib": 74.53483772277832,
+        "default_heap_busy_mib": 88.68560600280762,
+        "size_184_blocks": 4384,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 3,
+        "private_mib": 528.6484375,
+        "rust_live_mib": 74.54326915740967,
+        "default_heap_busy_mib": 88.93597984313965,
+        "size_184_blocks": 5834,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 4,
+        "private_mib": 530.1796875,
+        "rust_live_mib": 74.54357433319092,
+        "default_heap_busy_mib": 89.16958141326904,
+        "size_184_blocks": 7284,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 5,
+        "private_mib": 546.51953125,
+        "rust_live_mib": 74.53532600402832,
+        "default_heap_busy_mib": 89.40761375427246,
+        "size_184_blocks": 8734,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 6,
+        "private_mib": 530.73828125,
+        "rust_live_mib": 74.54369640350342,
+        "default_heap_busy_mib": 89.68116283416748,
+        "size_184_blocks": 10184,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 7,
+        "private_mib": 530.80078125,
+        "rust_live_mib": 74.54992198944092,
+        "default_heap_busy_mib": 89.94182872772217,
+        "size_184_blocks": 11634,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 8,
+        "private_mib": 530.42578125,
+        "rust_live_mib": 74.54973888397217,
+        "default_heap_busy_mib": 90.19617748260498,
+        "size_184_blocks": 13084,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 9,
+        "private_mib": 532.00390625,
+        "rust_live_mib": 74.54118537902832,
+        "default_heap_busy_mib": 90.49261474609375,
+        "size_184_blocks": 14536,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 10,
+        "private_mib": 548.84765625,
+        "rust_live_mib": 74.54949474334717,
+        "default_heap_busy_mib": 90.88214874267578,
+        "size_184_blocks": 15989,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 11,
+        "private_mib": 548.35546875,
+        "rust_live_mib": 74.54967784881592,
+        "default_heap_busy_mib": 91.08196830749512,
+        "size_184_blocks": 17439,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      }
+    ],
+    "scope": "Single diagnostic run; not G2 release acceptance, physical latency or independent block-owner proof."
+  },
+  {
+    "report": "benchmarks\\display-pool-dx12-sustained-100.json",
+    "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+    "rounds": 12,
+    "warmup_rounds": 3,
+    "mask_edits_verified": 192,
+    "brush_strokes_verified": 12,
+    "elapsed_seconds": 411.1725786,
+    "tail": {
+      "private_mib": {
+        "net": 11.71875,
+        "slope_per_round": 1.6920572916666667
+      },
+      "rust_live_mib": {
+        "net": 0.0064697265625,
+        "slope_per_round": 0.0014174620310465494
+      },
+      "default_heap_busy_mib": {
+        "net": 0.18520259857177734,
+        "slope_per_round": 0.028973960876464845
+      },
+      "size_184_blocks": {
+        "net": 341,
+        "slope_per_round": 42.68333333333333
+      }
+    },
+    "final_idle_series": [
+      {
+        "round": 0,
+        "private_mib": 527.125,
+        "rust_live_mib": 74.52743530273438,
+        "default_heap_busy_mib": 87.05973720550537,
+        "size_184_blocks": 80,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 1,
+        "private_mib": 529.1484375,
+        "rust_live_mib": 74.54553318023682,
+        "default_heap_busy_mib": 88.0466136932373,
+        "size_184_blocks": 122,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 2,
+        "private_mib": 529.6484375,
+        "rust_live_mib": 74.53704071044922,
+        "default_heap_busy_mib": 88.03725528717041,
+        "size_184_blocks": 164,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 3,
+        "private_mib": 529.859375,
+        "rust_live_mib": 74.54577732086182,
+        "default_heap_busy_mib": 88.01979637145996,
+        "size_184_blocks": 206,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 4,
+        "private_mib": 531.9765625,
+        "rust_live_mib": 74.53765106201172,
+        "default_heap_busy_mib": 88.01077365875244,
+        "size_184_blocks": 248,
+        "gpu": {
+          "allocated_bytes": 36634624,
+          "allocation_count": 146,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 5,
+        "private_mib": 542.47265625,
+        "rust_live_mib": 74.54608249664307,
+        "default_heap_busy_mib": 88.03484153747559,
+        "size_184_blocks": 290,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 6,
+        "private_mib": 544.5,
+        "rust_live_mib": 74.54834079742432,
+        "default_heap_busy_mib": 88.04446983337402,
+        "size_184_blocks": 332,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 7,
+        "private_mib": 544.92578125,
+        "rust_live_mib": 74.55224704742432,
+        "default_heap_busy_mib": 88.05577659606934,
+        "size_184_blocks": 374,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 8,
+        "private_mib": 546.77734375,
+        "rust_live_mib": 74.55206394195557,
+        "default_heap_busy_mib": 88.12284088134766,
+        "size_184_blocks": 418,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 9,
+        "private_mib": 544.8984375,
+        "rust_live_mib": 74.55218601226807,
+        "default_heap_busy_mib": 88.13033294677734,
+        "size_184_blocks": 460,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 10,
+        "private_mib": 547.81640625,
+        "rust_live_mib": 74.55206394195557,
+        "default_heap_busy_mib": 88.25353145599365,
+        "size_184_blocks": 505,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      },
+      {
+        "round": 11,
+        "private_mib": 541.578125,
+        "rust_live_mib": 74.55224704742432,
+        "default_heap_busy_mib": 88.20499897003174,
+        "size_184_blocks": 547,
+        "gpu": {
+          "allocated_bytes": 36962304,
+          "allocation_count": 148,
+          "block_count": 2,
+          "reserved_bytes": 335544320
+        }
+      }
+    ],
+    "scope": "Single diagnostic run; not G2 release acceptance, physical latency or independent block-owner proof."
+  }
+]

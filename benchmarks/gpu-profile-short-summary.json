@@ -1,0 +1,1737 @@
+[
+  {
+    "source": "benchmarks\\gpu-profile-dx12-short-100.json",
+    "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+    "allocation_profile_enabled": true,
+    "checkpoint_storage": {
+      "fixed_capacity_bytes": 5520,
+      "record_bytes": 240,
+      "records": 23,
+      "used_excludes_current_record": true
+    },
+    "gpu_allocation_profile_enabled": true,
+    "gpu_allocation_checkpoints": [
+      {
+        "label": "initial-idle",
+        "round": 0,
+        "cycle": 0,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "cancel-restored",
+        "round": 0,
+        "cycle": 0,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 1,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 2,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 3,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 4,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 5,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 6,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 7,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 8,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 9,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 10,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 11,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 12,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 13,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 14,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 15,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "all-undone",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "all-redone",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "history-released-before-save",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "save-reopen-verified",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      },
+      {
+        "label": "final-idle-history-released",
+        "round": 0,
+        "cycle": 16,
+        "allocated_mib": 35.25,
+        "reserved_mib": 320.0,
+        "allocation_count": 148,
+        "block_count": 2
+      }
+    ],
+    "allocation_checkpoints": [
+      {
+        "label": "initial-idle",
+        "round": 0,
+        "cycle": 0,
+        "private_committed_mib": 473.23046875,
+        "allocations": 256415,
+        "cumulative_acquired_requested_bytes": 268.62002658843994,
+        "cumulative_released_requested_bytes": 238.7577667236328,
+        "deallocations": 249485,
+        "lifetime_peak_requested_bytes": 32.94834613800049,
+        "live_requested_bytes": 29.86225986480713,
+        "reallocations": 38056
+      },
+      {
+        "label": "cancel-restored",
+        "round": 0,
+        "cycle": 0,
+        "private_committed_mib": 474.671875,
+        "allocations": 362094,
+        "cumulative_acquired_requested_bytes": 484.48504066467285,
+        "cumulative_released_requested_bytes": 454.44085788726807,
+        "deallocations": 354559,
+        "lifetime_peak_requested_bytes": 37.52874565124512,
+        "live_requested_bytes": 30.044182777404785,
+        "reallocations": 53612
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 1,
+        "private_committed_mib": 482.484375,
+        "allocations": 522550,
+        "cumulative_acquired_requested_bytes": 805.683687210083,
+        "cumulative_released_requested_bytes": 771.427098274231,
+        "deallocations": 512166,
+        "lifetime_peak_requested_bytes": 37.63110542297363,
+        "live_requested_bytes": 34.25658893585205,
+        "reallocations": 76896
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 2,
+        "private_committed_mib": 485.8125,
+        "allocations": 672945,
+        "cumulative_acquired_requested_bytes": 1119.1824655532837,
+        "cumulative_released_requested_bytes": 1080.7717971801758,
+        "deallocations": 659718,
+        "lifetime_peak_requested_bytes": 41.81075859069824,
+        "live_requested_bytes": 38.41066837310791,
+        "reallocations": 98655
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 3,
+        "private_committed_mib": 491.71484375,
+        "allocations": 825098,
+        "cumulative_acquired_requested_bytes": 1434.4947090148926,
+        "cumulative_released_requested_bytes": 1391.83651638031,
+        "deallocations": 809031,
+        "lifetime_peak_requested_bytes": 45.9626407623291,
+        "live_requested_bytes": 42.65819263458252,
+        "reallocations": 120665
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 4,
+        "private_committed_mib": 496.1328125,
+        "allocations": 973725,
+        "cumulative_acquired_requested_bytes": 1746.3324346542358,
+        "cumulative_released_requested_bytes": 1699.6488246917725,
+        "deallocations": 954885,
+        "lifetime_peak_requested_bytes": 49.99611473083496,
+        "live_requested_bytes": 46.68360996246338,
+        "reallocations": 142143
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 5,
+        "private_committed_mib": 500.96484375,
+        "allocations": 1124308,
+        "cumulative_acquired_requested_bytes": 2059.0053691864014,
+        "cumulative_released_requested_bytes": 2008.2324075698853,
+        "deallocations": 1102689,
+        "lifetime_peak_requested_bytes": 54.02235221862793,
+        "live_requested_bytes": 50.77296161651611,
+        "reallocations": 163900
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 6,
+        "private_committed_mib": 506.03515625,
+        "allocations": 1270969,
+        "cumulative_acquired_requested_bytes": 2368.679305076599,
+        "cumulative_released_requested_bytes": 2313.860845565796,
+        "deallocations": 1246590,
+        "lifetime_peak_requested_bytes": 58.110403060913086,
+        "live_requested_bytes": 54.81845951080322,
+        "reallocations": 185070
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 7,
+        "private_committed_mib": 510.12109375,
+        "allocations": 1419383,
+        "cumulative_acquired_requested_bytes": 2680.7263565063477,
+        "cumulative_released_requested_bytes": 2621.7513151168823,
+        "deallocations": 1392242,
+        "lifetime_peak_requested_bytes": 62.155595779418945,
+        "live_requested_bytes": 58.97504138946533,
+        "reallocations": 206489
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 8,
+        "private_committed_mib": 514.33984375,
+        "allocations": 1564456,
+        "cumulative_acquired_requested_bytes": 2991.539786338806,
+        "cumulative_released_requested_bytes": 2928.763982772827,
+        "deallocations": 1534680,
+        "lifetime_peak_requested_bytes": 65.93481254577637,
+        "live_requested_bytes": 62.775803565979004,
+        "reallocations": 227454
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 9,
+        "private_committed_mib": 518.6875,
+        "allocations": 1725479,
+        "cumulative_acquired_requested_bytes": 3312.4750328063965,
+        "cumulative_released_requested_bytes": 3245.9189138412476,
+        "deallocations": 1693070,
+        "lifetime_peak_requested_bytes": 69.73893165588379,
+        "live_requested_bytes": 66.55611896514893,
+        "reallocations": 250702
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 10,
+        "private_committed_mib": 522.42578125,
+        "allocations": 1872300,
+        "cumulative_acquired_requested_bytes": 3624.372660636902,
+        "cumulative_released_requested_bytes": 3554.0177326202393,
+        "deallocations": 1837256,
+        "lifetime_peak_requested_bytes": 73.51595115661621,
+        "live_requested_bytes": 70.3549280166626,
+        "reallocations": 271916
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 11,
+        "private_committed_mib": 527.171875,
+        "allocations": 2020867,
+        "cumulative_acquired_requested_bytes": 3937.5685749053955,
+        "cumulative_released_requested_bytes": 3863.3098573684692,
+        "deallocations": 1983192,
+        "lifetime_peak_requested_bytes": 77.31463813781738,
+        "live_requested_bytes": 74.25871753692627,
+        "reallocations": 293379
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 12,
+        "private_committed_mib": 530.86328125,
+        "allocations": 2169403,
+        "cumulative_acquired_requested_bytes": 4250.513306617737,
+        "cumulative_released_requested_bytes": 4172.5976486206055,
+        "deallocations": 2129152,
+        "lifetime_peak_requested_bytes": 81.09651756286621,
+        "live_requested_bytes": 77.91565799713135,
+        "reallocations": 314841
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 13,
+        "private_committed_mib": 534.94921875,
+        "allocations": 2319685,
+        "cumulative_acquired_requested_bytes": 4564.545547485352,
+        "cumulative_released_requested_bytes": 4482.973071098328,
+        "deallocations": 2276860,
+        "lifetime_peak_requested_bytes": 84.75321388244629,
+        "live_requested_bytes": 81.57247638702393,
+        "reallocations": 336553
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 14,
+        "private_committed_mib": 539.17578125,
+        "allocations": 2473473,
+        "cumulative_acquired_requested_bytes": 4883.410685539246,
+        "cumulative_released_requested_bytes": 4797.915948867798,
+        "deallocations": 2428077,
+        "lifetime_peak_requested_bytes": 88.41003227233887,
+        "live_requested_bytes": 85.49473667144775,
+        "reallocations": 358762
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 15,
+        "private_committed_mib": 543.28515625,
+        "allocations": 2625662,
+        "cumulative_acquired_requested_bytes": 5201.556259155273,
+        "cumulative_released_requested_bytes": 5112.526858329773,
+        "deallocations": 2577752,
+        "lifetime_peak_requested_bytes": 91.94451332092285,
+        "live_requested_bytes": 89.02940082550049,
+        "reallocations": 380765
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 547.25,
+        "allocations": 2772132,
+        "cumulative_acquired_requested_bytes": 5515.164700508118,
+        "cumulative_released_requested_bytes": 5422.711505889893,
+        "deallocations": 2721771,
+        "lifetime_peak_requested_bytes": 95.36861228942871,
+        "live_requested_bytes": 92.4531946182251,
+        "reallocations": 401936
+      },
+      {
+        "label": "all-undone",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 548.546875,
+        "allocations": 3393508,
+        "cumulative_acquired_requested_bytes": 7051.569993019104,
+        "cumulative_released_requested_bytes": 6958.289897918701,
+        "deallocations": 3339046,
+        "lifetime_peak_requested_bytes": 96.02456665039062,
+        "live_requested_bytes": 93.28009510040283,
+        "reallocations": 492001
+      },
+      {
+        "label": "all-redone",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 549.3359375,
+        "allocations": 4014635,
+        "cumulative_acquired_requested_bytes": 8569.13060092926,
+        "cumulative_released_requested_bytes": 8475.303508758545,
+        "deallocations": 3956075,
+        "lifetime_peak_requested_bytes": 96.55043125152588,
+        "live_requested_bytes": 93.82709217071533,
+        "reallocations": 582047
+      },
+      {
+        "label": "history-released-before-save",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 494.1953125,
+        "allocations": 4280666,
+        "cumulative_acquired_requested_bytes": 8734.655047416687,
+        "cumulative_released_requested_bytes": 8697.925931930542,
+        "deallocations": 4250877,
+        "lifetime_peak_requested_bytes": 96.55043125152588,
+        "live_requested_bytes": 36.72911548614502,
+        "reallocations": 619906
+      },
+      {
+        "label": "save-reopen-verified",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 511.0546875,
+        "allocations": 4335352,
+        "cumulative_acquired_requested_bytes": 8905.567735671997,
+        "cumulative_released_requested_bytes": 8847.233296394348,
+        "deallocations": 4304998,
+        "lifetime_peak_requested_bytes": 96.55043125152588,
+        "live_requested_bytes": 58.334439277648926,
+        "reallocations": 628268
+      },
+      {
+        "label": "final-idle-history-released",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 512.56640625,
+        "allocations": 4605511,
+        "cumulative_acquired_requested_bytes": 9078.257827758789,
+        "cumulative_released_requested_bytes": 9019.93053150177,
+        "deallocations": 4575211,
+        "lifetime_peak_requested_bytes": 96.55043125152588,
+        "live_requested_bytes": 58.32729625701904,
+        "reallocations": 666365
+      }
+    ],
+    "zoom": 1.0,
+    "viewport_points": [
+      1280.0,
+      800.0
+    ],
+    "rounds": 1,
+    "mask_edits_verified": 16,
+    "brush_strokes_verified": 0,
+    "elapsed_seconds": 32.464929,
+    "callbacks": 2321,
+    "ui_prefix_ms": {
+      "count": 2321,
+      "median": 2.0368999999999997,
+      "p95_nearest_rank": 3.0553,
+      "maximum": 6.805000000000001
+    },
+    "active_ui_prefix_ms": {
+      "count": 1820,
+      "median": 2.1416000000000004,
+      "p95_nearest_rank": 3.1483000000000003,
+      "maximum": 4.7728
+    },
+    "generated_brush_ui_prefix_ms": null,
+    "ui_prefix_ms_by_phase": {
+      "Applied": {
+        "count": 64,
+        "median": 0.7959,
+        "p95_nearest_rank": 2.1798,
+        "maximum": 2.5989
+      },
+      "Canceled": {
+        "count": 22,
+        "median": 2.55525,
+        "p95_nearest_rank": 3.1934,
+        "maximum": 3.4459
+      },
+      "FinalIdle": {
+        "count": 151,
+        "median": 0.7368,
+        "p95_nearest_rank": 0.9601,
+        "maximum": 1.532
+      },
+      "Preview": {
+        "count": 415,
+        "median": 2.2384000000000004,
+        "p95_nearest_rank": 3.4668,
+        "maximum": 4.708600000000001
+      },
+      "RedoAll": {
+        "count": 311,
+        "median": 2.0906000000000002,
+        "p95_nearest_rank": 2.9139999999999997,
+        "maximum": 3.3625
+      },
+      "Redone": {
+        "count": 315,
+        "median": 2.2157999999999998,
+        "p95_nearest_rank": 3.1583,
+        "maximum": 3.8748
+      },
+      "Release": {
+        "count": 3,
+        "median": 0.6012,
+        "p95_nearest_rank": 0.7129000000000001,
+        "maximum": 0.7129000000000001
+      },
+      "ReleasedHistory": {
+        "count": 152,
+        "median": 0.6469,
+        "p95_nearest_rank": 0.9188999999999999,
+        "maximum": 1.3469
+      },
+      "Reopen": {
+        "count": 21,
+        "median": 2.1927000000000003,
+        "p95_nearest_rank": 3.1702000000000004,
+        "maximum": 3.2598000000000003
+      },
+      "Save": {
+        "count": 4,
+        "median": 0.76915,
+        "p95_nearest_rank": 0.9002,
+        "maximum": 0.9002
+      },
+      "Start": {
+        "count": 51,
+        "median": 0.6934,
+        "p95_nearest_rank": 0.9817,
+        "maximum": 1.1463999999999999
+      },
+      "UndoAll": {
+        "count": 311,
+        "median": 2.1004,
+        "p95_nearest_rank": 2.7656,
+        "maximum": 3.606
+      },
+      "Undone": {
+        "count": 353,
+        "median": 2.212,
+        "p95_nearest_rank": 3.3419,
+        "maximum": 4.7728
+      },
+      "Warmup": {
+        "count": 148,
+        "median": 0.74135,
+        "p95_nearest_rank": 2.9437,
+        "maximum": 6.805000000000001
+      }
+    },
+    "round_stats": [
+      {
+        "round": 0,
+        "ui_prefix_ms": {
+          "count": 2321,
+          "median": 2.0368999999999997,
+          "p95_nearest_rank": 3.0553,
+          "maximum": 6.805000000000001
+        },
+        "active_ui_prefix_ms": {
+          "count": 1820,
+          "median": 2.1416000000000004,
+          "p95_nearest_rank": 3.1483000000000003,
+          "maximum": 4.7728
+        },
+        "instrumented_app_command_ms": {
+          "count": 100,
+          "median": 1.1033499999999998,
+          "p95_nearest_rank": 3.0277,
+          "maximum": 4.1747
+        },
+        "diagnostic_driver_ms": {
+          "count": 2321,
+          "median": 0.00019999999999999998,
+          "p95_nearest_rank": 0.003,
+          "maximum": 181.5359
+        }
+      }
+    ],
+    "command_ms_by_phase": {
+      "Applied": {
+        "count": 16,
+        "median": 1.5783999999999998,
+        "p95_nearest_rank": 3.4732000000000003,
+        "maximum": 3.4732000000000003
+      },
+      "Preview": {
+        "count": 17,
+        "median": 0.0026,
+        "p95_nearest_rank": 1.1137,
+        "maximum": 1.1137
+      },
+      "RedoAll": {
+        "count": 16,
+        "median": 1.56045,
+        "p95_nearest_rank": 2.0606999999999998,
+        "maximum": 2.0606999999999998
+      },
+      "ReleasedHistory": {
+        "count": 1,
+        "median": 0.20120000000000002,
+        "p95_nearest_rank": 0.20120000000000002,
+        "maximum": 0.20120000000000002
+      },
+      "Save": {
+        "count": 1,
+        "median": 0.06999999999999999,
+        "p95_nearest_rank": 0.06999999999999999,
+        "maximum": 0.06999999999999999
+      },
+      "Start": {
+        "count": 17,
+        "median": 0.0019,
+        "p95_nearest_rank": 0.0036,
+        "maximum": 0.0036
+      },
+      "UndoAll": {
+        "count": 16,
+        "median": 2.7381,
+        "p95_nearest_rank": 4.1747,
+        "maximum": 4.1747
+      },
+      "Undone": {
+        "count": 16,
+        "median": 1.0003,
+        "p95_nearest_rank": 2.1883,
+        "maximum": 2.1883
+      }
+    },
+    "idle_series": {
+      "initial-idle": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 2.005262,
+            "resident_mib": 220.140625,
+            "private_committed_mib": 473.23046875,
+            "tracked_live_mib": 25.534602165222168,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.535101890563965,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.01233673095703125,
+            "rust_live_requested_mib": 29.86225986480713,
+            "rust_lifetime_peak_requested_mib": 32.94834613800049,
+            "gpu_suballocated_mib": 35.25,
+            "gpu_reserved_mib": 320.0,
+            "gpu_allocation_count": 148,
+            "gpu_block_count": 2
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0,
+          "gpu_suballocated_mib": 0.0,
+          "gpu_reserved_mib": 0.0,
+          "gpu_allocation_count": 0,
+          "gpu_block_count": 0
+        }
+      },
+      "history-released-before-save": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 30.0728336,
+            "resident_mib": 236.78515625,
+            "private_committed_mib": 494.1953125,
+            "tracked_live_mib": 24.811640739440918,
+            "tracked_additional_mib": 4.032295227050781,
+            "registered_snapshot_total_mib": 28.8439359664917,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.17967987060546875,
+            "rust_live_requested_mib": 36.72911548614502,
+            "rust_lifetime_peak_requested_mib": 96.55043125152588,
+            "gpu_suballocated_mib": 35.25,
+            "gpu_reserved_mib": 320.0,
+            "gpu_allocation_count": 148,
+            "gpu_block_count": 2
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0,
+          "gpu_suballocated_mib": 0.0,
+          "gpu_reserved_mib": 0.0,
+          "gpu_allocation_count": 0,
+          "gpu_block_count": 0
+        }
+      },
+      "final-idle-history-released": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 32.4571445,
+            "resident_mib": 258.80078125,
+            "private_committed_mib": 512.56640625,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.1947021484375,
+            "rust_live_requested_mib": 58.32729625701904,
+            "rust_lifetime_peak_requested_mib": 96.55043125152588,
+            "gpu_suballocated_mib": 35.25,
+            "gpu_reserved_mib": 320.0,
+            "gpu_allocation_count": 148,
+            "gpu_block_count": 2
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0,
+          "gpu_suballocated_mib": 0.0,
+          "gpu_reserved_mib": 0.0,
+          "gpu_allocation_count": 0,
+          "gpu_block_count": 0
+        }
+      }
+    },
+    "scope": "Descriptive measurements, not a leak verdict, GPU time, FPS, physical-input latency or release certification. Nearest-rank p95. Tail drift omits the first three rounds when present. Diagnostic frame use is shown separately; allocator/driver ownership is not inferred."
+  },
+  {
+    "source": "benchmarks\\gpu-profile-gl-short-100.json",
+    "renderer": "OpenGL",
+    "allocation_profile_enabled": true,
+    "checkpoint_storage": {
+      "fixed_capacity_bytes": 5520,
+      "record_bytes": 240,
+      "records": 23,
+      "used_excludes_current_record": true
+    },
+    "gpu_allocation_profile_enabled": true,
+    "gpu_allocation_checkpoints": [],
+    "allocation_checkpoints": [
+      {
+        "label": "initial-idle",
+        "round": 0,
+        "cycle": 0,
+        "private_committed_mib": 224.2421875,
+        "allocations": 225211,
+        "cumulative_acquired_requested_bytes": 247.01860237121582,
+        "cumulative_released_requested_bytes": 216.57895374298096,
+        "deallocations": 220157,
+        "lifetime_peak_requested_bytes": 33.727508544921875,
+        "live_requested_bytes": 30.439648628234863,
+        "reallocations": 32901
+      },
+      {
+        "label": "cancel-restored",
+        "round": 0,
+        "cycle": 0,
+        "private_committed_mib": 289.5859375,
+        "allocations": 315596,
+        "cumulative_acquired_requested_bytes": 453.75425720214844,
+        "cumulative_released_requested_bytes": 423.2961378097534,
+        "deallocations": 310526,
+        "lifetime_peak_requested_bytes": 37.96457386016846,
+        "live_requested_bytes": 30.45811939239502,
+        "reallocations": 46741
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 1,
+        "private_committed_mib": 293.78515625,
+        "allocations": 456745,
+        "cumulative_acquired_requested_bytes": 762.824577331543,
+        "cumulative_released_requested_bytes": 728.2839040756226,
+        "deallocations": 449593,
+        "lifetime_peak_requested_bytes": 37.97887134552002,
+        "live_requested_bytes": 34.54067325592041,
+        "reallocations": 67915
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 2,
+        "private_committed_mib": 300.375,
+        "allocations": 593062,
+        "cumulative_acquired_requested_bytes": 1069.302749633789,
+        "cumulative_released_requested_bytes": 1030.7128553390503,
+        "deallocations": 583839,
+        "lifetime_peak_requested_bytes": 42.02486038208008,
+        "live_requested_bytes": 38.58989429473877,
+        "reallocations": 88415
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 3,
+        "private_committed_mib": 305.66796875,
+        "allocations": 727713,
+        "cumulative_acquired_requested_bytes": 1375.4530954360962,
+        "cumulative_released_requested_bytes": 1332.747573852539,
+        "deallocations": 716419,
+        "lifetime_peak_requested_bytes": 46.07457733154297,
+        "live_requested_bytes": 42.70552158355713,
+        "reallocations": 108681
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 4,
+        "private_committed_mib": 307.8828125,
+        "allocations": 862120,
+        "cumulative_acquired_requested_bytes": 1679.997646331787,
+        "cumulative_released_requested_bytes": 1633.3691244125366,
+        "deallocations": 848819,
+        "lifetime_peak_requested_bytes": 49.97426223754883,
+        "live_requested_bytes": 46.62852191925049,
+        "reallocations": 128872
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 5,
+        "private_committed_mib": 311.59375,
+        "allocations": 996313,
+        "cumulative_acquired_requested_bytes": 1983.4236040115356,
+        "cumulative_released_requested_bytes": 1932.871379852295,
+        "deallocations": 981005,
+        "lifetime_peak_requested_bytes": 53.897987365722656,
+        "live_requested_bytes": 50.55222415924072,
+        "reallocations": 149004
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 6,
+        "private_committed_mib": 316.15625,
+        "allocations": 1135300,
+        "cumulative_acquired_requested_bytes": 2289.4532594680786,
+        "cumulative_released_requested_bytes": 2234.9797439575195,
+        "deallocations": 1117999,
+        "lifetime_peak_requested_bytes": 57.82035446166992,
+        "live_requested_bytes": 54.47351551055908,
+        "reallocations": 169795
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 7,
+        "private_committed_mib": 320.0234375,
+        "allocations": 1269501,
+        "cumulative_acquired_requested_bytes": 2594.2057819366455,
+        "cumulative_released_requested_bytes": 2535.678406715393,
+        "deallocations": 1250209,
+        "lifetime_peak_requested_bytes": 61.74137878417969,
+        "live_requested_bytes": 58.52737522125244,
+        "reallocations": 189926
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 8,
+        "private_committed_mib": 325.21484375,
+        "allocations": 1414736,
+        "cumulative_acquired_requested_bytes": 2907.290675163269,
+        "cumulative_released_requested_bytes": 2845.086805343628,
+        "deallocations": 1393577,
+        "lifetime_peak_requested_bytes": 65.40690994262695,
+        "live_requested_bytes": 62.20386981964111,
+        "reallocations": 211676
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 9,
+        "private_committed_mib": 328.765625,
+        "allocations": 1562457,
+        "cumulative_acquired_requested_bytes": 3220.895181655884,
+        "cumulative_released_requested_bytes": 3155.0073099136353,
+        "deallocations": 1539431,
+        "lifetime_peak_requested_bytes": 69.09564971923828,
+        "live_requested_bytes": 65.88787174224854,
+        "reallocations": 233723
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 10,
+        "private_committed_mib": 332.3671875,
+        "allocations": 1715868,
+        "cumulative_acquired_requested_bytes": 3540.538697242737,
+        "cumulative_released_requested_bytes": 3470.9743309020996,
+        "deallocations": 1690975,
+        "lifetime_peak_requested_bytes": 72.77839279174805,
+        "live_requested_bytes": 69.5643663406372,
+        "reallocations": 256711
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 11,
+        "private_committed_mib": 335.61328125,
+        "allocations": 1848545,
+        "cumulative_acquired_requested_bytes": 3845.237633705139,
+        "cumulative_released_requested_bytes": 3771.9769973754883,
+        "deallocations": 1821785,
+        "lifetime_peak_requested_bytes": 76.45476531982422,
+        "live_requested_bytes": 73.26063632965088,
+        "reallocations": 276652
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 12,
+        "private_committed_mib": 340.55859375,
+        "allocations": 1977423,
+        "cumulative_acquired_requested_bytes": 4147.171431541443,
+        "cumulative_released_requested_bytes": 4070.3565769195557,
+        "deallocations": 1948858,
+        "lifetime_peak_requested_bytes": 80.0310173034668,
+        "live_requested_bytes": 76.8148546218872,
+        "reallocations": 296038
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 13,
+        "private_committed_mib": 343.9375,
+        "allocations": 2104626,
+        "cumulative_acquired_requested_bytes": 4448.112981796265,
+        "cumulative_released_requested_bytes": 4367.743908882141,
+        "deallocations": 2074256,
+        "lifetime_peak_requested_bytes": 83.58309936523438,
+        "live_requested_bytes": 80.36907291412354,
+        "reallocations": 315191
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 14,
+        "private_committed_mib": 348.28515625,
+        "allocations": 2245202,
+        "cumulative_acquired_requested_bytes": 4759.646580696106,
+        "cumulative_released_requested_bytes": 4675.457664489746,
+        "deallocations": 2213027,
+        "lifetime_peak_requested_bytes": 87.1373176574707,
+        "live_requested_bytes": 84.18891620635986,
+        "reallocations": 336216
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 15,
+        "private_committed_mib": 352.78125,
+        "allocations": 2384271,
+        "cumulative_acquired_requested_bytes": 5070.557982444763,
+        "cumulative_released_requested_bytes": 4982.937124252319,
+        "deallocations": 2350353,
+        "lifetime_peak_requested_bytes": 90.56925964355469,
+        "live_requested_bytes": 87.62085819244385,
+        "reallocations": 357049
+      },
+      {
+        "label": "edit-undo-redo-settled",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 356.09765625,
+        "allocations": 2520380,
+        "cumulative_acquired_requested_bytes": 5379.692786216736,
+        "cumulative_released_requested_bytes": 5288.750429153442,
+        "deallocations": 2484775,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 90.94235706329346,
+        "reallocations": 377500
+      },
+      {
+        "label": "all-undone",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 356.10546875,
+        "allocations": 3111134,
+        "cumulative_acquired_requested_bytes": 6905.6495723724365,
+        "cumulative_released_requested_bytes": 6814.70477771759,
+        "deallocations": 3075524,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 90.94479465484619,
+        "reallocations": 467224
+      },
+      {
+        "label": "all-redone",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 356.12109375,
+        "allocations": 3668201,
+        "cumulative_acquired_requested_bytes": 8393.470341682434,
+        "cumulative_released_requested_bytes": 8302.525547027588,
+        "deallocations": 3632591,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 90.94479465484619,
+        "reallocations": 552250
+      },
+      {
+        "label": "history-released-before-save",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 302.30078125,
+        "allocations": 3920853,
+        "cumulative_acquired_requested_bytes": 8543.393537521362,
+        "cumulative_released_requested_bytes": 8509.546719551086,
+        "deallocations": 3914014,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 33.84681797027588,
+        "reallocations": 587584
+      },
+      {
+        "label": "save-reopen-verified",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 316.94140625,
+        "allocations": 3966900,
+        "cumulative_acquired_requested_bytes": 8709.644875526428,
+        "cumulative_released_requested_bytes": 8654.148361206055,
+        "deallocations": 3959753,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 55.496514320373535,
+        "reallocations": 594967
+      },
+      {
+        "label": "final-idle-history-released",
+        "round": 0,
+        "cycle": 16,
+        "private_committed_mib": 317.90625,
+        "allocations": 4225192,
+        "cumulative_acquired_requested_bytes": 8867.533331871033,
+        "cumulative_released_requested_bytes": 8812.043960571289,
+        "deallocations": 4218099,
+        "lifetime_peak_requested_bytes": 93.87972640991211,
+        "live_requested_bytes": 55.48937129974365,
+        "reallocations": 630743
+      }
+    ],
+    "zoom": 1.0,
+    "viewport_points": [
+      1280.0,
+      800.0
+    ],
+    "rounds": 1,
+    "mask_edits_verified": 16,
+    "brush_strokes_verified": 0,
+    "elapsed_seconds": 33.1463348,
+    "callbacks": 2347,
+    "ui_prefix_ms": {
+      "count": 2347,
+      "median": 2.1172999999999997,
+      "p95_nearest_rank": 3.1856,
+      "maximum": 15.6437
+    },
+    "active_ui_prefix_ms": {
+      "count": 1860,
+      "median": 2.2656,
+      "p95_nearest_rank": 3.2641,
+      "maximum": 15.6437
+    },
+    "generated_brush_ui_prefix_ms": null,
+    "ui_prefix_ms_by_phase": {
+      "Applied": {
+        "count": 64,
+        "median": 0.7912,
+        "p95_nearest_rank": 2.0288,
+        "maximum": 4.8668000000000005
+      },
+      "Canceled": {
+        "count": 21,
+        "median": 2.3101,
+        "p95_nearest_rank": 3.057,
+        "maximum": 3.2353
+      },
+      "FinalIdle": {
+        "count": 151,
+        "median": 0.7371,
+        "p95_nearest_rank": 1.0055,
+        "maximum": 1.6685999999999999
+      },
+      "Preview": {
+        "count": 430,
+        "median": 2.3735,
+        "p95_nearest_rank": 3.9395999999999995,
+        "maximum": 15.6437
+      },
+      "RedoAll": {
+        "count": 315,
+        "median": 2.2933,
+        "p95_nearest_rank": 2.9459999999999997,
+        "maximum": 3.7506000000000004
+      },
+      "Redone": {
+        "count": 338,
+        "median": 2.34775,
+        "p95_nearest_rank": 3.3533,
+        "maximum": 10.658900000000001
+      },
+      "Release": {
+        "count": 3,
+        "median": 0.709,
+        "p95_nearest_rank": 0.8746,
+        "maximum": 0.8746
+      },
+      "ReleasedHistory": {
+        "count": 151,
+        "median": 0.7593,
+        "p95_nearest_rank": 1.1592,
+        "maximum": 4.0602
+      },
+      "Reopen": {
+        "count": 20,
+        "median": 2.3190999999999997,
+        "p95_nearest_rank": 2.9958,
+        "maximum": 3.0305000000000004
+      },
+      "Save": {
+        "count": 3,
+        "median": 0.8450000000000001,
+        "p95_nearest_rank": 1.0665,
+        "maximum": 1.0665
+      },
+      "Start": {
+        "count": 51,
+        "median": 0.7211,
+        "p95_nearest_rank": 0.8933,
+        "maximum": 1.1316
+      },
+      "UndoAll": {
+        "count": 335,
+        "median": 2.2276000000000002,
+        "p95_nearest_rank": 3.1144,
+        "maximum": 6.6882
+      },
+      "Undone": {
+        "count": 327,
+        "median": 2.2535,
+        "p95_nearest_rank": 3.2193,
+        "maximum": 4.3139
+      },
+      "Warmup": {
+        "count": 138,
+        "median": 0.7005,
+        "p95_nearest_rank": 2.464,
+        "maximum": 4.4621
+      }
+    },
+    "round_stats": [
+      {
+        "round": 0,
+        "ui_prefix_ms": {
+          "count": 2347,
+          "median": 2.1172999999999997,
+          "p95_nearest_rank": 3.1856,
+          "maximum": 15.6437
+        },
+        "active_ui_prefix_ms": {
+          "count": 1860,
+          "median": 2.2656,
+          "p95_nearest_rank": 3.2641,
+          "maximum": 15.6437
+        },
+        "instrumented_app_command_ms": {
+          "count": 100,
+          "median": 1.0814,
+          "p95_nearest_rank": 3.3643,
+          "maximum": 7.7995
+        },
+        "diagnostic_driver_ms": {
+          "count": 2347,
+          "median": 0.00019999999999999998,
+          "p95_nearest_rank": 0.0028,
+          "maximum": 150.81369999999998
+        }
+      }
+    ],
+    "command_ms_by_phase": {
+      "Applied": {
+        "count": 16,
+        "median": 1.6064500000000002,
+        "p95_nearest_rank": 3.8798,
+        "maximum": 3.8798
+      },
+      "Preview": {
+        "count": 17,
+        "median": 0.0026,
+        "p95_nearest_rank": 0.9083,
+        "maximum": 0.9083
+      },
+      "RedoAll": {
+        "count": 16,
+        "median": 1.60465,
+        "p95_nearest_rank": 2.1004,
+        "maximum": 2.1004
+      },
+      "ReleasedHistory": {
+        "count": 1,
+        "median": 0.2316,
+        "p95_nearest_rank": 0.2316,
+        "maximum": 0.2316
+      },
+      "Save": {
+        "count": 1,
+        "median": 0.0986,
+        "p95_nearest_rank": 0.0986,
+        "maximum": 0.0986
+      },
+      "Start": {
+        "count": 17,
+        "median": 0.0023,
+        "p95_nearest_rank": 0.0065,
+        "maximum": 0.0065
+      },
+      "UndoAll": {
+        "count": 16,
+        "median": 2.82595,
+        "p95_nearest_rank": 7.7995,
+        "maximum": 7.7995
+      },
+      "Undone": {
+        "count": 16,
+        "median": 1.0814,
+        "p95_nearest_rank": 2.5298,
+        "maximum": 2.5298
+      }
+    },
+    "idle_series": {
+      "initial-idle": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 2.007186,
+            "resident_mib": 166.4609375,
+            "private_committed_mib": 224.2421875,
+            "tracked_live_mib": 25.534602165222168,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.535101890563965,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.01149749755859375,
+            "rust_live_requested_mib": 30.439648628234863,
+            "rust_lifetime_peak_requested_mib": 33.727508544921875
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0
+        }
+      },
+      "history-released-before-save": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 30.7525993,
+            "resident_mib": 174.2890625,
+            "private_committed_mib": 302.30078125,
+            "tracked_live_mib": 24.811640739440918,
+            "tracked_additional_mib": 4.032295227050781,
+            "registered_snapshot_total_mib": 28.8439359664917,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.18202972412109375,
+            "rust_live_requested_mib": 33.84681797027588,
+            "rust_lifetime_peak_requested_mib": 93.87972640991211
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0
+        }
+      },
+      "final-idle-history-released": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 33.138771,
+            "resident_mib": 197.0,
+            "private_committed_mib": 317.90625,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.1968841552734375,
+            "rust_live_requested_mib": 55.48937129974365,
+            "rust_lifetime_peak_requested_mib": 93.87972640991211
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0,
+          "rust_live_requested_mib": 0.0
+        }
+      }
+    },
+    "scope": "Descriptive measurements, not a leak verdict, GPU time, FPS, physical-input latency or release certification. Nearest-rank p95. Tail drift omits the first three rounds when present. Diagnostic frame use is shown separately; allocator/driver ownership is not inferred."
+  },
+  {
+    "source": "benchmarks\\gpu-profile-normal-short-100.json",
+    "renderer": "OpenGL",
+    "allocation_profile_enabled": false,
+    "checkpoint_storage": {
+      "fixed_capacity_bytes": 3312,
+      "record_bytes": 144,
+      "records": 23,
+      "used_excludes_current_record": true
+    },
+    "gpu_allocation_profile_enabled": false,
+    "gpu_allocation_checkpoints": [],
+    "allocation_checkpoints": [],
+    "zoom": 1.0,
+    "viewport_points": [
+      1280.0,
+      800.0
+    ],
+    "rounds": 1,
+    "mask_edits_verified": 16,
+    "brush_strokes_verified": 0,
+    "elapsed_seconds": 34.5911182,
+    "callbacks": 2436,
+    "ui_prefix_ms": {
+      "count": 2436,
+      "median": 2.09595,
+      "p95_nearest_rank": 3.4155,
+      "maximum": 11.0151
+    },
+    "active_ui_prefix_ms": {
+      "count": 1943,
+      "median": 2.2759,
+      "p95_nearest_rank": 3.5014,
+      "maximum": 11.0151
+    },
+    "generated_brush_ui_prefix_ms": null,
+    "ui_prefix_ms_by_phase": {
+      "Applied": {
+        "count": 64,
+        "median": 0.8237999999999999,
+        "p95_nearest_rank": 2.4903,
+        "maximum": 3.1583
+      },
+      "Canceled": {
+        "count": 25,
+        "median": 2.5494,
+        "p95_nearest_rank": 3.0222,
+        "maximum": 3.0242
+      },
+      "FinalIdle": {
+        "count": 151,
+        "median": 0.7503,
+        "p95_nearest_rank": 1.1078999999999999,
+        "maximum": 1.7237
+      },
+      "Preview": {
+        "count": 440,
+        "median": 2.3496,
+        "p95_nearest_rank": 4.0406,
+        "maximum": 11.0151
+      },
+      "RedoAll": {
+        "count": 316,
+        "median": 2.2477,
+        "p95_nearest_rank": 3.0722,
+        "maximum": 3.5927
+      },
+      "Redone": {
+        "count": 333,
+        "median": 2.2954,
+        "p95_nearest_rank": 3.2155,
+        "maximum": 4.6624
+      },
+      "Release": {
+        "count": 3,
+        "median": 0.9008,
+        "p95_nearest_rank": 0.9100999999999999,
+        "maximum": 0.9100999999999999
+      },
+      "ReleasedHistory": {
+        "count": 152,
+        "median": 0.6654,
+        "p95_nearest_rank": 1.0337,
+        "maximum": 1.632
+      },
+      "Reopen": {
+        "count": 21,
+        "median": 2.3205,
+        "p95_nearest_rank": 2.8886,
+        "maximum": 3.2468000000000004
+      },
+      "Save": {
+        "count": 3,
+        "median": 0.8272,
+        "p95_nearest_rank": 0.8484999999999999,
+        "maximum": 0.8484999999999999
+      },
+      "Start": {
+        "count": 51,
+        "median": 0.7092,
+        "p95_nearest_rank": 1.2151,
+        "maximum": 1.6948
+      },
+      "UndoAll": {
+        "count": 401,
+        "median": 2.5042,
+        "p95_nearest_rank": 3.6324,
+        "maximum": 10.6129
+      },
+      "Undone": {
+        "count": 338,
+        "median": 2.2895000000000003,
+        "p95_nearest_rank": 3.4209,
+        "maximum": 6.3734
+      },
+      "Warmup": {
+        "count": 138,
+        "median": 0.7349,
+        "p95_nearest_rank": 2.8478000000000003,
+        "maximum": 5.3831
+      }
+    },
+    "round_stats": [
+      {
+        "round": 0,
+        "ui_prefix_ms": {
+          "count": 2436,
+          "median": 2.09595,
+          "p95_nearest_rank": 3.4155,
+          "maximum": 11.0151
+        },
+        "active_ui_prefix_ms": {
+          "count": 1943,
+          "median": 2.2759,
+          "p95_nearest_rank": 3.5014,
+          "maximum": 11.0151
+        },
+        "instrumented_app_command_ms": {
+          "count": 100,
+          "median": 1.14615,
+          "p95_nearest_rank": 3.9236,
+          "maximum": 19.1804
+        },
+        "diagnostic_driver_ms": {
+          "count": 2436,
+          "median": 0.00019999999999999998,
+          "p95_nearest_rank": 0.0028,
+          "maximum": 159.7056
+        }
+      }
+    ],
+    "command_ms_by_phase": {
+      "Applied": {
+        "count": 16,
+        "median": 1.44305,
+        "p95_nearest_rank": 2.9826,
+        "maximum": 2.9826
+      },
+      "Preview": {
+        "count": 17,
+        "median": 0.0028,
+        "p95_nearest_rank": 1.2171,
+        "maximum": 1.2171
+      },
+      "RedoAll": {
+        "count": 16,
+        "median": 1.5534,
+        "p95_nearest_rank": 2.3054,
+        "maximum": 2.3054
+      },
+      "ReleasedHistory": {
+        "count": 1,
+        "median": 0.20049999999999998,
+        "p95_nearest_rank": 0.20049999999999998,
+        "maximum": 0.20049999999999998
+      },
+      "Save": {
+        "count": 1,
+        "median": 0.097,
+        "p95_nearest_rank": 0.097,
+        "maximum": 0.097
+      },
+      "Start": {
+        "count": 17,
+        "median": 0.0021,
+        "p95_nearest_rank": 0.0027,
+        "maximum": 0.0027
+      },
+      "UndoAll": {
+        "count": 16,
+        "median": 3.4747500000000002,
+        "p95_nearest_rank": 19.1804,
+        "maximum": 19.1804
+      },
+      "Undone": {
+        "count": 16,
+        "median": 0.9708499999999999,
+        "p95_nearest_rank": 2.0415,
+        "maximum": 2.0415
+      }
+    },
+    "idle_series": {
+      "initial-idle": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 2.0103119,
+            "resident_mib": 189.734375,
+            "private_committed_mib": 228.7890625,
+            "tracked_live_mib": 25.534602165222168,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.535101890563965,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.01149749755859375
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0
+        }
+      },
+      "history-released-before-save": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 32.1962628,
+            "resident_mib": 197.05078125,
+            "private_committed_mib": 311.08203125,
+            "tracked_live_mib": 24.811640739440918,
+            "tracked_additional_mib": 4.032295227050781,
+            "registered_snapshot_total_mib": 28.8439359664917,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.18941497802734375
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0
+        }
+      },
+      "final-idle-history-released": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 34.583417,
+            "resident_mib": 218.35546875,
+            "private_committed_mib": 325.4453125,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 0.6875,
+            "diagnostic_frame_used_mib": 0.20435333251953125
+          }
+        ],
+        "tail_start_round": 0,
+        "tail_drift": {
+          "resident_mib": 0.0,
+          "private_committed_mib": 0.0,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 0.0
+        }
+      }
+    },
+    "scope": "Descriptive measurements, not a leak verdict, GPU time, FPS, physical-input latency or release certification. Nearest-rank p95. Tail drift omits the first three rounds when present. Diagnostic frame use is shown separately; allocator/driver ownership is not inferred."
+  }
+]

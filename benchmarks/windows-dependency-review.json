@@ -1,0 +1,1985 @@
+{
+  "target": "x86_64-pc-windows-msvc",
+  "features": "default",
+  "command": "cargo tree --locked --offline --target x86_64-pc-windows-msvc --edges normal --prefix none --format '{p}' --charset ascii",
+  "cargo_lock_sha256": "32CCAFAFB31135674FC4E4756C44BC8262854E50432806BFF323ACC63DE36380",
+  "cargo_manifest_matches_verified_notice_package": true,
+  "package_notice_source": "artifacts\\releases\\dudel-0.1.0-candidate-20261017-144000-843",
+  "dependency_versions": 214,
+  "declared_license_expression_counts": {
+    "Apache-2.0": 10,
+    "MIT OR Apache-2.0": 121,
+    "0BSD OR MIT OR Apache-2.0": 1,
+    "Apache-2.0 OR MIT": 11,
+    "Zlib OR Apache-2.0 OR MIT": 2,
+    "Unlicense OR MIT": 2,
+    "BSL-1.0": 2,
+    "MIT": 14,
+    "MIT OR Apache-2.0 OR Zlib": 3,
+    "Apache-2.0 AND MIT": 1,
+    "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0": 1,
+    "MIT/Apache-2.0": 8,
+    "Zlib": 2,
+    "CC0-1.0": 2,
+    "Unicode-3.0": 18,
+    "ISC": 1,
+    "MIT OR Zlib OR Apache-2.0": 2,
+    "BSD-3-Clause OR Apache-2.0": 2,
+    "MPL-2.0": 1,
+    "Apache-2.0/MIT": 2,
+    "MPL-2.0+": 1,
+    "(MIT OR Apache-2.0) AND Unicode-3.0": 1,
+    "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT": 4,
+    "BSD-2-Clause OR Apache-2.0 OR MIT": 2
+  },
+  "legacy_notice_reviews": [
+    {
+      "package": "block-0.1.6",
+      "present_in_windows_normal_graph": false
+    },
+    {
+      "package": "dispatch-0.2.0",
+      "present_in_windows_normal_graph": false
+    },
+    {
+      "package": "malloc_buf-0.0.6",
+      "present_in_windows_normal_graph": false
+    },
+    {
+      "package": "hexf-parse-0.2.1",
+      "present_in_windows_normal_graph": true
+    }
+  ],
+  "packages": [
+    {
+      "name": "ab_glyph",
+      "version": "0.2.32",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ab_glyph-0.2.32/LICENSE"
+      ]
+    },
+    {
+      "name": "ab_glyph_rasterizer",
+      "version": "0.1.10",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ab_glyph_rasterizer-0.1.10/LICENSE"
+      ]
+    },
+    {
+      "name": "accesskit",
+      "version": "0.21.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/accesskit-0.21.1/upstream/AUTHORS",
+        "third-party-licenses/accesskit-0.21.1/upstream/LICENSE-APACHE",
+        "third-party-licenses/accesskit-0.21.1/upstream/LICENSE-MIT",
+        "third-party-licenses/accesskit-0.21.1/upstream/LICENSE.chromium"
+      ]
+    },
+    {
+      "name": "accesskit_consumer",
+      "version": "0.31.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/accesskit_consumer-0.31.0/upstream/AUTHORS",
+        "third-party-licenses/accesskit_consumer-0.31.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/accesskit_consumer-0.31.0/upstream/LICENSE-MIT",
+        "third-party-licenses/accesskit_consumer-0.31.0/upstream/LICENSE.chromium"
+      ]
+    },
+    {
+      "name": "accesskit_windows",
+      "version": "0.29.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/accesskit_windows-0.29.2/upstream/AUTHORS",
+        "third-party-licenses/accesskit_windows-0.29.2/upstream/LICENSE-APACHE",
+        "third-party-licenses/accesskit_windows-0.29.2/upstream/LICENSE-MIT",
+        "third-party-licenses/accesskit_windows-0.29.2/upstream/LICENSE.chromium"
+      ]
+    },
+    {
+      "name": "accesskit_winit",
+      "version": "0.29.2",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/accesskit_winit-0.29.2/upstream/AUTHORS",
+        "third-party-licenses/accesskit_winit-0.29.2/upstream/LICENSE-APACHE",
+        "third-party-licenses/accesskit_winit-0.29.2/upstream/LICENSE-MIT",
+        "third-party-licenses/accesskit_winit-0.29.2/upstream/LICENSE.chromium"
+      ]
+    },
+    {
+      "name": "adler2",
+      "version": "2.0.1",
+      "declared_license": "0BSD OR MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/adler2-2.0.1/LICENSE-0BSD",
+        "third-party-licenses/adler2-2.0.1/LICENSE-APACHE",
+        "third-party-licenses/adler2-2.0.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "ahash",
+      "version": "0.8.12",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ahash-0.8.12/LICENSE-APACHE",
+        "third-party-licenses/ahash-0.8.12/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "arboard",
+      "version": "3.6.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/arboard-3.6.1/LICENSE-APACHE.txt",
+        "third-party-licenses/arboard-3.6.1/LICENSE-MIT.txt"
+      ]
+    },
+    {
+      "name": "arrayvec",
+      "version": "0.7.8",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/arrayvec-0.7.8/LICENSE-APACHE",
+        "third-party-licenses/arrayvec-0.7.8/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "ash",
+      "version": "0.38.0+1.3.281",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ash-0.38.0+1.3.281/LICENSE-APACHE",
+        "third-party-licenses/ash-0.38.0+1.3.281/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "base64",
+      "version": "0.22.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/base64-0.22.1/LICENSE-APACHE",
+        "third-party-licenses/base64-0.22.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "bit-set",
+      "version": "0.8.0",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/bit-set-0.8.0/LICENSE-APACHE",
+        "third-party-licenses/bit-set-0.8.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "bit-vec",
+      "version": "0.8.0",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/bit-vec-0.8.0/LICENSE-APACHE",
+        "third-party-licenses/bit-vec-0.8.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "bitflags",
+      "version": "2.13.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/bitflags-2.13.2/LICENSE-APACHE",
+        "third-party-licenses/bitflags-2.13.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "bumpalo",
+      "version": "3.20.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/bumpalo-3.20.3/LICENSE-APACHE",
+        "third-party-licenses/bumpalo-3.20.3/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "bytemuck",
+      "version": "1.25.2",
+      "declared_license": "Zlib OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/bytemuck-1.25.2/LICENSE-APACHE",
+        "third-party-licenses/bytemuck-1.25.2/LICENSE-MIT",
+        "third-party-licenses/bytemuck-1.25.2/LICENSE-ZLIB"
+      ]
+    },
+    {
+      "name": "bytemuck_derive",
+      "version": "1.12.1",
+      "declared_license": "Zlib OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/bytemuck_derive-1.12.1/LICENSE-APACHE",
+        "third-party-licenses/bytemuck_derive-1.12.1/LICENSE-MIT",
+        "third-party-licenses/bytemuck_derive-1.12.1/LICENSE-ZLIB"
+      ]
+    },
+    {
+      "name": "byteorder-lite",
+      "version": "0.1.0",
+      "declared_license": "Unlicense OR MIT",
+      "notice_files": [
+        "third-party-licenses/byteorder-lite-0.1.0/LICENSE-MIT",
+        "third-party-licenses/byteorder-lite-0.1.0/UNLICENSE"
+      ]
+    },
+    {
+      "name": "cfg-if",
+      "version": "1.0.5",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/cfg-if-1.0.5/LICENSE-APACHE",
+        "third-party-licenses/cfg-if-1.0.5/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "clipboard-win",
+      "version": "5.4.1",
+      "declared_license": "BSL-1.0",
+      "notice_files": [
+        "third-party-licenses/clipboard-win-5.4.1/upstream/LICENSE"
+      ]
+    },
+    {
+      "name": "codespan-reporting",
+      "version": "0.12.0",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/codespan-reporting-0.12.0/LICENSE"
+      ]
+    },
+    {
+      "name": "const-random",
+      "version": "0.1.18",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/const-random-0.1.18/LICENSE-APACHE",
+        "third-party-licenses/const-random-0.1.18/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "const-random-macro",
+      "version": "0.1.16",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/const-random-macro-0.1.16/LICENSE-APACHE",
+        "third-party-licenses/const-random-macro-0.1.16/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/crc32fast-1.5.2/LICENSE-APACHE",
+        "third-party-licenses/crc32fast-1.5.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "crunchy",
+      "version": "0.2.4",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/crunchy-0.2.4/LICENSE"
+      ]
+    },
+    {
+      "name": "cursor-icon",
+      "version": "1.2.0",
+      "declared_license": "MIT OR Apache-2.0 OR Zlib",
+      "notice_files": [
+        "third-party-licenses/cursor-icon-1.2.0/LICENSE-APACHE",
+        "third-party-licenses/cursor-icon-1.2.0/LICENSE-MIT",
+        "third-party-licenses/cursor-icon-1.2.0/LICENSE-ZLIB"
+      ]
+    },
+    {
+      "name": "directories",
+      "version": "6.0.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/directories-6.0.0/LICENSE-APACHE",
+        "third-party-licenses/directories-6.0.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "dirs-sys",
+      "version": "0.5.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/dirs-sys-0.5.0/LICENSE-APACHE",
+        "third-party-licenses/dirs-sys-0.5.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "displaydoc",
+      "version": "0.2.7",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/displaydoc-0.2.7/LICENSE-APACHE",
+        "third-party-licenses/displaydoc-0.2.7/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "document-features",
+      "version": "0.2.12",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/document-features-0.2.12/LICENSE-APACHE",
+        "third-party-licenses/document-features-0.2.12/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "dpi",
+      "version": "0.1.2",
+      "declared_license": "Apache-2.0 AND MIT",
+      "notice_files": [
+        "third-party-licenses/dpi-0.1.2/LICENSE",
+        "third-party-licenses/dpi-0.1.2/LICENSE-LIBM-MIT"
+      ]
+    },
+    {
+      "name": "ecolor",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ecolor-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/ecolor-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "eframe",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/eframe-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/eframe-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "egui",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/egui-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/egui-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "egui-wgpu",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/egui-wgpu-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/egui-wgpu-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "egui-winit",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/egui-winit-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/egui-winit-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "egui_glow",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/egui_glow-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/egui_glow-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "emath",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/emath-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/emath-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "enumn",
+      "version": "0.1.14",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/enumn-0.1.14/LICENSE-APACHE",
+        "third-party-licenses/enumn-0.1.14/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "epaint",
+      "version": "0.33.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/epaint-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/epaint-0.33.3/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "epaint_default_fonts",
+      "version": "0.33.3",
+      "declared_license": "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0",
+      "notice_files": [
+        "third-party-licenses/epaint_default_fonts-0.33.3/fonts/emoji-icon-font-mit-license.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/fonts/Hack-Regular.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/fonts/OFL.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/fonts/UFL.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/LICENSE-APACHE",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/LICENSE-MIT",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/crates/epaint_default_fonts/fonts/Hack-Regular.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/crates/epaint_default_fonts/fonts/OFL.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/crates/epaint_default_fonts/fonts/UFL.txt",
+        "third-party-licenses/epaint_default_fonts-0.33.3/upstream/crates/epaint_default_fonts/fonts/emoji-icon-font-mit-license.txt"
+      ]
+    },
+    {
+      "name": "equivalent",
+      "version": "1.0.2",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/equivalent-1.0.2/LICENSE-APACHE",
+        "third-party-licenses/equivalent-1.0.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "error-code",
+      "version": "3.4.0",
+      "declared_license": "BSL-1.0",
+      "notice_files": [
+        "third-party-licenses/error-code-3.4.0/LICENSE"
+      ]
+    },
+    {
+      "name": "fallible-iterator",
+      "version": "0.3.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/fallible-iterator-0.3.0/LICENSE-APACHE",
+        "third-party-licenses/fallible-iterator-0.3.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "fallible-streaming-iterator",
+      "version": "0.1.9",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/fallible-streaming-iterator-0.1.9/LICENSE-APACHE",
+        "third-party-licenses/fallible-streaming-iterator-0.1.9/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "fastrand",
+      "version": "2.5.0",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/fastrand-2.5.0/LICENSE-APACHE",
+        "third-party-licenses/fastrand-2.5.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "fdeflate",
+      "version": "0.3.7",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/fdeflate-0.3.7/LICENSE-APACHE",
+        "third-party-licenses/fdeflate-0.3.7/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "flate2",
+      "version": "1.1.10",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/flate2-1.1.10/LICENSE-APACHE",
+        "third-party-licenses/flate2-1.1.10/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "foldhash",
+      "version": "0.1.5",
+      "declared_license": "Zlib",
+      "notice_files": [
+        "third-party-licenses/foldhash-0.1.5/LICENSE"
+      ]
+    },
+    {
+      "name": "foldhash",
+      "version": "0.2.0",
+      "declared_license": "Zlib",
+      "notice_files": [
+        "third-party-licenses/foldhash-0.2.0/LICENSE"
+      ]
+    },
+    {
+      "name": "form_urlencoded",
+      "version": "1.2.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/form_urlencoded-1.2.2/LICENSE-APACHE",
+        "third-party-licenses/form_urlencoded-1.2.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "getrandom",
+      "version": "0.2.17",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/getrandom-0.2.17/LICENSE-APACHE",
+        "third-party-licenses/getrandom-0.2.17/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "getrandom",
+      "version": "0.3.4",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/getrandom-0.3.4/LICENSE-APACHE",
+        "third-party-licenses/getrandom-0.3.4/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "getrandom",
+      "version": "0.4.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/getrandom-0.4.3/LICENSE-APACHE",
+        "third-party-licenses/getrandom-0.4.3/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "glow",
+      "version": "0.16.0",
+      "declared_license": "MIT OR Apache-2.0 OR Zlib",
+      "notice_files": [
+        "third-party-licenses/glow-0.16.0/LICENSE-APACHE",
+        "third-party-licenses/glow-0.16.0/LICENSE-MIT",
+        "third-party-licenses/glow-0.16.0/LICENSE-ZLIB"
+      ]
+    },
+    {
+      "name": "glutin",
+      "version": "0.32.3",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/glutin-0.32.3/LICENSE"
+      ]
+    },
+    {
+      "name": "glutin-winit",
+      "version": "0.5.0",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/glutin-winit-0.5.0/LICENSE"
+      ]
+    },
+    {
+      "name": "glutin_egl_sys",
+      "version": "0.7.1",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/glutin_egl_sys-0.7.1/LICENSE"
+      ]
+    },
+    {
+      "name": "glutin_wgl_sys",
+      "version": "0.6.1",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/glutin_wgl_sys-0.6.1/LICENSE"
+      ]
+    },
+    {
+      "name": "gpu-alloc",
+      "version": "0.6.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/gpu-alloc-0.6.2/upstream/COPYING",
+        "third-party-licenses/gpu-alloc-0.6.2/upstream/license/APACHE",
+        "third-party-licenses/gpu-alloc-0.6.2/upstream/license/MIT"
+      ]
+    },
+    {
+      "name": "gpu-alloc-types",
+      "version": "0.3.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/gpu-alloc-types-0.3.1/upstream/COPYING",
+        "third-party-licenses/gpu-alloc-types-0.3.1/upstream/license/APACHE",
+        "third-party-licenses/gpu-alloc-types-0.3.1/upstream/license/MIT"
+      ]
+    },
+    {
+      "name": "gpu-allocator",
+      "version": "0.27.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/gpu-allocator-0.27.0/LICENSE-APACHE",
+        "third-party-licenses/gpu-allocator-0.27.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "gpu-descriptor",
+      "version": "0.3.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/gpu-descriptor-0.3.2/upstream/COPYING",
+        "third-party-licenses/gpu-descriptor-0.3.2/upstream/license/APACHE",
+        "third-party-licenses/gpu-descriptor-0.3.2/upstream/license/MIT"
+      ]
+    },
+    {
+      "name": "gpu-descriptor-types",
+      "version": "0.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/gpu-descriptor-types-0.2.0/upstream/COPYING",
+        "third-party-licenses/gpu-descriptor-types-0.2.0/upstream/license/APACHE",
+        "third-party-licenses/gpu-descriptor-types-0.2.0/upstream/license/MIT"
+      ]
+    },
+    {
+      "name": "half",
+      "version": "2.7.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/half-2.7.1/LICENSE-APACHE",
+        "third-party-licenses/half-2.7.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.15.5",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/hashbrown-0.15.5/LICENSE-APACHE",
+        "third-party-licenses/hashbrown-0.15.5/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.16.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/hashbrown-0.16.1/LICENSE-APACHE",
+        "third-party-licenses/hashbrown-0.16.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.17.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/hashbrown-0.17.1/LICENSE-APACHE",
+        "third-party-licenses/hashbrown-0.17.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "hexf-parse",
+      "version": "0.2.1",
+      "declared_license": "CC0-1.0",
+      "notice_files": [
+        "third-party-licenses/hexf-parse-0.2.1/UPSTREAM_Cargo.toml",
+        "third-party-licenses/hexf-parse-0.2.1/LICENSE_REFERENCE_CC0-1.0.txt",
+        "third-party-licenses/hexf-parse-0.2.1/ATTRIBUTION.md"
+      ]
+    },
+    {
+      "name": "home",
+      "version": "0.5.12",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/home-0.5.12/LICENSE-APACHE",
+        "third-party-licenses/home-0.5.12/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "icu_collections",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_collections-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_locale_core",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_locale_core-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_normalizer",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_normalizer-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_normalizer_data",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_normalizer_data-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_properties",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_properties-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_properties_data",
+      "version": "2.3.0",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_properties_data-2.3.0/LICENSE"
+      ]
+    },
+    {
+      "name": "icu_provider",
+      "version": "2.3.1",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/icu_provider-2.3.1/LICENSE"
+      ]
+    },
+    {
+      "name": "idna",
+      "version": "1.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/idna-1.1.0/LICENSE-APACHE",
+        "third-party-licenses/idna-1.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "idna_adapter",
+      "version": "1.2.2",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/idna_adapter-1.2.2/LICENSE-APACHE",
+        "third-party-licenses/idna_adapter-1.2.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "image",
+      "version": "0.25.10",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/image-0.25.10/LICENSE-APACHE",
+        "third-party-licenses/image-0.25.10/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "indexmap",
+      "version": "2.14.2",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/indexmap-2.14.2/LICENSE-APACHE",
+        "third-party-licenses/indexmap-2.14.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/itoa-1.0.18/LICENSE-APACHE",
+        "third-party-licenses/itoa-1.0.18/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "khronos-egl",
+      "version": "6.0.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/khronos-egl-6.0.0/LICENSE-APACHE",
+        "third-party-licenses/khronos-egl-6.0.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "leb128fmt",
+      "version": "0.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/leb128fmt-0.1.0/LICENSE-APACHE",
+        "third-party-licenses/leb128fmt-0.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "libc",
+      "version": "0.2.190",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/libc-0.2.190/LICENSE-APACHE",
+        "third-party-licenses/libc-0.2.190/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "libloading",
+      "version": "0.8.9",
+      "declared_license": "ISC",
+      "notice_files": [
+        "third-party-licenses/libloading-0.8.9/LICENSE"
+      ]
+    },
+    {
+      "name": "libm",
+      "version": "0.2.16",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/libm-0.2.16/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "libsqlite3-sys",
+      "version": "0.38.2",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/libsqlite3-sys-0.38.2/LICENSE",
+        "third-party-licenses/libsqlite3-sys-0.38.2/sqlcipher/LICENSE"
+      ]
+    },
+    {
+      "name": "litemap",
+      "version": "0.8.3",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/litemap-0.8.3/LICENSE"
+      ]
+    },
+    {
+      "name": "litrs",
+      "version": "1.0.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/litrs-1.0.0/LICENSE-APACHE",
+        "third-party-licenses/litrs-1.0.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "lock_api",
+      "version": "0.4.14",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/lock_api-0.4.14/LICENSE-APACHE",
+        "third-party-licenses/lock_api-0.4.14/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "log",
+      "version": "0.4.34",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/log-0.4.34/LICENSE-APACHE",
+        "third-party-licenses/log-0.4.34/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "memchr",
+      "version": "2.8.3",
+      "declared_license": "Unlicense OR MIT",
+      "notice_files": [
+        "third-party-licenses/memchr-2.8.3/COPYING",
+        "third-party-licenses/memchr-2.8.3/LICENSE-MIT",
+        "third-party-licenses/memchr-2.8.3/UNLICENSE"
+      ]
+    },
+    {
+      "name": "memoffset",
+      "version": "0.9.1",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/memoffset-0.9.1/LICENSE"
+      ]
+    },
+    {
+      "name": "miniz_oxide",
+      "version": "0.8.9",
+      "declared_license": "MIT OR Zlib OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/miniz_oxide-0.8.9/LICENSE",
+        "third-party-licenses/miniz_oxide-0.8.9/LICENSE-APACHE.md",
+        "third-party-licenses/miniz_oxide-0.8.9/LICENSE-MIT.md",
+        "third-party-licenses/miniz_oxide-0.8.9/LICENSE-ZLIB.md"
+      ]
+    },
+    {
+      "name": "miniz_oxide",
+      "version": "0.9.1",
+      "declared_license": "MIT OR Zlib OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/miniz_oxide-0.9.1/LICENSE",
+        "third-party-licenses/miniz_oxide-0.9.1/LICENSE-APACHE.md",
+        "third-party-licenses/miniz_oxide-0.9.1/LICENSE-MIT.md",
+        "third-party-licenses/miniz_oxide-0.9.1/LICENSE-ZLIB.md"
+      ]
+    },
+    {
+      "name": "moxcms",
+      "version": "0.8.1",
+      "declared_license": "BSD-3-Clause OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/moxcms-0.8.1/LICENSE-APACHE.md",
+        "third-party-licenses/moxcms-0.8.1/LICENSE.md"
+      ]
+    },
+    {
+      "name": "naga",
+      "version": "27.0.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/naga-27.0.3/LICENSE.APACHE",
+        "third-party-licenses/naga-27.0.3/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "nohash-hasher",
+      "version": "0.2.0",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/nohash-hasher-0.2.0/LICENSE-APACHE",
+        "third-party-licenses/nohash-hasher-0.2.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "num-traits",
+      "version": "0.2.19",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/num-traits-0.2.19/LICENSE-APACHE",
+        "third-party-licenses/num-traits-0.2.19/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "once_cell",
+      "version": "1.21.4",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/once_cell-1.21.4/LICENSE-APACHE",
+        "third-party-licenses/once_cell-1.21.4/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "option-ext",
+      "version": "0.2.0",
+      "declared_license": "MPL-2.0",
+      "notice_files": [
+        "third-party-licenses/option-ext-0.2.0/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "ordered-float",
+      "version": "5.5.0",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/ordered-float-5.5.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "owned_ttf_parser",
+      "version": "0.25.1",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/owned_ttf_parser-0.25.1/LICENSE"
+      ]
+    },
+    {
+      "name": "parking_lot",
+      "version": "0.12.5",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/parking_lot-0.12.5/LICENSE-APACHE",
+        "third-party-licenses/parking_lot-0.12.5/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "parking_lot_core",
+      "version": "0.9.12",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/parking_lot_core-0.9.12/LICENSE-APACHE",
+        "third-party-licenses/parking_lot_core-0.9.12/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "percent-encoding",
+      "version": "2.3.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/percent-encoding-2.3.2/LICENSE-APACHE",
+        "third-party-licenses/percent-encoding-2.3.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "pin-project-lite",
+      "version": "0.2.17",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/pin-project-lite-0.2.17/LICENSE-APACHE",
+        "third-party-licenses/pin-project-lite-0.2.17/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "png",
+      "version": "0.18.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/png-0.18.1/LICENSE-APACHE",
+        "third-party-licenses/png-0.18.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "pollster",
+      "version": "0.4.0",
+      "declared_license": "Apache-2.0/MIT",
+      "notice_files": [
+        "third-party-licenses/pollster-0.4.0/LICENSE-APACHE",
+        "third-party-licenses/pollster-0.4.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "portable-atomic",
+      "version": "1.15.0",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/portable-atomic-1.15.0/LICENSE-APACHE",
+        "third-party-licenses/portable-atomic-1.15.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "potential_utf",
+      "version": "0.1.6",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/potential_utf-0.1.6/LICENSE"
+      ]
+    },
+    {
+      "name": "presser",
+      "version": "0.3.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/presser-0.3.1/LICENSE-APACHE",
+        "third-party-licenses/presser-0.3.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "proc-macro2",
+      "version": "1.0.107",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/proc-macro2-1.0.107/LICENSE-APACHE",
+        "third-party-licenses/proc-macro2-1.0.107/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "profiling",
+      "version": "1.0.18",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/profiling-1.0.18/upstream/LICENSE-APACHE",
+        "third-party-licenses/profiling-1.0.18/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "pxfm",
+      "version": "0.1.30",
+      "declared_license": "BSD-3-Clause OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/pxfm-0.1.30/LICENSE-APACHE.md",
+        "third-party-licenses/pxfm-0.1.30/LICENSE.md"
+      ]
+    },
+    {
+      "name": "quote",
+      "version": "1.0.47",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/quote-1.0.47/LICENSE-APACHE",
+        "third-party-licenses/quote-1.0.47/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "range-alloc",
+      "version": "0.1.5",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/range-alloc-0.1.5/LICENSE.APACHE",
+        "third-party-licenses/range-alloc-0.1.5/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "raw-window-handle",
+      "version": "0.6.2",
+      "declared_license": "MIT OR Apache-2.0 OR Zlib",
+      "notice_files": [
+        "third-party-licenses/raw-window-handle-0.6.2/LICENSE-APACHE.md",
+        "third-party-licenses/raw-window-handle-0.6.2/LICENSE-MIT.md",
+        "third-party-licenses/raw-window-handle-0.6.2/LICENSE-ZLIB.md"
+      ]
+    },
+    {
+      "name": "renderdoc-sys",
+      "version": "1.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/renderdoc-sys-1.1.0/LICENSE-APACHE",
+        "third-party-licenses/renderdoc-sys-1.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "rfd",
+      "version": "0.15.4",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/rfd-0.15.4/LICENSE"
+      ]
+    },
+    {
+      "name": "rhai",
+      "version": "1.26.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/rhai-1.26.1/LICENSE-APACHE.txt",
+        "third-party-licenses/rhai-1.26.1/LICENSE-MIT.txt"
+      ]
+    },
+    {
+      "name": "rhai_codegen",
+      "version": "3.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/rhai_codegen-3.2.0/upstream/LICENSE-APACHE.txt",
+        "third-party-licenses/rhai_codegen-3.2.0/upstream/LICENSE-MIT.txt"
+      ]
+    },
+    {
+      "name": "ron",
+      "version": "0.11.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ron-0.11.0/LICENSE-APACHE",
+        "third-party-licenses/ron-0.11.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "rusqlite",
+      "version": "0.40.2",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/rusqlite-0.40.2/LICENSE"
+      ]
+    },
+    {
+      "name": "rustc-hash",
+      "version": "1.1.0",
+      "declared_license": "Apache-2.0/MIT",
+      "notice_files": [
+        "third-party-licenses/rustc-hash-1.1.0/LICENSE-APACHE",
+        "third-party-licenses/rustc-hash-1.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "rustc-hash",
+      "version": "2.1.3",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/rustc-hash-2.1.3/LICENSE-APACHE",
+        "third-party-licenses/rustc-hash-2.1.3/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "scopeguard",
+      "version": "1.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/scopeguard-1.2.0/LICENSE-APACHE",
+        "third-party-licenses/scopeguard-1.2.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "serde",
+      "version": "1.0.229",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/serde-1.0.229/LICENSE-APACHE",
+        "third-party-licenses/serde-1.0.229/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "serde_core",
+      "version": "1.0.229",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/serde_core-1.0.229/LICENSE-APACHE",
+        "third-party-licenses/serde_core-1.0.229/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "serde_derive",
+      "version": "1.0.229",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/serde_derive-1.0.229/LICENSE-APACHE",
+        "third-party-licenses/serde_derive-1.0.229/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "serde_json",
+      "version": "1.0.152",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/serde_json-1.0.152/LICENSE-APACHE",
+        "third-party-licenses/serde_json-1.0.152/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "simd-adler32",
+      "version": "0.3.10",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/simd-adler32-0.3.10/LICENSE.md"
+      ]
+    },
+    {
+      "name": "smallvec",
+      "version": "1.16.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/smallvec-1.16.3/LICENSE-APACHE",
+        "third-party-licenses/smallvec-1.16.3/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "smartstring",
+      "version": "1.0.1",
+      "declared_license": "MPL-2.0+",
+      "notice_files": [
+        "third-party-licenses/smartstring-1.0.1/LICENCE.md"
+      ]
+    },
+    {
+      "name": "smol_str",
+      "version": "0.2.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/smol_str-0.2.2/LICENSE-APACHE",
+        "third-party-licenses/smol_str-0.2.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "spin",
+      "version": "0.9.9",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/spin-0.9.9/LICENSE"
+      ]
+    },
+    {
+      "name": "spirv",
+      "version": "0.3.0+sdk-1.3.268.0",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/spirv-0.3.0+sdk-1.3.268.0/upstream/LICENSE"
+      ]
+    },
+    {
+      "name": "stable_deref_trait",
+      "version": "1.2.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/stable_deref_trait-1.2.1/LICENSE-APACHE",
+        "third-party-licenses/stable_deref_trait-1.2.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "static_assertions",
+      "version": "1.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/static_assertions-1.1.0/LICENSE-APACHE",
+        "third-party-licenses/static_assertions-1.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "syn",
+      "version": "2.0.119",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/syn-2.0.119/LICENSE-APACHE",
+        "third-party-licenses/syn-2.0.119/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "syn",
+      "version": "3.0.7",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/syn-3.0.7/LICENSE-APACHE",
+        "third-party-licenses/syn-3.0.7/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "synstructure",
+      "version": "0.14.0",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/synstructure-0.14.0/LICENSE"
+      ]
+    },
+    {
+      "name": "tempfile",
+      "version": "3.27.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/tempfile-3.27.0/LICENSE-APACHE",
+        "third-party-licenses/tempfile-3.27.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "thin-vec",
+      "version": "0.2.21",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/thin-vec-0.2.21/LICENSE-APACHE",
+        "third-party-licenses/thin-vec-0.2.21/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "thiserror",
+      "version": "1.0.69",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/thiserror-1.0.69/LICENSE-APACHE",
+        "third-party-licenses/thiserror-1.0.69/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "thiserror",
+      "version": "2.0.21",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/thiserror-2.0.21/LICENSE-APACHE",
+        "third-party-licenses/thiserror-2.0.21/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "1.0.69",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/thiserror-impl-1.0.69/LICENSE-APACHE",
+        "third-party-licenses/thiserror-impl-1.0.69/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "2.0.21",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/thiserror-impl-2.0.21/LICENSE-APACHE",
+        "third-party-licenses/thiserror-impl-2.0.21/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "tiny-keccak",
+      "version": "2.0.2",
+      "declared_license": "CC0-1.0",
+      "notice_files": [
+        "third-party-licenses/tiny-keccak-2.0.2/LICENSE"
+      ]
+    },
+    {
+      "name": "tinystr",
+      "version": "0.8.4",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/tinystr-0.8.4/LICENSE"
+      ]
+    },
+    {
+      "name": "tracing",
+      "version": "0.1.44",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/tracing-0.1.44/LICENSE"
+      ]
+    },
+    {
+      "name": "tracing-core",
+      "version": "0.1.36",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/tracing-core-0.1.36/LICENSE",
+        "third-party-licenses/tracing-core-0.1.36/src/spin/LICENSE"
+      ]
+    },
+    {
+      "name": "ttf-parser",
+      "version": "0.25.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/ttf-parser-0.25.1/LICENSE-APACHE",
+        "third-party-licenses/ttf-parser-0.25.1/LICENSE-MIT",
+        "third-party-licenses/ttf-parser-0.25.1/tests/fonts/colr_1_LICENSE"
+      ]
+    },
+    {
+      "name": "type-map",
+      "version": "0.5.1",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/type-map-0.5.1/LICENSE-APACHE",
+        "third-party-licenses/type-map-0.5.1/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "unicode-ident",
+      "version": "1.0.26",
+      "declared_license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/unicode-ident-1.0.26/LICENSE-APACHE",
+        "third-party-licenses/unicode-ident-1.0.26/LICENSE-MIT",
+        "third-party-licenses/unicode-ident-1.0.26/LICENSE-UNICODE"
+      ]
+    },
+    {
+      "name": "unicode-segmentation",
+      "version": "1.13.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/unicode-segmentation-1.13.3/COPYRIGHT",
+        "third-party-licenses/unicode-segmentation-1.13.3/LICENSE-APACHE",
+        "third-party-licenses/unicode-segmentation-1.13.3/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "unicode-width",
+      "version": "0.2.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/unicode-width-0.2.2/COPYRIGHT",
+        "third-party-licenses/unicode-width-0.2.2/LICENSE-APACHE",
+        "third-party-licenses/unicode-width-0.2.2/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "url",
+      "version": "2.5.8",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/url-2.5.8/LICENSE-APACHE",
+        "third-party-licenses/url-2.5.8/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "utf8_iter",
+      "version": "1.0.4",
+      "declared_license": "Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/utf8_iter-1.0.4/COPYRIGHT",
+        "third-party-licenses/utf8_iter-1.0.4/LICENSE-APACHE",
+        "third-party-licenses/utf8_iter-1.0.4/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasm-encoder",
+      "version": "0.261.0",
+      "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/wasm-encoder-0.261.0/LICENSE-APACHE",
+        "third-party-licenses/wasm-encoder-0.261.0/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "third-party-licenses/wasm-encoder-0.261.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasmi",
+      "version": "2.0.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wasmi-2.0.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/wasmi-2.0.0/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasmi_collections",
+      "version": "2.0.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wasmi_collections-2.0.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/wasmi_collections-2.0.0/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasmi_core",
+      "version": "2.0.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wasmi_core-2.0.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/wasmi_core-2.0.0/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasmi_ir",
+      "version": "2.0.0",
+      "declared_license": "MIT/Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wasmi_ir-2.0.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/wasmi_ir-2.0.0/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wasmparser",
+      "version": "0.228.0",
+      "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/wasmparser-0.228.0/upstream/LICENSE-APACHE",
+        "third-party-licenses/wasmparser-0.228.0/upstream/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "third-party-licenses/wasmparser-0.228.0/upstream/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wast",
+      "version": "261.0.0",
+      "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/wast-261.0.0/LICENSE-APACHE",
+        "third-party-licenses/wast-261.0.0/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "third-party-licenses/wast-261.0.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wat",
+      "version": "1.261.0",
+      "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/wat-1.261.0/LICENSE-APACHE",
+        "third-party-licenses/wat-1.261.0/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "third-party-licenses/wat-1.261.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "web-time",
+      "version": "1.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/web-time-1.1.0/LICENSE-APACHE",
+        "third-party-licenses/web-time-1.1.0/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "webbrowser",
+      "version": "1.2.4",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/webbrowser-1.2.4/LICENSE-APACHE",
+        "third-party-licenses/webbrowser-1.2.4/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "wgpu",
+      "version": "27.0.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wgpu-27.0.1/LICENSE.APACHE",
+        "third-party-licenses/wgpu-27.0.1/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "wgpu-core",
+      "version": "27.0.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wgpu-core-27.0.3/LICENSE.APACHE",
+        "third-party-licenses/wgpu-core-27.0.3/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "wgpu-core-deps-windows-linux-android",
+      "version": "27.0.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wgpu-core-deps-windows-linux-android-27.0.0/LICENSE.APACHE",
+        "third-party-licenses/wgpu-core-deps-windows-linux-android-27.0.0/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "wgpu-hal",
+      "version": "27.0.4",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wgpu-hal-27.0.4/LICENSE.APACHE",
+        "third-party-licenses/wgpu-hal-27.0.4/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "wgpu-types",
+      "version": "27.0.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/wgpu-types-27.0.1/LICENSE.APACHE",
+        "third-party-licenses/wgpu-types-27.0.1/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "windows",
+      "version": "0.58.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-0.58.0/license-apache-2.0",
+        "third-party-licenses/windows-0.58.0/license-mit",
+        "third-party-licenses/windows-0.58.0/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows",
+      "version": "0.61.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-0.61.3/license-apache-2.0",
+        "third-party-licenses/windows-0.61.3/license-mit",
+        "third-party-licenses/windows-0.61.3/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows-collections",
+      "version": "0.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-collections-0.2.0/license-apache-2.0",
+        "third-party-licenses/windows-collections-0.2.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-core",
+      "version": "0.58.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-core-0.58.0/license-apache-2.0",
+        "third-party-licenses/windows-core-0.58.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-core",
+      "version": "0.61.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-core-0.61.2/license-apache-2.0",
+        "third-party-licenses/windows-core-0.61.2/license-mit"
+      ]
+    },
+    {
+      "name": "windows-future",
+      "version": "0.2.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-future-0.2.1/license-apache-2.0",
+        "third-party-licenses/windows-future-0.2.1/license-mit"
+      ]
+    },
+    {
+      "name": "windows-implement",
+      "version": "0.58.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-implement-0.58.0/license-apache-2.0",
+        "third-party-licenses/windows-implement-0.58.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-implement",
+      "version": "0.60.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-implement-0.60.2/license-apache-2.0",
+        "third-party-licenses/windows-implement-0.60.2/license-mit"
+      ]
+    },
+    {
+      "name": "windows-interface",
+      "version": "0.58.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-interface-0.58.0/license-apache-2.0",
+        "third-party-licenses/windows-interface-0.58.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-interface",
+      "version": "0.59.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-interface-0.59.3/license-apache-2.0",
+        "third-party-licenses/windows-interface-0.59.3/license-mit"
+      ]
+    },
+    {
+      "name": "windows-link",
+      "version": "0.1.3",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-link-0.1.3/license-apache-2.0",
+        "third-party-licenses/windows-link-0.1.3/license-mit"
+      ]
+    },
+    {
+      "name": "windows-link",
+      "version": "0.2.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-link-0.2.1/license-apache-2.0",
+        "third-party-licenses/windows-link-0.2.1/license-mit"
+      ]
+    },
+    {
+      "name": "windows-numerics",
+      "version": "0.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-numerics-0.2.0/license-apache-2.0",
+        "third-party-licenses/windows-numerics-0.2.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-result",
+      "version": "0.2.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-result-0.2.0/license-apache-2.0",
+        "third-party-licenses/windows-result-0.2.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-result",
+      "version": "0.3.4",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-result-0.3.4/license-apache-2.0",
+        "third-party-licenses/windows-result-0.3.4/license-mit"
+      ]
+    },
+    {
+      "name": "windows-strings",
+      "version": "0.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-strings-0.1.0/license-apache-2.0",
+        "third-party-licenses/windows-strings-0.1.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows-strings",
+      "version": "0.4.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-strings-0.4.2/license-apache-2.0",
+        "third-party-licenses/windows-strings-0.4.2/license-mit"
+      ]
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.52.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-sys-0.52.0/license-apache-2.0",
+        "third-party-licenses/windows-sys-0.52.0/license-mit",
+        "third-party-licenses/windows-sys-0.52.0/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.59.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-sys-0.59.0/license-apache-2.0",
+        "third-party-licenses/windows-sys-0.59.0/license-mit",
+        "third-party-licenses/windows-sys-0.59.0/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.60.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-sys-0.60.2/license-apache-2.0",
+        "third-party-licenses/windows-sys-0.60.2/license-mit",
+        "third-party-licenses/windows-sys-0.60.2/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-sys-0.61.2/license-apache-2.0",
+        "third-party-licenses/windows-sys-0.61.2/license-mit",
+        "third-party-licenses/windows-sys-0.61.2/src/Windows/Win32/Security/LicenseProtection/mod.rs"
+      ]
+    },
+    {
+      "name": "windows-targets",
+      "version": "0.52.6",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-targets-0.52.6/license-apache-2.0",
+        "third-party-licenses/windows-targets-0.52.6/license-mit"
+      ]
+    },
+    {
+      "name": "windows-targets",
+      "version": "0.53.5",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-targets-0.53.5/license-apache-2.0",
+        "third-party-licenses/windows-targets-0.53.5/license-mit"
+      ]
+    },
+    {
+      "name": "windows-threading",
+      "version": "0.1.0",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows-threading-0.1.0/license-apache-2.0",
+        "third-party-licenses/windows-threading-0.1.0/license-mit"
+      ]
+    },
+    {
+      "name": "windows_x86_64_msvc",
+      "version": "0.52.6",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows_x86_64_msvc-0.52.6/license-apache-2.0",
+        "third-party-licenses/windows_x86_64_msvc-0.52.6/license-mit"
+      ]
+    },
+    {
+      "name": "windows_x86_64_msvc",
+      "version": "0.53.1",
+      "declared_license": "MIT OR Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/windows_x86_64_msvc-0.53.1/license-apache-2.0",
+        "third-party-licenses/windows_x86_64_msvc-0.53.1/license-mit"
+      ]
+    },
+    {
+      "name": "winit",
+      "version": "0.30.13",
+      "declared_license": "Apache-2.0",
+      "notice_files": [
+        "third-party-licenses/winit-0.30.13/LICENSE"
+      ]
+    },
+    {
+      "name": "writeable",
+      "version": "0.6.4",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/writeable-0.6.4/LICENSE"
+      ]
+    },
+    {
+      "name": "yoke",
+      "version": "0.8.3",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/yoke-0.8.3/LICENSE"
+      ]
+    },
+    {
+      "name": "yoke-derive",
+      "version": "0.8.4",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/yoke-derive-0.8.4/LICENSE"
+      ]
+    },
+    {
+      "name": "zerocopy",
+      "version": "0.8.62",
+      "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/zerocopy-0.8.62/LICENSE-APACHE",
+        "third-party-licenses/zerocopy-0.8.62/LICENSE-BSD",
+        "third-party-licenses/zerocopy-0.8.62/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "zerocopy-derive",
+      "version": "0.8.62",
+      "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "notice_files": [
+        "third-party-licenses/zerocopy-derive-0.8.62/LICENSE-APACHE",
+        "third-party-licenses/zerocopy-derive-0.8.62/LICENSE-BSD",
+        "third-party-licenses/zerocopy-derive-0.8.62/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "zerofrom",
+      "version": "0.1.8",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/zerofrom-0.1.8/LICENSE"
+      ]
+    },
+    {
+      "name": "zerofrom-derive",
+      "version": "0.1.8",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/zerofrom-derive-0.1.8/LICENSE"
+      ]
+    },
+    {
+      "name": "zerotrie",
+      "version": "0.2.5",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/zerotrie-0.2.5/LICENSE"
+      ]
+    },
+    {
+      "name": "zerovec",
+      "version": "0.11.8",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/zerovec-0.11.8/LICENSE"
+      ]
+    },
+    {
+      "name": "zerovec-derive",
+      "version": "0.11.6",
+      "declared_license": "Unicode-3.0",
+      "notice_files": [
+        "third-party-licenses/zerovec-derive-0.11.6/LICENSE"
+      ]
+    },
+    {
+      "name": "zmij",
+      "version": "1.0.23",
+      "declared_license": "MIT",
+      "notice_files": [
+        "third-party-licenses/zmij-1.0.23/LICENSE-MIT"
+      ]
+    }
+  ],
+  "scope": "Cargo normal-edge target dependency graph, including normal dependencies that may be compiler plugins; not measured linked-code contents or a legal compatibility determination. Existing full 452-package notice/source inventory retained.",
+  "release_gate_accepted": false
+}

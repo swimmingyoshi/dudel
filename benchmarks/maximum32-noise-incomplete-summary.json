@@ -1,0 +1,43 @@
+{
+  "executable_sha256": "5B97376259EFB878ED082EFB796E2F30B8C098238D91B516E62CD5F33C1E1D22",
+  "planned_rounds": 30,
+  "layers": 32,
+  "density": "noise",
+  "controller_status": "failed",
+  "native_exit_code": 1,
+  "workload_completed": false,
+  "completed_rounds_logged": 24,
+  "save_reopen_verifications_logged": 24,
+  "mask_edit_settlements_logged": 400,
+  "generated_brush_settlements_logged": 25,
+  "last_progress_marker": "Native session: all-undone, round 25/30, cycle 16/16 (4063.9s)",
+  "native_failure": "Native session failed: Timed out in RedoAll: Redone",
+  "complete_native_report_exists": false,
+  "external_samples": 98,
+  "maximum_observed_lifetime_peak_paged_bytes": 1674907648,
+  "external_process_lifetime_seconds": 4092.228835,
+  "old_diagnostic_timeout_seconds": 4200,
+  "old_frame_capacity": 300000,
+  "limiter_interpretation": "Old error conflates elapsed deadline and frame capacity. External process lifetime is below 4200 seconds, making frame-capacity exhaustion the likely cause; no internal frame count survived.",
+  "scope": "Incomplete engineering workload. External samples began late and may miss final activity. No matched-idle or completed-job/peak acceptance can be calculated without the native report. Contention is recorded separately.",
+  "contention": {
+    "kind": "engineering resource contention",
+    "verification": "target/qa/keyboard-diagnostic-verification-20261017",
+    "started_utc": "2026-10-17T21:43:23.2473016Z",
+    "scope": "Low-priority single-job Rust verification overlaps part of this frozen engineering run. Preserve numeric memory/correctness/job measurements with this condition; do not claim isolated frame/queue/job timing acceptance. Final candidate needs isolated timing verification.",
+    "native_executable_unchanged": true,
+    "release_gate_accepted": false,
+    "release_compiler_priority_change": {
+      "priority": "Normal",
+      "utc": "2026-10-17T22:08:11.1151854Z",
+      "reason": "Finish CPU-starved release verification; isolated timing acceptance remains deferred."
+    },
+    "verification_build_completed_utc": "2026-10-17T22:10:20.7670648Z",
+    "subsequent_native_smoke_and_error_probe": "Queued against a distinct new frozen build; record probe state timestamps separately.",
+    "capture_abort_followup_verification": "target/qa/capture-abort-verification-20261017/STATE.json; ordinary process priority; preserve this engineering contention in timing interpretation"
+  },
+  "per_run_memory_targets_pass": null,
+  "per_run_job_peak_targets_pass": null,
+  "release_gate_accepted": false,
+  "stderr_sha256": "38F4CE12C3F7D4CB3BBD28B34E6D5CA992CCB2F09D80CA4801BFAB37057821B8"
+}

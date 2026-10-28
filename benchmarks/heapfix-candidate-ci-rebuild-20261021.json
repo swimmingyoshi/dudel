@@ -1,0 +1,35 @@
+{
+  "candidate": "dudel-0.1.0-candidate-20261021-190309-093",
+  "executable_sha256": "7C3090D3456F3B44C5C0AB241E2C60A330F259D97582EA06E41D46CB92F659D7",
+  "packaged_build_record_sha256": "28323AF7B9A8CBFEAC29E98849B24BE154EB2F9339741944C9CB0A34DA17933D",
+  "compiled_input_count": 160,
+  "compiled_inputs_match_commit": "c4632f42ad11838598f2b609e12c42e7d72d2d30",
+  "hosted_windows_ci": {
+    "run": 39711612376,
+    "url": "https://github.com/swimmingyoshi/dudel/actions/runs/39711612376",
+    "head_sha": "c4632f42ad11838598f2b609e12c42e7d72d2d30",
+    "conclusion": "success",
+    "default_tests": "886 passed, 3 ignored",
+    "all_feature_tests": "895 passed, 3 ignored",
+    "also": "formatting, warnings-denied Clippy, release build, maximum project round-trip and maximum masked noisy fixture checks"
+  },
+  "fresh_offline_rebuild": {
+    "archive": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261021-190309-093-source.zip",
+    "started_utc": "2026-10-22T03:04:56.799179+00:00",
+    "status": "passed",
+    "archive_sha256": "FE71FC56EB192A1D94F914655857827E7AA335C1450663365168DB39AA6704A0",
+    "members": 25080,
+    "source": "<repo>\\target\\qa\\offline-rebuild-20261021-190309-093\\extracted\\dudel-0.1.0-candidate-20261021-190309-093-source",
+    "expected_candidate_executable_sha256": "7C3090D3456F3B44C5C0AB241E2C60A330F259D97582EA06E41D46CB92F659D7",
+    "executable": "<repo>\\target\\qa\\offline-rebuild-20261021-190309-093\\build\\release\\dudel.exe",
+    "executable_sha256": "AAE2E6234143B0CD29492B47137AC9779769471B31BE193A0F0516AC6D3494A7",
+    "completed_utc": "2026-10-22T03:12:12.716020+00:00",
+    "scope": "Archive checksum/CRC, recorded source hashes and fresh offline release compilation; not clean-machine acceptance",
+    "state_sha256": "13636B053C7BD71290572FCC1DEDC64049ED3C7FE107DF5109E4FD80E76AC1AF",
+    "build_log_sha256": "E61C6697D3D60C63012589A033ACE023DB62C84796D6FF463942F7AEBB45E624",
+    "fresh_target_directory": true,
+    "command": "cargo build --locked --offline --release --bin dudel"
+  },
+  "rebuild_note": "The rebuilt executable hash differs from the packaged one, as in earlier candidate rebuilds (embedded build paths); the check verifies archive integrity, recorded source hashes and offline compilability, not bit-for-bit reproducibility.",
+  "linux_ci": "Not run for this commit (Linux verification runs from the linux branch)."
+}

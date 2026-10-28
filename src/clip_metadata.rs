@@ -1,0 +1,2134 @@
+//! Bounded read-only CSP metadata, strict raster import plans and rendering studies.
+use crate::{
+    clip_container,
+    document::{MAX_DEPTH, MAX_ENTRIES, MAX_RASTER_LAYERS},
+};
+use rusqlite::{Connection, OpenFlags, Row, limits::Limit};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    path::Path,
+    time::{Duration, Instant},
+};
+
+const MAX_SQL: usize = 32 * 1024 * 1024;
+const MAX_MIPS: usize = (MAX_ENTRIES + 1) * 16;
+
+#[derive(Debug, serde::Serialize)]
+struct Canvas {
+    id: i64,
+    width: f64,
+    height: f64,
+    channel_bytes: i64,
+    channel_order: i64,
+    root: i64,
+    current: i64,
+    profile_bytes: i64,
+    unit: i64,
+    resolution: f64,
+}
+#[derive(Debug, serde::Serialize)]
+struct Layer {
+    id: i64,
+    layer_type: i64,
+    folder: i64,
+    visibility: i64,
+    opacity: i64,
+    composite: i64,
+    clip: i64,
+    next: i64,
+    child: i64,
+    mipmap: i64,
+    offset_x: i64,
+    offset_y: i64,
+    render_offscreen_offset_x: i64,
+    render_offscreen_offset_y: i64,
+    paper_draw_color: Option<PaperDrawColor>,
+}
+impl Layer {
+    // Observed ordinary folders may carry the closed UI bit (16).
+    // Keep the raw value in reports; do not classify type-0 vector/text as folders.
+    fn is_folder(&self) -> bool {
+        matches!(self.folder, 1 | 17)
+    }
+    fn supported_kind(&self) -> bool {
+        matches!(
+            (self.layer_type, self.folder),
+            (0, 1 | 17) | (256, 1) | (1 | 1584, 0)
+        )
+    }
+}
+#[derive(Debug, serde::Serialize)]
+struct PaperDrawColor {
+    enabled: i64,
+    raw_rgb: [u32; 3],
+    // Measured high-byte projection for the observed paper samples. This does
+    // not establish profile conversion or general special-layer semantics.
+    high_byte_rgb: [u8; 3],
+}
+#[derive(Debug, serde::Serialize)]
+struct Entry {
+    id: i64,
+    depth: u8,
+}
+#[derive(Debug, serde::Serialize)]
+struct FullScale {
+    layer: i64,
+    mipmap: i64,
+    info: i64,
+    offscreen: i64,
+    attribute_bytes: usize,
+    attributes: crate::clip_attributes::Attributes,
+    block_layout_validated: bool,
+    external_id: Option<String>,
+    external_chunk_offset: Option<u64>,
+}
+#[derive(Debug, serde::Serialize)]
+struct Report {
+    scope: &'static str,
+    canvas: Canvas,
+    layers: Vec<Layer>,
+    root_child_next_order: Vec<Entry>,
+    full_scale: Vec<FullScale>,
+    external_chunks: usize,
+    diagnostics: Vec<String>,
+    timeline_present: bool,
+    unsupported_track_schema: bool,
+    import_issues: Vec<String>,
+    rendering_study_omissions: Vec<String>,
+    #[serde(skip)]
+    document_properties: BTreeMap<i64, String>,
+}
+
+fn db_error(error: rusqlite::Error) -> String {
+    format!("Clip metadata: {error}")
+}
+
+fn table_columns(db: &Connection, table: &str) -> Result<BTreeSet<String>, String> {
+    let mut statement = db
+        .prepare("SELECT name FROM pragma_table_info(?1) LIMIT 129")
+        .map_err(db_error)?;
+    let names = statement
+        .query_map([table], |row| {
+            let name = row.get_ref(0)?.as_str()?;
+            if name.len() > 128 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok(name.to_owned())
+        })
+        .map_err(db_error)?
+        .collect::<rusqlite::Result<BTreeSet<_>>>()
+        .map_err(db_error)?;
+    if names.len() > 128 {
+        return Err("Clip schema column bound".into());
+    }
+    Ok(names)
+}
+
+fn document_features(db: &Connection, report: &mut Report) -> Result<(), String> {
+    document_features_mode(db, report, false)
+}
+fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> Result<(), String> {
+    let columns = table_columns(db, "Layer")?;
+    if [
+        "LayerName",
+        "LayerLock",
+        "LayerMasking",
+        "LayerLayerMaskMipmap",
+        "LayerUsePaletteColor",
+    ]
+    .iter()
+    .any(|name| !columns.contains(*name))
+    {
+        report
+            .import_issues
+            .push("Required name/lock/mask/palette metadata is unavailable".into());
+        return Ok(());
+    }
+    let properties = rows(
+        db,
+        "SELECT MainId,LayerName,LayerLock,LayerMasking,LayerLayerMaskMipmap,LayerUsePaletteColor FROM Layer",
+        MAX_ENTRIES + 1,
+        |row| {
+            let name = row.get_ref(1)?.as_str()?;
+            if name.len() > 4096 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok((
+                row.get::<_, i64>(0)?,
+                name.to_owned(),
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        },
+    )?;
+    for (id, name, lock, masking, mask, palette) in properties {
+        let study_folder_masking = study
+            && id != report.canvas.root
+            && masking == 32
+            && report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.is_folder() && layer.supported_kind());
+        if study_folder_masking {
+            report.rendering_study_omissions.push(format!(
+                "Layer {id}: folder LayerMasking=32 treated as neutral in read-only study; semantics unverified and unsupported by import"
+            ));
+        }
+        if lock != 0
+            || mask != 0
+            || palette != 0
+            || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
+        {
+            report.import_issues.push(format!(
+                "Layer {id}: unsupported lock/mask/palette metadata"
+            ));
+        }
+        report.document_properties.insert(id, name);
+    }
+    for field in [
+        "FilterLayerInfo",
+        "LayerEffectInfo",
+        "FilterLayerV132",
+        "FilterLayerColorMixingInfo",
+        "GradationFillInfo",
+        "GradationFillColorMixingInfo",
+        "TextLayerString",
+        "TextLayerAttributes",
+        "VectorNormalStrokeIndex",
+        "VectorNormalFillIndex",
+        "VectorNormalBalloonIndex",
+        "MaterialContentType",
+        "UsePreviewColorType",
+        "UsePreviewMaskColorType",
+        "EffectRangeType",
+        "DraftLayer",
+        "LayerColorTypeIndex",
+        "LightTableInfo",
+        "SpecialRulerManager",
+        "RulerRange",
+        "GuideMove",
+        "AnimationFolder",
+    ] {
+        if !columns.contains(field) {
+            continue;
+        }
+        let values = rows(
+            db,
+            &format!(
+                "SELECT MainId,typeof(\"{field}\"),length(\"{field}\"),CASE WHEN typeof(\"{field}\")='integer' THEN \"{field}\" ELSE 0 END FROM Layer WHERE \"{field}\" IS NOT NULL"
+            ),
+            MAX_ENTRIES + 1,
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )?;
+        for (id, kind, length, scalar) in values {
+            if (kind == "integer" && scalar != 0) || (kind != "integer" && length != 0) {
+                if study
+                    && [
+                        "LightTableInfo",
+                        "SpecialRulerManager",
+                        "RulerRange",
+                        "GuideMove",
+                    ]
+                    .contains(&field)
+                {
+                    report.rendering_study_omissions.push(format!("Layer {id}: {field} omitted from read-only rendering study; unsupported by import"));
+                    continue;
+                }
+                report
+                    .import_issues
+                    .push(format!("Layer {id}: unsupported {field}"));
+            }
+        }
+    }
+    for (field, paper_expected) in [
+        ("DrawToRenderOffscreenType", 61),
+        ("SpecialRenderType", 20),
+        ("DrawToRenderMipmapType", 31),
+        ("MoveOffsetAndExpandType", 31),
+        ("FixOffsetAndExpandType", 31),
+        ("RenderBoundForLayerMoveType", 31),
+        ("SetRenderThumbnailInfoType", 31),
+        ("DrawRenderThumbnailType", 31),
+    ] {
+        if !columns.contains(field) {
+            if report.layers.iter().any(|layer| layer.layer_type == 1584) {
+                report
+                    .import_issues
+                    .push(format!("Paper {field} metadata is unavailable"));
+            }
+            continue;
+        }
+        let values = rows(
+            db,
+            &format!("SELECT MainId,\"{field}\" FROM Layer"),
+            MAX_ENTRIES + 1,
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )?;
+        for (id, value) in values {
+            let paper = report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.layer_type == 1584);
+            if (paper && value != Some(paper_expected))
+                || (!paper && value.is_some_and(|value| value != 0))
+            {
+                report
+                    .import_issues
+                    .push(format!("Layer {id}: unsupported {field}"));
+            }
+        }
+    }
+    if columns.contains("MonochromeFillInfo") {
+        let mut canonical = Vec::new();
+        for value in [62u32, 1, 17] {
+            canonical.extend(value.to_be_bytes());
+        }
+        for byte in b"MonochromeSetting" {
+            canonical.extend([0, *byte]);
+        }
+        for value in [0u32, 0, 0, 1] {
+            canonical.extend(value.to_be_bytes());
+        }
+        let values = rows(
+            db,
+            "SELECT MainId,CASE WHEN length(MonochromeFillInfo)<=62 THEN MonochromeFillInfo ELSE NULL END,length(MonochromeFillInfo) FROM Layer WHERE MonochromeFillInfo IS NOT NULL",
+            MAX_ENTRIES + 1,
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        let mut checked = BTreeSet::new();
+        for (id, data, length) in values {
+            let paper = report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.layer_type == 1584);
+            if paper && data.as_deref() == Some(canonical.as_slice()) {
+                checked.insert(id);
+            } else if length != 0 {
+                report
+                    .import_issues
+                    .push(format!("Layer {id}: unsupported monochrome fill"));
+            }
+        }
+        for layer in &report.layers {
+            if layer.layer_type == 1584 && !checked.contains(&layer.id) {
+                report.import_issues.push(format!(
+                    "Layer {}: paper fill metadata is unavailable",
+                    layer.id
+                ));
+            }
+        }
+    } else if report.layers.iter().any(|layer| layer.layer_type == 1584) {
+        report
+            .import_issues
+            .push("Paper fill metadata is unavailable".into());
+    }
+    let canvas_columns = table_columns(db, "Canvas")?;
+    for field in [
+        "CanvasSrcProfileName",
+        "CanvasDstProfileName",
+        "CanvasDstProfile",
+        "CanvasSimulateSrcProfileName",
+        "CanvasSimulateDstProfileName",
+        "CanvasSimulateSrcProfile",
+        "CanvasSimulateDstProfile",
+        "CanvasColorAdjustmentToneCurve",
+        "CanvasColorAdjustmentLevel",
+    ] {
+        if !canvas_columns.contains(field) {
+            continue;
+        }
+        let length: i64 = db
+            .query_row(
+                &format!("SELECT coalesce(length(\"{field}\"),0) FROM Canvas"),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if length != 0 {
+            report
+                .import_issues
+                .push(format!("Unsupported canvas {field}"));
+        }
+    }
+    for field in ["CanvasDoSimulateColor", "CanvasUseColorAdjustment"] {
+        if !canvas_columns.contains(field) {
+            continue;
+        }
+        let value: i64 = db
+            .query_row(
+                &format!("SELECT coalesce(\"{field}\",0) FROM Canvas"),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if value != 0 {
+            report
+                .import_issues
+                .push(format!("Unsupported canvas {field}"));
+        }
+    }
+    if report.canvas.profile_bytes != 0 {
+        report
+            .import_issues
+            .push("Canvas source color profile is unsupported".into());
+    }
+    if report.timeline_present || report.unsupported_track_schema {
+        report
+            .import_issues
+            .push("Animation/timeline content is unsupported by static raster import".into());
+    }
+    for layer in &report.layers {
+        if !layer.supported_kind()
+            || ![0, 1, 4, 5].contains(&layer.visibility)
+            || layer.composite != 0
+            || ![0, 1].contains(&layer.clip)
+        {
+            report.import_issues.push(format!(
+                "Layer {}: unsupported type/folder/visibility/blend/clipping metadata",
+                layer.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn configure(db: &Connection) -> Result<(), String> {
+    for (limit, value) in [
+        (Limit::SQLITE_LIMIT_LENGTH, MAX_SQL as i32),
+        (Limit::SQLITE_LIMIT_SQL_LENGTH, 16_384),
+        // Real samples contain a 68-column Project table even though the fixed
+        // queries never read it. This schema ceiling is separate from row caps.
+        (Limit::SQLITE_LIMIT_COLUMN, 128),
+        (Limit::SQLITE_LIMIT_EXPR_DEPTH, 32),
+        (Limit::SQLITE_LIMIT_ATTACHED, 0),
+        (Limit::SQLITE_LIMIT_WORKER_THREADS, 0),
+    ] {
+        db.set_limit(limit, value).map_err(db_error)?;
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut calls = 0;
+    db.progress_handler(
+        1000,
+        Some(move || {
+            calls += 1;
+            calls > 1000 || Instant::now() >= deadline
+        }),
+    )
+    .map_err(db_error)?;
+    db.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA cache_size=-2048; PRAGMA temp_store=MEMORY;").map_err(db_error)
+}
+
+struct Snapshot {
+    // Drop the SQLite connection before removing its bounded temporary metadata file.
+    db: Connection,
+    _file: tempfile::NamedTempFile,
+}
+impl std::ops::Deref for Snapshot {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.db
+    }
+}
+
+fn open_snapshot(read: impl Read, bytes: usize) -> Result<Snapshot, String> {
+    if bytes == 0 || bytes > MAX_SQL {
+        return Err("Clip SQLite snapshot exceeds inspection bounds".into());
+    }
+    // SQLite advises extra padding when deserializing untrusted bytes; the safe
+    // stream API allocates exactly the input size. Use the ordinary file pager
+    // on an isolated, bounded metadata copy instead. Never open the .clip as SQL.
+    let mut file = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
+    let copied = std::io::copy(&mut read.take(bytes as u64), &mut file)
+        .map_err(|error| error.to_string())?;
+    if copied != bytes as u64 {
+        return Err("Truncated clip SQLite snapshot".into());
+    }
+    let db = Connection::open_with_flags(
+        file.path(),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(db_error)?;
+    configure(&db)?;
+    Ok(Snapshot { db, _file: file })
+}
+
+fn rows<T>(
+    db: &Connection,
+    sql: &str,
+    max: usize,
+    map: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
+) -> Result<Vec<T>, String> {
+    // LIMIT also bounds stepping when a hostile table contains many rows.
+    let mut statement = db
+        .prepare(&format!("{sql} LIMIT {}", max + 1))
+        .map_err(db_error)?;
+    let data = statement
+        .query_map([], map)
+        .map_err(db_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(db_error)?;
+    if data.len() > max {
+        return Err("Clip metadata row count exceeds inspection bounds".into());
+    }
+    Ok(data)
+}
+
+fn ordinary_tables(db: &Connection) -> Result<(), String> {
+    for name in [
+        "Canvas",
+        "Layer",
+        "Mipmap",
+        "MipmapInfo",
+        "Offscreen",
+        "ExternalChunk",
+    ] {
+        let (kind, prefix): (String, String) = db
+            .query_row(
+                "SELECT type, substr(sql,1,128) FROM sqlite_schema WHERE name=?1",
+                [name],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(db_error)?;
+        let prefix = prefix
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_uppercase();
+        if kind != "table" || prefix != "CREATE TABLE" {
+            return Err(format!("Clip metadata requires an ordinary {name} table"));
+        }
+    }
+    Ok(())
+}
+
+fn layer_order(canvas: &Canvas, layers: &[Layer]) -> Result<Vec<Entry>, String> {
+    let mut by_id = BTreeMap::new();
+    for layer in layers {
+        if layer.id <= 0 || by_id.insert(layer.id, layer).is_some() {
+            return Err("Invalid or duplicate Layer.MainId".into());
+        }
+        if ![0, 1, 17].contains(&layer.folder)
+            || (layer.folder == 17 && layer.layer_type != 0)
+            || layer.next < 0
+            || layer.child < 0
+            || layer.mipmap < 0
+            || (!layer.is_folder() && layer.mipmap == 0)
+            || !(0..=256).contains(&layer.opacity)
+            || (!layer.is_folder() && layer.child != 0)
+        {
+            return Err("Unsupported layer graph fields".into());
+        }
+    }
+    let root = by_id.get(&canvas.root).ok_or("Missing root Layer.MainId")?;
+    if root.folder != 1 || root.next != 0 || !by_id.contains_key(&canvas.current) {
+        return Err("Invalid root/current layer reference".into());
+    }
+    let mut visited = BTreeSet::from([canvas.root]);
+    let mut pending = vec![(root.child, 0u8)];
+    let mut order = Vec::new();
+    while let Some((id, depth)) = pending.pop() {
+        if id == 0 {
+            continue;
+        }
+        if depth > MAX_DEPTH {
+            return Err("Clip folder graph exceeds Dudel depth limit".into());
+        }
+        if !visited.insert(id) {
+            return Err("Cyclic or multiply referenced clip layer graph".into());
+        }
+        let layer = by_id.get(&id).ok_or("Dangling Layer.MainId reference")?;
+        order.push(Entry { id, depth });
+        pending.push((layer.next, depth));
+        if layer.child != 0 {
+            pending.push((layer.child, depth + 1));
+        }
+    }
+    if visited.len() != layers.len() {
+        return Err("Unreachable clip layer rows".into());
+    }
+    if layers
+        .iter()
+        .filter(|layer| layer.folder == 0 && layer.layer_type == 1)
+        .count()
+        > MAX_RASTER_LAYERS
+    {
+        return Err("Clip raster count exceeds Dudel layer limit".into());
+    }
+    Ok(order)
+}
+
+fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report, String> {
+    ordinary_tables(db)?;
+    let mut canvases = rows(
+        db,
+        "SELECT MainId,CanvasWidth,CanvasHeight,CanvasChannelBytes,CanvasDefaultChannelOrder,CanvasRootFolder,CanvasCurrentLayer,coalesce(length(CanvasSrcProfile),0),CanvasUnit,CanvasResolution FROM Canvas",
+        1,
+        |r| {
+            Ok(Canvas {
+                id: r.get(0)?,
+                width: r.get(1)?,
+                height: r.get(2)?,
+                channel_bytes: r.get(3)?,
+                channel_order: r.get(4)?,
+                root: r.get(5)?,
+                current: r.get(6)?,
+                profile_bytes: r.get(7)?,
+                unit: r.get(8)?,
+                resolution: r.get(9)?,
+            })
+        },
+    )?;
+    let canvas = canvases.pop().ok_or("Missing clip canvas")?;
+    if canvas.unit != 0 {
+        return Err("Unsupported clip canvas unit: physical dimensions require verified raster geometry conversion".into());
+    }
+    if canvas.id <= 0
+        || !canvas.resolution.is_finite()
+        || canvas.resolution <= 0.
+        || !canvas.width.is_finite()
+        || !canvas.height.is_finite()
+        || canvas.width.fract() != 0.
+        || canvas.height.fract() != 0.
+        || !(1. ..=4096.).contains(&canvas.width)
+        || !(1. ..=4096.).contains(&canvas.height)
+        || canvas.width * canvas.height > 4_194_304.
+    {
+        return Err("Clip canvas exceeds Dudel dimensions or pixel limit".into());
+    }
+    let mut layers = rows(
+        db,
+        "SELECT MainId,LayerType,LayerFolder,LayerVisibility,LayerOpacity,LayerComposite,LayerClip,LayerNextIndex,LayerFirstChildIndex,LayerRenderMipmap,LayerOffsetX,LayerOffsetY,LayerRenderOffscrOffsetX,LayerRenderOffscrOffsetY FROM Layer",
+        MAX_ENTRIES + 1,
+        |r| {
+            Ok(Layer {
+                id: r.get(0)?,
+                layer_type: r.get(1)?,
+                folder: r.get(2)?,
+                visibility: r.get(3)?,
+                opacity: r.get(4)?,
+                composite: r.get(5)?,
+                clip: r.get(6)?,
+                next: r.get(7)?,
+                child: r.get(8)?,
+                mipmap: r.get(9)?,
+                offset_x: r.get(10)?,
+                offset_y: r.get(11)?,
+                render_offscreen_offset_x: r.get(12)?,
+                render_offscreen_offset_y: r.get(13)?,
+                paper_draw_color: None,
+            })
+        },
+    )?;
+    let order = layer_order(&canvas, &layers)?;
+    let mut externals = BTreeMap::new();
+    let mut offsets = BTreeSet::new();
+    for (id, offset) in actual_external {
+        if externals.insert(id.clone(), *offset).is_some() || !offsets.insert(*offset) {
+            return Err("Duplicate external chunk identity/offset".into());
+        }
+    }
+    let external_rows = rows(
+        db,
+        "SELECT ExternalID,Offset FROM ExternalChunk",
+        4096,
+        |r| {
+            // The observed BLOB-affinity column stores TEXT; accept exactly
+            // TEXT/BLOB bytes, never numeric coercions or NULL.
+            let bytes = r.get_ref(0)?.as_bytes()?;
+            if bytes.len() > 1024 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok((
+                String::from_utf8(bytes.to_vec()).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                r.get::<_, i64>(1)?,
+            ))
+        },
+    )?;
+    let mut indexed_ids = BTreeSet::new();
+    for (id, offset) in external_rows {
+        if offset < 0 || externals.get(&id) != Some(&(offset as u64)) || !indexed_ids.insert(id) {
+            return Err(
+                "ExternalChunk does not match a unique framed external identifier/header offset"
+                    .into(),
+            );
+        }
+    }
+    // An Offscreen reference is resolved only through the verified SQL index.
+    externals.retain(|id, _| indexed_ids.contains(id));
+    let mips = rows(
+        db,
+        "SELECT MainId,CanvasId,LayerId,MipmapCount,BaseMipmapInfo FROM Mipmap",
+        MAX_ENTRIES + 1,
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        },
+    )?;
+    let infos = rows(
+        db,
+        "SELECT MainId,LayerId,ThisScale,Offscreen,NextIndex FROM MipmapInfo",
+        MAX_MIPS,
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, f64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        },
+    )?;
+    let offscreens = rows(
+        db,
+        "SELECT MainId,CanvasId,LayerId,Attribute,BlockData FROM Offscreen",
+        MAX_MIPS * 2,
+        |r| {
+            let attr = r.get_ref(3)?.as_blob()?;
+            let block = r.get_ref(4)?.as_blob()?;
+            if attr.len() > crate::clip_attributes::MAX_BYTES || block.len() > 1024 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                attr.to_vec(),
+                block.to_vec(),
+            ))
+        },
+    )?;
+    let mut mip_by_id = BTreeMap::new();
+    for mip in &mips {
+        if mip.0 <= 0 || mip_by_id.insert(mip.0, mip).is_some() {
+            return Err("Invalid/duplicate Mipmap.MainId".into());
+        }
+    }
+    let mut info_by_id = BTreeMap::new();
+    for info in &infos {
+        if info.0 <= 0 || info_by_id.insert(info.0, info).is_some() {
+            return Err("Invalid/duplicate MipmapInfo.MainId".into());
+        }
+    }
+    let mut off_by_id = BTreeMap::new();
+    for off in &offscreens {
+        if off.0 <= 0 || off_by_id.insert(off.0, off).is_some() {
+            return Err("Invalid/duplicate Offscreen.MainId".into());
+        }
+    }
+    let mut full_scale = Vec::new();
+    let mut diagnostics = vec!["Research inspection only: layer order direction, visibility bits, special layer types, profiles, masks/effects, block checksums and pixel/channel semantics are not validated. No import-ready status is implied.".into()];
+    let mut timeline_present = false;
+    let mut unsupported_track_schema = false;
+    let tracks = rows(
+        db,
+        "SELECT type,substr(sql,1,128) FROM sqlite_schema WHERE name='Track'",
+        1,
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    )?;
+    if let Some((kind, sql)) = tracks.first() {
+        let prefix = sql
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_uppercase();
+        if kind != "table" || prefix != "CREATE TABLE" {
+            unsupported_track_schema = true;
+            diagnostics.push(
+                "Track metadata uses an unsupported schema; timeline support is unverified".into(),
+            );
+        } else if db
+            .query_row("SELECT EXISTS(SELECT 1 FROM Track LIMIT 1)", [], |row| {
+                row.get::<_, bool>(0)
+            })
+            .map_err(db_error)?
+        {
+            timeline_present = true;
+            diagnostics.push("Timeline/track content is present; static raster import must not silently discard animation".into());
+        }
+    }
+    let paper_columns: i64 = db.query_row("SELECT count(*) FROM pragma_table_info('Layer') WHERE name IN ('DrawColorEnable','DrawColorMainRed','DrawColorMainGreen','DrawColorMainBlue')",[],|row| row.get(0)).map_err(db_error)?;
+    if paper_columns == 4 {
+        let colors = rows(
+            db,
+            "SELECT MainId,DrawColorEnable,DrawColorMainRed,DrawColorMainGreen,DrawColorMainBlue FROM Layer WHERE LayerType=1584",
+            MAX_ENTRIES,
+            |row| {
+                let raw_rgb = [
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
+                    row.get::<_, u32>(4)?,
+                ];
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    PaperDrawColor {
+                        enabled: row.get(1)?,
+                        raw_rgb,
+                        high_byte_rgb: raw_rgb.map(|word| (word >> 24) as u8),
+                    },
+                ))
+            },
+        )?;
+        for (id, color) in colors {
+            let layer = layers
+                .iter_mut()
+                .find(|layer| layer.id == id)
+                .ok_or("Unknown paper draw-color owner")?;
+            layer.paper_draw_color = Some(color);
+        }
+    } else if layers.iter().any(|layer| layer.layer_type == 1584) {
+        diagnostics.push(
+            "Paper draw-color columns are absent/incomplete; paper rendering remains unsupported"
+                .into(),
+        );
+    }
+    if canvas.channel_bytes != 1 || canvas.channel_order != 33 || canvas.profile_bytes != 0 {
+        diagnostics.push("Canvas channel/profile metadata differs from the observed sample".into());
+    }
+    let mut used_mips = BTreeSet::new();
+    let mut used_infos = BTreeSet::new();
+    for layer in &layers {
+        if layer.render_offscreen_offset_x != 0 || layer.render_offscreen_offset_y != 0 {
+            diagnostics.push(format!("Layer {} has separate render-offscreen offsets; placement requires both offset sources and controlled fixtures", layer.id));
+        }
+        if ![1, 256].contains(&layer.layer_type)
+            || ![0, 1].contains(&layer.visibility)
+            || layer.composite != 0
+            || layer.clip != 0
+        {
+            diagnostics.push(format!(
+                "Layer {} has uninterpreted type/visibility/blend/clipping fields",
+                layer.id
+            ));
+        }
+        if layer.is_folder() && layer.mipmap == 0 {
+            continue;
+        }
+        let mip = mip_by_id
+            .get(&layer.mipmap)
+            .ok_or("Dangling LayerRenderMipmap MainId")?;
+        if mip.1 != canvas.id
+            || mip.2 != layer.id
+            || !(1..=16).contains(&mip.3)
+            || !used_mips.insert(mip.0)
+        {
+            return Err("Invalid mipmap owner/count/reference".into());
+        }
+        let mut id = mip.4;
+        let mut previous_scale = f64::INFINITY;
+        for index in 0..mip.3 {
+            if !used_infos.insert(id) {
+                return Err("Cyclic/shared mipmap chain".into());
+            }
+            let info = info_by_id.get(&id).ok_or("Dangling MipmapInfo.MainId")?;
+            if info.1 != layer.id
+                || !info.2.is_finite()
+                || info.2 <= 0.
+                || info.2 >= previous_scale
+                || (index == 0 && info.2 != 100.)
+            {
+                return Err("Invalid mipmap owner/scale (expected 100 percent base)".into());
+            }
+            let off = off_by_id.get(&info.3).ok_or("Dangling Offscreen.MainId")?;
+            if off.1 != canvas.id || off.2 != layer.id {
+                return Err("Invalid offscreen owner".into());
+            }
+            if index == 0 {
+                let attributes = crate::clip_attributes::parse(&off.3)
+                    .map_err(|error| format!("Layer {}: {error}", layer.id))?;
+                let external_id = std::str::from_utf8(&off.4)
+                    .ok()
+                    .filter(|id| {
+                        id.len() == 40
+                            && id.starts_with("extrnlid")
+                            && id[8..].bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+                    .map(str::to_owned);
+                let offset = external_id
+                    .as_ref()
+                    .and_then(|id| externals.get(id))
+                    .copied();
+                if offset.is_none() {
+                    diagnostics.push(format!("Layer {} full-scale block reference is unresolved; it must not be assumed blank", layer.id));
+                }
+                full_scale.push(FullScale {
+                    layer: layer.id,
+                    mipmap: mip.0,
+                    info: info.0,
+                    offscreen: off.0,
+                    attribute_bytes: off.3.len(),
+                    attributes,
+                    block_layout_validated: false,
+                    external_id,
+                    external_chunk_offset: offset,
+                });
+            }
+            previous_scale = info.2;
+            id = info.4;
+        }
+        if id != 0 {
+            return Err("Mipmap chain length disagrees with MipmapCount".into());
+        }
+    }
+    if used_mips.len() != mips.len() || used_infos.len() != infos.len() {
+        diagnostics.push("Unreferenced mipmap rows remain uninterpreted".into());
+    }
+    Ok(Report {
+        scope: "Bounded read-only metadata, offscreen attributes and referenced block layout/checksums. No color conversion or artwork import.",
+        canvas,
+        layers,
+        root_child_next_order: order,
+        full_scale,
+        external_chunks: actual_external.len(),
+        diagnostics,
+        timeline_present,
+        unsupported_track_schema,
+        import_issues: Vec::new(),
+        rendering_study_omissions: Vec::new(),
+        document_properties: BTreeMap::new(),
+    })
+}
+
+fn read_source(input: &Path) -> Result<(File, clip_container::Inventory, Report), String> {
+    read_source_mode(input, false)
+}
+fn read_source_mode(
+    input: &Path,
+    study: bool,
+) -> Result<(File, clip_container::Inventory, Report), String> {
+    let mut source = File::open(input).map_err(|error| error.to_string())?;
+    let length = source.metadata().map_err(|error| error.to_string())?.len();
+    let inventory = clip_container::scan(&mut source, length)?;
+    let external = inventory.external_ids(&mut source)?;
+    let (offset, bytes) = inventory.selected_sql_payload();
+    source
+        .seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let db = open_snapshot((&mut source).take(bytes), bytes as usize)?;
+    let mut report = metadata(&db, &external)?;
+    if study {
+        document_features_mode(&db, &mut report, true)?;
+    } else {
+        document_features(&db, &mut report)?;
+    }
+    Ok((source, inventory, report))
+}
+pub(crate) fn inspect(input: &Path, output: Option<&Path>) -> Result<(), String> {
+    let (mut source, inventory, mut report) = read_source(input)?;
+    let mut budget = crate::clip_blocks::Budget::default();
+    for full in &mut report.full_scale {
+        if let (Some(id), Some(chunk)) = (&full.external_id, full.external_chunk_offset) {
+            let (offset, size) = inventory.external_body_bounds(chunk, id.len())?;
+            source
+                .seek(SeekFrom::Start(offset))
+                .map_err(|error| error.to_string())?;
+            crate::clip_blocks::validate_layout(
+                &mut source,
+                size,
+                &full.attributes.block_sizes,
+                &mut budget,
+            )
+            .map_err(|error| format!("Layer {}: {error}", full.layer))?;
+            full.block_layout_validated = true;
+        }
+    }
+    clip_container::write_report(&report, output)
+}
+
+pub(crate) fn verify_rasters(input: &Path, output: Option<&Path>) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Raster {
+        layer: i64,
+        statistics: crate::clip_raster::Statistics,
+    }
+    #[derive(serde::Serialize)]
+    struct Verification {
+        scope: &'static str,
+        canvas: [usize; 2],
+        rasters: Vec<Raster>,
+        non_raster_layers: Vec<[i64; 2]>,
+        diagnostics: Vec<String>,
+    }
+    let (mut source, inventory, report) = read_source(input)?;
+    let canvas = [report.canvas.width as usize, report.canvas.height as usize];
+    let mut budget = crate::clip_blocks::Budget::default();
+    let mut rasters = Vec::new();
+    let mut non_raster_layers = Vec::new();
+    for layer in &report.layers {
+        if layer.layer_type != 1 || layer.folder != 0 {
+            non_raster_layers.push([layer.id, layer.layer_type]);
+            continue;
+        }
+        let full = report
+            .full_scale
+            .iter()
+            .find(|full| full.layer == layer.id)
+            .ok_or("Missing full-scale raster descriptor")?;
+        let (Some(id), Some(chunk)) = (&full.external_id, full.external_chunk_offset) else {
+            return Err(format!(
+                "Layer {}: unresolved raster data is not assumed blank",
+                layer.id
+            ));
+        };
+        let (offset, bytes) = inventory.external_body_bounds(chunk, id.len())?;
+        source
+            .seek(SeekFrom::Start(offset))
+            .map_err(|error| error.to_string())?;
+        let pixels = crate::clip_raster::decode(
+            &mut source,
+            bytes,
+            &full.attributes,
+            crate::clip_raster::Placement {
+                canvas,
+                layer_offset: [layer.offset_x, layer.offset_y],
+                render_offset: [
+                    layer.render_offscreen_offset_x,
+                    layer.render_offscreen_offset_y,
+                ],
+            },
+            &mut budget,
+            &|| false,
+        )
+        .map_err(|error| format!("Layer {}: {error}", layer.id))?;
+        rasters.push(Raster {
+            layer: layer.id,
+            statistics: crate::clip_raster::statistics(&pixels),
+        });
+    }
+    clip_container::write_report(
+        &Verification {
+            scope: "Sparse RGBA conversion of resolved type-1 raster leaves only. No masks/effects, color profiles, composite, special layers, animation, document import or import-ready status.",
+            canvas,
+            rasters,
+            non_raster_layers,
+            diagnostics: report.diagnostics,
+        },
+        output,
+    )
+}
+
+pub(crate) fn prepare_document(
+    input: &Path,
+    cancelled: &impl Fn() -> bool,
+) -> Result<crate::document::Document, String> {
+    prepare_document_mode(input, cancelled, false).map(|(doc, _)| doc)
+}
+fn prepare_document_mode(
+    input: &Path,
+    cancelled: &impl Fn() -> bool,
+    study: bool,
+) -> Result<(crate::document::Document, Vec<String>), String> {
+    if cancelled() {
+        return Err("Clip document assembly canceled".into());
+    }
+    let (mut source, inventory, report) = read_source_mode(input, study)?;
+    let root = report
+        .layers
+        .iter()
+        .find(|layer| layer.id == report.canvas.root)
+        .unwrap();
+    let mut issues = report.import_issues;
+    if !study
+        && report
+            .layers
+            .iter()
+            .any(|layer| (layer.id != report.canvas.root && layer.is_folder()) || layer.clip != 0)
+    {
+        issues.push("Folder/clipping import awaits controlled CSP rendering validation".into());
+    }
+    if root.opacity != 256
+        || root.visibility != 1
+        || root.composite != 0
+        || root.clip != 0
+        || [
+            root.offset_x,
+            root.offset_y,
+            root.render_offscreen_offset_x,
+            root.render_offscreen_offset_y,
+        ] != [0; 4]
+    {
+        issues.push("Root container has unsupported rendering properties".into());
+    }
+    if !issues.is_empty() {
+        return Err(format!("Unsupported clip content: {}", issues.join("; ")));
+    }
+    let mut entries = Vec::new();
+    let canvas = [report.canvas.width as usize, report.canvas.height as usize];
+    for order in &report.root_child_next_order {
+        let layer = report
+            .layers
+            .iter()
+            .find(|layer| layer.id == order.id)
+            .unwrap();
+        let content = match layer.layer_type {
+            1 => crate::clip_document::Content::Raster,
+            0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
+            1584 => {
+                let Some(color) = &layer.paper_draw_color else {
+                    return Err(format!("Layer {}: missing paper color", layer.id));
+                };
+                let full = report
+                    .full_scale
+                    .iter()
+                    .find(|full| full.layer == layer.id)
+                    .unwrap();
+                if color.enabled != 1
+                    || !full.attributes.paper_default()
+                    || [
+                        full.attributes.width as usize,
+                        full.attributes.height as usize,
+                    ] != canvas
+                    || [
+                        layer.offset_x,
+                        layer.offset_y,
+                        layer.render_offscreen_offset_x,
+                        layer.render_offscreen_offset_y,
+                    ] != [0; 4]
+                {
+                    return Err(format!(
+                        "Layer {}: unsupported paper rendering mode",
+                        layer.id
+                    ));
+                }
+                crate::clip_document::Content::Paper(color.high_byte_rgb)
+            }
+            _ => {
+                issues.push(format!("Layer {} has unsupported content", layer.id));
+                continue;
+            }
+        };
+        let name = report
+            .document_properties
+            .get(&layer.id)
+            .cloned()
+            .unwrap_or_default();
+        entries.push(crate::clip_document::Entry {
+            source_id: layer.id,
+            name,
+            depth: order.depth,
+            visible: layer.visibility & 1 != 0,
+            opacity: layer.opacity as u16,
+            clipped: layer.clip == 1,
+            content,
+        });
+    }
+    let mut budget = crate::clip_blocks::Budget::default();
+    let doc = crate::clip_document::assemble(
+        canvas,
+        entries,
+        report.canvas.current,
+        &issues,
+        cancelled,
+        &mut |id| {
+            let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
+            let full = report
+                .full_scale
+                .iter()
+                .find(|full| full.layer == id)
+                .unwrap();
+            let (Some(external), Some(chunk)) = (&full.external_id, full.external_chunk_offset)
+            else {
+                return Err(format!("Layer {id}: unresolved raster reference"));
+            };
+            let (offset, bytes) = inventory.external_body_bounds(chunk, external.len())?;
+            source
+                .seek(SeekFrom::Start(offset))
+                .map_err(|error| error.to_string())?;
+            crate::clip_raster::decode(
+                &mut source,
+                bytes,
+                &full.attributes,
+                crate::clip_raster::Placement {
+                    canvas,
+                    layer_offset: [layer.offset_x, layer.offset_y],
+                    render_offset: [
+                        layer.render_offscreen_offset_x,
+                        layer.render_offscreen_offset_y,
+                    ],
+                },
+                &mut budget,
+                cancelled,
+            )
+        },
+    )?;
+    Ok((doc, report.rendering_study_omissions))
+}
+
+pub(crate) fn compare_rendering(input: &Path, output: Option<&Path>) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Comparison {
+        scope: &'static str,
+        import_ready: bool,
+        omissions: Vec<String>,
+        canvas: [usize; 2],
+        preview: crate::clip_preview::Comparison,
+        quantized_leaf_opacity_hypothesis: crate::clip_preview::Comparison,
+    }
+    let (mut doc, omissions) = prepare_document_mode(input, &|| false, true)?;
+    let mut source = File::open(input).map_err(|error| error.to_string())?;
+    let length = source.metadata().map_err(|error| error.to_string())?.len();
+    let inventory = clip_container::scan(&mut source, length)?;
+    let (offset, size) = inventory.selected_sql_payload();
+    source
+        .seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let db = open_snapshot((&mut source).take(size), size as usize)?;
+    let (kind, prefix): (String, String) = db
+        .query_row(
+            "SELECT type,substr(sql,1,128) FROM sqlite_schema WHERE name='CanvasPreview'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(db_error)?;
+    if kind != "table"
+        || !prefix
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .eq_ignore_ascii_case("CREATE TABLE")
+    {
+        return Err("Expected ordinary CanvasPreview table".into());
+    }
+    let previews = rows(
+        &db,
+        "SELECT ImageType,ImageWidth,ImageHeight,ImageData FROM CanvasPreview",
+        1,
+        |row| {
+            let data = row.get_ref(3)?.as_blob()?;
+            if data.len() > 16 * 1024 * 1024 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                data.to_vec(),
+            ))
+        },
+    )?;
+    let (kind, width, height, encoded) = previews
+        .into_iter()
+        .next()
+        .ok_or("Missing stored preview")?;
+    if kind != 1 {
+        return Err("Unsupported stored preview image type".into());
+    }
+    let preview = crate::clip_preview::compare(&encoded, [width, height], &doc)?;
+    crate::clip_preview::bake_leaf_opacity_hypothesis(&mut doc);
+    let quantized_leaf_opacity_hypothesis =
+        crate::clip_preview::compare(&encoded, [width, height], &doc)?;
+    clip_container::write_report(
+        &Comparison {
+            scope: "Read-only rendering study with explicitly omitted editor overlays. Not eligible for import; no document publication or source modification.",
+            import_ready: false,
+            omissions,
+            canvas: [doc.width, doc.height],
+            preview,
+            quantized_leaf_opacity_hypothesis,
+        },
+        output,
+    )
+}
+
+/// Compare unpublished native group hypotheses with saved full-scale group caches.
+/// A cache may be stale; matching it does not establish complete CSP semantics.
+pub(crate) fn compare_folder_caches(input: &Path, output: Option<&Path>) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Group {
+        source_layer: i64,
+        source_opacity: i64,
+        source_visibility: i64,
+        entries: usize,
+        intrinsic_group: crate::clip_preview::RgbaComparison,
+        with_group_opacity: crate::clip_preview::RgbaComparison,
+    }
+    #[derive(serde::Serialize)]
+    struct Study {
+        scope: &'static str,
+        import_ready: bool,
+        omissions: Vec<String>,
+        canvas: [usize; 2],
+        groups: Vec<Group>,
+    }
+    let (mut source, inventory, report) = read_source_mode(input, true)?;
+    if !report.import_issues.is_empty() {
+        return Err(format!(
+            "Unsupported clip content: {}",
+            report.import_issues.join("; ")
+        ));
+    }
+    let canvas = [report.canvas.width as usize, report.canvas.height as usize];
+    let mut budget = crate::clip_blocks::Budget::default();
+    let mut decode = |id| {
+        let layer = report
+            .layers
+            .iter()
+            .find(|layer| layer.id == id)
+            .ok_or("Missing source layer")?;
+        let full = report
+            .full_scale
+            .iter()
+            .find(|full| full.layer == id)
+            .ok_or("Missing full-scale folder/raster cache")?;
+        let (Some(external), Some(chunk)) = (&full.external_id, full.external_chunk_offset) else {
+            return Err("Unresolved folder/raster cache reference".into());
+        };
+        let (offset, bytes) = inventory.external_body_bounds(chunk, external.len())?;
+        source
+            .seek(SeekFrom::Start(offset))
+            .map_err(|error| error.to_string())?;
+        crate::clip_raster::decode(
+            &mut source,
+            bytes,
+            &full.attributes,
+            crate::clip_raster::Placement {
+                canvas,
+                layer_offset: [layer.offset_x, layer.offset_y],
+                render_offset: [
+                    layer.render_offscreen_offset_x,
+                    layer.render_offscreen_offset_y,
+                ],
+            },
+            &mut budget,
+            &|| false,
+        )
+    };
+    let mut groups = Vec::new();
+    for (start, parent) in report.root_child_next_order.iter().enumerate() {
+        let folder = report
+            .layers
+            .iter()
+            .find(|layer| layer.id == parent.id)
+            .unwrap();
+        if !folder.is_folder() {
+            continue;
+        }
+        if folder.clip != 0 {
+            return Err("Folder cache study cannot isolate a clipped folder".into());
+        }
+        let mut entries = Vec::new();
+        for (relative, item) in report.root_child_next_order[start..].iter().enumerate() {
+            if relative != 0 && item.depth <= parent.depth {
+                break;
+            }
+            let layer = report
+                .layers
+                .iter()
+                .find(|layer| layer.id == item.id)
+                .unwrap();
+            let content = if layer.is_folder() {
+                crate::clip_document::Content::Folder
+            } else if layer.layer_type == 1 {
+                crate::clip_document::Content::Raster
+            } else {
+                return Err("Folder cache study supports only raster descendants".into());
+            };
+            entries.push(crate::clip_document::Entry {
+                source_id: layer.id,
+                name: String::new(),
+                depth: item.depth - parent.depth,
+                // Group visibility/opacity may be applied outside its stored cache.
+                visible: relative == 0 || layer.visibility & 1 != 0,
+                opacity: if relative == 0 {
+                    256
+                } else {
+                    layer.opacity as u16
+                },
+                clipped: layer.clip == 1,
+                content,
+            });
+        }
+        let mut doc = crate::clip_document::assemble(
+            canvas,
+            entries,
+            folder.id,
+            &[],
+            &|| false,
+            &mut decode,
+        )?;
+        let cached = decode(folder.id)?;
+        let native = crate::pixels::Pixels::from(doc.composite_transparent());
+        let intrinsic_group = crate::clip_preview::compare_pixels(&native, &cached, true)?;
+        drop(native);
+        doc.layers[doc.active].opacity = folder.opacity as f32 / 256.;
+        let native = crate::pixels::Pixels::from(doc.composite_transparent());
+        let with_group_opacity = crate::clip_preview::compare_pixels(&native, &cached, true)?;
+        groups.push(Group {
+            source_layer: folder.id,
+            source_opacity: folder.opacity,
+            source_visibility: folder.visibility,
+            entries: doc.layers.len(),
+            intrinsic_group,
+            with_group_opacity,
+        });
+    }
+    if groups.is_empty() {
+        return Err("No ordinary folders available for cache comparison".into());
+    }
+    clip_container::write_report(
+        &Study {
+            scope: "Read-only isolated folder hypotheses versus saved CSP group caches; hidden RGB normalized for metrics only. Cache freshness and complete CSP rendering semantics unproven. No import eligibility or source modification.",
+            import_ready: false,
+            omissions: report.rendering_study_omissions,
+            canvas,
+            groups,
+        },
+        output,
+    )
+}
+
+/// User-selected full-size PNG reference. File pairing/export state is external
+/// evidence and cannot be inferred from matching geometry or pixel metrics.
+pub(crate) fn compare_export(
+    input: &Path,
+    reference: &Path,
+    output: Option<&Path>,
+) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Comparison {
+        scope: &'static str,
+        import_ready: bool,
+        omissions: Vec<String>,
+        canvas: [usize; 2],
+        full_size_png: crate::clip_preview::Comparison,
+    }
+    let file = File::open(reference).map_err(|error| error.to_string())?;
+    if file.metadata().map_err(|error| error.to_string())?.len() > 16 * 1024 * 1024 {
+        return Err("PNG reference exceeds comparison bounds".into());
+    }
+    let mut encoded = Vec::new();
+    file.take(16 * 1024 * 1024 + 1)
+        .read_to_end(&mut encoded)
+        .map_err(|error| error.to_string())?;
+    let (doc, omissions) = prepare_document_mode(input, &|| false, true)?;
+    let comparison =
+        crate::clip_preview::compare(&encoded, [doc.width as u32, doc.height as u32], &doc)?;
+    clip_container::write_report(
+        &Comparison {
+            scope: "Read-only native composition versus supplied full-size PNG. Pair correspondence, export state and complete CSP semantics require external validation. Explicit study omissions remain unsupported by import; no source modification or document publication.",
+            import_ready: false,
+            omissions,
+            canvas: [doc.width, doc.height],
+            full_size_png: comparison,
+        },
+        output,
+    )
+}
+
+pub(crate) fn verify_document(input: &Path, output: Option<&Path>) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Verification {
+        scope: &'static str,
+        canvas: [usize; 2],
+        entries: usize,
+        active: usize,
+        composite: crate::clip_raster::Statistics,
+    }
+    let doc = prepare_document(input, &|| false)?;
+    let rgba = crate::pixels::Pixels::from(doc.composite_transparent());
+    clip_container::write_report(
+        &Verification {
+            scope: "Unpublished candidate document assembly and native composite; no complete CSP feature/rounding validation or GUI import.",
+            canvas: [doc.width, doc.height],
+            entries: doc.layers.len(),
+            active: doc.active,
+            composite: crate::clip_raster::statistics(&rgba),
+        },
+        output,
+    )
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    const ID: &str = "extrnlid0123456789ABCDEF0123456789ABCDEF";
+    pub(crate) fn worker_fixture() -> Vec<u8> {
+        worker_fixture_with_sql("")
+    }
+    pub(crate) fn worker_fixture_with_sql(mutation: &str) -> Vec<u8> {
+        let db = fixture();
+        db.execute_batch("UPDATE Layer SET LayerType=1 WHERE MainId=40; ALTER TABLE Layer ADD COLUMN LayerName TEXT; ALTER TABLE Layer ADD COLUMN LayerLock INTEGER; ALTER TABLE Layer ADD COLUMN LayerMasking INTEGER; ALTER TABLE Layer ADD COLUMN LayerLayerMaskMipmap INTEGER; ALTER TABLE Layer ADD COLUMN LayerUsePaletteColor INTEGER; UPDATE Layer SET LayerName='Fixture',LayerLock=0,LayerMasking=0,LayerLayerMaskMipmap=0,LayerUsePaletteColor=0; UPDATE Layer SET LayerMasking=32 WHERE MainId=20;").unwrap();
+        db.execute_batch(mutation).unwrap();
+        let body = crate::clip_blocks::tests::fixture(&[None]);
+        let mut ext = b"CHNKExta".to_vec();
+        ext.extend((48 + body.len() as u64).to_be_bytes());
+        ext.extend(40u64.to_be_bytes());
+        ext.extend(ID.as_bytes());
+        ext.extend(body);
+        let mut data = container(&db.serialize("main").unwrap());
+        data[48..56].copy_from_slice(&(80 + ext.len() as u64).to_be_bytes());
+        data.splice(80..80, ext);
+        let size = data.len() as u64;
+        data[8..16].copy_from_slice(&size.to_be_bytes());
+        data
+    }
+    #[test]
+    fn strict_import_rejects_unvalidated_folder_and_clipping_rendering() {
+        for mutation in [
+            "UPDATE Layer SET LayerType=256,LayerFolder=1,LayerRenderMipmap=0 WHERE MainId=40",
+            "UPDATE Layer SET LayerType=0,LayerFolder=1,LayerRenderMipmap=0 WHERE MainId=40",
+            "UPDATE Layer SET LayerType=0,LayerFolder=17,LayerRenderMipmap=0 WHERE MainId=40",
+            "UPDATE Layer SET LayerClip=1 WHERE MainId=30",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("generated.clip");
+            std::fs::write(&path, worker_fixture_with_sql(mutation)).unwrap();
+            let error = prepare_document(&path, &|| false).err().unwrap();
+            assert!(error.contains("Folder/clipping import awaits"), "{error}");
+        }
+    }
+    #[test]
+    fn ordinary_open_and_closed_folders_keep_children_in_unpublished_study() {
+        for folder in [1, 17] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("generated.clip");
+            let sql = format!(
+                "UPDATE Layer SET LayerType=0,LayerFolder={folder},LayerRenderMipmap=0,LayerNextIndex=0,LayerFirstChildIndex=40,LayerMasking=32 WHERE MainId=30"
+            );
+            std::fs::write(&path, worker_fixture_with_sql(&sql)).unwrap();
+            let (doc, omissions) = prepare_document_mode(&path, &|| false, true).unwrap();
+            assert_eq!(omissions.len(), 1);
+            assert!(omissions[0].contains("folder LayerMasking=32"));
+            assert_eq!(doc.layers.len(), 2);
+            assert!(!doc.layers[0].folder);
+            assert_eq!(doc.layers[0].depth, 1);
+            assert!(doc.layers[1].folder);
+            assert_eq!(doc.layers[1].depth, 0);
+            assert_eq!(doc.active, 1);
+        }
+        let db = fixture();
+        let mut report = check(&db).unwrap();
+        let layer = &mut report.layers[1];
+        for (kind, folder, supported) in [
+            (0, 0, false),
+            (0, 16, false),
+            (0, 17, true),
+            (1, 17, false),
+            (0, 33, false),
+            (512, 1, false),
+            (256, 17, false),
+        ] {
+            layer.layer_type = kind;
+            layer.folder = folder;
+            assert_eq!(layer.supported_kind(), supported);
+        }
+    }
+    #[test]
+    fn folder_cache_study_stays_numeric_unpublished_and_requires_resolved_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("generated.clip");
+        let output = dir.path().join("numeric.json");
+        let mutation = "UPDATE Layer SET LayerType=0,LayerFolder=17,LayerNextIndex=0,LayerFirstChildIndex=40,LayerMasking=32 WHERE MainId=30";
+        let source = worker_fixture_with_sql(mutation);
+        std::fs::write(&path, &source).unwrap();
+        compare_folder_caches(&path, Some(&output)).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert_eq!(report["import_ready"], false);
+        assert_eq!(report["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(report["groups"][0]["entries"], 2);
+        assert_eq!(
+            report["groups"][0]["intrinsic_group"]["exact_pixels"],
+            32 * 48
+        );
+        assert_eq!(
+            report["groups"][0]["with_group_opacity"]["hidden_rgb_normalized"],
+            true
+        );
+        assert_eq!(report["omissions"].as_array().unwrap().len(), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), source);
+        assert!(compare_folder_caches(&path, Some(&output)).is_err());
+        assert!(prepare_document(&path, &|| false).is_err());
+        let missing = worker_fixture_with_sql(&format!(
+            "{mutation}; UPDATE Layer SET LayerRenderMipmap=0 WHERE MainId=30"
+        ));
+        std::fs::write(&path, &missing).unwrap();
+        let unavailable = dir.path().join("unavailable.json");
+        assert!(
+            compare_folder_caches(&path, Some(&unavailable))
+                .unwrap_err()
+                .contains("Missing full-scale")
+        );
+        assert!(!unavailable.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), missing);
+    }
+    #[test]
+    fn legacy_effects_and_modern_special_payloads_cannot_bypass_raster_preflight() {
+        for (field, payload) in [
+            ("FilterLayerInfo", "x'010203'"),
+            ("LayerEffectInfo", "x'010203'"),
+            ("GradationFillInfo", "x'010203'"),
+            ("TextLayerString", "'private source text'"),
+            ("TextLayerAttributes", "x'010203'"),
+            ("VectorNormalStrokeIndex", "2"),
+            ("MaterialContentType", "110"),
+            ("UsePreviewMaskColorType", "1"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("generated.clip");
+            let sql = format!(
+                "ALTER TABLE Layer ADD COLUMN {field}; UPDATE Layer SET {field}={payload} WHERE MainId=30"
+            );
+            let source = worker_fixture_with_sql(&sql);
+            std::fs::write(&path, &source).unwrap();
+            for study in [false, true] {
+                let error = prepare_document_mode(&path, &|| false, study)
+                    .err()
+                    .unwrap();
+                assert!(error.contains(&format!("unsupported {field}")), "{error}");
+                assert!(!error.contains("private source text"));
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), source);
+            let inactive =
+                worker_fixture_with_sql(&format!("{sql}; UPDATE Layer SET {field}=NULL"));
+            std::fs::write(&path, inactive).unwrap();
+            assert!(prepare_document(&path, &|| false).is_ok());
+        }
+    }
+    #[test]
+    fn external_png_comparison_is_full_size_numeric_and_never_overwrites_inputs() {
+        use image::ImageEncoder;
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.clip");
+        let reference = dir.path().join("reference.png");
+        let report = dir.path().join("report.json");
+        let clip = worker_fixture();
+        std::fs::write(&source, &clip).unwrap();
+        let encode = |w, h, rgba: &[u8]| {
+            let mut png = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(rgba, w, h, image::ExtendedColorType::Rgba8)
+                .unwrap();
+            png
+        };
+        let png = encode(32, 48, &vec![0; 32 * 48 * 4]);
+        std::fs::write(&reference, &png).unwrap();
+        compare_export(&source, &reference, Some(&report)).unwrap();
+        let metrics: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
+        assert_eq!(metrics["import_ready"], false);
+        assert_eq!(metrics["full_size_png"]["compared_full_size"], true);
+        assert_eq!(metrics["full_size_png"]["exact_pixels"], 32 * 48);
+        for existing in [&source, &reference, &report] {
+            assert!(compare_export(&source, &reference, Some(existing)).is_err());
+        }
+        assert_eq!(std::fs::read(&source).unwrap(), clip);
+        assert_eq!(std::fs::read(&reference).unwrap(), png);
+        let unavailable = dir.path().join("unavailable.json");
+        std::fs::write(&reference, encode(1, 1, &[0; 4])).unwrap();
+        assert!(compare_export(&source, &reference, Some(&unavailable)).is_err());
+        assert!(!unavailable.exists());
+        std::fs::write(&reference, b"not PNG").unwrap();
+        assert!(compare_export(&source, &reference, Some(&unavailable)).is_err());
+        assert!(!unavailable.exists());
+    }
+    fn fixture() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE Canvas (MainId INTEGER,CanvasWidth REAL,CanvasHeight REAL,CanvasChannelBytes INTEGER,CanvasDefaultChannelOrder INTEGER,CanvasRootFolder INTEGER,CanvasCurrentLayer INTEGER,CanvasSrcProfile BLOB,CanvasUnit INTEGER,CanvasResolution REAL);
+            CREATE TABLE Layer (_PW_ID INTEGER PRIMARY KEY,MainId INTEGER,LayerType INTEGER,LayerFolder INTEGER,LayerVisibility INTEGER,LayerOpacity INTEGER,LayerComposite INTEGER,LayerClip INTEGER,LayerNextIndex INTEGER,LayerFirstChildIndex INTEGER,LayerRenderMipmap INTEGER,LayerOffsetX INTEGER,LayerOffsetY INTEGER,LayerRenderOffscrOffsetX INTEGER,LayerRenderOffscrOffsetY INTEGER);
+            CREATE TABLE Mipmap (MainId INTEGER,CanvasId INTEGER,LayerId INTEGER,MipmapCount INTEGER,BaseMipmapInfo INTEGER);
+            CREATE TABLE MipmapInfo (MainId INTEGER,LayerId INTEGER,ThisScale REAL,Offscreen INTEGER,NextIndex INTEGER);
+            CREATE TABLE Offscreen (MainId INTEGER,CanvasId INTEGER,LayerId INTEGER,Attribute BLOB,BlockData BLOB);
+            CREATE TABLE ExternalChunk (ExternalID BLOB,Offset INTEGER);
+            INSERT INTO Canvas VALUES (7,32,48,1,33,20,30,NULL,0,300);
+            INSERT INTO Layer VALUES (1,20,256,1,1,256,0,0,0,30,50,0,0,0,0);
+            INSERT INTO Layer VALUES (2,30,1,0,5,256,0,0,40,0,60,-7,-9,7,9);
+            INSERT INTO Layer VALUES (3,40,1584,0,1,128,0,0,0,0,70,0,0,0,0);
+            INSERT INTO Mipmap VALUES (50,7,20,1,80),(60,7,30,2,90),(70,7,40,1,100);
+            INSERT INTO MipmapInfo VALUES (80,20,100,110,0),(90,30,100,120,91),(91,30,50,121,0),(100,40,100,130,0);").unwrap();
+        for (id, owner) in [(110, 20), (120, 30), (121, 30), (130, 40)] {
+            db.execute(
+                "INSERT INTO Offscreen VALUES (?1,7,?2,?3,?4)",
+                rusqlite::params![
+                    id,
+                    owner,
+                    crate::clip_attributes::fixture(32, 48, &[20, 0, 0, 0, 4], &[104]),
+                    ID.as_bytes()
+                ],
+            )
+            .unwrap();
+        }
+        db.execute("INSERT INTO ExternalChunk VALUES (?1,80)", [ID.as_bytes()])
+            .unwrap();
+        db
+    }
+    fn check(db: &Connection) -> Result<Report, String> {
+        metadata(db, &[(ID.into(), 80)])
+    }
+
+    #[test]
+    fn main_id_graph_mipmap_offsets_and_uninterpreted_fields() {
+        let db = fixture();
+        let report = check(&db).unwrap();
+        assert_eq!(
+            report
+                .root_child_next_order
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            [30, 40]
+        );
+        let full = report
+            .full_scale
+            .iter()
+            .find(|full| full.layer == 30)
+            .unwrap();
+        assert_eq!((full.mipmap, full.info, full.offscreen), (60, 90, 120));
+        assert_eq!(full.external_chunk_offset, Some(80));
+        assert_eq!(
+            (report.layers[1].offset_x, report.layers[1].offset_y),
+            (-7, -9)
+        );
+        assert_eq!(
+            (
+                report.layers[1].render_offscreen_offset_x,
+                report.layers[1].render_offscreen_offset_y
+            ),
+            (7, 9)
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("separate render-offscreen offsets"))
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("Layer 30 has uninterpreted"))
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("Layer 40 has uninterpreted"))
+        );
+        db.execute(
+            "UPDATE ExternalChunk SET ExternalID=CAST(ExternalID AS TEXT)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            check(&db).unwrap().full_scale[1].external_chunk_offset,
+            Some(80)
+        );
+        db.execute("DELETE FROM ExternalChunk", []).unwrap();
+        let unresolved = check(&db).unwrap();
+        assert!(
+            unresolved
+                .full_scale
+                .iter()
+                .all(|full| full.external_chunk_offset.is_none())
+        );
+        assert!(
+            unresolved
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("must not be assumed blank"))
+        );
+    }
+
+    #[test]
+    fn reject_damaged_graph_mip_and_external_references() {
+        for mutation in [
+            "UPDATE Layer SET LayerNextIndex=30 WHERE MainId=40",
+            "UPDATE Layer SET LayerNextIndex=99 WHERE MainId=30",
+            "UPDATE Layer SET LayerNextIndex=0 WHERE MainId=30",
+            "UPDATE Layer SET MainId=30 WHERE MainId=40",
+            "UPDATE Layer SET LayerFirstChildIndex=40 WHERE MainId=30",
+            "UPDATE Canvas SET CanvasCurrentLayer=99",
+            "UPDATE Layer SET LayerFolder=0 WHERE MainId=20",
+            "UPDATE Layer SET LayerOpacity=257 WHERE MainId=30",
+            "UPDATE Layer SET LayerRenderMipmap=99 WHERE MainId=30",
+            "UPDATE Mipmap SET LayerId=40 WHERE MainId=60",
+            "UPDATE Mipmap SET MipmapCount=1 WHERE MainId=60",
+            "UPDATE Mipmap SET MipmapCount=3 WHERE MainId=60",
+            "UPDATE MipmapInfo SET ThisScale=50 WHERE MainId=90",
+            "UPDATE MipmapInfo SET NextIndex=90 WHERE MainId=91",
+            "UPDATE MipmapInfo SET MainId=90 WHERE MainId=91",
+            "UPDATE Offscreen SET LayerId=40 WHERE MainId=120",
+            "UPDATE MipmapInfo SET Offscreen=99 WHERE MainId=90",
+            "UPDATE ExternalChunk SET Offset=81",
+            "UPDATE ExternalChunk SET ExternalID=123",
+            "INSERT INTO ExternalChunk SELECT * FROM ExternalChunk",
+            "UPDATE Canvas SET CanvasWidth=4097",
+            "UPDATE Canvas SET CanvasWidth=2049,CanvasHeight=2048",
+            "UPDATE Canvas SET CanvasWidth=32.5",
+            "UPDATE Canvas SET CanvasUnit=3,CanvasWidth=2,CanvasHeight=3",
+            "UPDATE Canvas SET CanvasResolution=0",
+            "INSERT INTO Canvas SELECT * FROM Canvas",
+            "UPDATE Offscreen SET Attribute=zeroblob(65537)",
+            "UPDATE Offscreen SET BlockData=zeroblob(1025)",
+            "DROP TABLE Layer; CREATE VIEW Layer AS SELECT 1",
+            "UPDATE Layer SET LayerVisibility='wrong-type' WHERE MainId=30",
+            "UPDATE Layer SET LayerRenderOffscrOffsetX='wrong-type' WHERE MainId=30",
+        ] {
+            let db = fixture();
+            db.execute_batch(mutation).unwrap();
+            assert!(check(&db).is_err(), "accepted {mutation}");
+        }
+        let db = fixture();
+        assert!(metadata(&db, &[(ID.into(), 80), (ID.into(), 90)]).is_err());
+    }
+
+    #[test]
+    fn nested_folders_have_bounded_depth_and_no_shared_children() {
+        let db = fixture();
+        db.execute_batch("UPDATE Layer SET LayerFolder=1,LayerType=256,LayerFirstChildIndex=40,LayerNextIndex=0 WHERE MainId=30").unwrap();
+        let report = check(&db).unwrap();
+        assert_eq!(
+            report
+                .root_child_next_order
+                .iter()
+                .map(|entry| (entry.id, entry.depth))
+                .collect::<Vec<_>>(),
+            [(30, 0), (40, 1)]
+        );
+        db.execute_batch("UPDATE Layer SET LayerNextIndex=40 WHERE MainId=30")
+            .unwrap();
+        assert!(check(&db).unwrap_err().contains("multiply referenced"));
+        let canvas = report.canvas;
+        let mut layers = report.layers;
+        layers[1].child = 1000;
+        for depth in 0..=MAX_DEPTH {
+            layers.push(Layer {
+                id: 1000 + depth as i64,
+                layer_type: 256,
+                folder: 1,
+                visibility: 1,
+                opacity: 256,
+                composite: 0,
+                clip: 0,
+                next: 0,
+                child: if depth == MAX_DEPTH {
+                    40
+                } else {
+                    1001 + depth as i64
+                },
+                mipmap: 1,
+                offset_x: 0,
+                offset_y: 0,
+                render_offscreen_offset_x: 0,
+                render_offscreen_offset_y: 0,
+                paper_draw_color: None,
+            });
+        }
+        assert!(
+            layer_order(&canvas, &layers)
+                .unwrap_err()
+                .contains("depth limit")
+        );
+    }
+    #[test]
+    fn structural_folders_do_not_require_a_cached_raster_mipmap() {
+        let db = fixture();
+        db.execute("UPDATE Layer SET LayerRenderMipmap=0 WHERE MainId=20", [])
+            .unwrap();
+        let report = check(&db).unwrap();
+        assert_eq!(report.root_child_next_order.len(), 2);
+        assert!(!report.full_scale.iter().any(|level| level.layer == 20));
+        db.execute("UPDATE Layer SET LayerRenderMipmap=0 WHERE MainId=30", [])
+            .unwrap();
+        assert!(check(&db).is_err());
+    }
+    #[test]
+    fn document_feature_preflight_preserves_names_privately_and_rejects_masks_effects_and_profiles()
+    {
+        fn source() -> Connection {
+            let db = fixture();
+            db.execute_batch("UPDATE Layer SET LayerType=1 WHERE MainId=40; ALTER TABLE Layer ADD COLUMN LayerName TEXT; ALTER TABLE Layer ADD COLUMN LayerLock INTEGER; ALTER TABLE Layer ADD COLUMN LayerMasking INTEGER; ALTER TABLE Layer ADD COLUMN LayerLayerMaskMipmap INTEGER; ALTER TABLE Layer ADD COLUMN LayerUsePaletteColor INTEGER; UPDATE Layer SET LayerName='Paint private name',LayerLock=0,LayerMasking=0,LayerLayerMaskMipmap=0,LayerUsePaletteColor=0; UPDATE Layer SET LayerMasking=32 WHERE MainId=20;").unwrap();
+            db
+        }
+        let db = source();
+        let mut report = check(&db).unwrap();
+        document_features(&db, &mut report).unwrap();
+        assert!(report.import_issues.is_empty());
+        assert_eq!(report.document_properties[&30], "Paint private name");
+        assert!(
+            !serde_json::to_string(&report)
+                .unwrap()
+                .contains("Paint private name")
+        );
+        for mutation in [
+            "UPDATE Layer SET LayerLayerMaskMipmap=1 WHERE MainId=30",
+            "UPDATE Layer SET LayerLock=1 WHERE MainId=30",
+            "UPDATE Layer SET LayerUsePaletteColor=1 WHERE MainId=30",
+            "ALTER TABLE Layer ADD COLUMN FilterLayerV132 BLOB; UPDATE Layer SET FilterLayerV132=x'01' WHERE MainId=30",
+            "CREATE TABLE Track (MainId INTEGER); INSERT INTO Track VALUES (1)",
+            "ALTER TABLE Canvas ADD COLUMN CanvasDstProfile BLOB; UPDATE Canvas SET CanvasDstProfile=x'01'",
+        ] {
+            let db = source();
+            db.execute_batch(mutation).unwrap();
+            let mut report = check(&db).unwrap();
+            document_features(&db, &mut report).unwrap();
+            assert!(!report.import_issues.is_empty(), "accepted {mutation}");
+        }
+        let db = source();
+        db.execute_batch("ALTER TABLE Layer ADD COLUMN SpecialRulerManager INTEGER; UPDATE Layer SET SpecialRulerManager=9 WHERE MainId=30").unwrap();
+        let mut strict = check(&db).unwrap();
+        document_features(&db, &mut strict).unwrap();
+        assert!(!strict.import_issues.is_empty());
+        assert!(strict.rendering_study_omissions.is_empty());
+        let mut study = check(&db).unwrap();
+        document_features_mode(&db, &mut study, true).unwrap();
+        assert!(study.import_issues.is_empty());
+        assert_eq!(study.rendering_study_omissions.len(), 1);
+        db.execute(
+            "UPDATE Layer SET LayerLayerMaskMipmap=1 WHERE MainId=30",
+            [],
+        )
+        .unwrap();
+        let mut study = check(&db).unwrap();
+        document_features_mode(&db, &mut study, true).unwrap();
+        assert!(
+            !study.import_issues.is_empty(),
+            "study must never bypass rendering features"
+        );
+    }
+
+    #[test]
+    fn snapshot_is_read_only_bounded_and_interruptible() {
+        let source = fixture();
+        let columns = (0..68)
+            .map(|index| format!("column{index} INTEGER"))
+            .collect::<Vec<_>>()
+            .join(",");
+        source
+            .execute_batch(&format!("CREATE TABLE Project ({columns})"))
+            .unwrap();
+        let bytes = source.serialize("main").unwrap();
+        let db = open_snapshot(&bytes[..], bytes.len()).unwrap();
+        let temporary_path = db._file.path().to_owned();
+        assert!(db.is_readonly("main").unwrap());
+        db.execute_batch("PRAGMA query_only=OFF").unwrap();
+        assert!(db.execute("DELETE FROM Layer", []).is_err());
+        db.execute_batch("PRAGMA query_only=ON").unwrap();
+        assert_eq!(check(&db).unwrap().layers.len(), 3);
+        assert_eq!(db.limit(Limit::SQLITE_LIMIT_COLUMN).unwrap(), 128);
+        assert!(open_snapshot(&bytes[..bytes.len() - 1], bytes.len()).is_err());
+        assert!(open_snapshot(std::io::empty(), MAX_SQL + 1).is_err());
+        let error = db.query_row("WITH RECURSIVE count(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM count WHERE x<100000000) SELECT sum(x) FROM count", [], |row| row.get::<_,i64>(0)).unwrap_err();
+        assert!(
+            matches!(error,rusqlite::Error::SqliteFailure(code,_) if code.code == rusqlite::ErrorCode::OperationInterrupted)
+        );
+        drop(db);
+        assert!(!temporary_path.exists());
+    }
+
+    #[test]
+    fn bounded_rows_and_raster_counts() {
+        let db = fixture();
+        assert!(
+            rows(&db, "SELECT MainId FROM Layer", 2, |row| row
+                .get::<_, i64>(0))
+            .is_err()
+        );
+        let report = check(&db).unwrap();
+        let mut layers = report.layers;
+        layers[2].next = 1000;
+        for index in 0..MAX_RASTER_LAYERS {
+            layers.push(Layer {
+                id: 1000 + index as i64,
+                layer_type: 1,
+                folder: 0,
+                visibility: 1,
+                opacity: 256,
+                composite: 0,
+                clip: 0,
+                next: if index + 1 == MAX_RASTER_LAYERS {
+                    0
+                } else {
+                    1001 + index as i64
+                },
+                child: 0,
+                mipmap: 1,
+                offset_x: 0,
+                offset_y: 0,
+                render_offscreen_offset_x: 0,
+                render_offscreen_offset_y: 0,
+                paper_draw_color: None,
+            });
+        }
+        assert!(
+            layer_order(&report.canvas, &layers)
+                .unwrap_err()
+                .contains("raster count")
+        );
+    }
+    #[test]
+    fn optional_paper_colors_preserve_unsigned_words_without_defaulting_old_schemas() {
+        let db = fixture();
+        assert!(
+            check(&db)
+                .unwrap()
+                .layers
+                .iter()
+                .all(|layer| layer.paper_draw_color.is_none())
+        );
+        db.execute_batch("ALTER TABLE Layer ADD COLUMN DrawColorEnable INTEGER; ALTER TABLE Layer ADD COLUMN DrawColorMainRed INTEGER; ALTER TABLE Layer ADD COLUMN DrawColorMainGreen INTEGER; ALTER TABLE Layer ADD COLUMN DrawColorMainBlue INTEGER; UPDATE Layer SET DrawColorEnable=1,DrawColorMainRed=4294967295,DrawColorMainGreen=2394721980,DrawColorMainBlue=0 WHERE MainId=40;").unwrap();
+        let report = check(&db).unwrap();
+        let color = report.layers[2].paper_draw_color.as_ref().unwrap();
+        assert_eq!(color.enabled, 1);
+        assert_eq!(color.raw_rgb, [u32::MAX, 2394721980, 0]);
+        assert_eq!(color.high_byte_rgb, [255, 142, 0]);
+        db.execute(
+            "UPDATE Layer SET DrawColorMainRed=4294967296 WHERE MainId=40",
+            [],
+        )
+        .unwrap();
+        assert!(check(&db).is_err());
+        db.execute("UPDATE Layer SET DrawColorMainRed=-1 WHERE MainId=40", [])
+            .unwrap();
+        assert!(check(&db).is_err());
+    }
+    #[test]
+    fn nonempty_timeline_is_diagnosed_and_unknown_track_views_are_never_queried() {
+        let db = fixture();
+        db.execute_batch("CREATE TABLE Track (MainId INTEGER)")
+            .unwrap();
+        assert!(
+            !check(&db)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("Timeline/track content"))
+        );
+        db.execute("INSERT INTO Track VALUES (1)", []).unwrap();
+        assert!(
+            check(&db)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("must not silently discard animation"))
+        );
+        db.execute_batch("DROP TABLE Track; CREATE VIEW Track AS SELECT unavailable_function()")
+            .unwrap();
+        assert!(
+            check(&db)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|message| message.contains("unsupported schema"))
+        );
+    }
+
+    fn container(sql: &[u8]) -> Vec<u8> {
+        let mut bytes = b"CSFCHUNK".to_vec();
+        bytes.extend([0; 8]);
+        bytes.extend(24u64.to_be_bytes());
+        bytes.extend(b"CHNKHead");
+        bytes.extend(40u64.to_be_bytes());
+        bytes.extend(256u64.to_be_bytes());
+        bytes.extend(80u64.to_be_bytes());
+        bytes.extend(16u64.to_be_bytes());
+        bytes.extend([0; 16]);
+        bytes.extend(b"CHNKSQLi");
+        bytes.extend((sql.len() as u64).to_be_bytes());
+        bytes.extend(sql);
+        bytes.extend(b"CHNKFoot");
+        bytes.extend(0u64.to_be_bytes());
+        let len = bytes.len() as u64;
+        bytes[8..16].copy_from_slice(&len.to_be_bytes());
+        bytes
+    }
+
+    #[test]
+    fn reports_preserve_input_and_existing_files_even_on_bad_metadata() {
+        let db = fixture();
+        db.execute("DELETE FROM ExternalChunk", []).unwrap();
+        let source = container(&db.serialize("main").unwrap());
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("sample.clip");
+        let output = temp.path().join("report.json");
+        std::fs::write(&input, &source).unwrap();
+        inspect(&input, Some(&output)).unwrap();
+        let original_report = std::fs::read(&output).unwrap();
+        assert!(inspect(&input, Some(&output)).is_err());
+        assert!(inspect(&input, Some(&input)).is_err());
+        assert_eq!(std::fs::read(&input).unwrap(), source);
+        assert_eq!(std::fs::read(&output).unwrap(), original_report);
+        db.execute_batch("UPDATE Layer SET LayerNextIndex=30 WHERE MainId=40")
+            .unwrap();
+        std::fs::write(&input, container(&db.serialize("main").unwrap())).unwrap();
+        let bad_report = temp.path().join("bad.json");
+        assert!(inspect(&input, Some(&bad_report)).is_err());
+        assert!(!bad_report.exists());
+    }
+    #[test]
+    fn metadata_inspection_cross_checks_external_sizes_before_creating_report() {
+        let db = fixture();
+        let body = crate::clip_blocks::tests::fixture(&[None]);
+        fn with_external(sql: &[u8], body: &[u8]) -> Vec<u8> {
+            let mut ext = b"CHNKExta".to_vec();
+            ext.extend((48 + body.len() as u64).to_be_bytes());
+            ext.extend(40u64.to_be_bytes());
+            ext.extend(ID.as_bytes());
+            ext.extend(body);
+            let mut data = container(sql);
+            data[48..56].copy_from_slice(&(80 + ext.len() as u64).to_be_bytes());
+            data.splice(80..80, ext);
+            let size = data.len() as u64;
+            data[8..16].copy_from_slice(&size.to_be_bytes());
+            data
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("fixture.clip");
+        let output = dir.path().join("report.json");
+        let source = with_external(&db.serialize("main").unwrap(), &body);
+        std::fs::write(&input, &source).unwrap();
+        inspect(&input, Some(&output)).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert!(
+            json["full_scale"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|level| level["block_layout_validated"] == true)
+        );
+        assert_eq!(std::fs::read(&input).unwrap(), source);
+        // Structurally valid attributes with a wrong record size must fail only
+        // when crossed against the actual external record, with no new report.
+        let wrong = crate::clip_attributes::fixture(32, 48, &[20, 0, 0, 0, 4], &[108]);
+        db.execute(
+            "UPDATE Offscreen SET Attribute=?1 WHERE MainId=120",
+            [wrong],
+        )
+        .unwrap();
+        let damaged = with_external(&db.serialize("main").unwrap(), &body);
+        std::fs::write(&input, &damaged).unwrap();
+        let rejected = dir.path().join("rejected.json");
+        assert!(
+            inspect(&input, Some(&rejected))
+                .unwrap_err()
+                .contains("does not match")
+        );
+        assert!(!rejected.exists());
+        assert_eq!(std::fs::read(&input).unwrap(), damaged);
+    }
+}

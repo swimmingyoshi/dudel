@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "executable_sha256": "5C2554712F13117DEC605CEA14B5EDC573D3B480F8629BC5FB90F75A3317EAE9",
+  "started_utc": "2026-10-17T22:22:14.217060+00:00",
+  "release_gate_accepted": false,
+  "pid": null,
+  "exit_code": 0,
+  "error": "Cannot create a file when that file already exists. (os error 183)",
+  "preserved_jobs": 2,
+  "preserved_checkpoints": 23,
+  "incomplete_sha256": "6CA05FA1366E7E45F9C142C653130B434F6637F393B18B03981D23230141334A",
+  "conflict_preserved": true,
+  "incomplete_rejected_by_summary": true,
+  "no_spurious_screenshot_timeout": true
+}

@@ -1,0 +1,64 @@
+{
+  "scope": "Synthetic bounded tile codec and journal integration; no document format, thumbnail, compaction, editor save integration or power-cut certification. Append count excludes root overwrite; no latency benchmark.",
+  "cases": [
+    {
+      "name": "solid_rgba",
+      "geometry": [
+        256,
+        256
+      ],
+      "raw_bytes": 262144,
+      "record_bytes": 1255,
+      "omitted": false,
+      "exact": true
+    },
+    {
+      "name": "deterministic_noise",
+      "geometry": [
+        256,
+        256
+      ],
+      "raw_bytes": 262144,
+      "record_bytes": 262176,
+      "omitted": false,
+      "exact": true
+    },
+    {
+      "name": "partial_edge",
+      "geometry": [
+        3,
+        17
+      ],
+      "raw_bytes": 204,
+      "record_bytes": 53,
+      "omitted": false,
+      "exact": true
+    },
+    {
+      "name": "hidden_rgb",
+      "geometry": [
+        1,
+        1
+      ],
+      "raw_bytes": 4,
+      "record_bytes": 36,
+      "omitted": false,
+      "exact": true
+    },
+    {
+      "name": "empty",
+      "geometry": [
+        256,
+        256
+      ],
+      "raw_bytes": 262144,
+      "record_bytes": 0,
+      "omitted": true,
+      "exact": true
+    }
+  ],
+  "exact_journal_reopen": true,
+  "changed_record_append_bytes": 1307,
+  "unchanged_record_reused": true,
+  "empty_tile_deletion_exact": true
+}

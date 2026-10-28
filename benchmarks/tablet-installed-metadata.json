@@ -1,0 +1,29 @@
+{
+  "installed_tablet_packages": [
+    {
+      "DisplayName": "Pentablet",
+      "DisplayVersion": "3.4.13.231129"
+    }
+  ],
+  "monitor_metadata": [
+    {
+      "active": true,
+      "manufacturer": "UGD",
+      "model": "Artist 12    "
+    },
+    {
+      "active": true,
+      "manufacturer": "SAM",
+      "model": "S24R35xFZ"
+    },
+    {
+      "active": true,
+      "manufacturer": "GSM",
+      "model": "LG ULTRAGEAR"
+    }
+  ],
+  "scope": "Model confirmed by user; package version and EDID names observed locally. Active pen driver/Windows Ink path, display scaling and physical-session duration remain unconfirmed.",
+  "user_confirmed_model": "XP-Pen Artist 12",
+  "user_confirmation_date": "2026-10-17",
+  "user_confirmation_quote": "its the xp pen artist 12"
+}

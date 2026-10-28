@@ -1,0 +1,68 @@
+{
+  "candidate": "dudel-0.1.0-candidate-20261019-101430-664",
+  "source_parent_revision": "9e979aa79cdd89aebd2b66a61ed24a3466a14b75",
+  "working_tree_changes_recorded": [
+    " M QUICK_START.md",
+    " M src/layers_panel.rs",
+    " M src/mask_controller.rs",
+    " M src/reference_layers.rs",
+    " M src/workflow_tests.rs",
+    " M src/workspace.rs",
+    "?? benchmarks/linux-hosted-preset-notices-20261019.json"
+  ],
+  "executable_sha256": "CA1BD8537821D229B536A394E41528A48792A1B0AB99EED797EF1A0C9916E188",
+  "archives": {
+    "dudel-0.1.0-candidate-20261019-101430-664.zip": "820D944DA3B93E09F285752CEC92BB753E2C4C5330927469CECF088065B06226",
+    "dudel-0.1.0-candidate-20261019-101430-664-source.zip": "81F867F3E9146EBE9C58B942129D963E750CED02C6E98FCCA0213C9832576275"
+  },
+  "archive_crc_and_checksums": "pass",
+  "compiled_inputs_match_workspace_and_source_archive": true,
+  "registry_packages": 458,
+  "notice_files_identical_in_binary_and_source": 880,
+  "missing_notice_collection": [],
+  "focused_tests": {
+    "command": "cargo test --locked --bin dudel -- short_inspector layer_list_reveals navigator_reserves layer_badges_edit mask_focus_thumbnails_actions_and_canvas_packets_keep_artwork_separate",
+    "passed": 5
+  },
+  "fmt_and_default_all_target_clippy": "pass",
+  "release_build": "pass",
+  "renderer": "DX12 on NVIDIA GeForce RTX 3060",
+  "captures": [
+    {
+      "path": "target\\qa\\short-inspector-20261019\\guides-1280-800-1.png",
+      "size": [
+        1280,
+        800
+      ],
+      "sha256": "517E8A644F42AAC1C8779CC74059E7E77A2C131D9ECA0C291DD56C434B0BAD37"
+    },
+    {
+      "path": "target\\qa\\short-inspector-20261019\\guides-1280-800-2-repeat.png",
+      "size": [
+        1280,
+        800
+      ],
+      "sha256": "EA38773632145A84285D9DDB516252B0835E566C8DA0077148AD40F454656C23"
+    },
+    {
+      "path": "target\\qa\\short-inspector-20261019\\guides-1280-800-2.png",
+      "size": [
+        1280,
+        800
+      ],
+      "sha256": "EA38773632145A84285D9DDB516252B0835E566C8DA0077148AD40F454656C23"
+    },
+    {
+      "path": "target\\qa\\short-inspector-20261019\\guides-960-640-2.png",
+      "size": [
+        960,
+        640
+      ],
+      "sha256": "B739BB581616436885F5D8B7413D1371E4DC0CD17CBC32A0D08229851982BA93"
+    }
+  ],
+  "visual_review": "Normal layout preserved at 1280x800/100%. At 1280x800/200% Navigator and Color become popups; layer action, blend, opacity and mask controls fit. At 960x640/200% Layer contains actions/properties and selected layer remains visible. Layer/local and global badges and status controls fit; prior inspector overlap resolved.",
+  "observation": "An initial 1280x800/200% capture had partial Color toolbar glyphs; immediate repeat on the same binary rendered the label correctly. Cause unproven; not broad text-rendering acceptance.",
+  "scope": "Focused layout regression, native startup/capture and matching-source packaging. No final-source full CI, independent rebuild, sustained DX12, physical tablet, clean Windows or legal compatibility acceptance.",
+  "release_accepted": false
+}

@@ -1,0 +1,7 @@
+# Pinned so local builds, CI and release packages use the same compiler and
+# lints. Newer stable releases add Clippy lints and deprecations that would
+# fail `-D warnings` without any source change; upgrade deliberately.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

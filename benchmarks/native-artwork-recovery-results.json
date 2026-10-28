@@ -1,0 +1,69 @@
+{
+  "status": "passed",
+  "executable_sha256": "151CC53C708BF5681883E566C686BC355C9CCED3636D8324D948F8EE9037000F",
+  "completed": [
+    {
+      "version": 4,
+      "producer": {
+        "expected_restore_generation": 2,
+        "generations_verified": 2,
+        "native_app_update": true,
+        "normal_15_second_timer": true,
+        "pid": 45820,
+        "producer_uses_normal_idle_repaints": true,
+        "seconds_from_edit_to_completion": [
+          16.8992354,
+          15.7842246
+        ],
+        "snapshot": "\\\\?\\<repo>\\target\\qa\\native-artwork-recovery-20261017\\v4\\recovery\\session-1792249578522788300-45820.gz",
+        "uncheckpointed_generation": 3
+      },
+      "restore": {
+        "full_editable_state_equal": true,
+        "native_app_update": true,
+        "original_and_snapshot_unchanged": true,
+        "passed": true,
+        "restore_copy_egui_hit_test": true,
+        "scope": "Native diagnostic wrapper, normal recovery discovery/timer/UI/load/save; synthetic egui pointer, not OS/tablet input or power-loss certification",
+        "separate_copy_save_reopen": true,
+        "startup_discovery": true
+      },
+      "original_sha256": "1F5A1268EC6AC8BF67D0C29BF723E42F7662B2B6631C43B824666704E1522509",
+      "snapshot_sha256": "E7EF89F3F5CCB88DAA4659EFB450836CFA2D51563D44E8344D8B6C15356D4D8A"
+    },
+    {
+      "version": 5,
+      "producer": {
+        "expected_restore_generation": 2,
+        "generations_verified": 2,
+        "native_app_update": true,
+        "normal_15_second_timer": true,
+        "pid": 23232,
+        "producer_uses_normal_idle_repaints": true,
+        "seconds_from_edit_to_completion": [
+          16.7324035,
+          15.7914187
+        ],
+        "snapshot": "\\\\?\\<repo>\\target\\qa\\native-artwork-recovery-20261017\\v5\\recovery\\session-1792249612749073700-23232.gz",
+        "uncheckpointed_generation": 3
+      },
+      "restore": {
+        "full_editable_state_equal": true,
+        "native_app_update": true,
+        "original_and_snapshot_unchanged": true,
+        "passed": true,
+        "restore_copy_egui_hit_test": true,
+        "scope": "Native diagnostic wrapper, normal recovery discovery/timer/UI/load/save; synthetic egui pointer, not OS/tablet input or power-loss certification",
+        "separate_copy_save_reopen": true,
+        "startup_discovery": true
+      },
+      "original_sha256": "7CFA797F80B70E20DF031D766F89035476690B3072D1A1307790FF9AE5017A28",
+      "snapshot_sha256": "84452DA75EACB9970B974C86100CEAD4D473CAA6DCB1073867D22AB164D3ADFE"
+    }
+  ],
+  "started_utc": "2026-10-17T15:06:17.690214+00:00",
+  "phase": "complete",
+  "pid": null,
+  "terminated_producer_pid": 23232,
+  "completed_utc": "2026-10-17T15:07:26.806821+00:00"
+}

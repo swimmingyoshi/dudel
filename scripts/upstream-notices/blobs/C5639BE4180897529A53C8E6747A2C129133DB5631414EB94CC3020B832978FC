@@ -1,0 +1,8 @@
+# block 0.1.6
+
+Authors listed by the matching upstream release: Steven Sheldon.
+
+That release declares `MIT` in Cargo.toml but provides no separate license file. The original source and manifest are preserved; LICENSE_REFERENCE is the canonical SPDX text, not an invented upstream copyright notice. Source lib.rs was byte-compared against the fixed release revision.
+
+Upstream: https://raw.githubusercontent.com/SSheldon/rust-block/47178790cfc9d4a8b092051d8b413b78bd31254a/
+License reference: https://spdx.org/licenses/MIT.txt

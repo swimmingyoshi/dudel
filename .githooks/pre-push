@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Refuse a push while the Rust sources are unformatted: both CI workflows
+# start with `cargo fmt --check` and fail within a minute otherwise.
+# Also refuse personal paths or private research in tracked files; locally this
+# includes the owner's deny-list from ../dudel-research (see check_public_tree.py).
+# Checks the working tree, so commit the fixes before pushing.
+# Enable once per clone: git config core.hooksPath .githooks
+# Skip for one push: git push --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+if ! unformatted="$(cargo fmt --all -- --check --files-with-diff 2>&1)"; then
+    echo 'Push refused: these files need `cargo fmt --all`, then a commit:' >&2
+    echo "$unformatted" | sed 's/^/  /' >&2
+    exit 1
+fi
+python="$(command -v python || command -v python3)"
+if ! leaks="$("$python" scripts/check_public_tree.py 2>&1)"; then
+    echo 'Push refused: tracked files contain personal paths or private research:' >&2
+    echo "$leaks" | sed 's/^/  /' >&2
+    exit 1
+fi

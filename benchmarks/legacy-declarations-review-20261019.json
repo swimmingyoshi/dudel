@@ -1,0 +1,132 @@
+{
+  "candidate": "dudel-0.1.0-candidate-20261019-111249-426",
+  "reviews": [
+    {
+      "package": "block-0.1.6",
+      "declared_license": "MIT",
+      "authors": [
+        "Steven Sheldon"
+      ],
+      "upstream_revision": "47178790cfc9d4a8b092051d8b413b78bd31254a",
+      "upstream_manifest_url": "https://raw.githubusercontent.com/SSheldon/rust-block/47178790cfc9d4a8b092051d8b413b78bd31254a/Cargo.toml",
+      "upstream_manifest_sha256": "24DF2F33B48C9E756A4F864F882C1AB07A159B6C2B790F45AF2E8162499B6719",
+      "upstream_lib_sha256": "EB31678ADF63B53109D9B94EBA23699FD5F9EBFDB950F6E1A57AD51BB6A146FA",
+      "original_crate_files_verified": 4,
+      "notices": [
+        {
+          "path": "third-party-licenses/block-0.1.6/UPSTREAM_Cargo.toml",
+          "sha256": "24DF2F33B48C9E756A4F864F882C1AB07A159B6C2B790F45AF2E8162499B6719",
+          "url": "https://raw.githubusercontent.com/SSheldon/rust-block/47178790cfc9d4a8b092051d8b413b78bd31254a/Cargo.toml"
+        },
+        {
+          "path": "third-party-licenses/block-0.1.6/LICENSE_REFERENCE_MIT.txt",
+          "sha256": "C3B1B78BC8BD3EA13AA4BC9778442D16560270AFA235006D816E5E88CEF24DB4",
+          "url": "https://spdx.org/licenses/MIT.txt"
+        },
+        {
+          "path": "third-party-licenses/block-0.1.6/ATTRIBUTION.md",
+          "sha256": "C5639BE4180897529A53C8E6747A2C129133DB5631414EB94CC3020B832978FC",
+          "url": "https://raw.githubusercontent.com/SSheldon/rust-block/47178790cfc9d4a8b092051d8b413b78bd31254a/"
+        }
+      ],
+      "standalone_upstream_license_file_supplied": false,
+      "disposition": "Accepted for this versioned notice bundle using the explicit upstream manifest declaration, exact original source and preserved author attribution. Canonical terms remain clearly labelled references; no copyright year or upstream notice is invented."
+    },
+    {
+      "package": "dispatch-0.2.0",
+      "declared_license": "MIT",
+      "authors": [
+        "Steven Sheldon"
+      ],
+      "upstream_revision": "82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748",
+      "upstream_manifest_url": "https://raw.githubusercontent.com/SSheldon/rust-dispatch/82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748/Cargo.toml",
+      "upstream_manifest_sha256": "05C60B829931EF7F1F130735843C11F5CF9CC69546ECA5FC941D014781C68E31",
+      "upstream_lib_sha256": "1F75D8F3BB8DBC57449C8727C68D7C75E6A5CF20347617C96AB6A608F186612B",
+      "original_crate_files_verified": 12,
+      "notices": [
+        {
+          "path": "third-party-licenses/dispatch-0.2.0/UPSTREAM_Cargo.toml",
+          "sha256": "05C60B829931EF7F1F130735843C11F5CF9CC69546ECA5FC941D014781C68E31",
+          "url": "https://raw.githubusercontent.com/SSheldon/rust-dispatch/82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748/Cargo.toml"
+        },
+        {
+          "path": "third-party-licenses/dispatch-0.2.0/LICENSE_REFERENCE_MIT.txt",
+          "sha256": "C3B1B78BC8BD3EA13AA4BC9778442D16560270AFA235006D816E5E88CEF24DB4",
+          "url": "https://spdx.org/licenses/MIT.txt"
+        },
+        {
+          "path": "third-party-licenses/dispatch-0.2.0/ATTRIBUTION.md",
+          "sha256": "86F0A7EC89C42C7C93A64011237E0A10D47FDA7A1188FEC24ABCB1D5635365C8",
+          "url": "https://raw.githubusercontent.com/SSheldon/rust-dispatch/82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748/"
+        }
+      ],
+      "standalone_upstream_license_file_supplied": false,
+      "disposition": "Accepted for this versioned notice bundle using the explicit upstream manifest declaration, exact original source and preserved author attribution. Canonical terms remain clearly labelled references; no copyright year or upstream notice is invented."
+    },
+    {
+      "package": "malloc_buf-0.0.6",
+      "declared_license": "MIT",
+      "authors": [
+        "Steven Sheldon"
+      ],
+      "upstream_revision": "a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9",
+      "upstream_manifest_url": "https://raw.githubusercontent.com/SSheldon/malloc_buf/a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9/Cargo.toml",
+      "upstream_manifest_sha256": "1C70C91688D9850272E43CEE9B189FFE3FE667151D7CAF576A36A720F8B28194",
+      "upstream_lib_sha256": "1130DACBE045A20C1EA1E65E00976F18EB7513DA492B07D538E7B1B5C64B8842",
+      "original_crate_files_verified": 2,
+      "notices": [
+        {
+          "path": "third-party-licenses/malloc_buf-0.0.6/UPSTREAM_Cargo.toml",
+          "sha256": "1C70C91688D9850272E43CEE9B189FFE3FE667151D7CAF576A36A720F8B28194",
+          "url": "https://raw.githubusercontent.com/SSheldon/malloc_buf/a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9/Cargo.toml"
+        },
+        {
+          "path": "third-party-licenses/malloc_buf-0.0.6/LICENSE_REFERENCE_MIT.txt",
+          "sha256": "C3B1B78BC8BD3EA13AA4BC9778442D16560270AFA235006D816E5E88CEF24DB4",
+          "url": "https://spdx.org/licenses/MIT.txt"
+        },
+        {
+          "path": "third-party-licenses/malloc_buf-0.0.6/ATTRIBUTION.md",
+          "sha256": "5B5B3906DAE3C0F2ACBF4AE788905FEE9A3DFB29D5D3F6ECD6A87E6CA4073C6D",
+          "url": "https://raw.githubusercontent.com/SSheldon/malloc_buf/a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9/"
+        }
+      ],
+      "standalone_upstream_license_file_supplied": false,
+      "disposition": "Accepted for this versioned notice bundle using the explicit upstream manifest declaration, exact original source and preserved author attribution. Canonical terms remain clearly labelled references; no copyright year or upstream notice is invented."
+    },
+    {
+      "package": "hexf-parse-0.2.1",
+      "declared_license": "CC0-1.0",
+      "authors": [
+        "Kang Seonghoon <public+rust@mearie.org>"
+      ],
+      "upstream_revision": "4225763d744183d720f575ae96d04161b4d08ea0",
+      "upstream_manifest_url": "https://raw.githubusercontent.com/lifthrasiir/hexf/4225763d744183d720f575ae96d04161b4d08ea0/parse/Cargo.toml",
+      "upstream_manifest_sha256": "4A56DBDBC12054FD33B7A2634A45CBBE6FE12F5E6F4081002CBFA527F7220C70",
+      "upstream_lib_sha256": "511B164642EFE470E88323B8AFE0274E797805FF2441F0173B5B005AD4B4D1B1",
+      "original_crate_files_verified": 4,
+      "notices": [
+        {
+          "path": "third-party-licenses/hexf-parse-0.2.1/UPSTREAM_Cargo.toml",
+          "sha256": "4A56DBDBC12054FD33B7A2634A45CBBE6FE12F5E6F4081002CBFA527F7220C70",
+          "url": "https://raw.githubusercontent.com/lifthrasiir/hexf/4225763d744183d720f575ae96d04161b4d08ea0/parse/Cargo.toml"
+        },
+        {
+          "path": "third-party-licenses/hexf-parse-0.2.1/LICENSE_REFERENCE_CC0-1.0.txt",
+          "sha256": "E0456CBAB4F7B5E7203E678FAFF37EADBDFEF02E822DB3B7A52A1DD9D3DC514A",
+          "url": "https://spdx.org/licenses/CC0-1.0.txt"
+        },
+        {
+          "path": "third-party-licenses/hexf-parse-0.2.1/ATTRIBUTION.md",
+          "sha256": "268600636426144631B14CAE4BDEBE2F08B2CBC1E58FA19E8EFB47BB2647FE44",
+          "url": "https://raw.githubusercontent.com/lifthrasiir/hexf/4225763d744183d720f575ae96d04161b4d08ea0/parse/"
+        }
+      ],
+      "standalone_upstream_license_file_supplied": false,
+      "disposition": "Accepted for this versioned notice bundle using the explicit upstream manifest declaration, exact original source and preserved author attribution. Canonical terms remain clearly labelled references; no copyright year or upstream notice is invented."
+    }
+  ],
+  "cargo_license_field_reference": "https://doc.rust-lang.org/cargo/reference/manifest.html#the-license-and-license-file-fields",
+  "scope": "Four pinned manifest-only declaration review items resolved for this bundle. Does not replace full native-subcomponent/dependency compatibility or public-distribution acceptance.",
+  "release_accepted": false
+}

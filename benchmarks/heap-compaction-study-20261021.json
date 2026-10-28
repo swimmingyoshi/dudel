@@ -1,0 +1,306 @@
+{
+  "date": "2026-10-21",
+  "scope": "Packaged unattended DX12 study (RunPerformanceStudy.ps1, Full) on the reference PC: Ryzen 5 3600X, 40 GiB, RTX 3060, Windows 11 26200. Memory/job-peak/continuity subtargets only; release_accepted remains false and G1-G4 stay open. Callback continuity is evaluated only for duration-controlled sessions (null otherwise).",
+  "change": "Process heap is compacted once after a document replace or tab close settles (HeapCompact); see research/MAX32_HEAP_RETENTION_2026-10-20.md.",
+  "candidate": {
+    "name": "dudel-0.1.0-candidate-20261021-190309-093",
+    "build_revision": "2227f4689f5cf4136179840213519ec4f8f1d48e",
+    "working_tree_entries": 26,
+    "features": "default (profiling disabled)",
+    "executable_sha256": "7C3090D3456F3B44C5C0AB241E2C60A330F259D97582EA06E41D46CB92F659D7"
+  },
+  "study": {
+    "folder": "artifacts/releases/dudel-0.1.0-candidate-20261021-190309-093/diagnostics/target/qa/study-20261021-223831-433",
+    "STUDY": {
+      "status": "passed",
+      "mode": "Full",
+      "executable_sha256": "7C3090D3456F3B44C5C0AB241E2C60A330F259D97582EA06E41D46CB92F659D7",
+      "started_utc": "2026-10-21T22:38:33.3149515Z",
+      "release_accepted": false,
+      "stage": "maximum32-two-hours",
+      "ended_utc": "2026-10-22T01:31:51.2899618Z"
+    },
+    "sessions": {
+      "maximum32-two-hours": {
+        "status": "completed",
+        "layers": 32,
+        "density": "noise",
+        "minimum_seconds": 7200,
+        "runs": [
+          {
+            "run": 1,
+            "rounds": 59,
+            "elapsed_seconds": 7246.5,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 4.8,
+                "private_slope_mib_per_round": 0.073,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 1.88,
+                "private_slope_mib_per_round": -0.009,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 7.82,
+                "private_slope_mib_per_round": 0.103,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": 86.4,
+            "estimated_suspend_seconds": 0.002
+          }
+        ]
+      },
+      "standard20": {
+        "status": "completed",
+        "layers": 20,
+        "density": "sparse",
+        "minimum_seconds": 0,
+        "runs": [
+          {
+            "run": 1,
+            "rounds": 30,
+            "elapsed_seconds": 1041.0,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 2.13,
+                "private_slope_mib_per_round": 0.04,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 5.61,
+                "private_slope_mib_per_round": 0.073,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 3.8,
+                "private_slope_mib_per_round": 0.087,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0.001
+          },
+          {
+            "run": 2,
+            "rounds": 30,
+            "elapsed_seconds": 1041.8,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 1.65,
+                "private_slope_mib_per_round": 0.09,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": -0.09,
+                "private_slope_mib_per_round": -0.022,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 4.37,
+                "private_slope_mib_per_round": 0.111,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0.009
+          },
+          {
+            "run": 3,
+            "rounds": 30,
+            "elapsed_seconds": 1044.4,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": -1.35,
+                "private_slope_mib_per_round": 0.031,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 4.76,
+                "private_slope_mib_per_round": -0.053,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 3.77,
+                "private_slope_mib_per_round": 0.081,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0
+          }
+        ]
+      }
+    }
+  },
+  "previous_candidate_for_comparison": {
+    "name": "dudel-0.1.0-candidate-20261019-111249-426",
+    "executable_sha256": "8D2C768E9179B61A9D05FD884E791C763465C6A3C8FB46E763399670ABE9279C",
+    "STUDY": {
+      "status": "stopped",
+      "mode": "Full",
+      "executable_sha256": "8D2C768E9179B61A9D05FD884E791C763465C6A3C8FB46E763399670ABE9279C",
+      "started_utc": "2026-10-20T17:35:15.7472873Z",
+      "release_accepted": false,
+      "stage": "maximum32-two-hours",
+      "error": "maximum32-two-hours stopped (1). Keep the reports; it will not restart automatically.",
+      "ended_utc": "2026-10-20T20:28:19.4821178Z"
+    },
+    "sessions": {
+      "maximum32-two-hours": {
+        "status": "memory-targets-not-met",
+        "layers": 32,
+        "density": "noise",
+        "minimum_seconds": 7200,
+        "runs": [
+          {
+            "run": 1,
+            "rounds": 62,
+            "elapsed_seconds": 7256.0,
+            "memory_targets_pass": false,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 3.95,
+                "private_slope_mib_per_round": 7.461,
+                "private_target_pass": false,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 7.2,
+                "private_slope_mib_per_round": 0.107,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 54.03,
+                "private_slope_mib_per_round": 0.842,
+                "private_target_pass": false,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": 64.8,
+            "estimated_suspend_seconds": 0.003
+          }
+        ]
+      },
+      "standard20": {
+        "status": "completed",
+        "layers": 20,
+        "density": "sparse",
+        "minimum_seconds": 0,
+        "runs": [
+          {
+            "run": 1,
+            "rounds": 30,
+            "elapsed_seconds": 1014.7,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 8.67,
+                "private_slope_mib_per_round": 0.085,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 3.84,
+                "private_slope_mib_per_round": 0.214,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 3.29,
+                "private_slope_mib_per_round": 0.138,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0.013
+          },
+          {
+            "run": 2,
+            "rounds": 30,
+            "elapsed_seconds": 1043.4,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 6.54,
+                "private_slope_mib_per_round": 0.159,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 8.55,
+                "private_slope_mib_per_round": 0.237,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 2.8,
+                "private_slope_mib_per_round": 0.094,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0.006
+          },
+          {
+            "run": 3,
+            "rounds": 30,
+            "elapsed_seconds": 1045.6,
+            "memory_targets_pass": true,
+            "job_peak_targets_pass": true,
+            "stages": {
+              "initial-idle": {
+                "private_net_mib": 4.39,
+                "private_slope_mib_per_round": 0.129,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "history-released-before-save": {
+                "private_net_mib": 1.79,
+                "private_slope_mib_per_round": -0.12,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              },
+              "final-idle-history-released": {
+                "private_net_mib": 3.45,
+                "private_slope_mib_per_round": 0.147,
+                "private_target_pass": true,
+                "tracked_ownership_target_pass": true
+              }
+            },
+            "maximum_unexplained_callback_ms": null,
+            "estimated_suspend_seconds": 0
+          }
+        ]
+      }
+    }
+  }
+}

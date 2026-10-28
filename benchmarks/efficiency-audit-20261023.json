@@ -1,0 +1,4778 @@
+{
+  "date": "2026-10-23",
+  "baseline_commit": "a3170d045df6bdb43288aaeb5a2f4bd464a4e4b7",
+  "scope": "Uncommitted working-tree efficiency roadmap after the direct-upload pass. Dense 4K viewport payload and exact pixel checks, optional-job scheduling, cache lookup and asset fingerprint changes, latency diagnostics and contextual brush editing. CPU and texture payload evidence, not physical pen latency, GPU commitment, total RSS or a fixed global memory cap.",
+  "executables": {
+    "before": {
+      "path": "artifacts/efficiency/before.exe",
+      "sha256": "282f3488245ee0c9afe4ecad54dde6bae65a9f0ba0de54ef56b2d29e4ce1ebf4"
+    },
+    "after": {
+      "path": "target/release/dudel.exe",
+      "sha256": "a9990001dbeba9fa2d5c913d350746b3de9f602efad3bb7df2fa71f02ee4e265"
+    }
+  },
+  "source_sha256": {
+    "src/adjustments.rs": "49b03fb3e57f02df8f2c4bbb3158da624020a7ff9b2d7cccd2fee3a1ccfc7881",
+    "src/affine.rs": "bfcf0394f061de88c8919fe9e6683cc643e0ebe1a1e49bf4239f459fcf10dbc2",
+    "src/affine_benchmark.rs": "2b3e2e704264813afe876b80ce7e732c472ced477550d86ff4d54231a127940b",
+    "src/affine_preview.rs": "d2384de30b7b3e8c6f521ca47d5b6cc69f18a60eb8a0e41fea065a8f10a83846",
+    "src/allocation_profile.rs": "0b6ca0cec1c71bc0d99fb21a65f002d20ced8e7a66d2990c7ae29afdf1aa8576",
+    "src/allocation_trace.rs": "25fe772b5254b9648056582cd9edeac947146bd4187c0169af9269c76a546bd0",
+    "src/benchmark.rs": "76b1a2672c91137fddc7be650deb674e0062038955e2a9121fa6eee68736423d",
+    "src/binary_project.rs": "48e4ea3c08fe811321de333b5337b190f4aa382d3491c683272d6e685b633b81",
+    "src/blend.rs": "98eaf650753eaa54244449c6cf49cee0c5bad616fda5dd5b493bec3e0e001444",
+    "src/brush.rs": "a2c30cf0459d0da4a234ba4de4fdc33cf19a3658f7e0a1ed61d42ae0413a095d",
+    "src/brush_edge.rs": "dfd5212bd8c26a4ab6b6e15b23c0fb0a2cd08ed85b2e45793ff6eecd91cd3780",
+    "src/brush_library.rs": "2769bc0330723266e78a4203d8b7f2ee4d3584c10f6dcba19c60bf0fda2cd01c",
+    "src/brush_pack.rs": "ee584546e5ad8c11bb969f1b0c71fb159eccbefe3b687bbfb6f0388cad1d1667",
+    "src/brush_previews.rs": "5bcc120507b0bb59de8a08599201ae4ada0f9f49d4e70b4a54c9bf11e2c19155",
+    "src/brush_studio.rs": "a0dd5f8f8ec8d941f4bc2f12443c0bd7581218f8d48a0d3b085319f27f88b235",
+    "src/canvas.rs": "8fd11d7d928354eeec63f4fede15c6ffc738c6d8fe000256b2541d8def10231b",
+    "src/canvas_size.rs": "582c85ac08dca230e76a64a5e30ad69cf7bade517f32048a76464e02b57c52d4",
+    "src/canvas_textures.rs": "09724c2019273769f3d00336f68986f15d0a7ec9cf24d336000b05b905c75d5b",
+    "src/capture.rs": "423823736f0fafa51758e1ccf837e3b4c53523279df3d3d20d05dbe2d6da4507",
+    "src/clip_attributes.rs": "4d0893e695c189ab9148db2592c9278e570ca43eaab038d3b2d1b61c6f07fe61",
+    "src/clip_blocks.rs": "fd9b8f536d3aa2b538417079e6361e1b450296811561f651949993b08fa003be",
+    "src/clip_container.rs": "d31fb6bb98dabac346784d8543e7452af7804d10552da0481d22dd8d9bc082a7",
+    "src/clip_document.rs": "8061d11df812df9c93ac5131f8b8f2c35c0b891dd133ff20f6fcd9490fbafc4e",
+    "src/clip_metadata.rs": "65d0b4e2497c19cec438a8faad8c4095fc03b8ab541f40c40eeb699c6c8b27a8",
+    "src/clip_preview.rs": "14283aa4c3f1007cfaae135b4bca8acb0f67f3cb3ec482c70cedb828b9033cf2",
+    "src/clip_raster.rs": "c2510b2c350103bfa50b39a558a703d4b767a40aa84aa1fcf7873ba95bac5b80",
+    "src/clipboard.rs": "81d67ed4053f12891d0c7547b1e92cf81acd0b5ad6e9b6c3639a6506f67a13fd",
+    "src/clipboard_files.rs": "4649aa89e726570794c97985e858de5c510d5adb15a0b45620a24dd263ae2931",
+    "src/clipboard_shortcuts.rs": "ff29015353651aba8a914e0786eeccb60b449dc193d6c9cc522f21e9cda2671f",
+    "src/color_wheel.rs": "2433993f7002af011552bc06a768c2cd372ce5a415b5caabae16dc3dbcdee4e6",
+    "src/composite_cursor.rs": "d94c6a5bbe4ba152686ae9bdd46baa43f0ce1f5a28349be22a68311f479088e1",
+    "src/dab_paint.rs": "80f35f05ce0edec9398b36047d5968a5881dc14dd65a7247b605e17cfb08ea54",
+    "src/dialogs.rs": "2a1e544c878c9c750c1baf84897b2e4f2e9b3372f4990ad94fc5296f3c0aff7d",
+    "src/display_settings.rs": "2fe95981b70000bd814d084b41968e54611675e38d0dad169f9fade6721a2137",
+    "src/display_workers.rs": "d5187152273e68835c2b92add4027a809600bcc5d4a6bdfba0b161697f919ad2",
+    "src/document.rs": "250f079aa4e4b7a2408887084f82118e092b71773713e0b7c20fa60a2ba595ac",
+    "src/document_actions.rs": "b42baa24e22dd3cf56f966b4d8d9a9ecdcea1f29930804853e55f14005f58c55",
+    "src/document_edits.rs": "9a03b736ec584336e7f8485e9c9c5e9f41c727d23c0fcd25cf123e9065d3493f",
+    "src/dynamics.rs": "37daba1731c6c194bde27d1fb57bafbbf3cbacd3c3e96dfd973492c284898707",
+    "src/export_jobs.rs": "5fb1289063c4fa3276892bb8c2f91309d30179fa1d16bda47d11472e9f0026e0",
+    "src/extensions.rs": "e12be5f628a1d5aad9545b1fed45c7c84fd9df8c88ecec98edfeca54d3a50e78",
+    "src/fill.rs": "94343d2eb4e5ca0614964bab589f7abd44f71c6b334b72cdf7e99ca00a7a5505",
+    "src/folders.rs": "fd50a386bc903bcd750f38442a08e5d8dc0a4f20af367e40a91d6842acdce0e7",
+    "src/gpu_profile.rs": "4eb608c6e67e3c62ba65b3a7c3be89167307d99cd185b4b1a319dd17d9f74483",
+    "src/guides.rs": "d1cd0b8e1ad7ee7dd18738720f16283f30eb9a6375d5839546acadf0f6a3ab41",
+    "src/history_pixels.rs": "d3cfd1ab4da1b9af505a4486b2088b46c0c1fcdcca297965e87e37af06efa4f8",
+    "src/history_settlement.rs": "c00a1be5367fce786efca6ce1328210b267e611645844fccf53cc24361f17fe6",
+    "src/icons.rs": "c81ad183a572a2259955793ce14f31f0428c4759e8b54cdbcf1aed80ab26f34b",
+    "src/image_paste.rs": "cbd09a70a5607d51d7ff023afd9de1435939c4ba80ee45a5ce7ef52e0ed50b85",
+    "src/indexed_commit.rs": "f42cbe0e5ca8adff92625669f6edccca07866549bf4d1d9a5d5f480337375f88",
+    "src/indexed_document.rs": "60d7e5cb4579ee1a29f7dd31a04b2da0516412faeabc4d666f3660e0593b4435",
+    "src/indexed_lifecycle.rs": "e0498680e486552998534abf9f6390d7458ab8c150fb8ba6dec25bc526e666a6",
+    "src/indexed_mask.rs": "b3a4adeb891d7bb474a8200321cea153c49d3cd9a7d7b92fe0653b2354fc2028",
+    "src/indexed_session.rs": "18f28e558513adbbb003283d49a15ed39c72b2ed4f69506e652e79d97fd1c930",
+    "src/indexed_thumbnail.rs": "6bdac6561962b11afb0a787c9ec7811dd8e549389cb93ac14b4ee49972863603",
+    "src/indexed_tile.rs": "bb9c6a24f58ecb71d5473c33c73740fff543099333d99296df221e6879c3144a",
+    "src/input.rs": "88302f2eebb7b6d418061c6210ab29e91c659e0f85d385ceb0da58a9d8a3f99a",
+    "src/jobs.rs": "21021e49fb60749f65ef42e31f5c3f2e9915efe50b75cb7f95f2fb2320104ec9",
+    "src/lasso_paint.rs": "fb5e18bd7bbe79aa79afcb1af54b5dd1e24d9fe16233cf4549487830f877b104",
+    "src/layer_guides.rs": "f95030d5603de49be9ad3c2b5ccb282f660571a8cbe3e3ed0811c292565ea8e0",
+    "src/layer_import.rs": "532d0ae4dedda14e2bc00c7f8c2ecd96f51661691cb9024bef17739ed68f9a9f",
+    "src/layer_mask.rs": "4abd8195e79b73653d281b9de88dcfe6b04b0f421d128d16db5a7542b40d4c93",
+    "src/layer_mask_document_tests.rs": "3bd067798b64514a99968b3900007cdc2e6b128768a94b2eb2b7fc73a3aa9c8f",
+    "src/layer_mask_edit_tests.rs": "f68c5d6a0ad7f6648020be41ecc8a911a65ded917e8dd69b1f3b445f444053d7",
+    "src/layer_mask_edits.rs": "7e9bb6b4c3919da546521140854d53ebeec3f0a11c4c5e5c118c579c386fd506",
+    "src/layer_mask_geometry_tests.rs": "641f9dcadef2fd413b209031a206d809182136f7e13f25cef8eb7c3d5541bfe1",
+    "src/layer_opacity_tests.rs": "34984525ad1d0353b9d8c163af660c887f04e5880f88108446d41204cd373077",
+    "src/layers_panel.rs": "238efa2cd3edce13eb131e25709b55f3b4ee40be30dcafeb9cf9333fe7fdc48e",
+    "src/load_jobs.rs": "a3ab0069198cc186530004ad2a85f370bf90c504dbb1b85ccd099083b0f2ad33",
+    "src/locations.rs": "0f19876d470fc177f345d0b0feb80a8a5affff0807ab9d36632de145207fb7aa",
+    "src/main.rs": "bcba3b2570ef5f592b18142b02267b896b50b7ae509dfed7eef3d0b29cf67b3b",
+    "src/mask_clipboard.rs": "ec02c2b6af9bc6a20505ae66824598baa1320d4cdd4e34d088fbbb80ec832427",
+    "src/mask_clipboard_tests.rs": "9beac7681d7718ad892a158d0e9df979fddf9286ba162afe7abbbdcf2bae14bd",
+    "src/mask_controller.rs": "6050375fc2b38ac51d2643d4085b137c610e127639accacdd9cd2e3945e4135d",
+    "src/mask_feedback_tests.rs": "f67bfcf16d1eb2bb9d46539cfb1dfac86f18da6e8ceb52fd8c010c2dd09e089a",
+    "src/mask_fill.rs": "ad8248a369f637968f0375bb5bfdb716e86644d72e6f0f2080da640974868cf1",
+    "src/mask_fill_tests.rs": "1c7a5f0fa0303cb33e9712683fac7847bf6ed6c586c6ad21b3d43f4c4d986517",
+    "src/mask_stroke_tests.rs": "fb00d921f9f9a3928338d32a6a8dca048950c2eab1970d42716c6808fb71d587",
+    "src/mask_transform.rs": "6011b0c7b3285ceed9cb07dc05b66738e1f02a66497646bd6561334149d05e9a",
+    "src/mask_transform_benchmark.rs": "1007c9f273a2ff9b2b22709a63532ef72ff28961fe80fa93a14a256175d89aea",
+    "src/mask_transform_tests.rs": "41611450158a3d39a56482f8a30f5b4007282a8568e07bab37f0f3a2fbf0c382",
+    "src/move_preview.rs": "8889a52c3f042eb5f20e4025ddfe85f8fc859dff96cec0c10a73ea2acacd8542",
+    "src/native_frame_log.rs": "f95ba9723d804c322441ae60b9afbf8bd0f15c86907d69ac633a135efccefa72",
+    "src/native_pen.rs": "a434b17ad67990abd6d3834217004405b1bf742745674ace75b8310fc8e54b0b",
+    "src/native_session.rs": "a95e910dd928827c8d1f05ac6be2e2c74523e2ea2705a94c6138b8cbb790b048",
+    "src/navigator.rs": "e9e1d9de82186803f8442a7a5f91c8da1c1805c754b30f0a72559740b7d7b891",
+    "src/new_canvas.rs": "35398655f65c1ae8ddb96018945d57a5447d124dadf2ce91ebde7c3cde2b7113",
+    "src/paint_target.rs": "a90a7c2d39f97d2faebacace8f66584beb2653ec72e55b3cffd68dea69e2fcb1",
+    "src/palette.rs": "1b7654370eb42b49df4399708a0ab1725d77436a628c216fb0247a9bc3070e8e",
+    "src/parallel.rs": "671a7f9a9f1f41e1ffc804e30d919e8fb957a57feff04980bc2e8b947346b5a4",
+    "src/pending_layers.rs": "19422d0e76681a0ee852c185be00b0df6bd13e98b16185b1987cb379326a9816",
+    "src/performance.rs": "47fefb159a74efb3130f63fe1d7b6a3701157cd760d5eee38ca40eb46ec498b4",
+    "src/pixels.rs": "90b15b971c3e78f4b7bc189498171bf149e51021985e499c1ffba4fb772dbf13",
+    "src/plugins.rs": "fc55a191b8acb04fe2ad3fb694aa4335e80414e1a15ee3e44591a5718b0248f8",
+    "src/preference_recovery.rs": "2ab632a090cef4c664a1239760966bfef6067d1c2bc4da90da1a9bbaac6d14f8",
+    "src/preferences.rs": "2083285cd258de5400f1d1a02e977c8ca596018696f3cafc467b5baf18e74e3f",
+    "src/prefix_cache.rs": "51c3cd036dadb464e0613ef5aabf71bd62f75539c147a723874bb2f3cdbd5ea0",
+    "src/pressure_editor.rs": "6e6b9219046012e764df13bae53e2ba5524deb3f89b9125fce3a0666bf54061a",
+    "src/preview.rs": "a81f9c9287170b89c3d5fb5c6fa0463595962efe5297af27dd607cbcd4cc1c7a",
+    "src/preview_window.rs": "04f2dc90caad25b5aa75b2d10705d4d8456cd31142ffc0e6230eb7aa89d2b4f2",
+    "src/project_package.rs": "6d4e4644404743a095a9dd5101f5790191f8ab8524da666db6cd19ef714bd5f4",
+    "src/recovery.rs": "80ef18b8ada5b1ca6163de87cae18caf13078d97681d94455564608a624e676e",
+    "src/recovery_probe.rs": "b70baee7a4bc12d2e54228915ffb6c4ef28ea2746186984ce84a50b0b26c9570",
+    "src/reference_layers.rs": "16079afebf4e34e3a60df619a1d3b58b6fc715ed16e127e9091ee0da746f1a74",
+    "src/reference_stack.rs": "f76caccf57027e0a7e0b01846e54f35f8beb82226b6ed2c183b8682e092979ec",
+    "src/references.rs": "e57f5dcad56912916dfa90de88ecaddb5cb0fbdbb2557ed6e70c588af3b2b7d3",
+    "src/region_census.rs": "6f3e05f1e072ca12782ec33ac59b77a0b4a4d00e94b18269633a5851e0ee5ce4",
+    "src/render_controller.rs": "4ca95f17606eef0f4712af16dc941a5ec5d7822b5c9007cf943150a7491c75ca",
+    "src/render_queue.rs": "d803012a2f42ef3d5bae427b237001535bcd567cf3cc161dad7cc8b07056fb6e",
+    "src/render_region.rs": "53be7c81c38d10b582470eebd4b2e3c9d7a784dff1e3f9f205ba88d980cc5cea",
+    "src/replay.rs": "2367b714d60e19234f71f0556687ea4bae3085b3c7f5bf2413a91b7a2a05de0b",
+    "src/rulers.rs": "c76d65490daed805a2df6677c5ab6f3be451965bd8fd5c777d27db3913bfd037",
+    "src/save_jobs.rs": "6f30509f9a199278ff713237a9e1a85fa9d088087da029b9d56b847761ebf77b",
+    "src/selection.rs": "7475053f877d1bf68bd55591481bed76c4dafe7ebda22c1b8dda355464c21ca4",
+    "src/selection_contour.rs": "3dff65b006f293af452c2ca90e938f9b90c39691c8784f6684a3ddfce66b648f",
+    "src/selection_mask.rs": "d28fccaf604c0fcc5eae4d41f5df74ba551b045cdf49eeb6f4319190922aa06c",
+    "src/selection_ui.rs": "bb9a3be828a71c8a0bbc096e5b264cb72aec48e4e3ab5beef664516d327b33e4",
+    "src/settings_store.rs": "b4a7e7a9cfa5a06742572f8813b14e11c73a4b2c82e6a57a8f3fdc003d4b0f12",
+    "src/snapshot_memory.rs": "162ee0e66ebea15ba5d21e0671d14983cf9dce47ab6aa8253039c9f0c4028d01",
+    "src/storage.rs": "565271ed59a5560ecd4da9dfc4af6856f52a5936de40bd2e974eda3940fa4aa2",
+    "src/storage_interrupt_tests.rs": "6aa94398154c5170bc82132c14a525bef2b1197cc56cd4b1732a4c88a773d319",
+    "src/stroke.rs": "5a90bddff1997ff518f3c37f5fdba4686ff2229e7b340c32aeff261331e1fd71",
+    "src/stroke_buffer.rs": "0017d8bf02e738bc7c2a434fd99f390b39c58980c3a3ed697131108ae7945c4c",
+    "src/symmetry.rs": "c37c27ca20626d0a4f48f6b1c96b24ebdbbc16c29e58f5ca7002b4757a9dc62a",
+    "src/tabs.rs": "43282e2a8b02fb72a3cfdf80603e820ec3a863aa4ec245b2d0a4a992c3998df2",
+    "src/tail_replay.rs": "bd9763756bd687c2ed3fe7d6cfe4a7b52c0ad4e1f4a018ef02167af91d9772e5",
+    "src/themes.rs": "1c96a3a39ddae0637b32ed38028ef14991f875ba39c777a7926b1db09b301c41",
+    "src/thumbnails.rs": "b40053611c298926ebcd5dbcf01d4392909981ea3f6c006589b551b77a0d2025",
+    "src/tile_project.rs": "5ae7b96044c54b1c449047afa468337197b8204d832110db0bcecdc704f2ac2f",
+    "src/timelapse.rs": "4d67abcc7ac09aa362659e55ca0eece8aba74cbae11a1c85d55b05b0a244ed58",
+    "src/tip_cursor.rs": "e6667aef2e521ab466f3a2ef856d61f70eae5bfe41decebd284d7a6d2c6dab49",
+    "src/tip_import.rs": "65bb0193b2577bf792ff48191e03b4e329619b65e43fbd1a6d126ccaf1da873a",
+    "src/tool_panel.rs": "96a6a8d1b03b318a263a1a01ca9f15d77202f4dabe5f95c91a01c0a37497fc6e",
+    "src/tool_shift.rs": "ada7dfe5d76cadc5d1b88e8d13536216aea38471e9a23ea45ffaa9ab71150bf3",
+    "src/tools.rs": "8a03af1f7ef5d55ed78c9ff75db9e8bfc3d3b83869abe52d496173e936129aaf",
+    "src/transform.rs": "b97ae564a8bd17bb5cc155d44af6593a3383acd1e5b017e020d7d52e20ba83d1",
+    "src/view.rs": "c8becc871558739f46cd55a16e3e1d8f33edaa0f736d05012e657d75f3601e97",
+    "src/wand.rs": "053c9eaa8d9cb0b396afd1e545d0b5a43a94888e0b4cc0cf70360df0a0774bad",
+    "src/wasm_filters.rs": "69fc404f4b676049ae852212f90ab0960ba808908c5bd6fa28d93345972ccbf7",
+    "src/wayland_pen.rs": "999843e2ec62cae0ec40b25f2df7b942f084728906d211c4cd1678fc469861e1",
+    "src/window_chrome.rs": "083974de30b3e58f2501afbe15bb72df214f00659a1d78f6621a8d2ee2cefdd4",
+    "src/workflow_tests.rs": "b5d8ce71d36eee47f03d820a9d8899bc58b0f500ec0d7b2e0022a66ccb52a3d8",
+    "src/workspace.rs": "1481411463a1e03d85436a6e8f99b0c19d222cf9f190de7fcd8a5fc981156208",
+    "Cargo.toml": "9a10784b208bbbb6b8aa07bd08a811b1b756aeb423ae5939011eb81158fb2761",
+    "Cargo.lock": "a6cc445ca54fc67e308e2d1c7632ff5916f00d13a84b69399dc33a8989df7ff8"
+  },
+  "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "validation": {
+    "full_verify_log": {
+      "path": "artifacts/efficiency/release-verify.log",
+      "sha256": "d1cdb6420c680c38e2a72dff55868329704f96cfbc02f6ea0a6306b8ab866f1c"
+    },
+    "viewport_probe_log": {
+      "path": "artifacts/efficiency/viewport-probe.log",
+      "sha256": "ac6339939d04def5ac38c2d4eb3f97670c515891a478446de9b1bf93bc34cd0f"
+    },
+    "commands": [
+      "./scripts/Verify.ps1 -Mode Full",
+      "cargo test --locked --release --no-run",
+      "cargo test --locked --release benchmark_viewport_residency -- --ignored --test-threads=1",
+      "dudel.exe --benchmark-moving-display <output.json> (three alternating trials per frozen build)",
+      "dudel.exe --benchmark-render-queue artifacts/efficiency/final-render-queue.json",
+      "DUDEL_RENDERER=opengl|dx12 dudel.exe --capture-large-canvas <output.png> 1280 800 1",
+      "DUDEL_RENDERER=opengl|dx12 dudel.exe --capture-large-canvas-detail <output.png> 1280 800 1"
+    ]
+  },
+  "captures": [
+    {
+      "path": "artifacts/efficiency/opengl-large-canvas.png",
+      "sha256": "7a4b15fd8cbc49495fc8b7d47d1e8901009d279626add882b7c34b3c5c66a2ef",
+      "inspection": "Main canvas and navigator inspected at fit and rotated/mirrored 100% detail; no mixed-resolution navigator boundaries."
+    },
+    {
+      "path": "artifacts/efficiency/opengl-large-canvas-detail.png",
+      "sha256": "0213fe05b325d7fd3a4664626245e1e1db7d19e837705197b13a6ad2e021b366",
+      "inspection": "Main canvas and navigator inspected at fit and rotated/mirrored 100% detail; no mixed-resolution navigator boundaries."
+    },
+    {
+      "path": "artifacts/efficiency/dx12-large-canvas.png",
+      "sha256": "a98e778932f8cdf407085d7fcb2cd2f2d75c070b8f880a1d99ae229e73411208",
+      "inspection": "Main canvas and navigator inspected at fit and rotated/mirrored 100% detail; no mixed-resolution navigator boundaries."
+    },
+    {
+      "path": "artifacts/efficiency/dx12-large-canvas-detail.png",
+      "sha256": "481f1d6239bd738255f761f17074efec39d71f1d5775dd33c0cfbc92d77fb9e0",
+      "inspection": "Main canvas and navigator inspected at fit and rotated/mirrored 100% detail; no mixed-resolution navigator boundaries."
+    }
+  ],
+  "viewport_residency": {
+    "canvas": [
+      4096,
+      4096
+    ],
+    "cases": [
+      {
+        "full_detail_tiles": 0,
+        "memory": {
+          "metadata_heap_bytes": 112640,
+          "prefix_heap_bytes": 0,
+          "resident_tiles": 512,
+          "texture_base_rgba_bytes": 6963200,
+          "texture_with_mips_rgba_estimate_bytes": 6963200
+        },
+        "owner_total_ms": 173.6785000000001,
+        "peak_including_previous_generation_rgba_bytes": 6963200,
+        "phase": "fit"
+      },
+      {
+        "full_detail_tiles": 36,
+        "memory": {
+          "metadata_heap_bytes": 112640,
+          "prefix_heap_bytes": 0,
+          "resident_tiles": 512,
+          "texture_base_rgba_bytes": 20787200,
+          "texture_with_mips_rgba_estimate_bytes": 20787200
+        },
+        "owner_total_ms": 16.6008,
+        "peak_including_previous_generation_rgba_bytes": 20944000,
+        "phase": "detail"
+      },
+      {
+        "damage_side": 18,
+        "memory": {
+          "metadata_heap_bytes": 112640,
+          "prefix_heap_bytes": 0,
+          "resident_tiles": 512,
+          "texture_base_rgba_bytes": 20787200,
+          "texture_with_mips_rgba_estimate_bytes": 20787200
+        },
+        "owner_samples_ms": [
+          0.29619999999999996,
+          0.30410000000000004,
+          0.2983,
+          0.24640000000000004,
+          0.27099999999999996,
+          0.2557,
+          0.2342,
+          0.2621,
+          0.23809999999999998,
+          0.2407,
+          0.2341,
+          0.2325,
+          0.23220000000000002,
+          0.3025,
+          0.1946,
+          0.18919999999999998,
+          0.2457,
+          0.2621,
+          0.2757,
+          0.2742,
+          0.2351,
+          0.2252,
+          0.2245,
+          0.1946
+        ],
+        "phase": "visible-dirty-edits",
+        "queued_rgba_bytes": 116304,
+        "updates": 24,
+        "owner_summary": {
+          "count": 24,
+          "total_ms": 5.969,
+          "p50_ms": 0.2432,
+          "p95_ms": 0.3025,
+          "max_ms": 0.30410000000000004
+        }
+      },
+      {
+        "full_detail_tiles": 33,
+        "memory": {
+          "metadata_heap_bytes": 112640,
+          "prefix_heap_bytes": 0,
+          "resident_tiles": 512,
+          "texture_base_rgba_bytes": 19635200,
+          "texture_with_mips_rgba_estimate_bytes": 19635200
+        },
+        "owner_total_ms": 40.5312,
+        "peak_including_previous_generation_rgba_bytes": 35281600,
+        "phase": "pan-rotate-mirror"
+      },
+      {
+        "full_detail_tiles": 0,
+        "memory": {
+          "metadata_heap_bytes": 112640,
+          "prefix_heap_bytes": 0,
+          "resident_tiles": 512,
+          "texture_base_rgba_bytes": 6963200,
+          "texture_with_mips_rgba_estimate_bytes": 6963200
+        },
+        "owner_total_ms": 21.631299999999992,
+        "peak_including_previous_generation_rgba_bytes": 20505600,
+        "phase": "zoom-out"
+      }
+    ],
+    "scope": "Dense patterned artwork, production workers, coherent publication checked on every update, sampled tiles compared with independent image-library reduction. Payload only, not physical VRAM; source/compositor memory excluded. Visible resolution follows screen density; no fixed global cap for arbitrarily large/high-DPI viewports. One run, not pen latency.",
+    "uncompressed_full_detail_rgba_bytes": 104857600,
+    "viewport": [
+      800,
+      600
+    ]
+  },
+  "moving_display_scope": "Supported 512/2048 documents, one dense flat/tiled base and sparse extra layers. 24 opaque region changes with one paint and one idle display update per change, followed by an 8 ms sleep. A center marker reports logical input-update age and same-call visibility; not physical tablet latency, UI frame rate or GPU rendering. Initial upload/setup, writes/COW, validation and sleep excluded from owner timings. Production workers are used. Final padded pixels and input-update payload accounting verified. One sequential run per case; no statistical speedup or hard deadline claim.",
+  "moving_display_trials": [
+    {
+      "build": "before",
+      "trial": 1,
+      "path": "artifacts\\efficiency\\before-moving-1.json",
+      "sha256": "9f1833ae893973d57bc4f7bdec6716fcc0fd4a6cd4bb8b332983ea476b47658c",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.08610000000000001,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.5653,
+            "p50_ms": 0.025750000000000002,
+            "p95_ms": 0.066,
+            "max_ms": 0.08610000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.3692,
+            "p50_ms": 0.05965,
+            "p95_ms": 0.0706,
+            "max_ms": 0.08610000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.431,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.7651,
+            "p50_ms": 0.14639999999999997,
+            "p95_ms": 0.3463,
+            "max_ms": 0.431
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 7.5803,
+            "p50_ms": 0.3065,
+            "p95_ms": 0.42010000000000003,
+            "max_ms": 0.431
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.1682,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.4936,
+            "p50_ms": 0.029150000000000002,
+            "p95_ms": 0.1424,
+            "max_ms": 0.1682
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.2687,
+            "p50_ms": 0.07715,
+            "p95_ms": 0.156,
+            "max_ms": 0.1682
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.1511,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.3079,
+            "p50_ms": 0.22345,
+            "p95_ms": 0.8262,
+            "max_ms": 1.1511
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.991999999999999,
+            "p50_ms": 0.4651,
+            "p95_ms": 1.0829,
+            "max_ms": 1.1511
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2953,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 4.4374,
+            "p50_ms": 0.06825,
+            "p95_ms": 0.25520000000000004,
+            "max_ms": 0.2953
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.9941,
+            "p50_ms": 0.1484,
+            "p95_ms": 0.2723,
+            "max_ms": 0.2953
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.4580000000000002,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 15.6919,
+            "p50_ms": 0.24089999999999998,
+            "p95_ms": 0.7802,
+            "max_ms": 1.4580000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.3373,
+            "p50_ms": 0.5525,
+            "p95_ms": 0.9824,
+            "max_ms": 1.4580000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.09770000000000001,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.5030000000000001,
+            "p50_ms": 0.030699999999999998,
+            "p95_ms": 0.07160000000000001,
+            "max_ms": 0.09770000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.2779,
+            "p50_ms": 0.0518,
+            "p95_ms": 0.08349999999999999,
+            "max_ms": 0.09770000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5691,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.7872,
+            "p50_ms": 0.1585,
+            "p95_ms": 0.503,
+            "max_ms": 0.5691
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.5917,
+            "p50_ms": 0.32120000000000004,
+            "p95_ms": 0.5233,
+            "max_ms": 0.5691
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2252,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.6349,
+            "p50_ms": 0.030149999999999996,
+            "p95_ms": 0.1509,
+            "max_ms": 0.2252
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.4133,
+            "p50_ms": 0.08854999999999999,
+            "p95_ms": 0.1631,
+            "max_ms": 0.2252
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.288,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.2666,
+            "p50_ms": 0.2108,
+            "p95_ms": 0.7221000000000001,
+            "max_ms": 1.288
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.9561,
+            "p50_ms": 0.5539,
+            "p95_ms": 0.7263999999999999,
+            "max_ms": 1.288
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2929,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 4.0593,
+            "p50_ms": 0.060649999999999996,
+            "p95_ms": 0.2691,
+            "max_ms": 0.2929
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.6432,
+            "p50_ms": 0.13085,
+            "p95_ms": 0.2791,
+            "max_ms": 0.2929
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.7207999999999999,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 17.2421,
+            "p50_ms": 0.245,
+            "p95_ms": 0.987,
+            "max_ms": 1.7207999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 16.8114,
+            "p50_ms": 0.5539000000000001,
+            "p95_ms": 1.1892,
+            "max_ms": 1.7207999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1005,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.8636,
+            "p50_ms": 0.02655,
+            "p95_ms": 0.0953,
+            "max_ms": 0.1005
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.6367,
+            "p50_ms": 0.06420000000000001,
+            "p95_ms": 0.0954,
+            "max_ms": 0.1005
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.4855,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.4945,
+            "p50_ms": 0.1518,
+            "p95_ms": 0.4351,
+            "max_ms": 0.4855
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.2521,
+            "p50_ms": 0.31955,
+            "p95_ms": 0.484,
+            "max_ms": 0.4855
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.4032,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 5.8647,
+            "p50_ms": 0.0821,
+            "p95_ms": 0.29550000000000004,
+            "max_ms": 0.4032
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 5.4127,
+            "p50_ms": 0.21205,
+            "p95_ms": 0.35369999999999996,
+            "max_ms": 0.4032
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.7184,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 17.8888,
+            "p50_ms": 0.32585,
+            "p95_ms": 0.8986000000000001,
+            "max_ms": 1.7184
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.2479,
+            "p50_ms": 0.6636500000000001,
+            "p95_ms": 0.9631000000000001,
+            "max_ms": 1.7184
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.2848,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.4818,
+            "p50_ms": 0.31625000000000003,
+            "p95_ms": 0.9832000000000001,
+            "max_ms": 1.2848
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.067,
+            "p50_ms": 0.67365,
+            "p95_ms": 1.0722,
+            "max_ms": 1.2848
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.5306,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 31.2517,
+            "p50_ms": 0.50775,
+            "p95_ms": 1.4397,
+            "max_ms": 2.5306
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.8487,
+            "p50_ms": 1.19825,
+            "p95_ms": 1.5628,
+            "max_ms": 2.5306
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1521,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.8941,
+            "p50_ms": 0.04995,
+            "p95_ms": 0.1268,
+            "max_ms": 0.1521
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.6352,
+            "p50_ms": 0.11125,
+            "p95_ms": 0.1452,
+            "max_ms": 0.1521
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.632,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.046,
+            "p50_ms": 0.1677,
+            "p95_ms": 0.4139,
+            "max_ms": 0.632
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.8098,
+            "p50_ms": 0.3557,
+            "p95_ms": 0.4202,
+            "max_ms": 0.632
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.7290000000000001,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.2876,
+            "p50_ms": 0.09685,
+            "p95_ms": 0.3366,
+            "max_ms": 0.7290000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.796,
+            "p50_ms": 0.251,
+            "p95_ms": 0.4486,
+            "max_ms": 0.7290000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.8132000000000001,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.317,
+            "p50_ms": 0.2687,
+            "p95_ms": 1.0609,
+            "max_ms": 1.8132000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.7778,
+            "p50_ms": 0.69835,
+            "p95_ms": 1.1209,
+            "max_ms": 1.8132000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.3267000000000002,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 21.1976,
+            "p50_ms": 0.3855,
+            "p95_ms": 1.0528,
+            "max_ms": 1.3267000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.7013,
+            "p50_ms": 0.8035999999999999,
+            "p95_ms": 1.0722,
+            "max_ms": 1.3267000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.4471,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 30.9371,
+            "p50_ms": 0.487,
+            "p95_ms": 1.4684,
+            "max_ms": 2.4471
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.5944,
+            "p50_ms": 1.20545,
+            "p95_ms": 1.4702000000000002,
+            "max_ms": 2.4471
+          }
+        }
+      ]
+    },
+    {
+      "build": "after",
+      "trial": 1,
+      "path": "artifacts\\efficiency\\after-moving-1.json",
+      "sha256": "9ad274898aeaba44ff57a2f72bad78865afaddf39908b49f4e06f20da06929bf",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1022,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.7661,
+            "p50_ms": 0.0316,
+            "p95_ms": 0.0782,
+            "max_ms": 0.1022
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.5386,
+            "p50_ms": 0.06095,
+            "p95_ms": 0.0849,
+            "max_ms": 0.1022
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.45189999999999997,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.57,
+            "p50_ms": 0.159,
+            "p95_ms": 0.4101,
+            "max_ms": 0.45189999999999997
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.3602,
+            "p50_ms": 0.33940000000000003,
+            "p95_ms": 0.4334,
+            "max_ms": 0.45189999999999997
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2171,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.5668,
+            "p50_ms": 0.03015,
+            "p95_ms": 0.1603,
+            "max_ms": 0.2171
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.3343000000000003,
+            "p50_ms": 0.08225,
+            "p95_ms": 0.18450000000000003,
+            "max_ms": 0.2171
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.2924,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 18.1008,
+            "p50_ms": 0.26945,
+            "p95_ms": 0.877,
+            "max_ms": 1.2924
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.7876,
+            "p50_ms": 0.7427999999999999,
+            "p95_ms": 0.9993999999999998,
+            "max_ms": 1.2924
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2374,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.4457,
+            "p50_ms": 0.07915,
+            "p95_ms": 0.18009999999999998,
+            "max_ms": 0.2374
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.0592,
+            "p50_ms": 0.10769999999999999,
+            "p95_ms": 0.23149999999999998,
+            "max_ms": 0.2374
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.1074,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.8258,
+            "p50_ms": 0.23570000000000002,
+            "p95_ms": 0.8566,
+            "max_ms": 2.1074
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 16.4666,
+            "p50_ms": 0.5847500000000001,
+            "p95_ms": 0.8972,
+            "max_ms": 2.1074
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.0943,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.7904,
+            "p50_ms": 0.029650000000000003,
+            "p95_ms": 0.0814,
+            "max_ms": 0.0943
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.5916,
+            "p50_ms": 0.06575,
+            "p95_ms": 0.083,
+            "max_ms": 0.0943
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.553,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.6725,
+            "p50_ms": 0.1639,
+            "p95_ms": 0.5347999999999999,
+            "max_ms": 0.553
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.4711,
+            "p50_ms": 0.36035,
+            "p95_ms": 0.5397000000000001,
+            "max_ms": 0.553
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2124,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.6228,
+            "p50_ms": 0.0377,
+            "p95_ms": 0.18139999999999998,
+            "max_ms": 0.2124
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.4125,
+            "p50_ms": 0.08074999999999999,
+            "p95_ms": 0.1828,
+            "max_ms": 0.2124
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.3041,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 13.9901,
+            "p50_ms": 0.24189999999999998,
+            "p95_ms": 0.7152999999999999,
+            "max_ms": 1.3041
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.7556,
+            "p50_ms": 0.51095,
+            "p95_ms": 0.7421,
+            "max_ms": 1.3041
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2813,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.4105,
+            "p50_ms": 0.037450000000000004,
+            "p95_ms": 0.2286,
+            "max_ms": 0.2813
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.0653,
+            "p50_ms": 0.1051,
+            "p95_ms": 0.2353,
+            "max_ms": 0.2813
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.5485,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.9313,
+            "p50_ms": 0.2793,
+            "p95_ms": 0.8359,
+            "max_ms": 1.5485
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 16.5324,
+            "p50_ms": 0.6129,
+            "p95_ms": 0.8564999999999999,
+            "max_ms": 1.5485
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1184,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.2234,
+            "p50_ms": 0.02665,
+            "p95_ms": 0.1121,
+            "max_ms": 0.1184
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.9462,
+            "p50_ms": 0.0743,
+            "p95_ms": 0.11359999999999999,
+            "max_ms": 0.1184
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6313,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 11.1463,
+            "p50_ms": 0.1713,
+            "p95_ms": 0.5875,
+            "max_ms": 0.6313
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 10.8085,
+            "p50_ms": 0.4096,
+            "p95_ms": 0.6251,
+            "max_ms": 0.6313
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.4191,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.5879,
+            "p50_ms": 0.09565,
+            "p95_ms": 0.3146,
+            "max_ms": 0.4191
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.0631,
+            "p50_ms": 0.23555,
+            "p95_ms": 0.3533,
+            "max_ms": 0.4191
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.9672,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 23.6307,
+            "p50_ms": 0.35005,
+            "p95_ms": 1.2346,
+            "max_ms": 1.9672
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 22.9415,
+            "p50_ms": 0.9333,
+            "p95_ms": 1.2769000000000001,
+            "max_ms": 1.9672
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.3202,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 24.8848,
+            "p50_ms": 0.45985000000000004,
+            "p95_ms": 1.0567,
+            "max_ms": 1.3202
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 22.9746,
+            "p50_ms": 0.96315,
+            "p95_ms": 1.0776,
+            "max_ms": 1.3202
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 3.557,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 46.5256,
+            "p50_ms": 0.61305,
+            "p95_ms": 2.5946,
+            "max_ms": 3.557
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 44.4477,
+            "p50_ms": 1.7352500000000002,
+            "p95_ms": 3.1131,
+            "max_ms": 3.557
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1924,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.9217999999999997,
+            "p50_ms": 0.0506,
+            "p95_ms": 0.1582,
+            "max_ms": 0.1924
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.6581,
+            "p50_ms": 0.099,
+            "p95_ms": 0.16119999999999998,
+            "max_ms": 0.1924
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6653,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 11.3518,
+            "p50_ms": 0.18085,
+            "p95_ms": 0.6152,
+            "max_ms": 0.6653
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 11.0636,
+            "p50_ms": 0.40659999999999996,
+            "p95_ms": 0.6455000000000001,
+            "max_ms": 0.6653
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.44630000000000003,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.3033,
+            "p50_ms": 0.1224,
+            "p95_ms": 0.33980000000000005,
+            "max_ms": 0.44630000000000003
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.7626,
+            "p50_ms": 0.26554999999999995,
+            "p95_ms": 0.3963,
+            "max_ms": 0.44630000000000003
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 2.0161,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.6408,
+            "p50_ms": 0.2807,
+            "p95_ms": 0.9096,
+            "max_ms": 2.0161
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.1474,
+            "p50_ms": 0.70025,
+            "p95_ms": 1.0608,
+            "max_ms": 2.0161
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.1061999999999999,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 20.3764,
+            "p50_ms": 0.48765,
+            "p95_ms": 0.9894000000000001,
+            "max_ms": 1.1061999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.4789,
+            "p50_ms": 0.7273999999999999,
+            "p95_ms": 1.0917999999999999,
+            "max_ms": 1.1061999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.5279,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 31.2695,
+            "p50_ms": 0.49495,
+            "p95_ms": 1.477,
+            "max_ms": 2.5279
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.8905,
+            "p50_ms": 1.1765500000000002,
+            "p95_ms": 1.6753,
+            "max_ms": 2.5279
+          }
+        }
+      ]
+    },
+    {
+      "build": "after",
+      "trial": 2,
+      "path": "artifacts\\efficiency\\after-moving-2.json",
+      "sha256": "221d3a8619cfb1cb05cbfdefff51ad310c39560b2924a61e92140a369a588d94",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1032,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.6253,
+            "p50_ms": 0.029150000000000002,
+            "p95_ms": 0.0773,
+            "max_ms": 0.1032
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.4135,
+            "p50_ms": 0.0575,
+            "p95_ms": 0.08990000000000001,
+            "max_ms": 0.1032
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.4697,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.3806,
+            "p50_ms": 0.1597,
+            "p95_ms": 0.3703,
+            "max_ms": 0.4697
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.1763,
+            "p50_ms": 0.33499999999999996,
+            "p95_ms": 0.3716,
+            "max_ms": 0.4697
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2997,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.7113,
+            "p50_ms": 0.02815,
+            "p95_ms": 0.1802,
+            "max_ms": 0.2997
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.477,
+            "p50_ms": 0.0812,
+            "p95_ms": 0.187,
+            "max_ms": 0.2997
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.2578,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 13.9941,
+            "p50_ms": 0.23455,
+            "p95_ms": 0.6805,
+            "max_ms": 1.2578
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.7503,
+            "p50_ms": 0.5116499999999999,
+            "p95_ms": 0.6904,
+            "max_ms": 1.2578
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2721,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.5237,
+            "p50_ms": 0.0378,
+            "p95_ms": 0.232,
+            "max_ms": 0.2721
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.2037,
+            "p50_ms": 0.11115,
+            "p95_ms": 0.25470000000000004,
+            "max_ms": 0.2721
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.7139,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.0244,
+            "p50_ms": 0.26655000000000006,
+            "p95_ms": 0.7887000000000001,
+            "max_ms": 1.7139
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.6767,
+            "p50_ms": 0.5557000000000001,
+            "p95_ms": 0.8169,
+            "max_ms": 1.7139
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1079,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.6902,
+            "p50_ms": 0.027899999999999998,
+            "p95_ms": 0.0848,
+            "max_ms": 0.1079
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.4989999999999999,
+            "p50_ms": 0.0601,
+            "p95_ms": 0.1032,
+            "max_ms": 0.1079
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 1.0049,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 10.2424,
+            "p50_ms": 0.18615,
+            "p95_ms": 0.4646,
+            "max_ms": 1.0049
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.9924,
+            "p50_ms": 0.3821,
+            "p95_ms": 0.5626,
+            "max_ms": 1.0049
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.21130000000000002,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.0136000000000003,
+            "p50_ms": 0.0336,
+            "p95_ms": 0.19440000000000002,
+            "max_ms": 0.21130000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.7640000000000002,
+            "p50_ms": 0.09815,
+            "p95_ms": 0.2097,
+            "max_ms": 0.21130000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.3595,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.8623,
+            "p50_ms": 0.22215,
+            "p95_ms": 0.7484,
+            "max_ms": 1.3595
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 14.6209,
+            "p50_ms": 0.5387,
+            "p95_ms": 0.8281000000000001,
+            "max_ms": 1.3595
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.3076,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.968,
+            "p50_ms": 0.0822,
+            "p95_ms": 0.2427,
+            "max_ms": 0.3076
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.5582,
+            "p50_ms": 0.11595,
+            "p95_ms": 0.2682,
+            "max_ms": 0.3076
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.6098,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.7282,
+            "p50_ms": 0.2534,
+            "p95_ms": 0.8526,
+            "max_ms": 1.6098
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 16.37,
+            "p50_ms": 0.5940000000000001,
+            "p95_ms": 0.9487,
+            "max_ms": 1.6098
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1769,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.3235,
+            "p50_ms": 0.03735,
+            "p95_ms": 0.1038,
+            "max_ms": 0.1769
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.0379,
+            "p50_ms": 0.07745,
+            "p95_ms": 0.1388,
+            "max_ms": 0.1769
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5604,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.304,
+            "p50_ms": 0.17270000000000002,
+            "p95_ms": 0.4079,
+            "max_ms": 0.5604
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.0406,
+            "p50_ms": 0.3587,
+            "p95_ms": 0.5062000000000001,
+            "max_ms": 0.5604
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.521,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.143,
+            "p50_ms": 0.11174999999999999,
+            "p95_ms": 0.42260000000000003,
+            "max_ms": 0.521
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.6269,
+            "p50_ms": 0.23135,
+            "p95_ms": 0.4374,
+            "max_ms": 0.521
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.9308,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.7799,
+            "p50_ms": 0.31415000000000004,
+            "p95_ms": 0.9825,
+            "max_ms": 1.9308
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.2295,
+            "p50_ms": 0.74175,
+            "p95_ms": 0.9888,
+            "max_ms": 1.9308
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.1628999999999998,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 20.3477,
+            "p50_ms": 0.2936,
+            "p95_ms": 0.9851000000000001,
+            "max_ms": 1.1628999999999998
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.817700000000002,
+            "p50_ms": 0.80535,
+            "p95_ms": 1.0096,
+            "max_ms": 1.1628999999999998
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.5239,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 33.1679,
+            "p50_ms": 0.55065,
+            "p95_ms": 1.8167,
+            "max_ms": 2.5239
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 31.6876,
+            "p50_ms": 1.2181000000000002,
+            "p95_ms": 1.8966,
+            "max_ms": 2.5239
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.14109999999999998,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.6123,
+            "p50_ms": 0.034749999999999996,
+            "p95_ms": 0.1249,
+            "max_ms": 0.14109999999999998
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.3664,
+            "p50_ms": 0.096,
+            "p95_ms": 0.134,
+            "max_ms": 0.14109999999999998
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6401,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 11.0984,
+            "p50_ms": 0.18365,
+            "p95_ms": 0.6056,
+            "max_ms": 0.6401
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 10.8238,
+            "p50_ms": 0.41175,
+            "p95_ms": 0.6278,
+            "max_ms": 0.6401
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.5351,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.0353,
+            "p50_ms": 0.11299999999999999,
+            "p95_ms": 0.382,
+            "max_ms": 0.5351
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.5255,
+            "p50_ms": 0.256,
+            "p95_ms": 0.4052,
+            "max_ms": 0.5351
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 2.3937,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 20.9772,
+            "p50_ms": 0.30405,
+            "p95_ms": 1.1467,
+            "max_ms": 2.3937
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 20.4299,
+            "p50_ms": 0.71485,
+            "p95_ms": 1.408,
+            "max_ms": 2.3937
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.1049,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.6434,
+            "p50_ms": 0.3254,
+            "p95_ms": 0.9600000000000001,
+            "max_ms": 1.1049
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.2215,
+            "p50_ms": 0.74855,
+            "p95_ms": 1.0296,
+            "max_ms": 1.1049
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.8154,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 33.1502,
+            "p50_ms": 0.5623,
+            "p95_ms": 1.7907000000000002,
+            "max_ms": 2.8154
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 31.698900000000002,
+            "p50_ms": 1.21725,
+            "p95_ms": 1.8216,
+            "max_ms": 2.8154
+          }
+        }
+      ]
+    },
+    {
+      "build": "before",
+      "trial": 2,
+      "path": "artifacts\\efficiency\\before-moving-2.json",
+      "sha256": "df306bcd7ad7e36b68a08f046f45320359f2f4973a51b4c16c5bb9c597361c6b",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1026,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.4142,
+            "p50_ms": 0.022699999999999998,
+            "p95_ms": 0.081,
+            "max_ms": 0.1026
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.2297,
+            "p50_ms": 0.05085,
+            "p95_ms": 0.0901,
+            "max_ms": 0.1026
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6126,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.924,
+            "p50_ms": 0.15485,
+            "p95_ms": 0.4935,
+            "max_ms": 0.6126
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.6659,
+            "p50_ms": 0.39264999999999994,
+            "p95_ms": 0.5161,
+            "max_ms": 0.6126
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2266,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.5565,
+            "p50_ms": 0.0285,
+            "p95_ms": 0.1608,
+            "max_ms": 0.2266
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.3338,
+            "p50_ms": 0.0776,
+            "p95_ms": 0.2006,
+            "max_ms": 0.2266
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.234,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 13.8877,
+            "p50_ms": 0.20515,
+            "p95_ms": 0.6698999999999999,
+            "max_ms": 1.234
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.6489,
+            "p50_ms": 0.5,
+            "p95_ms": 0.9420999999999999,
+            "max_ms": 1.234
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2392,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.3104,
+            "p50_ms": 0.0497,
+            "p95_ms": 0.1799,
+            "max_ms": 0.2392
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.9689,
+            "p50_ms": 0.10855000000000001,
+            "p95_ms": 0.2226,
+            "max_ms": 0.2392
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.8152000000000001,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 15.8217,
+            "p50_ms": 0.24904999999999997,
+            "p95_ms": 0.7546999999999999,
+            "max_ms": 1.8152000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.4612,
+            "p50_ms": 0.53885,
+            "p95_ms": 0.8984000000000001,
+            "max_ms": 1.8152000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1349,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.7688,
+            "p50_ms": 0.02335,
+            "p95_ms": 0.0955,
+            "max_ms": 0.1349
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.5738,
+            "p50_ms": 0.05935,
+            "p95_ms": 0.1028,
+            "max_ms": 0.1349
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6013000000000001,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.1761,
+            "p50_ms": 0.17625,
+            "p95_ms": 0.5244,
+            "max_ms": 0.6013000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.9147,
+            "p50_ms": 0.3226,
+            "p95_ms": 0.5599999999999999,
+            "max_ms": 0.6013000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.1951,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.686,
+            "p50_ms": 0.0259,
+            "p95_ms": 0.1593,
+            "max_ms": 0.1951
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.458,
+            "p50_ms": 0.0885,
+            "p95_ms": 0.1897,
+            "max_ms": 0.1951
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.0986,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 13.0698,
+            "p50_ms": 0.2044,
+            "p95_ms": 0.6995,
+            "max_ms": 1.0986
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 12.8498,
+            "p50_ms": 0.4581,
+            "p95_ms": 0.7551,
+            "max_ms": 1.0986
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2973,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.3799,
+            "p50_ms": 0.0427,
+            "p95_ms": 0.2294,
+            "max_ms": 0.2973
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.0376,
+            "p50_ms": 0.10289999999999999,
+            "p95_ms": 0.2569,
+            "max_ms": 0.2973
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.4011,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 15.342600000000001,
+            "p50_ms": 0.242,
+            "p95_ms": 0.7674,
+            "max_ms": 1.4011
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.001100000000001,
+            "p50_ms": 0.5622,
+            "p95_ms": 1.0295,
+            "max_ms": 1.4011
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.11220000000000001,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.8401,
+            "p50_ms": 0.021400000000000002,
+            "p95_ms": 0.0854,
+            "max_ms": 0.11220000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.6239999999999999,
+            "p50_ms": 0.06725,
+            "p95_ms": 0.0903,
+            "max_ms": 0.11220000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5073,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.8889,
+            "p50_ms": 0.1489,
+            "p95_ms": 0.477,
+            "max_ms": 0.5073
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.6313,
+            "p50_ms": 0.32075,
+            "p95_ms": 0.5008,
+            "max_ms": 0.5073
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.5490999999999999,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.2349,
+            "p50_ms": 0.0908,
+            "p95_ms": 0.2983,
+            "max_ms": 0.5490999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 5.759,
+            "p50_ms": 0.22205,
+            "p95_ms": 0.3635,
+            "max_ms": 0.5490999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.7948,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.7048,
+            "p50_ms": 0.28675,
+            "p95_ms": 1.0897000000000001,
+            "max_ms": 1.7948
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.1152,
+            "p50_ms": 0.7296,
+            "p95_ms": 1.2431,
+            "max_ms": 1.7948
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.1537,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 20.7223,
+            "p50_ms": 0.32485,
+            "p95_ms": 0.9479,
+            "max_ms": 1.1537
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.1921,
+            "p50_ms": 0.8059000000000001,
+            "p95_ms": 1.078,
+            "max_ms": 1.1537
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.392,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 31.1284,
+            "p50_ms": 0.4838,
+            "p95_ms": 1.6102,
+            "max_ms": 2.392
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.7255,
+            "p50_ms": 1.17085,
+            "p95_ms": 1.6278,
+            "max_ms": 2.392
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.127,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.185,
+            "p50_ms": 0.031599999999999996,
+            "p95_ms": 0.1002,
+            "max_ms": 0.127
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.9688,
+            "p50_ms": 0.08195,
+            "p95_ms": 0.11699999999999999,
+            "max_ms": 0.127
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6767,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 11.2038,
+            "p50_ms": 0.25555,
+            "p95_ms": 0.5831000000000001,
+            "max_ms": 0.6767
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 10.7071,
+            "p50_ms": 0.41305,
+            "p95_ms": 0.6111,
+            "max_ms": 0.6767
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.4295,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.6281,
+            "p50_ms": 0.10825,
+            "p95_ms": 0.3282,
+            "max_ms": 0.4295
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.1277,
+            "p50_ms": 0.24215,
+            "p95_ms": 0.3812,
+            "max_ms": 0.4295
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.6697000000000002,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.4059,
+            "p50_ms": 0.27425,
+            "p95_ms": 1.1904000000000001,
+            "max_ms": 1.6697000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.8578,
+            "p50_ms": 0.6556,
+            "p95_ms": 1.2376,
+            "max_ms": 1.6697000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.1132,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.0937,
+            "p50_ms": 0.33305,
+            "p95_ms": 0.9024,
+            "max_ms": 1.1132
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.7182,
+            "p50_ms": 0.69895,
+            "p95_ms": 1.0262,
+            "max_ms": 1.1132
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 3.0957,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 33.8891,
+            "p50_ms": 0.5249499999999999,
+            "p95_ms": 1.7841999999999998,
+            "max_ms": 3.0957
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 32.4244,
+            "p50_ms": 1.1939,
+            "p95_ms": 1.9144999999999999,
+            "max_ms": 3.0957
+          }
+        }
+      ]
+    },
+    {
+      "build": "before",
+      "trial": 3,
+      "path": "artifacts\\efficiency\\before-moving-3.json",
+      "sha256": "9409dc93f2d9a99dd50f01e6426c02bc6f04f907f4614b69f81da7dce3831b58",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1255,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.7064,
+            "p50_ms": 0.0253,
+            "p95_ms": 0.1199,
+            "max_ms": 0.1255
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.4809,
+            "p50_ms": 0.05740000000000001,
+            "p95_ms": 0.1207,
+            "max_ms": 0.1255
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.43879999999999997,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 7.9012,
+            "p50_ms": 0.14965,
+            "p95_ms": 0.3585,
+            "max_ms": 0.43879999999999997
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 7.6925,
+            "p50_ms": 0.309,
+            "p95_ms": 0.38739999999999997,
+            "max_ms": 0.43879999999999997
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.22949999999999998,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.3908,
+            "p50_ms": 0.0313,
+            "p95_ms": 0.13779999999999998,
+            "max_ms": 0.22949999999999998
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.1828,
+            "p50_ms": 0.0765,
+            "p95_ms": 0.14889999999999998,
+            "max_ms": 0.22949999999999998
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.1704,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.7327,
+            "p50_ms": 0.22735,
+            "p95_ms": 0.8359,
+            "max_ms": 1.1704
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 14.3793,
+            "p50_ms": 0.50905,
+            "p95_ms": 0.9476,
+            "max_ms": 1.1704
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.3524,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 4.2348,
+            "p50_ms": 0.0523,
+            "p95_ms": 0.2716,
+            "max_ms": 0.3524
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.8015,
+            "p50_ms": 0.14150000000000001,
+            "p95_ms": 0.3001,
+            "max_ms": 0.3524
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.4407,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 17.5998,
+            "p50_ms": 0.2519,
+            "p95_ms": 0.9077,
+            "max_ms": 1.4407
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.1668,
+            "p50_ms": 0.7145999999999999,
+            "p95_ms": 1.0602,
+            "max_ms": 1.4407
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1023,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.8782,
+            "p50_ms": 0.024850000000000004,
+            "p95_ms": 0.0963,
+            "max_ms": 0.1023
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.6808,
+            "p50_ms": 0.0628,
+            "p95_ms": 0.1001,
+            "max_ms": 0.1023
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5206,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.6665,
+            "p50_ms": 0.15895,
+            "p95_ms": 0.4751,
+            "max_ms": 0.5206
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.4656,
+            "p50_ms": 0.328,
+            "p95_ms": 0.4975,
+            "max_ms": 0.5206
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.24600000000000002,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.6699,
+            "p50_ms": 0.028650000000000002,
+            "p95_ms": 0.1643,
+            "max_ms": 0.24600000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.4465,
+            "p50_ms": 0.0881,
+            "p95_ms": 0.1961,
+            "max_ms": 0.24600000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.3700999999999999,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.1099,
+            "p50_ms": 0.21345,
+            "p95_ms": 0.858,
+            "max_ms": 1.3700999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.8622,
+            "p50_ms": 0.4778,
+            "p95_ms": 1.0116,
+            "max_ms": 1.3700999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2242,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.2829,
+            "p50_ms": 0.0456,
+            "p95_ms": 0.1854,
+            "max_ms": 0.2242
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.9568,
+            "p50_ms": 0.1052,
+            "p95_ms": 0.1992,
+            "max_ms": 0.2242
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.435,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 18.6524,
+            "p50_ms": 0.27065,
+            "p95_ms": 1.0187,
+            "max_ms": 2.435
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.1646,
+            "p50_ms": 0.63405,
+            "p95_ms": 1.1267,
+            "max_ms": 2.435
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.2256,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.9511,
+            "p50_ms": 0.027200000000000002,
+            "p95_ms": 0.0914,
+            "max_ms": 0.2256
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.716,
+            "p50_ms": 0.0677,
+            "p95_ms": 0.0917,
+            "max_ms": 0.2256
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5493,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.0937,
+            "p50_ms": 0.1598,
+            "p95_ms": 0.4674,
+            "max_ms": 0.5493
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.85,
+            "p50_ms": 0.34750000000000003,
+            "p95_ms": 0.501,
+            "max_ms": 0.5493
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.4261,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.5341,
+            "p50_ms": 0.09865,
+            "p95_ms": 0.3247,
+            "max_ms": 0.4261
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.0054,
+            "p50_ms": 0.22385,
+            "p95_ms": 0.422,
+            "max_ms": 0.4261
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.8483,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 18.5119,
+            "p50_ms": 0.2542,
+            "p95_ms": 0.8883,
+            "max_ms": 1.8483
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.014,
+            "p50_ms": 0.7109,
+            "p95_ms": 1.1167,
+            "max_ms": 1.8483
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.9890000000000001,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 18.9795,
+            "p50_ms": 0.2903,
+            "p95_ms": 0.9233,
+            "max_ms": 0.9890000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.5956,
+            "p50_ms": 0.72495,
+            "p95_ms": 0.9819,
+            "max_ms": 0.9890000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.4128000000000003,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 30.5491,
+            "p50_ms": 0.4948,
+            "p95_ms": 1.5039,
+            "max_ms": 2.4128000000000003
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.2029,
+            "p50_ms": 1.1808,
+            "p95_ms": 1.5758,
+            "max_ms": 2.4128000000000003
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1353,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.36,
+            "p50_ms": 0.04065,
+            "p95_ms": 0.1126,
+            "max_ms": 0.1353
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.1278,
+            "p50_ms": 0.08265,
+            "p95_ms": 0.1188,
+            "max_ms": 0.1353
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.7039000000000001,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 12.3133,
+            "p50_ms": 0.16005,
+            "p95_ms": 0.6353,
+            "max_ms": 0.7039000000000001
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 12.0763,
+            "p50_ms": 0.55175,
+            "p95_ms": 0.6733,
+            "max_ms": 0.7039000000000001
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.4052,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.2943999999999996,
+            "p50_ms": 0.0893,
+            "p95_ms": 0.3209,
+            "max_ms": 0.4052
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 5.8473,
+            "p50_ms": 0.2354,
+            "p95_ms": 0.3392,
+            "max_ms": 0.4052
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.6200999999999999,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.7904,
+            "p50_ms": 0.31194999999999995,
+            "p95_ms": 0.794,
+            "max_ms": 1.6200999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 16.2161,
+            "p50_ms": 0.6144499999999999,
+            "p95_ms": 0.7946,
+            "max_ms": 1.6200999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.0238999999999998,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.4022,
+            "p50_ms": 0.3125,
+            "p95_ms": 0.915,
+            "max_ms": 1.0238999999999998
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.0337,
+            "p50_ms": 0.7690999999999999,
+            "p95_ms": 1.0043,
+            "max_ms": 1.0238999999999998
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.5728999999999997,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 31.2014,
+            "p50_ms": 0.49474999999999997,
+            "p95_ms": 1.5406,
+            "max_ms": 2.5728999999999997
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 29.8034,
+            "p50_ms": 1.18505,
+            "p95_ms": 1.5722,
+            "max_ms": 2.5728999999999997
+          }
+        }
+      ]
+    },
+    {
+      "build": "after",
+      "trial": 3,
+      "path": "artifacts\\efficiency\\after-moving-3.json",
+      "sha256": "af9a3ce64d988f03eab6b58a29f4678cc83ea7722bc190e61d283edf4e6afb32",
+      "cases": [
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.094,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.6511,
+            "p50_ms": 0.025349999999999998,
+            "p95_ms": 0.0726,
+            "max_ms": 0.094
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.4366,
+            "p50_ms": 0.06,
+            "p95_ms": 0.0808,
+            "max_ms": 0.094
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5517,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.8896,
+            "p50_ms": 0.16395,
+            "p95_ms": 0.5289,
+            "max_ms": 0.5517
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.6698,
+            "p50_ms": 0.3645,
+            "p95_ms": 0.5347999999999999,
+            "max_ms": 0.5517
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2284,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.5491,
+            "p50_ms": 0.0387,
+            "p95_ms": 0.2107,
+            "max_ms": 0.2284
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.2559,
+            "p50_ms": 0.12300000000000001,
+            "p95_ms": 0.2219,
+            "max_ms": 0.2284
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.5325,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 15.508799999999999,
+            "p50_ms": 0.22285,
+            "p95_ms": 0.8814,
+            "max_ms": 1.5325
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.2293,
+            "p50_ms": 0.56695,
+            "p95_ms": 0.9076000000000001,
+            "max_ms": 1.5325
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.25070000000000003,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.2529,
+            "p50_ms": 0.03975,
+            "p95_ms": 0.1846,
+            "max_ms": 0.25070000000000003
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.9446,
+            "p50_ms": 0.10604999999999999,
+            "p95_ms": 0.2186,
+            "max_ms": 0.25070000000000003
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.484,
+          "size": 512,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 15.2219,
+            "p50_ms": 0.24,
+            "p95_ms": 0.7456999999999999,
+            "max_ms": 1.484
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 14.8857,
+            "p50_ms": 0.5478,
+            "p95_ms": 0.8389,
+            "max_ms": 1.484
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.06889999999999999,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.4157,
+            "p50_ms": 0.020399999999999998,
+            "p95_ms": 0.061900000000000004,
+            "max_ms": 0.06889999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.2528,
+            "p50_ms": 0.05625,
+            "p95_ms": 0.0629,
+            "max_ms": 0.06889999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.4465,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 8.8252,
+            "p50_ms": 0.16785,
+            "p95_ms": 0.4087,
+            "max_ms": 0.4465
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 8.641,
+            "p50_ms": 0.3546,
+            "p95_ms": 0.41829999999999995,
+            "max_ms": 0.4465
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.2437,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.5686999999999998,
+            "p50_ms": 0.0319,
+            "p95_ms": 0.1597,
+            "max_ms": 0.2437
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.3485,
+            "p50_ms": 0.08385000000000001,
+            "p95_ms": 0.1773,
+            "max_ms": 0.2437
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.3066,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 14.0515,
+            "p50_ms": 0.21765,
+            "p95_ms": 0.703,
+            "max_ms": 1.3066
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 13.8248,
+            "p50_ms": 0.5273,
+            "p95_ms": 0.7353999999999999,
+            "max_ms": 1.3066
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 0.2253,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 3.3686000000000003,
+            "p50_ms": 0.051949999999999996,
+            "p95_ms": 0.1949,
+            "max_ms": 0.2253
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 3.0427,
+            "p50_ms": 0.10635,
+            "p95_ms": 0.20550000000000002,
+            "max_ms": 0.2253
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.5992,
+          "size": 512,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 16.0585,
+            "p50_ms": 0.2357,
+            "p95_ms": 0.7935000000000001,
+            "max_ms": 1.5992
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 15.6985,
+            "p50_ms": 0.5640000000000001,
+            "p95_ms": 1.0082,
+            "max_ms": 1.5992
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1095,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 1.9613,
+            "p50_ms": 0.0299,
+            "p95_ms": 0.0863,
+            "max_ms": 0.1095
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 1.7195,
+            "p50_ms": 0.07050000000000001,
+            "p95_ms": 0.0941,
+            "max_ms": 0.1095
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.5741,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 9.587,
+            "p50_ms": 0.16845,
+            "p95_ms": 0.4931,
+            "max_ms": 0.5741
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 9.3194,
+            "p50_ms": 0.36760000000000004,
+            "p95_ms": 0.4937,
+            "max_ms": 0.5741
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.3622,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.6648,
+            "p50_ms": 0.11005000000000001,
+            "p95_ms": 0.3266,
+            "max_ms": 0.3622
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.1654,
+            "p50_ms": 0.2358,
+            "p95_ms": 0.3585,
+            "max_ms": 0.3622
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.8278,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.529700000000002,
+            "p50_ms": 0.30265,
+            "p95_ms": 0.9182,
+            "max_ms": 1.8278
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 18.9877,
+            "p50_ms": 0.7359,
+            "p95_ms": 0.973,
+            "max_ms": 1.8278
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.3254,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.0871,
+            "p50_ms": 0.28845000000000004,
+            "p95_ms": 1.0367,
+            "max_ms": 1.3254
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.683699999999998,
+            "p50_ms": 0.72975,
+            "p95_ms": 1.0562,
+            "max_ms": 1.3254
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.4233000000000002,
+          "size": 2048,
+          "tiled": false,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 32.0239,
+            "p50_ms": 0.5428999999999999,
+            "p95_ms": 1.6009,
+            "max_ms": 2.4233000000000002
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 30.5828,
+            "p50_ms": 1.2141000000000002,
+            "p95_ms": 1.6072,
+            "max_ms": 2.4233000000000002
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.1564,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 2.4842,
+            "p50_ms": 0.03605,
+            "p95_ms": 0.12430000000000001,
+            "max_ms": 0.1564
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 2.2397,
+            "p50_ms": 0.088,
+            "p95_ms": 0.1499,
+            "max_ms": 0.1564
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 1,
+          "max_owner_ms": 0.6204999999999999,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 11.3796,
+            "p50_ms": 0.18255000000000002,
+            "p95_ms": 0.5939,
+            "max_ms": 0.6204999999999999
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 11.097,
+            "p50_ms": 0.46265,
+            "p95_ms": 0.6013000000000001,
+            "max_ms": 0.6204999999999999
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 0.3816,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 6.5769,
+            "p50_ms": 0.09649999999999999,
+            "p95_ms": 0.32689999999999997,
+            "max_ms": 0.3816
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 6.1065,
+            "p50_ms": 0.23604999999999998,
+            "p95_ms": 0.3556,
+            "max_ms": 0.3816
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 8,
+          "max_owner_ms": 1.9602,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 19.6187,
+            "p50_ms": 0.28500000000000003,
+            "p95_ms": 0.9452,
+            "max_ms": 1.9602
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 19.0944,
+            "p50_ms": 0.7363999999999999,
+            "p95_ms": 0.9655,
+            "max_ms": 1.9602
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 18,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 51624,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 1.0198,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 18.853,
+            "p50_ms": 0.29760000000000003,
+            "p95_ms": 0.8893,
+            "max_ms": 1.0198
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 17.4403,
+            "p50_ms": 0.71045,
+            "p95_ms": 0.9933,
+            "max_ms": 1.0198
+          }
+        },
+        {
+          "busy_idle_updates": 0,
+          "damage_side": 80,
+          "display_age_input_updates_peak": 0,
+          "emitted_rgba_bytes": 1616896,
+          "immediate_updates": 24,
+          "input_updates": 24,
+          "layers": 32,
+          "max_owner_ms": 2.4952,
+          "size": 2048,
+          "tiled": true,
+          "owner_calls": {
+            "count": 48,
+            "total_ms": 34.8649,
+            "p50_ms": 0.5605500000000001,
+            "p95_ms": 1.6651,
+            "max_ms": 2.4952
+          },
+          "input_calls": {
+            "count": 24,
+            "total_ms": 33.2511,
+            "p50_ms": 1.35985,
+            "p95_ms": 1.684,
+            "max_ms": 2.4952
+          }
+        }
+      ]
+    }
+  ],
+  "render_queue": {
+    "allocation_scope": "Common registry samples live document, retained history and active stroke/fill settlement after each owner advance. Shared pixel allocations count once; settlement includes embedded snapshot metadata, partial raw copying, prepared Arc patch buffers, region-vector and fill-plan capacities. Peaks for separate fields may occur at different calls and must not be added. Sampling is outside owner timing but inside drain wall, can miss short-lived settlement, and excludes emitted snapshots, other active stroke/fill buffers, worker scratch/output, descriptor/registry bookkeeping and allocator overhead. This is not RSS or a global memory budget.",
+    "measurements": [
+      {
+        "brush_size": 18.0,
+        "calls": 497,
+        "canceled_strokes": 0,
+        "canvas_size": 512,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": false,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 163840,
+        "flat_source": false,
+        "max_advance_ms": 0.10579999999999999,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.0252,
+            "total_ms": 0.0283,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 0.0653,
+            "total_ms": 7.494199999999994,
+            "units": 10982
+          },
+          "redo": {
+            "max_ms": 0.0206,
+            "total_ms": 0.0206,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 0.0859,
+            "total_ms": 0.5456999999999999,
+            "units": 2331
+          },
+          "snapshot": {
+            "max_ms": 0.0005,
+            "total_ms": 0.0009,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.0047,
+            "total_ms": 0.6484999999999999,
+            "units": 2123
+          },
+          "undo": {
+            "max_ms": 0.0236,
+            "total_ms": 0.0236,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 262144,
+        "queued_input_bytes": 32172,
+        "radial_copies": 1,
+        "rollback_calls": 25,
+        "rollback_max_advance_ms": 0.0281,
+        "rollback_verified": true,
+        "rollback_wall_ms": 0.4601,
+        "settlement_bytes_beyond_live_and_history_peak": 71446,
+        "settlement_payload_peak_bytes": 70656,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 270016,
+        "total_wall_ms": 10.9788,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 2439214,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 1190841,
+        "tracked_live_document_bytes_peak": 1049215,
+        "work_budget": 32
+      },
+      {
+        "brush_size": 300.0,
+        "calls": 2345,
+        "canceled_strokes": 0,
+        "canvas_size": 512,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": false,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 1802240,
+        "flat_source": false,
+        "max_advance_ms": 0.6426000000000001,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.0063,
+            "total_ms": 0.0103,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 0.189,
+            "total_ms": 282.1104000000001,
+            "units": 38082
+          },
+          "redo": {
+            "max_ms": 0.0573,
+            "total_ms": 0.0573,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 0.31129999999999997,
+            "total_ms": 1.9558999999999995,
+            "units": 4100
+          },
+          "snapshot": {
+            "max_ms": 0.0007999999999999999,
+            "total_ms": 0.0013,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.0283,
+            "total_ms": 22.582400000000007,
+            "units": 32636
+          },
+          "undo": {
+            "max_ms": 0.0821,
+            "total_ms": 0.0821,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 262144,
+        "queued_input_bytes": 4628,
+        "radial_copies": 4,
+        "rollback_calls": 246,
+        "rollback_max_advance_ms": 0.1405,
+        "rollback_verified": true,
+        "rollback_wall_ms": 7.7016,
+        "settlement_bytes_beyond_live_and_history_peak": 1049750,
+        "settlement_payload_peak_bytes": 1048960,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 2770776,
+        "total_wall_ms": 318.37530000000004,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 6047620,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 3148037,
+        "tracked_live_document_bytes_peak": 1049215,
+        "work_budget": 32
+      },
+      {
+        "brush_size": 18.0,
+        "calls": 1459,
+        "canceled_strokes": 0,
+        "canvas_size": 2048,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": true,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 163840,
+        "flat_source": true,
+        "max_advance_ms": 2.3994,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.0068000000000000005,
+            "total_ms": 0.0121,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 2.3949000000000003,
+            "total_ms": 12.240700000000004,
+            "units": 10982
+          },
+          "redo": {
+            "max_ms": 0.019899999999999998,
+            "total_ms": 0.019899999999999998,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 0.7718999999999999,
+            "total_ms": 8.629899999999994,
+            "units": 33051
+          },
+          "snapshot": {
+            "max_ms": 0.004,
+            "total_ms": 0.0055,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.011,
+            "total_ms": 0.7890999999999998,
+            "units": 2123
+          },
+          "undo": {
+            "max_ms": 0.0523,
+            "total_ms": 0.0523,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 4194304,
+        "queued_input_bytes": 32172,
+        "radial_copies": 1,
+        "rollback_calls": 25,
+        "rollback_max_advance_ms": 0.0266,
+        "rollback_verified": true,
+        "rollback_wall_ms": 0.2969,
+        "settlement_bytes_beyond_live_and_history_peak": 71406,
+        "settlement_payload_peak_bytes": 70576,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 270016,
+        "total_wall_ms": 32.536500000000004,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 33896030,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 16919169,
+        "tracked_live_document_bytes_peak": 16777663,
+        "work_budget": 32
+      },
+      {
+        "brush_size": 300.0,
+        "calls": 4682,
+        "canceled_strokes": 0,
+        "canvas_size": 2048,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": true,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 5554176,
+        "flat_source": true,
+        "max_advance_ms": 2.4443,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.011,
+            "total_ms": 0.0178,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 2.4383999999999997,
+            "total_ms": 297.9301,
+            "units": 38462
+          },
+          "redo": {
+            "max_ms": 0.6352000000000001,
+            "total_ms": 0.6352000000000001,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 1.5668,
+            "total_ms": 14.562300000000034,
+            "units": 40008
+          },
+          "snapshot": {
+            "max_ms": 0.0027,
+            "total_ms": 0.004,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.0213,
+            "total_ms": 41.73409999999961,
+            "units": 71086
+          },
+          "undo": {
+            "max_ms": 0.6811999999999999,
+            "total_ms": 0.6811999999999999,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 4194304,
+        "queued_input_bytes": 4628,
+        "radial_copies": 4,
+        "rollback_calls": 823,
+        "rollback_max_advance_ms": 0.1882,
+        "rollback_verified": true,
+        "rollback_wall_ms": 21.5485,
+        "settlement_bytes_beyond_live_and_history_peak": 2821606,
+        "settlement_payload_peak_bytes": 2820816,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 9153880,
+        "total_wall_ms": 385.26959999999997,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 45361158,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 22251221,
+        "tracked_live_document_bytes_peak": 16777663,
+        "work_budget": 32
+      },
+      {
+        "brush_size": 18.0,
+        "calls": 501,
+        "canceled_strokes": 0,
+        "canvas_size": 2048,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": true,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 163840,
+        "flat_source": false,
+        "max_advance_ms": 0.1484,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.0196,
+            "total_ms": 0.032799999999999996,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 0.0987,
+            "total_ms": 8.3918,
+            "units": 10982
+          },
+          "redo": {
+            "max_ms": 0.011300000000000001,
+            "total_ms": 0.011300000000000001,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 0.0146,
+            "total_ms": 0.5450999999999997,
+            "units": 2451
+          },
+          "snapshot": {
+            "max_ms": 0.00039999999999999996,
+            "total_ms": 0.0006999999999999999,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.006,
+            "total_ms": 0.7087999999999998,
+            "units": 2123
+          },
+          "undo": {
+            "max_ms": 0.0178,
+            "total_ms": 0.0178,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 4194304,
+        "queued_input_bytes": 32172,
+        "radial_copies": 1,
+        "rollback_calls": 25,
+        "rollback_max_advance_ms": 0.026699999999999998,
+        "rollback_verified": true,
+        "rollback_wall_ms": 0.36469999999999997,
+        "settlement_bytes_beyond_live_and_history_peak": 71406,
+        "settlement_payload_peak_bytes": 70576,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 270016,
+        "total_wall_ms": 15.2377,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 18171134,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 1191201,
+        "tracked_live_document_bytes_peak": 16780735,
+        "work_budget": 32
+      },
+      {
+        "brush_size": 300.0,
+        "calls": 4043,
+        "canceled_strokes": 0,
+        "canvas_size": 2048,
+        "completed_strokes": 2,
+        "deadline_ms": 2.0,
+        "dense_source": true,
+        "edit_pipeline_verified": true,
+        "finished_scratch_released_bytes": 5554176,
+        "flat_source": false,
+        "max_advance_ms": 1.4778,
+        "phase_timings": {
+          "begin": {
+            "max_ms": 0.021500000000000002,
+            "total_ms": 0.0366,
+            "units": 2
+          },
+          "cancel": {
+            "max_ms": 0.0,
+            "total_ms": 0.0,
+            "units": 0
+          },
+          "live_row": {
+            "max_ms": 0.2439,
+            "total_ms": 305.4638000000002,
+            "units": 38462
+          },
+          "redo": {
+            "max_ms": 0.2792,
+            "total_ms": 0.2792,
+            "units": 1
+          },
+          "settle": {
+            "max_ms": 1.4688999999999999,
+            "total_ms": 7.933499999999993,
+            "units": 19608
+          },
+          "snapshot": {
+            "max_ms": 0.0013,
+            "total_ms": 0.0024999999999999996,
+            "units": 2
+          },
+          "tail_unit": {
+            "max_ms": 0.047599999999999996,
+            "total_ms": 44.80659999999967,
+            "units": 71086
+          },
+          "undo": {
+            "max_ms": 0.4906,
+            "total_ms": 0.4906,
+            "units": 1
+          }
+        },
+        "pixels_verified_per_snapshot": 4194304,
+        "queued_input_bytes": 4628,
+        "radial_copies": 4,
+        "rollback_calls": 823,
+        "rollback_max_advance_ms": 0.4498,
+        "rollback_verified": true,
+        "rollback_wall_ms": 24.937399999999997,
+        "settlement_bytes_beyond_live_and_history_peak": 2821606,
+        "settlement_payload_peak_bytes": 2820816,
+        "snapshots_verified": 2,
+        "stroke_working_bytes_peak": 9153880,
+        "total_wall_ms": 408.7706,
+        "tracked_document_history_settlement_and_stroke_bytes_peak": 34879942,
+        "tracked_history_and_settlement_bytes_beyond_live_peak": 11766933,
+        "tracked_live_document_bytes_peak": 16780735,
+        "work_budget": 32
+      }
+    ],
+    "scope": "Supported 512-square empty tiled and 2048-square dense single-layer raster documents in both flat compatibility and tiled storage. Profiling is enabled for per-unit phase counts/timings and adds clock overhead. Two overlapping timestamped strokes, completed-stroke snapshot, undo snapshot, redo and document fence. CPU advance timings include checkpoint/settlement/reclamation, undo/redo and snapshot control units; full pixel checks are outside each call timer, inside total wall. Input generation and reference painting precede all timers. A two-millisecond deadline is checked between units, with a 32-unit cap; synchronous controls and individual rows can overrun it. Rollback-only timings cover cancellation cursor construction, original row restoration, incremental scratch release, tile reclamation and final checkpoint discard/accounting; they exclude preparation/live painting and final pixel verification. Rollback must restore every pixel of both completed strokes. Settlement scans and copies one tile row per unit, retaining the full checkpoint until atomic publication; final trimming/accounting and buffer release remain synchronous. Settlement payload peak estimates count partial region buffers and region-vector capacity, excluding shared snapshot pixels, metadata clones, allocator overhead and stack fields. Input bytes exclude active buffers/history/snapshots, vacant queue capacity and allocator overhead. An additional typed-command correctness sequence runs after all reported timers: invalid target, reserved-identity new layer, identity-target rename, opacity, captured-identity stroke and snapshot, checking both layers in full against synchronous reference output. Typed raster commands and their history settlement remain synchronous; legacy target indices remain execution-relative; new identity targets survive reorder and reject missing layers. Drains without UI waits; does not measure driver/UI/display or save filesystem commits.",
+    "stroke_scope": "Exclusive active stroke buffers and cursors are sampled outside owner-call timing, inside drain wall: remaining original/coverage blocks, vector capacities, prefix/tail storage, cursor payload and rollback key-table entries. Excludes map control bytes and shared captured Settings. Finished prefix/tail allocations retire incrementally during compaction while original pixels remain available for rollback. Released bytes record those work units; remaining scratch may drop at completion. Separate peaks must not be added: the combined tracked field samples live, history, settlement and stroke together. Sampling can miss short-lived states; excludes emitted snapshots, fill working buffers, worker scratch/output, descriptor/registry bookkeeping and allocator overhead. Not RSS or a global memory budget.",
+    "version": 9
+  },
+  "limitations": [
+    "Viewport probe is one release run; moving display has three alternating trials per binary, descriptive medians only.",
+    "Moving-display benchmark does not set a viewport and isolates existing small-region/cache behavior. The separate dense 4K probe exercises adaptive display resolution.",
+    "Reduced tiles currently rebuild through background preparation when edited; immediate subuploads apply to full-detail tiles.",
+    "Large previews carry their own display plan. Previous generations and parked projects add retained data.",
+    "Existing background workers are not preempted. Quiet-period rules govern admission only.",
+    "Physical tablet, sustained GPU and total memory measurements remain separate acceptance checks."
+  ],
+  "moving_display_comparison": {
+    "scope": "Median accumulated owner time across 48 input/idle calls for 24 edits. Three trials per binary. No viewport: this measures existing full-detail display behavior, not adaptive texture residency.",
+    "cases_with_higher_median": 19,
+    "cases_with_lower_median": 5,
+    "largest_median_total_increase_ms": 2.039500000000004,
+    "cases": [
+      {
+        "size": 512,
+        "layers": 1,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 1.5653,
+        "after_owner_total_median_ms": 1.6511,
+        "difference_ms": 0.0858000000000001
+      },
+      {
+        "size": 512,
+        "layers": 1,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 7.9012,
+        "after_owner_total_median_ms": 8.57,
+        "difference_ms": 0.6688000000000001
+      },
+      {
+        "size": 512,
+        "layers": 8,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 2.4936,
+        "after_owner_total_median_ms": 2.7113,
+        "difference_ms": 0.21770000000000023
+      },
+      {
+        "size": 512,
+        "layers": 8,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 14.3079,
+        "after_owner_total_median_ms": 15.508799999999999,
+        "difference_ms": 1.200899999999999
+      },
+      {
+        "size": 512,
+        "layers": 32,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 4.2348,
+        "after_owner_total_median_ms": 3.4457,
+        "difference_ms": -0.7890999999999999
+      },
+      {
+        "size": 512,
+        "layers": 32,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 15.8217,
+        "after_owner_total_median_ms": 16.0244,
+        "difference_ms": 0.2027000000000001
+      },
+      {
+        "size": 512,
+        "layers": 1,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 1.7688,
+        "after_owner_total_median_ms": 1.6902,
+        "difference_ms": -0.0786
+      },
+      {
+        "size": 512,
+        "layers": 1,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 8.7872,
+        "after_owner_total_median_ms": 9.6725,
+        "difference_ms": 0.8852999999999991
+      },
+      {
+        "size": 512,
+        "layers": 8,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 2.6699,
+        "after_owner_total_median_ms": 2.6228,
+        "difference_ms": -0.047100000000000364
+      },
+      {
+        "size": 512,
+        "layers": 8,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 14.1099,
+        "after_owner_total_median_ms": 14.0515,
+        "difference_ms": -0.0583999999999989
+      },
+      {
+        "size": 512,
+        "layers": 32,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 3.3799,
+        "after_owner_total_median_ms": 3.4105,
+        "difference_ms": 0.03059999999999974
+      },
+      {
+        "size": 512,
+        "layers": 32,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 17.2421,
+        "after_owner_total_median_ms": 16.7282,
+        "difference_ms": -0.5138999999999996
+      },
+      {
+        "size": 2048,
+        "layers": 1,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 1.8636,
+        "after_owner_total_median_ms": 2.2234,
+        "difference_ms": 0.3597999999999999
+      },
+      {
+        "size": 2048,
+        "layers": 1,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 8.8889,
+        "after_owner_total_median_ms": 9.587,
+        "difference_ms": 0.6981000000000002
+      },
+      {
+        "size": 2048,
+        "layers": 8,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 6.2349,
+        "after_owner_total_median_ms": 6.6648,
+        "difference_ms": 0.42989999999999995
+      },
+      {
+        "size": 2048,
+        "layers": 8,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 18.5119,
+        "after_owner_total_median_ms": 19.7799,
+        "difference_ms": 1.2680000000000007
+      },
+      {
+        "size": 2048,
+        "layers": 32,
+        "tiled": false,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 19.4818,
+        "after_owner_total_median_ms": 20.3477,
+        "difference_ms": 0.8658999999999999
+      },
+      {
+        "size": 2048,
+        "layers": 32,
+        "tiled": false,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 31.1284,
+        "after_owner_total_median_ms": 33.1679,
+        "difference_ms": 2.039500000000004
+      },
+      {
+        "size": 2048,
+        "layers": 1,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 2.36,
+        "after_owner_total_median_ms": 2.6123,
+        "difference_ms": 0.25229999999999997
+      },
+      {
+        "size": 2048,
+        "layers": 1,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 11.2038,
+        "after_owner_total_median_ms": 11.3518,
+        "difference_ms": 0.14800000000000146
+      },
+      {
+        "size": 2048,
+        "layers": 8,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 6.6281,
+        "after_owner_total_median_ms": 7.0353,
+        "difference_ms": 0.40720000000000045
+      },
+      {
+        "size": 2048,
+        "layers": 8,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 19.317,
+        "after_owner_total_median_ms": 19.6408,
+        "difference_ms": 0.32379999999999853
+      },
+      {
+        "size": 2048,
+        "layers": 32,
+        "tiled": true,
+        "damage_side": 18,
+        "before_owner_total_median_ms": 19.4022,
+        "after_owner_total_median_ms": 19.6434,
+        "difference_ms": 0.2411999999999992
+      },
+      {
+        "size": 2048,
+        "layers": 32,
+        "tiled": true,
+        "damage_side": 80,
+        "before_owner_total_median_ms": 31.2014,
+        "after_owner_total_median_ms": 33.1502,
+        "difference_ms": 1.9487999999999985
+      }
+    ],
+    "interpretation": "This pass does not establish a net CPU display speedup. Retained texture payload is the clear measured improvement; scheduling and cached asset hashes address separate work."
+  }
+}

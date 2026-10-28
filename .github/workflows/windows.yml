@@ -1,0 +1,55 @@
+name: Windows verification
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # Same compiler and lints as rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify
+        shell: pwsh
+        run: ./scripts/Verify.ps1 -Mode Full
+      - name: Maximum supported project round-trip
+        shell: pwsh
+        run: cargo test --locked binary_project::tests::maximum_supported_binary_project_roundtrip -- --ignored --exact
+      - name: Maximum masked noisy fixture payload boundary
+        shell: pwsh
+        run: cargo test --locked native_session::tests::maximum_masked_noise_fixture_is_valid_at_the_payload_boundary -- --ignored --exact
+      - name: Package development candidate
+        shell: pwsh
+        run: ./scripts/Package.ps1
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: dudel-windows-candidate
+          path: |
+            artifacts/releases/*.zip
+            artifacts/releases/*.zip.sha256
+          if-no-files-found: error
+          # Each candidate is ~110 MB and private repositories share 500 MB of
+          # artifact storage; releases are packaged locally, so a week is enough.
+          retention-days: 7

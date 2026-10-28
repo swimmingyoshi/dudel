@@ -1,0 +1,8 @@
+# hexf-parse 0.2.1
+
+Authors listed by the matching upstream release: Kang Seonghoon <public+rust@mearie.org>.
+
+That release declares `CC0-1.0` in Cargo.toml but provides no separate license file. The original source and manifest are preserved; LICENSE_REFERENCE is the canonical SPDX text, not an invented upstream copyright notice. Source lib.rs was byte-compared against the fixed release revision.
+
+Upstream: https://raw.githubusercontent.com/lifthrasiir/hexf/4225763d744183d720f575ae96d04161b4d08ea0/parse/
+License reference: https://spdx.org/licenses/CC0-1.0.txt

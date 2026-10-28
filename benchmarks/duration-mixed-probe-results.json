@@ -1,0 +1,37 @@
+{
+  "executable_sha256": "7F765F63EEA25BCDC2B625FF2A666ECC7F4B3E09DB674D3DD0B5A5C623B654D8",
+  "configured_minimum_rounds": 2,
+  "actual_rounds": 5,
+  "minimum_observed_seconds": 180,
+  "observed_session_seconds": 181.8543754,
+  "mask_edits_verified": 80,
+  "brush_strokes_verified": 5,
+  "save_open_pairs": 5,
+  "workload_brush_names": [
+    "G-pen",
+    "Pencil",
+    "QA textured stamp"
+  ],
+  "continuity": {
+    "clocks": {
+      "biased_elapsed_seconds": 184.3279999999795,
+      "awake_elapsed_seconds": 184.32884049997665,
+      "estimated_suspend_seconds": 0,
+      "suspension_tolerance_seconds": 2
+    },
+    "callbacks": {
+      "maximum_unexplained_callback_ms": 75.97959999999999,
+      "gap_limit_ms": 2000,
+      "traced_seconds": 181.85437489999973,
+      "scope": "Continuity only; subtracts known diagnostic driver and current UI prefix. Not frame/queue performance or physical latency acceptance."
+    }
+  },
+  "power_request": {
+    "requested": true,
+    "restored": true,
+    "flags": 2147483651
+  },
+  "source_report_sha256": "7EF8923D76DE8AB9AAB746031F2AF785FB8B748277B28C2E996464E5CD0859D9",
+  "scope": "Small 4-layer semantic/instrumentation probe. Confirms adaptive extension, three brush configurations, pixel/history/save-open checks and observation continuity; no resource targets or two-hour acceptance evaluated.",
+  "release_gate_accepted": false
+}

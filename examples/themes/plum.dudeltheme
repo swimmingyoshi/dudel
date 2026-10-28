@@ -1,0 +1,9 @@
+{
+  "name": "Plum",
+  "dark": true,
+  "panel": [38, 32, 43],
+  "window": [54, 44, 62],
+  "text": [237, 230, 242],
+  "accent": [103, 68, 123],
+  "canvas_background": [48, 42, 52]
+}

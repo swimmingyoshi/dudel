@@ -1,0 +1,588 @@
+{
+  "date": "2026-10-18",
+  "observed_utc": "2026-10-18T22:55:28.756540+00:00",
+  "application_source_revision": "581971a043f947606e4f6bd5d35151b3753adeff",
+  "executable_sha256": "331640509A0A1326527637F397ABD95FA376AFAA5D6E1F2B4D277BE9D0C202DD",
+  "binary_directory": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-170922-110",
+  "source_archive": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-170922-110-source.zip",
+  "archive_verification": {
+    "dudel-0.1.0-candidate-20261018-170922-110-source.zip": {
+      "sha256": "26F548DA782947B9383D1E440BA66C78651E7DA75B51B620BB4EBFE08C65D5B7",
+      "files": 24945,
+      "crc": "passed"
+    },
+    "dudel-0.1.0-candidate-20261018-170922-110.zip": {
+      "sha256": "C17CE045DBC124CBC8B0D429D5779625945A2406C32F2E6493B7B7E49678FC3A",
+      "files": 898,
+      "crc": "passed"
+    }
+  },
+  "full_verification": "benchmarks/clipboard-file-reader-verification-20261018.json",
+  "pipeline": {
+    "status_at_observation": "pipeline-failed",
+    "controller": "target/qa/release-gates-clipboard-fix-20261018/continue_release.py",
+    "state": "target/qa/release-gates-clipboard-fix-20261018/PIPELINE_STATE.json",
+    "stop_on_failure": true,
+    "release_accepted": false
+  },
+  "hosted_ci": {
+    "run_id": 39148261858,
+    "application_revision": "581971a043f947606e4f6bd5d35151b3753adeff",
+    "status_at_observation": "completed",
+    "accepted": false,
+    "conclusion": "success"
+  },
+  "obs_acceptance": {
+    "installed": true,
+    "status": "not_executed_desktop_automation_unavailable",
+    "attempts": 2,
+    "error": "GetCursorPos failed: Access is denied. (0x80070005)",
+    "settings_or_artwork_modified": false
+  },
+  "plan_review": {
+    "current_plan": "DELIVERY_PLAN.md",
+    "historical_text": "research/DELIVERY_CHECKPOINTS_2026-10-18.md",
+    "relative_links": "all file targets checked"
+  },
+  "scope": "Identified frozen binary, matching archives, successful independent rebuild/startup/hosted CI and standard runtime subtargets. Maximum noisy workload and all manual gates remain open.",
+  "release_accepted": false,
+  "independent_offline_rebuild": {
+    "archive": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-170922-110-source.zip",
+    "started_utc": "2026-10-18T17:12:24.655137+00:00",
+    "status": "passed",
+    "archive_sha256": "26F548DA782947B9383D1E440BA66C78651E7DA75B51B620BB4EBFE08C65D5B7",
+    "members": 24945,
+    "source": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-170922-110-source",
+    "expected_candidate_executable_sha256": "331640509A0A1326527637F397ABD95FA376AFAA5D6E1F2B4D277BE9D0C202DD",
+    "executable": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\build\\release\\dudel.exe",
+    "executable_sha256": "DD9BE4A425C16AFE1743F35584A91E8D10B10C9D0C2F9DB0763131BD16A957BC",
+    "completed_utc": "2026-10-18T17:24:29.916782+00:00",
+    "scope": "Archive checksum/CRC, recorded source hashes and fresh offline release compilation; not clean-machine acceptance"
+  },
+  "rebuilt_startup": {
+    "exit_code": 0,
+    "capture": "target/qa/release-gates-clipboard-fix-20261018/rebuilt-startup.png",
+    "capture_sha256": "EFA335F0E3E5181249EC81570491159C2479C13D9F27E9BB9233FFA43B5AEE9D",
+    "visually_reviewed": true
+  },
+  "standard_dx12": {
+    "state": {
+      "status": "completed",
+      "runs": 3,
+      "rounds": 30,
+      "layers": 20,
+      "density": "sparse",
+      "completed": [
+        {
+          "run": 1,
+          "elapsed_seconds": 1851.3756072,
+          "actual_rounds": 30,
+          "requested_plan_verified": true,
+          "per_run_memory_targets_pass": true,
+          "per_run_job_peak_targets_pass": true
+        },
+        {
+          "run": 2,
+          "elapsed_seconds": 1849.2166412,
+          "actual_rounds": 30,
+          "requested_plan_verified": true,
+          "per_run_memory_targets_pass": true,
+          "per_run_job_peak_targets_pass": true
+        },
+        {
+          "run": 3,
+          "elapsed_seconds": 1794.7095762,
+          "actual_rounds": 30,
+          "requested_plan_verified": true,
+          "per_run_memory_targets_pass": true,
+          "per_run_job_peak_targets_pass": true
+        }
+      ],
+      "require_job_peaks": true,
+      "minimum_seconds": 0,
+      "brushes": "mixed",
+      "probe_only": false,
+      "power_request": {
+        "requested": true,
+        "restored": true,
+        "flags": 2147483651
+      },
+      "frozen_executable_sha256": "331640509A0A1326527637F397ABD95FA376AFAA5D6E1F2B4D277BE9D0C202DD",
+      "controller_timeout_seconds": 6300,
+      "run": 3,
+      "pid": null,
+      "launched_utc": "2026-10-18T18:30:20.359453+00:00",
+      "report": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-170922-110-source\\target\\qa\\current-standard20\\run-3-sustained-100.json",
+      "stderr": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-170922-110-source\\target\\qa\\current-standard20\\run-3.stderr.log",
+      "exit_code": 0
+    },
+    "runs": [
+      {
+        "run": 1,
+        "memory": {
+          "rounds": 30,
+          "warmup_rounds": 5,
+          "layers": 20,
+          "fixture_options": {
+            "density": "Sparse",
+            "layers": 20,
+            "rounds": 30
+          },
+          "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+          "elapsed_seconds": 1851.3756072,
+          "configuration_target_pass": true,
+          "per_run_memory_targets_pass": true,
+          "stages": {
+            "initial-idle": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 4.3671875,
+              "private_slope_mib_per_round": 0.20857572115384615,
+              "private_min_mib": 545.19921875,
+              "private_max_mib": 554.58984375,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 55.55233573913574
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "history-released-before-save": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": -3.7734375,
+              "private_slope_mib_per_round": 0.008218149038461539,
+              "private_min_mib": 566.54296875,
+              "private_max_mib": 580.12109375,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 74.86279773712158
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "final-idle-history-released": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 2.234375,
+              "private_slope_mib_per_round": 0.09243689903846154,
+              "private_min_mib": 608.38671875,
+              "private_max_mib": 612.765625,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 110.38158988952637
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            }
+          },
+          "release_gate_accepted": false,
+          "scope": "Per-run CPU/process memory subchecks only. Requires three runs, two-hour mixed session, dense fixtures, GPU ownership, uninstrumented timing, source identity and physical artist acceptance before G2 can close. Uses five warmup rounds, unlike historical three-round descriptive summaries."
+        },
+        "jobs_peaks": {
+          "available": true,
+          "configuration_target_pass": true,
+          "fixture_class": "standard",
+          "private_commit_lifetime_peak_bytes": 677736448,
+          "peak_budget_bytes": 2147483648,
+          "peak_target_pass": true,
+          "completed_jobs_ms": {
+            "Save": {
+              "count": 30,
+              "median": 55.081199999999995,
+              "p95_nearest_rank": 66.3215,
+              "maximum": 71.6073
+            },
+            "Open": {
+              "count": 30,
+              "median": 584.3960999999999,
+              "p95_nearest_rank": 781.0998999999999,
+              "maximum": 823.414
+            }
+          },
+          "completed_job_p95_budget_ms": 5000,
+          "completed_job_target_pass": true,
+          "per_run_job_peak_targets_pass": true,
+          "release_gate_accepted": false,
+          "scope": "Warm-cache command-to-editor-ready wall times include worker completion/polling and Open display settlement, before pixel oracles. Windows lifetime peak through the last checkpoint includes fixed diagnostic storage. Not isolated worker CPU, cold-cache performance, VRAM, frame timing, physical input or release certification."
+        },
+        "continuity": {
+          "clocks": {
+            "biased_elapsed_seconds": 1855.25,
+            "awake_elapsed_seconds": 1855.2465490999748,
+            "estimated_suspend_seconds": 0.0034509000252000988,
+            "suspension_tolerance_seconds": 2
+          },
+          "callbacks": null
+        },
+        "raw_report_sha256": "A9833ADD0443EDB6BDB8B42F4B6A4987DC05159E761A91FC7F37FE9C89A20473"
+      },
+      {
+        "run": 2,
+        "memory": {
+          "rounds": 30,
+          "warmup_rounds": 5,
+          "layers": 20,
+          "fixture_options": {
+            "density": "Sparse",
+            "layers": 20,
+            "rounds": 30
+          },
+          "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+          "elapsed_seconds": 1849.2166412,
+          "configuration_target_pass": true,
+          "per_run_memory_targets_pass": true,
+          "stages": {
+            "initial-idle": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 3.87109375,
+              "private_slope_mib_per_round": 0.10568509615384615,
+              "private_min_mib": 545.0,
+              "private_max_mib": 552.6796875,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 55.55233573913574
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "history-released-before-save": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 1.1484375,
+              "private_slope_mib_per_round": -0.04615685096153846,
+              "private_min_mib": 568.828125,
+              "private_max_mib": 580.453125,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 74.86279773712158
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "final-idle-history-released": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 1.60546875,
+              "private_slope_mib_per_round": 0.02145733173076923,
+              "private_min_mib": 609.34765625,
+              "private_max_mib": 612.36328125,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 110.38158988952637
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            }
+          },
+          "release_gate_accepted": false,
+          "scope": "Per-run CPU/process memory subchecks only. Requires three runs, two-hour mixed session, dense fixtures, GPU ownership, uninstrumented timing, source identity and physical artist acceptance before G2 can close. Uses five warmup rounds, unlike historical three-round descriptive summaries."
+        },
+        "jobs_peaks": {
+          "available": true,
+          "configuration_target_pass": true,
+          "fixture_class": "standard",
+          "private_commit_lifetime_peak_bytes": 678125568,
+          "peak_budget_bytes": 2147483648,
+          "peak_target_pass": true,
+          "completed_jobs_ms": {
+            "Save": {
+              "count": 30,
+              "median": 55.4858,
+              "p95_nearest_rank": 68.15690000000001,
+              "maximum": 73.0232
+            },
+            "Open": {
+              "count": 30,
+              "median": 604.1187,
+              "p95_nearest_rank": 821.2787999999999,
+              "maximum": 987.2333
+            }
+          },
+          "completed_job_p95_budget_ms": 5000,
+          "completed_job_target_pass": true,
+          "per_run_job_peak_targets_pass": true,
+          "release_gate_accepted": false,
+          "scope": "Warm-cache command-to-editor-ready wall times include worker completion/polling and Open display settlement, before pixel oracles. Windows lifetime peak through the last checkpoint includes fixed diagnostic storage. Not isolated worker CPU, cold-cache performance, VRAM, frame timing, physical input or release certification."
+        },
+        "continuity": {
+          "clocks": {
+            "biased_elapsed_seconds": 1851.9220000000205,
+            "awake_elapsed_seconds": 1851.9249423000147,
+            "estimated_suspend_seconds": 0,
+            "suspension_tolerance_seconds": 2
+          },
+          "callbacks": null
+        },
+        "raw_report_sha256": "E63B1C5A412AD4F4BAB8B0A93865C11CB7C4B987D3F7165B53DB47DD32F86F58"
+      },
+      {
+        "run": 3,
+        "memory": {
+          "rounds": 30,
+          "warmup_rounds": 5,
+          "layers": 20,
+          "fixture_options": {
+            "density": "Sparse",
+            "layers": 20,
+            "rounds": 30
+          },
+          "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+          "elapsed_seconds": 1794.7095762,
+          "configuration_target_pass": true,
+          "per_run_memory_targets_pass": true,
+          "stages": {
+            "initial-idle": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": -1.54296875,
+              "private_slope_mib_per_round": 0.08341947115384615,
+              "private_min_mib": 543.90234375,
+              "private_max_mib": 549.6875,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 55.55233573913574
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "history-released-before-save": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 2.46875,
+              "private_slope_mib_per_round": -0.03297776442307692,
+              "private_min_mib": 563.25,
+              "private_max_mib": 576.734375,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 74.86279773712158
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            },
+            "final-idle-history-released": {
+              "tail_start_round_zero_based": 5,
+              "samples": 25,
+              "private_net_mib": 5.33984375,
+              "private_slope_mib_per_round": 0.21685096153846153,
+              "private_min_mib": 605.796875,
+              "private_max_mib": 612.65625,
+              "private_target_pass": true,
+              "ownership": {
+                "registered_snapshot_total_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 110.38158988952637
+                },
+                "display_rgba_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 25.0
+                },
+                "display_prefix_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                },
+                "history_mib": {
+                  "net_mib": 0.0,
+                  "maximum_mib": 0.0
+                }
+              },
+              "tracked_ownership_target_pass": true
+            }
+          },
+          "release_gate_accepted": false,
+          "scope": "Per-run CPU/process memory subchecks only. Requires three runs, two-hour mixed session, dense fixtures, GPU ownership, uninstrumented timing, source identity and physical artist acceptance before G2 can close. Uses five warmup rounds, unlike historical three-round descriptive summaries."
+        },
+        "jobs_peaks": {
+          "available": true,
+          "configuration_target_pass": true,
+          "fixture_class": "standard",
+          "private_commit_lifetime_peak_bytes": 676802560,
+          "peak_budget_bytes": 2147483648,
+          "peak_target_pass": true,
+          "completed_jobs_ms": {
+            "Save": {
+              "count": 30,
+              "median": 50.551950000000005,
+              "p95_nearest_rank": 61.6044,
+              "maximum": 61.6734
+            },
+            "Open": {
+              "count": 30,
+              "median": 576.56975,
+              "p95_nearest_rank": 629.0411,
+              "maximum": 654.1968999999999
+            }
+          },
+          "completed_job_p95_budget_ms": 5000,
+          "completed_job_target_pass": true,
+          "per_run_job_peak_targets_pass": true,
+          "release_gate_accepted": false,
+          "scope": "Warm-cache command-to-editor-ready wall times include worker completion/polling and Open display settlement, before pixel oracles. Windows lifetime peak through the last checkpoint includes fixed diagnostic storage. Not isolated worker CPU, cold-cache performance, VRAM, frame timing, physical input or release certification."
+        },
+        "continuity": {
+          "clocks": {
+            "biased_elapsed_seconds": 1797.2969999999623,
+            "awake_elapsed_seconds": 1797.2971784999827,
+            "estimated_suspend_seconds": 0,
+            "suspension_tolerance_seconds": 2
+          },
+          "callbacks": null
+        },
+        "raw_report_sha256": "DA86AF219ED235A93511AC067FD3A346F68E681EAC6755B232DD3DEACC423A4A"
+      }
+    ],
+    "scope": "Three completed 30-round/20-layer sparse mixed-brush workloads; memory, completed jobs, peaks and continuity only. Not all of G2."
+  },
+  "maximum_dx12": {
+    "state": {
+      "status": "failed",
+      "runs": 1,
+      "rounds": 30,
+      "layers": 32,
+      "density": "noise",
+      "completed": [],
+      "require_job_peaks": true,
+      "minimum_seconds": 7200,
+      "brushes": "mixed",
+      "probe_only": false,
+      "power_request": {
+        "requested": true,
+        "restored": true,
+        "flags": 2147483651
+      },
+      "frozen_executable_sha256": "331640509A0A1326527637F397ABD95FA376AFAA5D6E1F2B4D277BE9D0C202DD",
+      "controller_timeout_seconds": 9900,
+      "run": 1,
+      "pid": null,
+      "launched_utc": "2026-10-18T19:00:24.179545+00:00",
+      "report": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-170922-110-source\\target\\qa\\current-maximum32-two-hours\\run-1-sustained-100.json",
+      "stderr": "<repo>\\target\\qa\\release-gates-clipboard-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-170922-110-source\\target\\qa\\current-maximum32-two-hours\\run-1.stderr.log",
+      "exit_code": 1
+    },
+    "incomplete_report": "target/qa/release-gates-clipboard-fix-20261018/offline-rebuild/extracted/dudel-0.1.0-candidate-20261018-170922-110-source/target/qa/current-maximum32-two-hours/run-1-sustained-100.incomplete.json",
+    "incomplete_report_sha256": "D91EFA6F6F9A388BA65A2C4276444F73DC7561AF445C3563C38B1C4BFB189FF5",
+    "error": "Diagnostic frame storage exhausted in Undone: Undone",
+    "observed_session_seconds": 7585.1447546,
+    "last_round_zero_based": 28,
+    "cycle": 9,
+    "completed_rounds": 28,
+    "frame_samples_recorded": 1152000,
+    "frame_capacity": 1152000,
+    "diagnostic_timeout_seconds": 9600,
+    "scope": "Over two hours elapsed, but minimum 30 rounds were not completed. No maximum-workload, frame, memory or completed-job acceptance inferred from incomplete evidence.",
+    "next_action": "Replace frame-count/FPS-based in-memory retention with bounded buffered frame logging that retains every sample; verify streaming report compatibility and error handling before another long run."
+  }
+}

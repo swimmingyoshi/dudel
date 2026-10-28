@@ -1,0 +1,8 @@
+{
+  "scope": "Synthetic experimental indexed commit primitive only; no document format, tile compression, thumbnail, compaction, editor integration or power-cut certification.",
+  "generations": 2,
+  "first_bytes": 536670,
+  "changed_tile_append_bytes": 262220,
+  "unchanged_records_reused": true,
+  "exact_reopen": true
+}

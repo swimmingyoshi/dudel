@@ -1,0 +1,31 @@
+{
+  "scope": "Generated small-document streaming journal study; no complete encoded object maps retained. Sink memory metric covers incoming and comparison record allocations only, excluding encoder scratch/index/source memory. Append bytes exclude root overwrite. No compaction, normal save integration or power-cut certification.",
+  "first_commit_bytes": 81667,
+  "unchanged_append_bytes": 220,
+  "edit_append_bytes": 995,
+  "removed_objects": 4,
+  "first": {
+    "objects": 9,
+    "changed": 9,
+    "reused": 0,
+    "removed": 0,
+    "sink_owned_record_bytes_peak": 65552
+  },
+  "unchanged": {
+    "objects": 9,
+    "changed": 0,
+    "reused": 9,
+    "removed": 0,
+    "sink_owned_record_bytes_peak": 131104
+  },
+  "edit": {
+    "objects": 9,
+    "changed": 3,
+    "reused": 6,
+    "removed": 0,
+    "sink_owned_record_bytes_peak": 131104
+  },
+  "exact_initial": true,
+  "exact_edited": true,
+  "exact_after_removal": true
+}

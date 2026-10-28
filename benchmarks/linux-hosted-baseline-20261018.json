@@ -1,0 +1,59 @@
+{
+  "revision": "aca86c0181e778f83fe6cb20410f43126533867d",
+  "run": 39177554445,
+  "url": "https://github.com/swimmingyoshi/dudel/actions/runs/39177554445",
+  "conclusion": "success",
+  "verification": {
+    "platform": "Ubuntu 24.04",
+    "default_passed": 849,
+    "all_features_passed": 853,
+    "ignored_per_suite": 2,
+    "python_passed": 32,
+    "format": "passed",
+    "default_clippy": "passed",
+    "all_features_clippy": "passed",
+    "release_build": "passed"
+  },
+  "native_startup": {
+    "renderer": "X11 / software OpenGL under Xvfb",
+    "dimensions": [
+      1280,
+      800
+    ],
+    "executable_sha256": "e23cd3fb58296af150d44d1f24bef93d7268eaa850ac4fc0d03392cf3a1f2186",
+    "capture_sha256": "8bf477983901a14a08a8d4a3801e2989236e0fd86cc3d7789cc371b1d47c5a82",
+    "artifact_download_sha256_verified": true,
+    "archive_crc": "passed",
+    "visually_reviewed": true,
+    "local_capture": "target/qa/frame-log-fix-20261018/linux-startup.png"
+  },
+  "artifacts": [
+    {
+      "id": 12155606310,
+      "name": "dudel-linux-startup",
+      "size_in_bytes": 115103,
+      "url": "https://api.github.com/repos/swimmingyoshi/dudel/actions/artifacts/12155606310",
+      "archive_download_url": "https://api.github.com/repos/swimmingyoshi/dudel/actions/artifacts/12155606310/zip",
+      "expired": false,
+      "created_at": "2026-10-18T23:57:43Z",
+      "expires_at": "2027-01-16T23:41:10Z",
+      "updated_at": "2026-10-18T23:57:43Z",
+      "digest": "sha256:34d00cd7fc646f2e9d819cad79e97b1f70997e1934b0acfd9982d258404d7687",
+      "workflow_run": {
+        "id": 39177554445,
+        "repository_id": 1420414610,
+        "head_repository_id": 1420414610,
+        "head_branch": "linux",
+        "head_sha": "aca86c0181e778f83fe6cb20410f43126533867d"
+      }
+    }
+  ],
+  "initial_failure": {
+    "run": 39177055193,
+    "revision": "d69b929cc49ed079daad0476785481db5d334d5a",
+    "error": "E0425: Windows-only DX12 example called count_blocks on Linux",
+    "resolution": "Gate Windows imports, helpers and entry point; non-Windows entry point reports unsupported platform"
+  },
+  "release_accepted": false,
+  "scope": "Build, tests and isolated X11/software-OpenGL startup. No physical Wayland/tablet, real GPU performance, multi-monitor, OBS, Linux packaging or release acceptance. This baseline predates the tab-recovery fix, whose hosted checks are pending."
+}

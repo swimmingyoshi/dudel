@@ -1,0 +1,126 @@
+{
+  "date": "2026-10-28",
+  "package": "dudel-0.1.0-windows-x64",
+  "package_revision": "3d0625569ec4f82b2cbc26282b7fd4ee2dd92275",
+  "status": "passed",
+  "release_preparation_accepted": true,
+  "public_release_published": false,
+  "artifacts": [
+    {
+      "path": "dudel.exe",
+      "sha256": "9713876BB6FD1FE917DB12EA6D829B19ED58D7E11D4B6537E030AF7AEF5FD8E5",
+      "imports": [
+        "advapi32.dll",
+        "api-ms-win-core-synch-l1-2-0.dll",
+        "bcryptprimitives.dll",
+        "comctl32.dll",
+        "dwmapi.dll",
+        "gdi32.dll",
+        "imm32.dll",
+        "kernel32.dll",
+        "KERNEL32.dll",
+        "ntdll.dll",
+        "ole32.dll",
+        "oleaut32.dll",
+        "opengl32.dll",
+        "shell32.dll",
+        "shlwapi.dll",
+        "uiautomationcore.dll",
+        "user32.dll",
+        "uxtheme.dll"
+      ]
+    },
+    {
+      "path": "dudel_thumbnails.dll",
+      "sha256": "7A82B0990C4C643E50547118805E9FF7098347AE742C77C294652833F537F417",
+      "imports": [
+        "advapi32.dll",
+        "api-ms-win-core-synch-l1-2-0.dll",
+        "gdi32.dll",
+        "kernel32.dll",
+        "KERNEL32.dll",
+        "ntdll.dll",
+        "ole32.dll",
+        "oleaut32.dll",
+        "shell32.dll"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "role": "windows-binary",
+      "filename": "dudel-0.1.0-windows-x64.zip",
+      "bytes": 13988558,
+      "sha256": "95C04690D2BA067EC4861C2F0E71508FFCC8D6B21F3A0350D6D599A0ADFE2DE7",
+      "checksum_file": "dudel-0.1.0-windows-x64.zip.sha256",
+      "url": null
+    },
+    {
+      "role": "corresponding-source",
+      "filename": "dudel-0.1.0-windows-x64-source.zip",
+      "bytes": 108768075,
+      "sha256": "E6AC200A5DB5F9003EAE47AAA8B1A4D4912A12878B0A663646F213E9D9FFCCB5",
+      "checksum_file": "dudel-0.1.0-windows-x64-source.zip.sha256",
+      "url": null
+    }
+  ],
+  "notices": {
+    "candidate": "dudel-0.1.0-windows-x64",
+    "passed": true,
+    "problems": [],
+    "binary_zip": {
+      "sha256": "95C04690D2BA067EC4861C2F0E71508FFCC8D6B21F3A0350D6D599A0ADFE2DE7",
+      "members": 991
+    },
+    "source_zip": {
+      "sha256": "E6AC200A5DB5F9003EAE47AAA8B1A4D4912A12878B0A663646F213E9D9FFCCB5",
+      "members": 25098
+    },
+    "artifacts_checked": [
+      "dudel.exe",
+      "dudel_thumbnails.dll"
+    ],
+    "manual_review": [],
+    "packages": 458,
+    "notice_files": 880,
+    "upstream_provenance_hashes_checked": 139,
+    "binary_source_notice_parity": true,
+    "identical_to_reviewed_candidate": {
+      "reviewed": "dudel-0.1.0-candidate-20261021-190309-093",
+      "notice_files_identical": true,
+      "dependencies_identical": true,
+      "third_party_notices_md_identical": true,
+      "changed_files": []
+    }
+  },
+  "compiled_inputs_identical_to_verified_candidate": true,
+  "compiled_input_count": 166,
+  "cargo_settings_and_toolchain_identical": true,
+  "vendored_files_compared": 23859,
+  "vendored_contents_identical": true,
+  "vendor_tree_sha256": "D4F8F687DB7FC67451CDD25D5A503294A26315243D2CD6EAB0F631828FB95FB6",
+  "offline_rebuild_reused": {
+    "record": "benchmarks/release-candidate-20261027.json",
+    "state": "passed",
+    "reason": "Identical app/DLL bytes, all compiled inputs, toolchain/configuration and every vendored file; differences are release documentation and packaging scripts."
+  },
+  "documentation_checks": {
+    ".zip": {
+      "documents": 42,
+      "local_links": 187
+    },
+    "-source.zip": {
+      "documents": 43,
+      "local_links": 203
+    }
+  },
+  "packaging_validation": {
+    "powershell_parse": "passed",
+    "python_compile": "passed",
+    "focused_archive_tests": 4,
+    "release_hash_guard": "passed for both pinned artifacts"
+  },
+  "handoff": "artifacts\\release-handoff-20261028",
+  "downloads_manifest_sha256": "EAD2D3C68D9A4C64A74893F212BBF02C471A4ADA381FF313DABBD0D73C70E081",
+  "publication_limit": "No website/payment/support setup or upload performed; those launch actions are explicit in DOWNLOADS.json."
+}

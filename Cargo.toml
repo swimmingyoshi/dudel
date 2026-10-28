@@ -1,0 +1,49 @@
+[package]
+name = "dudel"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/swimmingyoshi/dudel"
+
+[features]
+# Diagnostic build only: requested Rust allocation bytes, not heap commitment/VRAM.
+allocation-profile = ["windows-sys/Win32_System_Memory", "windows-sys/Win32_System_ProcessStatus", "windows-sys/Win32_System_LibraryLoader", "windows-sys/Win32_System_Threading"]
+allocation-stack-profile = ["allocation-profile", "dep:rustc-demangle", "windows-sys/Win32_System_Diagnostics_Debug", "windows-sys/Win32_System_LibraryLoader"]
+
+[dependencies]
+arboard = "=3.6.1"
+eframe = { version = "0.33", features = ["persistence", "wgpu"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rustc-demangle = { version = "0.1", optional = true }
+ron = { version = "=0.11.0", features = ["integer128"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
+# Timelapse GIFs encode only the pixels that changed between frames.
+gif = "0.14"
+color_quant = "1"
+rfd = "0.15"
+rhai = "1"
+tempfile = "3"
+flate2 = "1"
+directories = "6"
+wasmi = "2"
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "hooks", "limits"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Input_Pointer", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_Performance", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_Globalization"] }
+
+[dev-dependencies]
+rusqlite = { version = "=0.40.2", default-features = false, features = ["serialize"] }
+wat = "1.261.0"
+
+[[example]]
+name = "dx12_upload_probe"
+required-features = ["allocation-profile"]

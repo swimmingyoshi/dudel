@@ -1,0 +1,49 @@
+{
+  "candidate_revision": "94ef2ed1780d15417ca793d85d2d2d9d34bc59b1",
+  "executable_sha256": "D41C0072F8FA9D15C33160F5973B382E8884BEEE5FB0536D39A1CEF32173011A",
+  "archives": {
+    "dudel-0.1.0-candidate-20261018-231406-661-source.zip": {
+      "sha256": "679623DE015034D6C74EA7ACD93499D0E24BBF1E8986CA9A20B12C31889A4392",
+      "files": 24985,
+      "crc": "passed",
+      "documents": 32,
+      "local_links": 95,
+      "link_resolution": "passed"
+    },
+    "dudel-0.1.0-candidate-20261018-231406-661.zip": {
+      "sha256": "5E988E364DFDCF2A23DFE9352D45E376FD0986287B5CB84F35C7355F24F4101C",
+      "files": 935,
+      "crc": "passed",
+      "documents": 31,
+      "local_links": 79,
+      "link_resolution": "passed"
+    }
+  },
+  "offline_rebuild": {
+    "archive": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-231406-661-source.zip",
+    "started_utc": "2026-10-18T23:17:16.897506+00:00",
+    "status": "passed",
+    "archive_sha256": "679623DE015034D6C74EA7ACD93499D0E24BBF1E8986CA9A20B12C31889A4392",
+    "members": 24985,
+    "source": "<repo>\\target\\qa\\release-gates-frame-log-fix-20261018\\offline-rebuild\\extracted\\dudel-0.1.0-candidate-20261018-231406-661-source",
+    "expected_candidate_executable_sha256": "D41C0072F8FA9D15C33160F5973B382E8884BEEE5FB0536D39A1CEF32173011A",
+    "executable": "<repo>\\target\\qa\\release-gates-frame-log-fix-20261018\\offline-rebuild\\build\\release\\dudel.exe",
+    "executable_sha256": "BDD3099C2F12A6E51AFE6F04261727EF5A5C4F2157F3ED6818D4DBB853235B59",
+    "completed_utc": "2026-10-18T23:27:46.904274+00:00",
+    "scope": "Archive checksum/CRC, recorded source hashes and fresh offline release compilation; not clean-machine acceptance"
+  },
+  "rebuilt_startup": {
+    "path": "<repo>\\target\\qa\\release-gates-frame-log-fix-20261018\\rebuilt-startup.png",
+    "sha256": "EFA335F0E3E5181249EC81570491159C2479C13D9F27E9BB9233FFA43B5AEE9D",
+    "renderer": "DX12",
+    "visually_reviewed": true
+  },
+  "windows_recorder_ci": {
+    "run": 39175300120,
+    "revision": "52ffee9aacc463085dd068f4296079ff7de0cca7",
+    "conclusion": "success"
+  },
+  "resource_study_status_at_recording": "dx12-standard-running",
+  "release_accepted": false,
+  "scope": "Archive integrity reused from preserved pipeline; packaged root Markdown dependency links audited separately. Offline rebuild is fresh compilation, not byte-identical reproduction or clean-machine acceptance. Resource studies and physical acceptance remain open."
+}

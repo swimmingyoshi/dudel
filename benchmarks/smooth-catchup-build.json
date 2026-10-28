@@ -1,0 +1,525 @@
+﻿{
+    "revision":  "dcb5a73efb8b6cf738f28d568b5eb67ecd23c93e",
+    "features":  "default (profiling disabled)",
+    "executable_sha256":  "995C5A449999E4C30D98430922104DEF52A71F8613BC3162DEFEDFF9CB323E7F",
+    "package":  "artifacts/releases/dudel-0.1.0-candidate-20261017-134927-038.zip",
+    "package_sha256":  "02394E5A009B2C35412F5C4445FAA7CDF2AE086C45F9D1099CD803442E346779",
+    "source_inputs":  [
+                          {
+                              "path":  "Cargo.lock",
+                              "sha256":  "32CCAFAFB31135674FC4E4756C44BC8262854E50432806BFF323ACC63DE36380"
+                          },
+                          {
+                              "path":  "Cargo.toml",
+                              "sha256":  "64A606EBDACB9AE9F90346A2A578E1ECB28B9830206D8ADBA937C37A8F836779"
+                          },
+                          {
+                              "path":  "src/adjustments.rs",
+                              "sha256":  "B7947FBD03A01405A576182217F247222B235926CD7AD8355A833AE11D447A50"
+                          },
+                          {
+                              "path":  "src/affine.rs",
+                              "sha256":  "387BCFFEFFFDD31ECEC5AC0218781005A33352A10255FDCC0D175C96BF9344F2"
+                          },
+                          {
+                              "path":  "src/affine_benchmark.rs",
+                              "sha256":  "2B3E2E704264813AFE876B80CE7E732C472CED477550D86FF4D54231A127940B"
+                          },
+                          {
+                              "path":  "src/affine_preview.rs",
+                              "sha256":  "A178AC8593BF410408990A04099613A6FC3B7C0C1E99A5EB1D2FAB58541826FC"
+                          },
+                          {
+                              "path":  "src/allocation_profile.rs",
+                              "sha256":  "0B6CA0CEC1C71BC0D99FB21A65F002D20CED8E7A66D2990C7AE29AFDF1AA8576"
+                          },
+                          {
+                              "path":  "src/allocation_trace.rs",
+                              "sha256":  "25FE772B5254B9648056582CD9EDEAC947146BD4187C0169AF9269C76A546BD0"
+                          },
+                          {
+                              "path":  "src/benchmark.rs",
+                              "sha256":  "552C81CF35277275F416D7AD18F18D26783B5B959EFE74F12BB68CE6E0EDDD44"
+                          },
+                          {
+                              "path":  "src/binary_project.rs",
+                              "sha256":  "FD1DDFE5E4D11F7833AD83CFB56C9252118D4ABC5861D5C96117B075800F9AA1"
+                          },
+                          {
+                              "path":  "src/blend.rs",
+                              "sha256":  "5A007CB2A3D8D558A178425D9EE041E1B2F5A503003F4EB43ED4A4D081DBD42A"
+                          },
+                          {
+                              "path":  "src/brush.rs",
+                              "sha256":  "3278FB7A977F3C7AF54A0E03A2D7B0AB6E55DA4EBA03AD2593C11FCCDB1181AA"
+                          },
+                          {
+                              "path":  "src/brush_edge.rs",
+                              "sha256":  "DFD5212BD8C26A4AB6B6E15B23C0FB0A2CD08ED85B2E45793FF6EECD91CD3780"
+                          },
+                          {
+                              "path":  "src/brush_library.rs",
+                              "sha256":  "AA21CE7A10A674704AE240F9EE19121CB8F928E765A73D8D90A2CAAEE15A5F93"
+                          },
+                          {
+                              "path":  "src/brush_pack.rs",
+                              "sha256":  "E77F2B8220891FC1325BEB19A9041C8BAFDECEDB9D6A601D79D56899F1B9DF4F"
+                          },
+                          {
+                              "path":  "src/brush_previews.rs",
+                              "sha256":  "F15FA522694E606B9C12EF0F2C30CA54A63FBFC8176714B08BFD7EBCCE5F2B55"
+                          },
+                          {
+                              "path":  "src/brush_studio.rs",
+                              "sha256":  "142C2C834256C89F13869395A01F190B95306B1849147E2FD23E9488EAB70BA6"
+                          },
+                          {
+                              "path":  "src/canvas.rs",
+                              "sha256":  "807150A65BCBF99A9B515189A9843CB28D76F81DA7E23F052C55367560479F52"
+                          },
+                          {
+                              "path":  "src/canvas_size.rs",
+                              "sha256":  "C236D2941595FCBA96D4223738C87D04997AF3162E7B78B57E9C477507AB803F"
+                          },
+                          {
+                              "path":  "src/canvas_textures.rs",
+                              "sha256":  "5E737FAA16BBF9509FD8D47F1CF3B81C02D4A73FD21225D84310ACFECE37259B"
+                          },
+                          {
+                              "path":  "src/capture.rs",
+                              "sha256":  "3BD64693DE67898E9960A40F1B14A3AA4E9B4A6DF8FD2C4A998FA9C706D9E957"
+                          },
+                          {
+                              "path":  "src/clip_attributes.rs",
+                              "sha256":  "4D0893E695C189AB9148DB2592C9278E570CA43EAAB038D3B2D1B61C6F07FE61"
+                          },
+                          {
+                              "path":  "src/clip_blocks.rs",
+                              "sha256":  "FD9B8F536D3AA2B538417079E6361E1B450296811561F651949993B08FA003BE"
+                          },
+                          {
+                              "path":  "src/clip_container.rs",
+                              "sha256":  "D31FB6BB98DABAC346784D8543E7452AF7804D10552DA0481D22DD8D9BC082A7"
+                          },
+                          {
+                              "path":  "src/clip_document.rs",
+                              "sha256":  "0078A191300723483044AD075C8FF5E112D30B311AD15D8CC5DACED25AE8894E"
+                          },
+                          {
+                              "path":  "src/clip_metadata.rs",
+                              "sha256":  "65D0B4E2497C19CEC438A8FAAD8C4095FC03B8AB541F40C40EEB699C6C8B27A8"
+                          },
+                          {
+                              "path":  "src/clip_preview.rs",
+                              "sha256":  "14283AA4C3F1007CFAAE135B4BCA8ACB0F67F3CB3EC482C70CEDB828B9033CF2"
+                          },
+                          {
+                              "path":  "src/clip_raster.rs",
+                              "sha256":  "C2510B2C350103BFA50B39A558A703D4B767A40AA84AA1FCF7873BA95BAC5B80"
+                          },
+                          {
+                              "path":  "src/clipboard.rs",
+                              "sha256":  "00D2FC89057F2FBF1D0B2EB3C9B232EACE9127CFB68D4F55B3AE7AE5C23C7973"
+                          },
+                          {
+                              "path":  "src/clipboard_shortcuts.rs",
+                              "sha256":  "FF29015353651ABA8A914E0786EECCB60B449DC193D6C9CC522F21E9CDA2671F"
+                          },
+                          {
+                              "path":  "src/color_wheel.rs",
+                              "sha256":  "445DC4A8C2A5D81B9ABA41F6AA5C524FBECE3E94DB6AF938E1D1223B555D32DD"
+                          },
+                          {
+                              "path":  "src/composite_cursor.rs",
+                              "sha256":  "1ED76B24AF01B3DA9BF2C19487517DEBA532B5559E92D72266362F328A55188F"
+                          },
+                          {
+                              "path":  "src/dab_paint.rs",
+                              "sha256":  "C3911F3472A387E6A4E2C245E856364FA2DA6506451FB327D1FB1C0DFDFF3531"
+                          },
+                          {
+                              "path":  "src/display_settings.rs",
+                              "sha256":  "1EF6CEC1B17A8ECD4A9F87861E1EEE552429F7A91ECFD04794CA58A0385A84CC"
+                          },
+                          {
+                              "path":  "src/display_workers.rs",
+                              "sha256":  "D5187152273E68835C2B92ADD4027A809600BCC5D4A6BDFBA0B161697F919AD2"
+                          },
+                          {
+                              "path":  "src/document.rs",
+                              "sha256":  "63DEF53E22AAE045B25DCC77787AC5EA42D499D7722F5AD55AA761CBFC01619C"
+                          },
+                          {
+                              "path":  "src/document_actions.rs",
+                              "sha256":  "6BA9B1E8A294CE2F162E4780A713771C45C2C3ADF59F6BFB4C96C031EB1F9F0C"
+                          },
+                          {
+                              "path":  "src/document_edits.rs",
+                              "sha256":  "9A03B736EC584336E7F8485E9C9C5E9F41C727D23C0FCD25CF123E9065D3493F"
+                          },
+                          {
+                              "path":  "src/dynamics.rs",
+                              "sha256":  "37DABA1731C6C194BDE27D1FB57BAFBBF3CBACD3C3E96DFD973492C284898707"
+                          },
+                          {
+                              "path":  "src/export_jobs.rs",
+                              "sha256":  "C24D28EC7148C439702E2FB56152930D95459EAFB5484A18AD735025CF4170AA"
+                          },
+                          {
+                              "path":  "src/extensions.rs",
+                              "sha256":  "0C7E55D519F0FD49CE99C08E17BBB867D50E69E9A9467D9DC23906DCCC4B2B94"
+                          },
+                          {
+                              "path":  "src/fill.rs",
+                              "sha256":  "66ED9724E48444FCD0B9BA6B316E72B061D5679215A35CEB22DBCCE814C55F93"
+                          },
+                          {
+                              "path":  "src/folders.rs",
+                              "sha256":  "FD50A386BC903BCD750F38442A08E5D8DC0A4F20AF367E40A91D6842ACDCE0E7"
+                          },
+                          {
+                              "path":  "src/gpu_profile.rs",
+                              "sha256":  "4EB608C6E67E3C62BA65B3A7C3BE89167307D99CD185B4B1A319DD17D9F74483"
+                          },
+                          {
+                              "path":  "src/guides.rs",
+                              "sha256":  "105420AD1614241E16CBD7BD4404B5FD462B31F1EAFEB02F11B735AE5BE27104"
+                          },
+                          {
+                              "path":  "src/history_pixels.rs",
+                              "sha256":  "D3CFD1AB4DA1B9AF505A4486B2088B46C0C1FCDCCA297965E87E37AF06EFA4F8"
+                          },
+                          {
+                              "path":  "src/history_settlement.rs",
+                              "sha256":  "C00A1BE5367FCE786EFCA6CE1328210B267E611645844FCCF53CC24361F17FE6"
+                          },
+                          {
+                              "path":  "src/icons.rs",
+                              "sha256":  "DFE34FFA1AA4EF37A1A6DB3C9F84597E833A53616091DFAD98639A9631C81072"
+                          },
+                          {
+                              "path":  "src/indexed_commit.rs",
+                              "sha256":  "9CE38199BC07E5B4F2FC40C8F5C438521D6A437002AEC7B71A2276224D5C116E"
+                          },
+                          {
+                              "path":  "src/indexed_document.rs",
+                              "sha256":  "60D7E5CB4579EE1A29F7DD31A04B2DA0516412FAEABC4D666F3660E0593B4435"
+                          },
+                          {
+                              "path":  "src/indexed_lifecycle.rs",
+                              "sha256":  "55BECF4BC89B8AA8559F1B8191C53B2A79F7AE5F62154DAED72451C645008D57"
+                          },
+                          {
+                              "path":  "src/indexed_mask.rs",
+                              "sha256":  "B3A4ADEB891D7BB474A8200321CEA153C49D3CD9A7D7B92FE0653B2354FC2028"
+                          },
+                          {
+                              "path":  "src/indexed_session.rs",
+                              "sha256":  "18F28E558513ADBBB003283D49A15ED39C72B2ED4F69506E652E79D97FD1C930"
+                          },
+                          {
+                              "path":  "src/indexed_thumbnail.rs",
+                              "sha256":  "C7A95D3A2CCE24BDC8E1D15CDBEA7C3C6FADD95A1EC3B48A8486D595CD574EF9"
+                          },
+                          {
+                              "path":  "src/indexed_tile.rs",
+                              "sha256":  "BB9C6A24F58ECB71D5473C33C73740FFF543099333D99296DF221E6879C3144A"
+                          },
+                          {
+                              "path":  "src/input.rs",
+                              "sha256":  "AE9C0FAE7B66D5F01CFECCE6BFDBA61A8579F16519E1E62DA42BAD08F927A772"
+                          },
+                          {
+                              "path":  "src/jobs.rs",
+                              "sha256":  "DFC6C0F4B4D6DCE0959EC6BE6064F18038F4DF2EEC6B6BCFE9F857D208C123BC"
+                          },
+                          {
+                              "path":  "src/lasso_paint.rs",
+                              "sha256":  "3C8062F2B41400B8DD64309C01302DB6A920164AA4E4E3065A982CFC952359FF"
+                          },
+                          {
+                              "path":  "src/layer_import.rs",
+                              "sha256":  "53E9719A56DEA515A41A0BA2EEB7E1C1449C475B175EC642AB3C7FE54ECB22F7"
+                          },
+                          {
+                              "path":  "src/layer_mask.rs",
+                              "sha256":  "993D7AD1893D84461BA2683A5E7080310D541631F90CAC87E75CC3E8BC508D7C"
+                          },
+                          {
+                              "path":  "src/layer_mask_document_tests.rs",
+                              "sha256":  "3BD067798B64514A99968B3900007CDC2E6B128768A94B2EB2B7FC73A3AA9C8F"
+                          },
+                          {
+                              "path":  "src/layer_mask_edit_tests.rs",
+                              "sha256":  "F68C5D6A0AD7F6648020BE41ECC8A911A65DED917E8DD69B1F3B445F444053D7"
+                          },
+                          {
+                              "path":  "src/layer_mask_edits.rs",
+                              "sha256":  "7E9BB6B4C3919DA546521140854D53EBEEC3F0A11C4C5E5C118C579C386FD506"
+                          },
+                          {
+                              "path":  "src/layer_mask_geometry_tests.rs",
+                              "sha256":  "641F9DCADEF2FD413B209031A206D809182136F7E13F25CEF8EB7C3D5541BFE1"
+                          },
+                          {
+                              "path":  "src/layer_opacity_tests.rs",
+                              "sha256":  "EC609736C34AAF7FCB65D294EEE3727B208BEC21377E156059C6170C8DFE6E8F"
+                          },
+                          {
+                              "path":  "src/layers_panel.rs",
+                              "sha256":  "68119867D3ED655B551DE636905D7626D2466AFB726209B4A1DD7D8B1C7BB101"
+                          },
+                          {
+                              "path":  "src/load_jobs.rs",
+                              "sha256":  "2C412D3447C1452AB7700B0E5360BAA9B68B553094A7F714D62C5937DE3CFE78"
+                          },
+                          {
+                              "path":  "src/main.rs",
+                              "sha256":  "C8590732572DAE19F241BCC46DFFA26A90EF8DD9B5E5FE9E3F472C3135FEE03C"
+                          },
+                          {
+                              "path":  "src/mask_clipboard.rs",
+                              "sha256":  "EC02C2B6AF9BC6A20505AE66824598BAA1320D4CDD4E34D088FBBB80EC832427"
+                          },
+                          {
+                              "path":  "src/mask_clipboard_tests.rs",
+                              "sha256":  "E2ED782DAB503DE40FAA20B096DCA84AB9315D750AE5D7000FBA0FA84F2130E4"
+                          },
+                          {
+                              "path":  "src/mask_controller.rs",
+                              "sha256":  "DAF0C3200A68CC277ED359A888553D000356CF2F9E0E2798890B571BE3F51EE1"
+                          },
+                          {
+                              "path":  "src/mask_feedback_tests.rs",
+                              "sha256":  "F67BFCF16D1EB2BB9D46539CFB1DFAC86F18DA6E8CEB52FD8C010C2DD09E089A"
+                          },
+                          {
+                              "path":  "src/mask_fill.rs",
+                              "sha256":  "AD8248A369F637968F0375BB5BFDB716E86644D72E6F0F2080DA640974868CF1"
+                          },
+                          {
+                              "path":  "src/mask_fill_tests.rs",
+                              "sha256":  "440ABAEA11F14EBDF1AB95F36EF19EFD8FF17A6F47709E3DEC8A9FAC630CCE5B"
+                          },
+                          {
+                              "path":  "src/mask_stroke_tests.rs",
+                              "sha256":  "FB00D921F9F9A3928338D32A6A8DCA048950C2EAB1970D42716C6808FB71D587"
+                          },
+                          {
+                              "path":  "src/mask_transform.rs",
+                              "sha256":  "6011B0C7B3285CEED9CB07DC05B66738E1F02A66497646BD6561334149D05E9A"
+                          },
+                          {
+                              "path":  "src/mask_transform_benchmark.rs",
+                              "sha256":  "CB93F429CFA93C69A313CD959E8A63C304A04C68E748C3EF569CCE6CA56CD2C8"
+                          },
+                          {
+                              "path":  "src/mask_transform_tests.rs",
+                              "sha256":  "41611450158A3D39A56482F8A30F5B4007282A8568E07BAB37F0F3A2FBF0C382"
+                          },
+                          {
+                              "path":  "src/move_preview.rs",
+                              "sha256":  "8889A52C3F042EB5F20E4025DDFE85F8FC859DFF96CEC0C10A73EA2ACACD8542"
+                          },
+                          {
+                              "path":  "src/native_pen.rs",
+                              "sha256":  "734FD13CF066FC12B7C49F4484AE62B9A4BA0BDF263958BD942274F859C5C371"
+                          },
+                          {
+                              "path":  "src/native_session.rs",
+                              "sha256":  "3FB670AA994BBD8BCB87B3143BFD1CD274CDD08F0AE228AE74323D2C7BAA9C37"
+                          },
+                          {
+                              "path":  "src/navigator.rs",
+                              "sha256":  "68DEBE0DE72E83FD1AF5B9F131645F3D73BA271CCAF5FA996F06ECF45A696C8F"
+                          },
+                          {
+                              "path":  "src/new_canvas.rs",
+                              "sha256":  "160F256A8F95FF0E7527D8A36616C1A9FE511A4A317A271E4ED5F6850603F267"
+                          },
+                          {
+                              "path":  "src/paint_target.rs",
+                              "sha256":  "BE9F6DB4688E9EB2C8CCE2016B6227347CFA051C3FA34CD11A75099FF7E89097"
+                          },
+                          {
+                              "path":  "src/palette.rs",
+                              "sha256":  "BE5CF8E53C774B91653B20083F7696A5EFF17F6F1BC4D4010A8C14244D454775"
+                          },
+                          {
+                              "path":  "src/parallel.rs",
+                              "sha256":  "671A7F9A9F1F41E1FFC804E30D919E8FB957A57FEFF04980BC2E8B947346B5A4"
+                          },
+                          {
+                              "path":  "src/pending_layers.rs",
+                              "sha256":  "19422D0E76681A0EE852C185BE00B0DF6BD13E98B16185B1987CB379326A9816"
+                          },
+                          {
+                              "path":  "src/performance.rs",
+                              "sha256":  "0DEB5A7E186A796A3ED1E0C6FDBF5C599F419D8AB2B85C05F6E2AFBF8F37022A"
+                          },
+                          {
+                              "path":  "src/pixels.rs",
+                              "sha256":  "4E35F3E2825DE80ADC816FDB2A3AC41CEBF9496D01D98F34210AA4AF149759C2"
+                          },
+                          {
+                              "path":  "src/plugins.rs",
+                              "sha256":  "FC55A191B8ACB04FE2AD3FB694AA4335E80414E1A15EE3E44591A5718B0248F8"
+                          },
+                          {
+                              "path":  "src/preference_recovery.rs",
+                              "sha256":  "8A6D13D4E4B7913228802A6D37054129EC1ABAFCB15259F17019E677411AF5D9"
+                          },
+                          {
+                              "path":  "src/preferences.rs",
+                              "sha256":  "53D97AE1AE5FDA1F4505EC3DFFA81F770246F6C01C6586EAAF06B89D5E45D287"
+                          },
+                          {
+                              "path":  "src/prefix_cache.rs",
+                              "sha256":  "44E8D0CC7BB7C93D35E7D579E3D31902A73F37E00A5A6560A493822FF6565061"
+                          },
+                          {
+                              "path":  "src/pressure_editor.rs",
+                              "sha256":  "6E6B9219046012E764DF13BAE53E2BA5524DEB3F89B9125FCE3A0666BF54061A"
+                          },
+                          {
+                              "path":  "src/preview.rs",
+                              "sha256":  "A81F9C9287170B89C3D5FB5C6FA0463595962EFE5297AF27DD607CBCD4CC1C7A"
+                          },
+                          {
+                              "path":  "src/recovery.rs",
+                              "sha256":  "F880ECB40D06E0C433E401CE89C9AAD9E131117ECC4A494211EDF247931BBABB"
+                          },
+                          {
+                              "path":  "src/references.rs",
+                              "sha256":  "DF69235AE073FAA5D643C8597672D8112A5BC20E7A1128331EFAF68E01D0BE9A"
+                          },
+                          {
+                              "path":  "src/region_census.rs",
+                              "sha256":  "552A12FC07993703439F8658F057B154029B66826249FA2F7CDA1E7E94ACA713"
+                          },
+                          {
+                              "path":  "src/render_controller.rs",
+                              "sha256":  "33C1EEE3FB11F67857C03F3782371E2BA5CD5C8C504658CC48593DF9789A8ACB"
+                          },
+                          {
+                              "path":  "src/render_queue.rs",
+                              "sha256":  "4B007705944692F6D9EC3B829D2C1E4FB53687A173D40EEF5B8F08D467C967DE"
+                          },
+                          {
+                              "path":  "src/render_region.rs",
+                              "sha256":  "53BE7C81C38D10B582470EEBD4B2E3C9D7A784DFF1E3F9F205BA88D980CC5CEA"
+                          },
+                          {
+                              "path":  "src/replay.rs",
+                              "sha256":  "BB08816615C5430D8E42786E949F855FB65CEA53B4EA50437B11E3A306C9B34F"
+                          },
+                          {
+                              "path":  "src/rulers.rs",
+                              "sha256":  "C76D65490DAED805A2DF6677C5AB6F3BE451965BD8FD5C777D27DB3913BFD037"
+                          },
+                          {
+                              "path":  "src/save_jobs.rs",
+                              "sha256":  "9DEF1F5D92F731CFDFA6EC534C9474E28F2CB37B764FD023D302A8D052D0F209"
+                          },
+                          {
+                              "path":  "src/selection.rs",
+                              "sha256":  "7475053F877D1BF68BD55591481BED76C4DAFE7EBDA22C1B8DDA355464C21CA4"
+                          },
+                          {
+                              "path":  "src/selection_contour.rs",
+                              "sha256":  "3DFF65B006F293AF452C2CA90E938F9B90C39691C8784F6684A3DDFCE66B648F"
+                          },
+                          {
+                              "path":  "src/selection_mask.rs",
+                              "sha256":  "2B7BBB48CE944490AB6A221D17DA767E93AA5266827B86EA255F2185A32C5DA6"
+                          },
+                          {
+                              "path":  "src/selection_ui.rs",
+                              "sha256":  "7D248BCAE43CD7873804BF75797F00CC45129E78BD2C37658A3EB890BC33C7FD"
+                          },
+                          {
+                              "path":  "src/settings_store.rs",
+                              "sha256":  "B4A7E7A9CFA5A06742572F8813B14E11C73A4B2C82E6A57A8F3FDC003D4B0F12"
+                          },
+                          {
+                              "path":  "src/snapshot_memory.rs",
+                              "sha256":  "8F762162D4EBD29DAF1CC5108E7C7359161B80F5AD4CDA2C6803BFE61D83BD49"
+                          },
+                          {
+                              "path":  "src/stabilizer.rs",
+                              "sha256":  "6C64210A3AF28465868F68394A15ABC78EEF1713C7EBB940B6BA737231555E81"
+                          },
+                          {
+                              "path":  "src/storage.rs",
+                              "sha256":  "8D63A62E8F2F31941D38064C22A802734617F16DC7056692D152A5001D0B0061"
+                          },
+                          {
+                              "path":  "src/storage_interrupt_tests.rs",
+                              "sha256":  "E06C05F3FA3071288CB223CDB629DAAA06F03DE156A834ACD643273D1C5CE616"
+                          },
+                          {
+                              "path":  "src/stroke.rs",
+                              "sha256":  "5155A15AD1E0268FC5DD46E6B4FD586FF053277B6BE96C04A350E09D046B55BE"
+                          },
+                          {
+                              "path":  "src/stroke_buffer.rs",
+                              "sha256":  "C80526660B0302E6FC2B2BF3B91AA58321ADFAE0E9D72EA7C5A0663968F5B7A4"
+                          },
+                          {
+                              "path":  "src/symmetry.rs",
+                              "sha256":  "C37C27CA20626D0A4F48F6B1C96B24EBDBBC16C29E58F5CA7002B4757A9DC62A"
+                          },
+                          {
+                              "path":  "src/tail_replay.rs",
+                              "sha256":  "BD9763756BD687C2ED3FE7D6CFE4A7B52C0AD4E1F4A018EF02167AF91D9772E5"
+                          },
+                          {
+                              "path":  "src/thumbnails.rs",
+                              "sha256":  "D9121BA0DA1378FA6613A267966FB5C8BF1F7C05FCF5747B87130AC292480EF1"
+                          },
+                          {
+                              "path":  "src/tile_project.rs",
+                              "sha256":  "901EC80B0C033EF02E29EC5E99E14733580DD52EAC9C8DF3306E607D3F0760F5"
+                          },
+                          {
+                              "path":  "src/tip_import.rs",
+                              "sha256":  "380D7B40F5AC43F5CAFFD097ACC4F8B0558D390C3DAEF8C93AADE921DFCC47FA"
+                          },
+                          {
+                              "path":  "src/tool_panel.rs",
+                              "sha256":  "6E91DE0D8BC916BBD2E758783261775855AA52B15424A3C56980AE34A88D8CB9"
+                          },
+                          {
+                              "path":  "src/tool_shift.rs",
+                              "sha256":  "95A827442D8876C610655B2C14D4335EC13D94EB5A425831BED8511C9C0A9E36"
+                          },
+                          {
+                              "path":  "src/tools.rs",
+                              "sha256":  "832F95BD3DDC082D08861B4A121EFBA0A89B0631D99F68CD07E6CE112154C27D"
+                          },
+                          {
+                              "path":  "src/transform.rs",
+                              "sha256":  "B97AE564A8BD17BB5CC155D44AF6593A3383ACD1E5B017E020D7D52E20BA83D1"
+                          },
+                          {
+                              "path":  "src/view.rs",
+                              "sha256":  "C8BECC871558739F46CD55A16E3E1D8F33EDAA0F736D05012E657D75F3601E97"
+                          },
+                          {
+                              "path":  "src/wand.rs",
+                              "sha256":  "053C9EAA8D9CB0B396AFD1E545D0B5A43A94888E0B4CC0CF70360DF0A0774BAD"
+                          },
+                          {
+                              "path":  "src/wasm_filters.rs",
+                              "sha256":  "69FC404F4B676049AE852212F90AB0960BA808908C5BD6FA28D93345972CCBF7"
+                          },
+                          {
+                              "path":  "src/workflow_tests.rs",
+                              "sha256":  "473E6E08AF341E8660A675E8F442072A2694B0D741319D2FF79311937917B41A"
+                          },
+                          {
+                              "path":  "src/workspace.rs",
+                              "sha256":  "19666DF4B72359CB2F9B00FAFFBED68F35E541EAC887A853F630210C993302EE"
+                          }
+                      ]
+}

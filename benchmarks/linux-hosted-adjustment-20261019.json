@@ -1,0 +1,28 @@
+{
+  "revision": "fda875f7a827ff7dc7d53ddfa234fdce3cb60fbe",
+  "run_id": 39242855247,
+  "job_id": 118027925307,
+  "url": "https://github.com/swimmingyoshi/dudel/actions/runs/39242855247",
+  "conclusion": "success",
+  "default_tests_passed": 868,
+  "all_feature_tests_passed": 872,
+  "ignored_in_normal_suites": 2,
+  "python_tests_passed": 34,
+  "fmt_and_both_all_target_clippy_configurations": "pass",
+  "release_compilation": "pass",
+  "renderer": "X11 / software OpenGL under Xvfb",
+  "artifact_id": 12182466726,
+  "artifact_sha256": "F9B4031749CFCADA273635D12BD1BC00026AFA73498534BBC77487E11A4A9087",
+  "artifact_crc_and_expected_members": "pass",
+  "executable_sha256": "46e45f235b0c00ff136f271c453aa577db05d71984418a355138a454e2cb6ceb",
+  "capture_sha256": "110bed1b537f8db8e205f2ec6ae55ba010fa90aa84eefe690fa5311fe9e6c250",
+  "guide_captures": {
+    "1": "185d0508d6a85a08567a5de764fd831799d469872a053c18e986d34ca1b34300",
+    "2": "5e5608e4a39537b1dd41403366c1355602df34dc3a038f9d53182a4fcf0b0901"
+  },
+  "capture_hashes_and_dimensions_verified": true,
+  "visual_review": "All three captures are byte-identical to the previously reviewed captures in linux-hosted-inspector-20261019.json; their visual review is reused without a redundant render. The artifact does not capture the adjustment dialog itself; adjustment layout is covered by the automated regression and separate Windows captures.",
+  "local_artifact": "target/qa/linux-fda875f-20261019/artifact.zip",
+  "scope": "Full Linux verification and X11 startup/layout evidence for current application inputs. No physical Wayland/tablet, multi-monitor, sustained performance or release acceptance.",
+  "release_accepted": false
+}

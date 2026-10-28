@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "executable_sha256": "151CC53C708BF5681883E566C686BC355C9CCED3636D8324D948F8EE9037000F",
+  "completed": [
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "first"
+    },
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "reopen"
+    },
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "corrupt"
+    },
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "repair"
+    },
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "failure"
+    },
+    {
+      "isolated": true,
+      "native_eframe_save_and_restart": true,
+      "passed": true,
+      "phase": "retry"
+    }
+  ],
+  "renderer": "Native settings probe default OpenGL",
+  "phase": "retry"
+}

@@ -1,0 +1,73 @@
+{
+  "review_date": "2026-10-28",
+  "candidate_source": "0d8e42971fccff1ee2065b54838fd9ac072ed322",
+  "method": "Review existing completed studies, compare recorded source hashes and inspect code changes; no study rerun.",
+  "owner_feedback": {
+    "artist_12": "Works; tested multiple times during development.",
+    "explorer_previews": "Work after DLL.",
+    "interpretation": "Accept qualitative owner confirmation; no invented build hash, driver version, duration or timing measurement."
+  },
+  "passed_study": {
+    "record": "benchmarks/heap-compaction-study-20261021.json",
+    "terminal_state": "artifacts/releases/dudel-0.1.0-candidate-20261021-190309-093/diagnostics/target/qa/study-20261021-223831-433/STUDY.json",
+    "state_sha256": "DEEEEDD1E1D97213192E2F4711F66D4533B3CA0CA8EF5961353BB693BE40E404",
+    "status": "passed",
+    "executable_sha256": "7C3090D3456F3B44C5C0AB241E2C60A330F259D97582EA06E41D46CB92F659D7",
+    "standard_repeats": 3,
+    "standard_rounds_each": 30,
+    "maximum_rounds": 59,
+    "maximum_duration_seconds": 7246.5,
+    "maximum_idle_net_growth_mib": 7.82,
+    "maximum_final_idle_slope_mib_per_round": 0.103
+  },
+  "heap_compaction": {
+    "file": "src/document_actions.rs",
+    "identical_between_study_source_and_candidate": true,
+    "current_full_run_regression": "document_actions::tests::replaced_document_compacts_heap_once_after_thumbnail_settles passed in both configurations",
+    "study_source_equivalence_record": "benchmarks/heapfix-candidate-ci-rebuild-20261021.json"
+  },
+  "focused_source_checks": [
+    {
+      "source": "src/canvas_textures.rs",
+      "report": "benchmarks/viewport-patches-audit-20261023.json",
+      "recorded_sha256": "E04848AA098EE217C5AF8E752F9591DB336652DAF75D1920D5AF4E903EFAD81E",
+      "current_sha256": "E04848AA098EE217C5AF8E752F9591DB336652DAF75D1920D5AF4E903EFAD81E",
+      "matches": true
+    },
+    {
+      "source": "src/timelapse.rs",
+      "report": "benchmarks/viewport-patches-audit-20261023.json",
+      "recorded_sha256": "4D67ABCC7AC09AA362659E55CA0EECE8ABA74CBAE11A1C85D55B05B0A244ED58",
+      "current_sha256": "4D67ABCC7AC09AA362659E55CA0EECE8ABA74CBAE11A1C85D55B05B0A244ED58",
+      "matches": true
+    },
+    {
+      "source": "src/dab_paint.rs",
+      "report": "benchmarks/viewport-patches-audit-20261023.json",
+      "recorded_sha256": "80F35F05CE0EDEC9398B36047D5968A5881DC14DD65A7247B605E17CFB08EA54",
+      "current_sha256": "80F35F05CE0EDEC9398B36047D5968A5881DC14DD65A7247B605E17CFB08EA54",
+      "matches": true
+    },
+    {
+      "source": "src/fill.rs",
+      "report": "benchmarks/fill-scanlines-audit-20261024.json",
+      "recorded_sha256": "3ECC4EF554B10908EE5D246A8864E8037FB406A13CD5DF7F9894A22CD45616BD",
+      "current_sha256": "3ECC4EF554B10908EE5D246A8864E8037FB406A13CD5DF7F9894A22CD45616BD",
+      "matches": true
+    },
+    {
+      "source": "src/document.rs",
+      "report": "benchmarks/fill-scanlines-audit-20261024.json",
+      "recorded_sha256": "DCB41388862C12B5ED737269AA5DEDD011E4FBB7CD39695742344F58654719E6",
+      "current_sha256": "DCB41388862C12B5ED737269AA5DEDD011E4FBB7CD39695742344F58654719E6",
+      "matches": true
+    }
+  ],
+  "decision": "Reuse the passed study and subsequent focused results. No automatic full-study repeat is justified by this review. New testing requires a specific unresolved behavior, why existing evidence cannot answer it, and a bounded test whose outcome changes the release decision.",
+  "limits": [
+    "Recorded focused timings are not physical pen latency or actual GPU allocation.",
+    "Owner confirmation does not invent a formal two-hour physical session record.",
+    "The current candidate is not relabeled as the binary used in the older sustained study.",
+    "All G1-G4 gates are not declared accepted by this evidence review."
+  ]
+}

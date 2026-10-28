@@ -1,0 +1,8 @@
+# malloc_buf 0.0.6
+
+Authors listed by the matching upstream release: Steven Sheldon.
+
+That release declares `MIT` in Cargo.toml but provides no separate license file. The original source and manifest are preserved; LICENSE_REFERENCE is the canonical SPDX text, not an invented upstream copyright notice. Source lib.rs was byte-compared against the fixed release revision.
+
+Upstream: https://raw.githubusercontent.com/SSheldon/malloc_buf/a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9/
+License reference: https://spdx.org/licenses/MIT.txt

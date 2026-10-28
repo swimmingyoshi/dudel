@@ -1,0 +1,1101 @@
+[
+  {
+    "source": "benchmarks\\sustained-native-dx12-normal-100.json",
+    "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+    "allocation_profile_enabled": false,
+    "checkpoint_storage": {
+      "fixed_capacity_bytes": 41472,
+      "record_bytes": 144,
+      "records": 288,
+      "used_excludes_current_record": true
+    },
+    "allocation_checkpoints": [],
+    "zoom": 1.0,
+    "viewport_points": [
+      1280.0,
+      800.0
+    ],
+    "rounds": 12,
+    "mask_edits_verified": 192,
+    "brush_strokes_verified": 12,
+    "elapsed_seconds": 404.4904606,
+    "callbacks": 29170,
+    "ui_prefix_ms": {
+      "count": 29170,
+      "median": 1.9075,
+      "p95_nearest_rank": 2.8903000000000003,
+      "maximum": 8.6984
+    },
+    "active_ui_prefix_ms": {
+      "count": 23141,
+      "median": 1.9846,
+      "p95_nearest_rank": 2.9896,
+      "maximum": 8.6984
+    },
+    "generated_brush_ui_prefix_ms": {
+      "count": 1020,
+      "median": 1.03845,
+      "p95_nearest_rank": 2.169,
+      "maximum": 4.4003000000000005
+    },
+    "ui_prefix_ms_by_phase": {
+      "Applied": {
+        "count": 768,
+        "median": 0.69125,
+        "p95_nearest_rank": 2.1889000000000003,
+        "maximum": 3.3954
+      },
+      "BrushApplied": {
+        "count": 118,
+        "median": 1.6515,
+        "p95_nearest_rank": 2.3933999999999997,
+        "maximum": 2.8494
+      },
+      "BrushInput": {
+        "count": 902,
+        "median": 1.0368,
+        "p95_nearest_rank": 2.0579,
+        "maximum": 4.4003000000000005
+      },
+      "BrushRedone": {
+        "count": 228,
+        "median": 2.08415,
+        "p95_nearest_rank": 3.1281,
+        "maximum": 4.449
+      },
+      "BrushStart": {
+        "count": 36,
+        "median": 0.5705,
+        "p95_nearest_rank": 0.7592,
+        "maximum": 0.8672000000000001
+      },
+      "BrushUndone": {
+        "count": 230,
+        "median": 2.0730500000000003,
+        "p95_nearest_rank": 3.1341,
+        "maximum": 4.243
+      },
+      "Canceled": {
+        "count": 229,
+        "median": 2.003,
+        "p95_nearest_rank": 2.6567000000000003,
+        "maximum": 3.4293
+      },
+      "FinalIdle": {
+        "count": 1810,
+        "median": 0.5892999999999999,
+        "p95_nearest_rank": 0.8833,
+        "maximum": 1.6355
+      },
+      "Preview": {
+        "count": 4584,
+        "median": 2.06335,
+        "p95_nearest_rank": 3.3253,
+        "maximum": 7.5385
+      },
+      "RedoAll": {
+        "count": 3988,
+        "median": 2.0095,
+        "p95_nearest_rank": 2.856,
+        "maximum": 8.6984
+      },
+      "Redone": {
+        "count": 3712,
+        "median": 1.9995,
+        "p95_nearest_rank": 3.0184,
+        "maximum": 5.601
+      },
+      "Release": {
+        "count": 36,
+        "median": 0.5846499999999999,
+        "p95_nearest_rank": 0.8735999999999999,
+        "maximum": 1.0489
+      },
+      "ReleasedHistory": {
+        "count": 1824,
+        "median": 0.5818,
+        "p95_nearest_rank": 0.8771,
+        "maximum": 1.9765999999999997
+      },
+      "Reopen": {
+        "count": 249,
+        "median": 2.0597,
+        "p95_nearest_rank": 2.9301000000000004,
+        "maximum": 3.5971
+      },
+      "Save": {
+        "count": 37,
+        "median": 0.6253,
+        "p95_nearest_rank": 0.9843000000000001,
+        "maximum": 1.1891
+      },
+      "Start": {
+        "count": 612,
+        "median": 0.60335,
+        "p95_nearest_rank": 0.9186,
+        "maximum": 1.4633999999999998
+      },
+      "UndoAll": {
+        "count": 4023,
+        "median": 2.0334,
+        "p95_nearest_rank": 2.935,
+        "maximum": 8.428700000000001
+      },
+      "Undone": {
+        "count": 3976,
+        "median": 1.9706000000000001,
+        "p95_nearest_rank": 3.0179,
+        "maximum": 5.2251
+      },
+      "Warmup": {
+        "count": 1808,
+        "median": 0.61235,
+        "p95_nearest_rank": 2.0873,
+        "maximum": 4.4557
+      }
+    },
+    "round_stats": [
+      {
+        "round": 0,
+        "ui_prefix_ms": {
+          "count": 2422,
+          "median": 1.874,
+          "p95_nearest_rank": 2.8857000000000004,
+          "maximum": 7.5385
+        },
+        "active_ui_prefix_ms": {
+          "count": 1923,
+          "median": 1.9488,
+          "p95_nearest_rank": 2.9621,
+          "maximum": 7.5385
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.1099,
+          "p95_nearest_rank": 3.0883,
+          "maximum": 5.8431999999999995
+        },
+        "diagnostic_driver_ms": {
+          "count": 2422,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0025,
+          "maximum": 136.3434
+        }
+      },
+      {
+        "round": 1,
+        "ui_prefix_ms": {
+          "count": 2427,
+          "median": 1.8856000000000002,
+          "p95_nearest_rank": 2.833,
+          "maximum": 7.8387
+        },
+        "active_ui_prefix_ms": {
+          "count": 1924,
+          "median": 1.9583,
+          "p95_nearest_rank": 2.9471,
+          "maximum": 7.8387
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 0.9301,
+          "p95_nearest_rank": 3.2934,
+          "maximum": 5.9226
+        },
+        "diagnostic_driver_ms": {
+          "count": 2427,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0021,
+          "maximum": 137.0102
+        }
+      },
+      {
+        "round": 2,
+        "ui_prefix_ms": {
+          "count": 2433,
+          "median": 1.8786,
+          "p95_nearest_rank": 2.8848,
+          "maximum": 8.6984
+        },
+        "active_ui_prefix_ms": {
+          "count": 1930,
+          "median": 1.9523,
+          "p95_nearest_rank": 2.9755,
+          "maximum": 8.6984
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.0478,
+          "p95_nearest_rank": 3.5897,
+          "maximum": 6.098400000000001
+        },
+        "diagnostic_driver_ms": {
+          "count": 2433,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0026,
+          "maximum": 165.11880000000002
+        }
+      },
+      {
+        "round": 3,
+        "ui_prefix_ms": {
+          "count": 2420,
+          "median": 1.8817,
+          "p95_nearest_rank": 2.8066,
+          "maximum": 8.6418
+        },
+        "active_ui_prefix_ms": {
+          "count": 1917,
+          "median": 1.9457,
+          "p95_nearest_rank": 2.9079,
+          "maximum": 8.6418
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.02135,
+          "p95_nearest_rank": 3.1915,
+          "maximum": 5.6188
+        },
+        "diagnostic_driver_ms": {
+          "count": 2420,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0022,
+          "maximum": 130.8723
+        }
+      },
+      {
+        "round": 4,
+        "ui_prefix_ms": {
+          "count": 2444,
+          "median": 1.91675,
+          "p95_nearest_rank": 2.8518,
+          "maximum": 7.4072000000000005
+        },
+        "active_ui_prefix_ms": {
+          "count": 1942,
+          "median": 2.0087,
+          "p95_nearest_rank": 2.9399,
+          "maximum": 7.4072000000000005
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.02105,
+          "p95_nearest_rank": 3.2628000000000004,
+          "maximum": 5.9329
+        },
+        "diagnostic_driver_ms": {
+          "count": 2444,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0025,
+          "maximum": 149.8782
+        }
+      },
+      {
+        "round": 5,
+        "ui_prefix_ms": {
+          "count": 2442,
+          "median": 1.901,
+          "p95_nearest_rank": 2.9297,
+          "maximum": 8.08
+        },
+        "active_ui_prefix_ms": {
+          "count": 1940,
+          "median": 1.9817,
+          "p95_nearest_rank": 3.0206,
+          "maximum": 8.08
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.1578499999999998,
+          "p95_nearest_rank": 3.4052000000000002,
+          "maximum": 7.1495999999999995
+        },
+        "diagnostic_driver_ms": {
+          "count": 2442,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.002,
+          "maximum": 110.85549999999999
+        }
+      },
+      {
+        "round": 6,
+        "ui_prefix_ms": {
+          "count": 2413,
+          "median": 1.909,
+          "p95_nearest_rank": 2.9177999999999997,
+          "maximum": 8.428700000000001
+        },
+        "active_ui_prefix_ms": {
+          "count": 1912,
+          "median": 1.98855,
+          "p95_nearest_rank": 3.013,
+          "maximum": 8.428700000000001
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 0.94025,
+          "p95_nearest_rank": 3.614,
+          "maximum": 5.8222
+        },
+        "diagnostic_driver_ms": {
+          "count": 2413,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0022,
+          "maximum": 117.3587
+        }
+      },
+      {
+        "round": 7,
+        "ui_prefix_ms": {
+          "count": 2421,
+          "median": 1.9143000000000001,
+          "p95_nearest_rank": 2.8338,
+          "maximum": 6.9213000000000005
+        },
+        "active_ui_prefix_ms": {
+          "count": 1919,
+          "median": 1.9835999999999998,
+          "p95_nearest_rank": 2.9333,
+          "maximum": 6.9213000000000005
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.00555,
+          "p95_nearest_rank": 3.3183000000000002,
+          "maximum": 5.6661
+        },
+        "diagnostic_driver_ms": {
+          "count": 2421,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0025,
+          "maximum": 123.5981
+        }
+      },
+      {
+        "round": 8,
+        "ui_prefix_ms": {
+          "count": 2441,
+          "median": 1.9264,
+          "p95_nearest_rank": 2.9126,
+          "maximum": 7.3054
+        },
+        "active_ui_prefix_ms": {
+          "count": 1938,
+          "median": 1.9973,
+          "p95_nearest_rank": 3.0161,
+          "maximum": 7.3054
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.13315,
+          "p95_nearest_rank": 3.4461,
+          "maximum": 6.1675
+        },
+        "diagnostic_driver_ms": {
+          "count": 2441,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0027,
+          "maximum": 138.3783
+        }
+      },
+      {
+        "round": 9,
+        "ui_prefix_ms": {
+          "count": 2437,
+          "median": 1.9377000000000002,
+          "p95_nearest_rank": 2.9154,
+          "maximum": 8.4113
+        },
+        "active_ui_prefix_ms": {
+          "count": 1933,
+          "median": 2.0143,
+          "p95_nearest_rank": 3.0355,
+          "maximum": 8.4113
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.11195,
+          "p95_nearest_rank": 3.6954000000000002,
+          "maximum": 6.2607
+        },
+        "diagnostic_driver_ms": {
+          "count": 2437,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0024,
+          "maximum": 125.1701
+        }
+      },
+      {
+        "round": 10,
+        "ui_prefix_ms": {
+          "count": 2425,
+          "median": 1.9116,
+          "p95_nearest_rank": 2.8336,
+          "maximum": 7.9361
+        },
+        "active_ui_prefix_ms": {
+          "count": 1920,
+          "median": 1.98455,
+          "p95_nearest_rank": 2.9354,
+          "maximum": 7.9361
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 0.9659,
+          "p95_nearest_rank": 3.4254,
+          "maximum": 7.5977
+        },
+        "diagnostic_driver_ms": {
+          "count": 2425,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0025,
+          "maximum": 121.5567
+        }
+      },
+      {
+        "round": 11,
+        "ui_prefix_ms": {
+          "count": 2445,
+          "median": 2.0026,
+          "p95_nearest_rank": 3.02,
+          "maximum": 8.0555
+        },
+        "active_ui_prefix_ms": {
+          "count": 1943,
+          "median": 2.1006,
+          "p95_nearest_rank": 3.1365,
+          "maximum": 8.0555
+        },
+        "instrumented_app_command_ms": {
+          "count": 104,
+          "median": 1.1956,
+          "p95_nearest_rank": 3.8093,
+          "maximum": 6.6605
+        },
+        "diagnostic_driver_ms": {
+          "count": 2445,
+          "median": 9.999999999999999e-05,
+          "p95_nearest_rank": 0.0022,
+          "maximum": 111.34349999999999
+        }
+      }
+    ],
+    "command_ms_by_phase": {
+      "Applied": {
+        "count": 192,
+        "median": 1.6552,
+        "p95_nearest_rank": 3.3308999999999997,
+        "maximum": 5.7305
+      },
+      "BrushApplied": {
+        "count": 12,
+        "median": 2.6224,
+        "p95_nearest_rank": 3.3971,
+        "maximum": 3.3971
+      },
+      "BrushUndone": {
+        "count": 12,
+        "median": 0.1958,
+        "p95_nearest_rank": 0.2427,
+        "maximum": 0.2427
+      },
+      "Preview": {
+        "count": 204,
+        "median": 0.00215,
+        "p95_nearest_rank": 0.3473,
+        "maximum": 1.4427999999999999
+      },
+      "RedoAll": {
+        "count": 204,
+        "median": 1.6772,
+        "p95_nearest_rank": 2.2758000000000003,
+        "maximum": 3.3884000000000003
+      },
+      "ReleasedHistory": {
+        "count": 12,
+        "median": 0.15865,
+        "p95_nearest_rank": 0.1849,
+        "maximum": 0.1849
+      },
+      "Save": {
+        "count": 12,
+        "median": 0.07139999999999999,
+        "p95_nearest_rank": 0.0838,
+        "maximum": 0.0838
+      },
+      "Start": {
+        "count": 204,
+        "median": 0.0014,
+        "p95_nearest_rank": 0.0023,
+        "maximum": 0.0062
+      },
+      "UndoAll": {
+        "count": 204,
+        "median": 3.1047000000000002,
+        "p95_nearest_rank": 5.8431999999999995,
+        "maximum": 7.5977
+      },
+      "Undone": {
+        "count": 192,
+        "median": 0.8955500000000001,
+        "p95_nearest_rank": 1.8898000000000001,
+        "maximum": 2.6246
+      }
+    },
+    "idle_series": {
+      "initial-idle": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 2.0038309,
+            "resident_mib": 201.23828125,
+            "private_committed_mib": 484.7578125,
+            "tracked_live_mib": 25.534602165222168,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.535101890563965,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.0122528076171875
+          },
+          {
+            "round": 1,
+            "elapsed_seconds": 35.6559484,
+            "resident_mib": 219.23828125,
+            "private_committed_mib": 501.9921875,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.215850830078125
+          },
+          {
+            "round": 2,
+            "elapsed_seconds": 69.2679584,
+            "resident_mib": 227.359375,
+            "private_committed_mib": 509.44140625,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.41953277587890625
+          },
+          {
+            "round": 3,
+            "elapsed_seconds": 103.0535728,
+            "resident_mib": 231.8046875,
+            "private_committed_mib": 514.8046875,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.62371826171875
+          },
+          {
+            "round": 4,
+            "elapsed_seconds": 136.5589404,
+            "resident_mib": 241.53515625,
+            "private_committed_mib": 524.75,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.826812744140625
+          },
+          {
+            "round": 5,
+            "elapsed_seconds": 170.4781164,
+            "resident_mib": 250.6015625,
+            "private_committed_mib": 533.91015625,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.03192138671875
+          },
+          {
+            "round": 6,
+            "elapsed_seconds": 204.2903038,
+            "resident_mib": 256.375,
+            "private_committed_mib": 540.4140625,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.2368621826171875
+          },
+          {
+            "round": 7,
+            "elapsed_seconds": 237.7557981,
+            "resident_mib": 267.96484375,
+            "private_committed_mib": 551.63671875,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.4393692016601562
+          },
+          {
+            "round": 8,
+            "elapsed_seconds": 271.2880823,
+            "resident_mib": 273.57421875,
+            "private_committed_mib": 555.8046875,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.642547607421875
+          },
+          {
+            "round": 9,
+            "elapsed_seconds": 305.2200552,
+            "resident_mib": 280.8515625,
+            "private_committed_mib": 565.18359375,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.8474044799804688
+          },
+          {
+            "round": 10,
+            "elapsed_seconds": 339.0064624,
+            "resident_mib": 292.23046875,
+            "private_committed_mib": 574.67578125,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.0519256591796875
+          },
+          {
+            "round": 11,
+            "elapsed_seconds": 372.6176154,
+            "resident_mib": 298.9375,
+            "private_committed_mib": 580.7578125,
+            "tracked_live_mib": 25.534587860107422,
+            "tracked_additional_mib": 0.000499725341796875,
+            "registered_snapshot_total_mib": 25.53508758544922,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.2554397583007812
+          }
+        ],
+        "tail_start_round": 3,
+        "tail_drift": {
+          "resident_mib": 67.1328125,
+          "private_committed_mib": 65.953125,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 1.6317214965820312
+        }
+      },
+      "history-released-before-save": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 31.2692956,
+            "resident_mib": 234.26171875,
+            "private_committed_mib": 516.53125,
+            "tracked_live_mib": 24.811640739440918,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84405040740967,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.18824005126953125
+          },
+          {
+            "round": 1,
+            "elapsed_seconds": 64.8814172,
+            "resident_mib": 243.83984375,
+            "private_committed_mib": 526.90234375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.3919219970703125
+          },
+          {
+            "round": 2,
+            "elapsed_seconds": 98.667408,
+            "resident_mib": 252.203125,
+            "private_committed_mib": 537.7734375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.5961074829101562
+          },
+          {
+            "round": 3,
+            "elapsed_seconds": 132.1728154,
+            "resident_mib": 261.4296875,
+            "private_committed_mib": 545.1953125,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.7992019653320312
+          },
+          {
+            "round": 4,
+            "elapsed_seconds": 166.1052913,
+            "resident_mib": 266.03125,
+            "private_committed_mib": 548.453125,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.00439453125
+          },
+          {
+            "round": 5,
+            "elapsed_seconds": 199.9169764,
+            "resident_mib": 275.81640625,
+            "private_committed_mib": 560.43359375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.2093353271484375
+          },
+          {
+            "round": 6,
+            "elapsed_seconds": 233.3958094,
+            "resident_mib": 285.51953125,
+            "private_committed_mib": 570.4609375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.41192626953125
+          },
+          {
+            "round": 7,
+            "elapsed_seconds": 266.9146938,
+            "resident_mib": 292.1953125,
+            "private_committed_mib": 577.25390625,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.615020751953125
+          },
+          {
+            "round": 8,
+            "elapsed_seconds": 300.8340843,
+            "resident_mib": 302.51171875,
+            "private_committed_mib": 588.1875,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.819793701171875
+          },
+          {
+            "round": 9,
+            "elapsed_seconds": 334.6066559,
+            "resident_mib": 310.12890625,
+            "private_committed_mib": 593.26171875,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.02423095703125
+          },
+          {
+            "round": 10,
+            "elapsed_seconds": 368.2178578,
+            "resident_mib": 314.80078125,
+            "private_committed_mib": 595.5859375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.2277450561523438
+          },
+          {
+            "round": 11,
+            "elapsed_seconds": 402.1237217,
+            "resident_mib": 327.49609375,
+            "private_committed_mib": 614.49609375,
+            "tracked_live_mib": 24.811626434326172,
+            "tracked_additional_mib": 20.03240966796875,
+            "registered_snapshot_total_mib": 44.84403610229492,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.43310546875
+          }
+        ],
+        "tail_start_round": 3,
+        "tail_drift": {
+          "resident_mib": 66.06640625,
+          "private_committed_mib": 69.30078125,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 1.6339035034179688
+        }
+      },
+      "final-idle-history-released": {
+        "samples": [
+          {
+            "round": 0,
+            "elapsed_seconds": 33.6428226,
+            "resident_mib": 239.96484375,
+            "private_committed_mib": 522.79296875,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.20317840576171875
+          },
+          {
+            "round": 1,
+            "elapsed_seconds": 67.2548783,
+            "resident_mib": 247.953125,
+            "private_committed_mib": 530.48046875,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.4068603515625
+          },
+          {
+            "round": 2,
+            "elapsed_seconds": 101.0404031,
+            "resident_mib": 255.3046875,
+            "private_committed_mib": 537.83984375,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.6110458374023438
+          },
+          {
+            "round": 3,
+            "elapsed_seconds": 134.5458551,
+            "resident_mib": 262.90625,
+            "private_committed_mib": 544.8125,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 0.8141403198242188
+          },
+          {
+            "round": 4,
+            "elapsed_seconds": 168.4644618,
+            "resident_mib": 274.4140625,
+            "private_committed_mib": 562.06640625,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.0192489624023438
+          },
+          {
+            "round": 5,
+            "elapsed_seconds": 202.2768229,
+            "resident_mib": 285.2890625,
+            "private_committed_mib": 574.0390625,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.2241897583007812
+          },
+          {
+            "round": 6,
+            "elapsed_seconds": 235.7424908,
+            "resident_mib": 289.9609375,
+            "private_committed_mib": 577.75,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.42669677734375
+          },
+          {
+            "round": 7,
+            "elapsed_seconds": 269.2747191,
+            "resident_mib": 301.53515625,
+            "private_committed_mib": 590.13671875,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.6298751831054688
+          },
+          {
+            "round": 8,
+            "elapsed_seconds": 303.2068323,
+            "resident_mib": 310.23828125,
+            "private_committed_mib": 597.01171875,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 1.8347320556640625
+          },
+          {
+            "round": 9,
+            "elapsed_seconds": 336.992893,
+            "resident_mib": 318.85546875,
+            "private_committed_mib": 604.01953125,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.0392532348632812
+          },
+          {
+            "round": 10,
+            "elapsed_seconds": 370.6048308,
+            "resident_mib": 322.78125,
+            "private_committed_mib": 607.4375,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.242767333984375
+          },
+          {
+            "round": 11,
+            "elapsed_seconds": 404.4832125,
+            "resident_mib": 334.58203125,
+            "private_committed_mib": 622.4921875,
+            "tracked_live_mib": 24.814556121826172,
+            "tracked_additional_mib": 25.534557342529297,
+            "registered_snapshot_total_mib": 50.34911346435547,
+            "display_rgba_mib": 25.0,
+            "display_prefix_mib": 0.0,
+            "history_mib": 0.0,
+            "diagnostic_frame_capacity_mib": 10.07080078125,
+            "diagnostic_frame_used_mib": 2.4479598999023438
+          }
+        ],
+        "tail_start_round": 3,
+        "tail_drift": {
+          "resident_mib": 71.67578125,
+          "private_committed_mib": 77.6796875,
+          "tracked_live_mib": 0.0,
+          "tracked_additional_mib": 0.0,
+          "registered_snapshot_total_mib": 0.0,
+          "display_rgba_mib": 0.0,
+          "display_prefix_mib": 0.0,
+          "history_mib": 0.0,
+          "diagnostic_frame_used_mib": 1.633819580078125
+        }
+      }
+    },
+    "scope": "Descriptive measurements, not a leak verdict, GPU time, FPS, physical-input latency or release certification. Nearest-rank p95. Tail drift omits the first three rounds when present. Diagnostic frame use is shown separately; allocator/driver ownership is not inferred."
+  }
+]

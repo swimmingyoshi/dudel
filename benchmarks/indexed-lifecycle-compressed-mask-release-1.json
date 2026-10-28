@@ -1,0 +1,161 @@
+{
+  "scope": "Single-run generated supported storage lifecycle versus v4, with OS caches affected by prior writes/reads. No cache flush, cold-disk claim, UI/tablet latency, process RSS/peak memory or power-loss certification. Source/registry capacities are component accounting, sink allocations exclude encoder/index/source memory. Append bytes exclude root overwrites. All source files are temporary generated data.",
+  "cases": [
+    {
+      "name": "supported_sparse_4mp_20_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 20,
+      "logical_rgba_bytes": 335544320,
+      "source_pixel_capacity_bytes": 10485760,
+      "source_registry_live_bytes": 14697256,
+      "source_pixel_capacity_after_bytes": 10485760,
+      "v4_save_ms": 10.7534,
+      "v4_load_ms": 26.0491,
+      "v4_bytes": 68003,
+      "indexed_first_save_ms": 55.8532,
+      "indexed_load_ms": 30.3677,
+      "indexed_bytes": 69205,
+      "thumbnail_load_ms": 1.3192,
+      "unchanged_save_ms": 49.9036,
+      "unchanged_append_bytes": 1084,
+      "unchanged": {
+        "objects": 45,
+        "changed": 0,
+        "reused": 45,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 525550,
+        "raster_records_encoded": 0,
+        "raster_records_reused_without_encoding": 40
+      },
+      "edit_save_ms": 56.830600000000004,
+      "edit_load_ms": 27.3689,
+      "edit_append_bytes": 6911,
+      "edit": {
+        "objects": 45,
+        "changed": 3,
+        "reused": 42,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 525550,
+        "raster_records_encoded": 1,
+        "raster_records_reused_without_encoding": 39
+      },
+      "compaction_ms": 21.188,
+      "compaction": {
+        "before_bytes": 77200,
+        "after_bytes": 69223,
+        "records": 45,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 24.5773,
+      "exact_round_trips": true
+    },
+    {
+      "name": "supported_dense_pattern_4mp_20_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 20,
+      "logical_rgba_bytes": 335544320,
+      "source_pixel_capacity_bytes": 335544320,
+      "source_registry_live_bytes": 339805416,
+      "source_pixel_capacity_after_bytes": 335544320,
+      "v4_save_ms": 4417.6146,
+      "v4_load_ms": 1781.245,
+      "v4_bytes": 288909836,
+      "indexed_first_save_ms": 4251.1759,
+      "indexed_load_ms": 1715.4878999999999,
+      "indexed_bytes": 288450168,
+      "thumbnail_load_ms": 1.758,
+      "unchanged_save_ms": 1739.9916,
+      "unchanged_append_bytes": 30844,
+      "unchanged": {
+        "objects": 1285,
+        "changed": 0,
+        "reused": 1285,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 749563,
+        "raster_records_encoded": 0,
+        "raster_records_reused_without_encoding": 1280
+      },
+      "edit_save_ms": 1914.2966999999999,
+      "edit_load_ms": 1543.9346999999998,
+      "edit_append_bytes": 365984,
+      "edit": {
+        "objects": 1285,
+        "changed": 3,
+        "reused": 1282,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 749563,
+        "raster_records_encoded": 1,
+        "raster_records_reused_without_encoding": 1279
+      },
+      "compaction_ms": 3996.5649000000003,
+      "compaction": {
+        "before_bytes": 288846996,
+        "after_bytes": 288450168,
+        "records": 1285,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 1549.879,
+      "exact_round_trips": true
+    },
+    {
+      "name": "maximum_supported_dense_noise_4mp_32_layers",
+      "canvas": [
+        2048,
+        2048
+      ],
+      "layers": 32,
+      "logical_rgba_bytes": 536870912,
+      "source_pixel_capacity_bytes": 536870912,
+      "source_registry_live_bytes": 541170912,
+      "source_pixel_capacity_after_bytes": 536870912,
+      "v4_save_ms": 9365.7069,
+      "v4_load_ms": 2942.4543,
+      "v4_bytes": 476256953,
+      "indexed_first_save_ms": 7159.1315,
+      "indexed_load_ms": 3293.5432,
+      "indexed_bytes": 476593427,
+      "thumbnail_load_ms": 2.2476000000000003,
+      "unchanged_save_ms": 2640.0984,
+      "unchanged_append_bytes": 49276,
+      "unchanged": {
+        "objects": 2053,
+        "changed": 0,
+        "reused": 2053,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 756973,
+        "raster_records_encoded": 0,
+        "raster_records_reused_without_encoding": 2048
+      },
+      "edit_save_ms": 2795.1831,
+      "edit_load_ms": 2819.0037,
+      "edit_append_bytes": 510808,
+      "edit": {
+        "objects": 2053,
+        "changed": 3,
+        "reused": 2050,
+        "removed": 0,
+        "sink_owned_record_bytes_peak": 756973,
+        "raster_records_encoded": 1,
+        "raster_records_reused_without_encoding": 2047
+      },
+      "compaction_ms": 6310.211,
+      "compaction": {
+        "before_bytes": 477153511,
+        "after_bytes": 476593432,
+        "records": 2053,
+        "old_generation": 3,
+        "new_generation": 4
+      },
+      "compacted_load_ms": 2706.7348,
+      "exact_round_trips": true
+    }
+  ]
+}

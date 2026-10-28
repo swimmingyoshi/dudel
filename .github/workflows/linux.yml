@@ -1,0 +1,91 @@
+name: Linux verification
+
+on:
+  push:
+    # The synchronized mirror runs Linux once; master runs Windows once.
+    branches: [linux]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build and headless display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libwayland-dev libxkbcommon-dev libxkbcommon-x11-0 \
+            libx11-dev libxcursor-dev libxi-dev libxrandr-dev \
+            libegl-dev libegl1 libgl1-mesa-dri libglx-mesa0 \
+            xvfb xauth dbus-x11
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify
+        run: bash scripts/verify.sh full
+      - name: Native X11 OpenGL startup
+        env:
+          DUDEL_RENDERER: opengl
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WINIT_UNIX_BACKEND: x11
+          vblank_mode: '0'
+        run: |
+          mkdir -p target/qa "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          unset WAYLAND_DISPLAY WAYLAND_SOCKET
+          timeout 60s dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            target/release/dudel --capture-ui target/qa/linux-startup.png 1280 800 1
+          for scale in 1 2; do
+            timeout 60s dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+              target/release/dudel --capture-layer-guides "target/qa/linux-guides-${scale}.png" 1280 800 "$scale"
+          done
+          python - <<'PY'
+          import hashlib, json, pathlib, struct, subprocess
+          image = pathlib.Path('target/qa/linux-startup.png').read_bytes()
+          assert image[:8] == b'\x89PNG\r\n\x1a\n'
+          assert struct.unpack('>II', image[16:24]) == (1280, 800)
+          executable = pathlib.Path('target/release/dudel')
+          record = {
+              'revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
+              'capture_sha256': hashlib.sha256(image).hexdigest(),
+              'renderer': 'X11 / software OpenGL under Xvfb',
+              'scope': 'Build and startup only; no Wayland, physical tablet, multi-monitor or release acceptance',
+              'release_accepted': False,
+          }
+          record['guide_captures'] = {}
+          for scale in (1, 2):
+              capture = pathlib.Path(f'target/qa/linux-guides-{scale}.png').read_bytes()
+              assert capture[:8] == b'\x89PNG\r\n\x1a\n'
+              assert struct.unpack('>II', capture[16:24]) == (1280, 800)
+              record['guide_captures'][str(scale)] = hashlib.sha256(capture).hexdigest()
+          pathlib.Path('target/qa/linux-startup.json').write_text(json.dumps(record, indent=2) + '\n')
+          PY
+      - name: Upload Linux startup evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dudel-linux-startup
+          path: |
+            target/qa/linux-startup.png
+            target/qa/linux-startup.json
+            target/qa/linux-guides-*.png
+          if-no-files-found: error
+          retention-days: 7

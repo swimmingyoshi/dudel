@@ -1,0 +1,39 @@
+{
+  "test": "native_session::tests::maximum_masked_noise_fixture_is_valid_at_the_payload_boundary",
+  "command": "cargo test --locked native_session::tests::maximum_masked_noise_fixture_is_valid_at_the_payload_boundary -- --exact --ignored",
+  "passed": true,
+  "elapsed_seconds": 26.15,
+  "canvas": [
+    2048,
+    2048
+  ],
+  "raster_layers": 32,
+  "density": "noise",
+  "dense_mask_layers": 1,
+  "combined_raster_and_layer_mask_payload_bytes": 536870912,
+  "last_raster_populated_rows": 1536,
+  "last_raster_empty_rows": 512,
+  "source_files": [
+    {
+      "path": "src/native_session.rs",
+      "sha256": "9B034842DA42B9D17337B2DDC81A5A6D861D3C206B4409F32CF8C5232E7FA75A"
+    },
+    {
+      "path": "src/mask_transform_benchmark.rs",
+      "sha256": "CB93F429CFA93C69A313CD959E8A63C304A04C68E748C3EF569CCE6CA56CD2C8"
+    },
+    {
+      "path": "src/document.rs",
+      "sha256": "63DEF53E22AAE045B25DCC77787AC5EA42D499D7722F5AD55AA761CBFC01619C"
+    },
+    {
+      "path": "src/pixels.rs",
+      "sha256": "4E35F3E2825DE80ADC816FDB2A3AC41CEBF9496D01D98F34210AA4AF149759C2"
+    },
+    {
+      "path": "src/layer_mask.rs",
+      "sha256": "993D7AD1893D84461BA2683A5E7080310D541631F90CAC87E75CC3E8BC508D7C"
+    }
+  ],
+  "scope": "Constructs and validates the real maximum masked/noisy fixture; checks payload and populated/empty boundary rows. Not process peak memory, runtime soak, job timing or release certification."
+}

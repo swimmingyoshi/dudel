@@ -1,0 +1,20 @@
+{
+  "executable_sha256": "BB327D1EAEE5323D9FD4FFC5B0F1344015C9287368BC7DBD2F8C00E4103CC5DB",
+  "revision": "3f0052546efbebfaa325a52943c699a47bf423f3",
+  "archives": {
+    "binary": {
+      "name": "dudel-0.1.0-candidate-20261018-023323-112.zip",
+      "files": 892,
+      "sha256": "CF3741FF21FBEC68B4D4DB83AF63D3D0AC25772A28B52D8BB03BC4795ED382B3",
+      "crc": "passed"
+    },
+    "source": {
+      "name": "dudel-0.1.0-candidate-20261018-023323-112-source.zip",
+      "files": 24645,
+      "sha256": "57675CB71A7B044BA28A4F3DB790E71AFBF5A4004B29906444CFE38A1ECB548E",
+      "crc": "passed"
+    }
+  },
+  "source_inputs_verified": 148,
+  "dependencies": 454
+}

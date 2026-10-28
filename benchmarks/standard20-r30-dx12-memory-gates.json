@@ -1,0 +1,103 @@
+{
+  "rounds": 30,
+  "warmup_rounds": 5,
+  "layers": 20,
+  "fixture_options": {
+    "density": "Sparse",
+    "layers": 20,
+    "rounds": 30
+  },
+  "renderer": "Dx12 on NVIDIA GeForce RTX 3060",
+  "elapsed_seconds": 1420.6483385,
+  "configuration_target_pass": true,
+  "per_run_memory_targets_pass": true,
+  "stages": {
+    "initial-idle": {
+      "tail_start_round_zero_based": 5,
+      "samples": 25,
+      "private_net_mib": 6.10546875,
+      "private_slope_mib_per_round": 0.21309495192307693,
+      "private_min_mib": 544.21875,
+      "private_max_mib": 552.43359375,
+      "private_target_pass": true,
+      "ownership": {
+        "registered_snapshot_total_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 55.551984786987305
+        },
+        "display_rgba_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 25.0
+        },
+        "display_prefix_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        },
+        "history_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        }
+      },
+      "tracked_ownership_target_pass": true
+    },
+    "history-released-before-save": {
+      "tail_start_round_zero_based": 5,
+      "samples": 25,
+      "private_net_mib": 7.359375,
+      "private_slope_mib_per_round": 0.13834735576923077,
+      "private_min_mib": 564.0234375,
+      "private_max_mib": 577.8671875,
+      "private_target_pass": true,
+      "ownership": {
+        "registered_snapshot_total_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 74.86227130889893
+        },
+        "display_rgba_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 25.0
+        },
+        "display_prefix_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        },
+        "history_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        }
+      },
+      "tracked_ownership_target_pass": true
+    },
+    "final-idle-history-released": {
+      "tail_start_round_zero_based": 5,
+      "samples": 25,
+      "private_net_mib": 1.1484375,
+      "private_slope_mib_per_round": 0.10188401442307693,
+      "private_min_mib": 608.28515625,
+      "private_max_mib": 612.65234375,
+      "private_target_pass": true,
+      "ownership": {
+        "registered_snapshot_total_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 110.38114738464355
+        },
+        "display_rgba_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 25.0
+        },
+        "display_prefix_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        },
+        "history_mib": {
+          "net_mib": 0.0,
+          "maximum_mib": 0.0
+        }
+      },
+      "tracked_ownership_target_pass": true
+    }
+  },
+  "release_gate_accepted": false,
+  "scope": "Per-run CPU/process memory subchecks only. Requires three runs, two-hour mixed session, dense fixtures, GPU ownership, uninstrumented timing, source identity and physical artist acceptance before G2 can close. Uses five warmup rounds, unlike historical three-round descriptive summaries.",
+  "source": "benchmarks\\standard20-r30-dx12-sustained-100.json"
+}

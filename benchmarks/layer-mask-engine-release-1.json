@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "dense_construction_ms": 3.4369,
+      "dense_rotation_ms": 4.1258,
+      "edit_64_square_ms": 0.0983,
+      "edited_additional_bytes": 17040,
+      "size": 512,
+      "sparse_record_bytes": 16418,
+      "verified": true,
+      "white_source_bytes": 560
+    },
+    {
+      "dense_construction_ms": 60.553799999999995,
+      "dense_rotation_ms": 81.0699,
+      "edit_64_square_ms": 0.1003,
+      "edited_additional_bytes": 24720,
+      "size": 2048,
+      "sparse_record_bytes": 16418,
+      "verified": true,
+      "white_source_bytes": 8240
+    }
+  ],
+  "scope": "Layer mask engine only; excludes document, UI, history, project containers, display and physical input",
+  "version": 1
+}

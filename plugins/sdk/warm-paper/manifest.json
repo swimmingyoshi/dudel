@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "api": 1,
+  "id": "dudel-warm-paper",
+  "name": "Warm paper",
+  "author": "Dudel contributors",
+  "release": "1.0.0",
+  "description": "Warm the active layer while preserving transparency. Works with the current selection and masks.",
+  "capabilities": ["pixels.filter"],
+  "entry": "filter.rhai"
+}

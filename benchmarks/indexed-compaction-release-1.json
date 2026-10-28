@@ -1,0 +1,12 @@
+{
+  "scope": "Generated small-document same-directory compaction with stable pathname lease, locked staged/replacement file, codec/record/index verification and atomic TempPath persistence. No normal save integration, directory/device power-loss certification or dense-workload measurement.",
+  "compaction": {
+    "before_bytes": 101761,
+    "after_bytes": 81682,
+    "records": 9,
+    "old_generation": 7,
+    "new_generation": 8
+  },
+  "exact_reopen": true,
+  "exact_following_save": true
+}
