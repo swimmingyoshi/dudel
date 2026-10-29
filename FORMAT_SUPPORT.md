@@ -96,14 +96,18 @@ Layer effects (layer styles) become separate layers, as Photoshop's Layer > Laye
 Style > Create Layers does: drop shadows and outer glows under their layer, color and
 gradient overlays, inner shadows, inner glows and inside strokes clipped to it, and
 strokes (outside, inside or centred; color or gradient fill) where Photoshop draws
-them. Each is named after its layer ("Layer's Drop Shadow") and no longer follows
-edits to that layer. Several effects of one kind, the light angle (global or own),
+them; bevel and emboss (inner, outer, emboss and pillow; smooth or chisel) becomes a
+highlight and a shadow layer lit from the effect's angle and altitude. Effects on
+folders follow the folder's composited contents: their outer effects go under the
+contents and inner ones clip to the folder. Each is named after its layer ("Layer's
+Drop Shadow") and no longer follows edits to that layer. Several effects of one kind, the light angle (global or own),
 knockout and fill opacity are respected; shape and fill layers' effects follow the
 shape's outline. Shadows and glows use a Gaussian blur fitted to Photoshop's output
 (Photoshop does not document its blur), within about 5 levels on average in the test
-files. Bevel and emboss, satin, pattern overlays and pattern strokes, noise
-gradients, and effects on folders are skipped and named in Import details; contours
-other than linear and effect noise are drawn without and noted.
+files; bevels are approximate (about 3 to 18 levels). Satin, stroke emboss, pattern
+overlays and pattern strokes, and noise gradients are skipped and named in Import
+details; contours other than linear, bevel textures and effect noise are drawn
+without and noted.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.
 

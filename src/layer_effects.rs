@@ -7,6 +7,7 @@ use crate::blend::BlendMode;
 use crate::psd_vector::{Descriptor, Gradient, Value};
 
 /// Where an effect's layer goes relative to the layer it belongs to.
+/// Indexes the importer's [below, inside, above] lists.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Place {
     /// Under the layer: shadows, outer glows, outside strokes.
@@ -60,6 +61,33 @@ pub(crate) enum Kind {
         size: f64,
         position: Position,
     },
+    /// One half of a bevel: its lit (`highlight`) or its shaded side.
+    Bevel {
+        highlight: bool,
+        style: BevelStyle,
+        technique: Technique,
+        /// Slope steepness (Photoshop's depth, 1.0 = 100%).
+        depth: f64,
+        size: f64,
+        soften: f64,
+        /// Unit vector toward the light: x right, y down, z out of the canvas.
+        light: [f64; 3],
+        /// Raised (true) or pressed in.
+        up: bool,
+    },
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum BevelStyle {
+    Inner,
+    Outer,
+    Emboss,
+    Pillow,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Technique {
+    Smooth,
+    ChiselHard,
+    ChiselSoft,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Effect {
@@ -87,6 +115,10 @@ impl Effect {
             Kind::InnerGlow { .. } => "Inner Glow",
             Kind::InnerShadow { .. } => "Inner Shadow",
             Kind::Stroke { .. } => "Stroke",
+            Kind::Bevel {
+                highlight: true, ..
+            } => "Bevel Highlights",
+            Kind::Bevel { .. } => "Bevel Shadows",
         }
     }
     pub(crate) fn place(&self) -> Place {
@@ -100,6 +132,11 @@ impl Effect {
                 position: Position::Center,
                 ..
             } => Place::Above,
+            Kind::Bevel { style, .. } => match style {
+                BevelStyle::Inner => Place::Inside,
+                BevelStyle::Outer => Place::Below,
+                BevelStyle::Emboss | BevelStyle::Pillow => Place::Above,
+            },
             _ => Place::Inside,
         }
     }
@@ -113,6 +150,7 @@ impl Effect {
             Kind::InnerGlow { .. } => 4,
             Kind::InnerShadow { .. } => 5,
             Kind::Stroke { .. } => 6,
+            Kind::Bevel { .. } => 7,
         }
     }
     /// How far beyond the layer's pixels the effect can reach.
@@ -123,6 +161,7 @@ impl Effect {
             }
             Kind::OuterGlow { size, .. } => 2.0 * size,
             Kind::Stroke { size, .. } => size,
+            Kind::Bevel { size, soften, .. } => size + soften,
             _ => 0.0,
         };
         reach.ceil() as usize + 2
@@ -158,6 +197,13 @@ pub(crate) fn parse(data: &[u8], global_angle: f64) -> Result<Effects, String> {
         };
         for effect in list {
             if effect.flag("enab") != Some(true) {
+                continue;
+            }
+            if effect.class == "ebbl" {
+                match bevel(effect, global_angle, &mut effects.approximated) {
+                    Ok(halves) => effects.list.extend(halves),
+                    Err(skipped) => effects.skipped.push(skipped),
+                }
                 continue;
             }
             match read(effect, global_angle, &mut effects.approximated) {
@@ -211,7 +257,6 @@ fn read(
         "SoFi" => "color overlay",
         "GrFl" => "gradient overlay",
         "FrFX" => "stroke",
-        "ebbl" => return Err("bevel and emboss".into()),
         "ChFX" => return Err("satin".into()),
         "patternFill" => return Err("pattern overlay".into()),
         _ => return Ok(None),
@@ -284,6 +329,90 @@ fn read(
         blend,
         opacity,
     }))
+}
+/// Bevel and emboss: a highlight and a shadow, each with its own color,
+/// blend mode and opacity.
+fn bevel(
+    effect: &Descriptor,
+    global_angle: f64,
+    approximated: &mut Vec<String>,
+) -> Result<Vec<Effect>, String> {
+    let style = match effect.enumerated("bvlS") {
+        Some("InrB") | None => BevelStyle::Inner,
+        Some("OtrB") => BevelStyle::Outer,
+        Some("Embs") => BevelStyle::Emboss,
+        Some("PlEb") => BevelStyle::Pillow,
+        Some(_) => return Err("stroke emboss".into()),
+    };
+    let technique = match effect.enumerated("bvlT") {
+        Some("PrBL") => Technique::ChiselHard,
+        Some("Slmt") => Technique::ChiselSoft,
+        _ => Technique::Smooth,
+    };
+    let pixels = |key: &str| {
+        effect
+            .number(key)
+            .filter(|v| v.is_finite() && (0.0..=MAX_SIZE).contains(v))
+            .unwrap_or(0.0)
+    };
+    let angle = if effect.flag("uglg") == Some(true) {
+        global_angle
+    } else {
+        effect.number("lagl").unwrap_or(global_angle)
+    }
+    .to_radians();
+    let altitude = effect
+        .number("Lald")
+        .unwrap_or(30.0)
+        .clamp(0.0, 90.0)
+        .to_radians();
+    let light = [
+        altitude.cos() * angle.cos(),
+        -altitude.cos() * angle.sin(),
+        altitude.sin(),
+    ];
+    if !linear(effect.object("TrnS")) {
+        approximated.push("bevel gloss contour".into());
+    }
+    if effect.flag("useShape") == Some(true) {
+        approximated.push("bevel contour".into());
+    }
+    if effect.flag("useTexture") == Some(true) {
+        approximated.push("bevel texture".into());
+    }
+    let half = |highlight: bool| -> Result<Effect, String> {
+        let [mode, color, opacity] = if highlight {
+            ["hglM", "hglC", "hglO"]
+        } else {
+            ["sdwM", "sdwC", "sdwO"]
+        };
+        let mode = effect.enumerated(mode).unwrap_or("Nrml");
+        Ok(Effect {
+            kind: Kind::Bevel {
+                highlight,
+                style,
+                technique,
+                depth: effect
+                    .number("srgR")
+                    .map_or(1.0, |v| (v / 100.0).clamp(0.01, 10.0)),
+                size: pixels("blur"),
+                soften: pixels("Sftn"),
+                light,
+                up: effect.enumerated("bvlD") != Some("Out "),
+            },
+            paint: Paint::Color(match effect.object(color) {
+                Some(color) => crate::psd_vector::color(color)?,
+                None if highlight => [255; 3],
+                None => [0; 3],
+            }),
+            blend: blend(mode).ok_or(format!("bevel with blend mode {mode}"))?,
+            opacity: effect
+                .number(opacity)
+                .map_or(0.75, |v| (v / 100.0).clamp(0.0, 1.0)) as f32,
+        })
+    };
+    // Shadow first: Photoshop draws the highlight over it.
+    Ok(vec![half(false)?, half(true)?])
 }
 /// A contour that leaves the effect's falloff unchanged.
 fn linear(contour: Option<&Descriptor>) -> bool {
@@ -675,6 +804,62 @@ pub(crate) fn coverage(
             }
         }
         Kind::ColorOverlay | Kind::GradientOverlay => vec![1.0; w * h],
+        Kind::Bevel {
+            highlight,
+            style,
+            technique,
+            depth,
+            size,
+            soften,
+            light,
+            up,
+        } => {
+            let size = size.max(1.0);
+            let s = size as f32;
+            // Height over the slope, 0 at its foot and 1 at its top.
+            let mut height: Vec<f32> = alpha
+                .distance(cancel)?
+                .iter()
+                .map(|&d| {
+                    let t = match style {
+                        BevelStyle::Inner => -d / s,
+                        BevelStyle::Outer => 1.0 - d / s,
+                        BevelStyle::Emboss => 0.5 - d / s,
+                        BevelStyle::Pillow => 2.0 * d.abs() / s,
+                    }
+                    .clamp(0.0, 1.0);
+                    if up { t } else { 1.0 - t }
+                })
+                .collect();
+            let round = match technique {
+                Technique::Smooth => 0.5,
+                Technique::ChiselSoft => 0.15,
+                Technique::ChiselHard => 0.0,
+            };
+            blur(&mut height, w, h, size * round, cancel)?;
+            // Light the surface; a flat one is left unchanged.
+            let k = (size * depth) as f32;
+            let flat = light[2] as f32;
+            let at = |x: usize, y: usize| height[y * w + x];
+            let mut shade = vec![0.0; w * h];
+            for y in 0..h {
+                for x in 0..w {
+                    let dx = (at((x + 1).min(w - 1), y) - at(x.saturating_sub(1), y)) / 2.0;
+                    let dy = (at(x, (y + 1).min(h - 1)) - at(x, y.saturating_sub(1))) / 2.0;
+                    let n = [-dx * k, -dy * k, 1.0];
+                    let length = (n[0] * n[0] + n[1] * n[1] + 1.0).sqrt();
+                    let lit = (n[0] * light[0] as f32 + n[1] * light[1] as f32 + flat) / length;
+                    shade[y * w + x] = if highlight {
+                        ((lit - flat) / (1.0 - flat).max(1e-3)).max(0.0)
+                    } else {
+                        ((flat - lit) / flat.max(1e-3)).max(0.0)
+                    }
+                    .min(1.0);
+                }
+            }
+            blur(&mut shade, w, h, soften, cancel)?;
+            shade
+        }
         Kind::Stroke { size, position } => {
             let size = size as f32;
             // Outside strokes lie under the layer and fill beneath its
@@ -877,6 +1062,42 @@ mod tests {
     }
 
     #[test]
+    fn bevels_light_the_slope_facing_the_light_and_leave_flat_parts_alone() {
+        let bevel = |highlight, style| {
+            let mut alpha = square(40, [10, 10, 30, 30]);
+            coverage(
+                &effect(Kind::Bevel {
+                    highlight,
+                    style,
+                    technique: Technique::ChiselHard,
+                    depth: 1.0,
+                    size: 4.0,
+                    soften: 0.0,
+                    // From straight above the top edge, 30 degrees up.
+                    light: [0.0, -(30f64.to_radians().cos()), 30f64.to_radians().sin()],
+                    up: true,
+                }),
+                &mut alpha,
+                &|| false,
+            )
+            .unwrap()
+        };
+        let (light, dark) = (
+            bevel(true, BevelStyle::Inner),
+            bevel(false, BevelStyle::Inner),
+        );
+        let at = |plane: &[f32], x: usize, y: usize| plane[y * 40 + x];
+        // Top slope lit, bottom slope shaded, the plateau and outside untouched.
+        assert!(at(&light, 20, 11) > 0.5 && at(&dark, 20, 11) == 0.0);
+        assert!(at(&dark, 20, 28) > 0.5 && at(&light, 20, 28) == 0.0);
+        assert_eq!((at(&light, 20, 20), at(&dark, 20, 20)), (0.0, 0.0));
+        assert_eq!((at(&light, 20, 5), at(&dark, 20, 5)), (0.0, 0.0));
+        // An outer bevel slopes outside the layer instead.
+        let outer = bevel(true, BevelStyle::Outer);
+        assert!(at(&outer, 20, 8) > 0.5 && at(&outer, 20, 12) == 0.0);
+    }
+
+    #[test]
     fn glows_reach_full_strength_at_their_range() {
         assert_eq!(
             ranged(vec![0.1, 0.25, 0.5, 0.9], 0.5),
@@ -976,8 +1197,8 @@ mod tests {
                     ),
                 ),
                 (
-                    "ebbl".into(),
-                    object("ebbl", vec![("enab", Value::Bool(true))]),
+                    "ChFX".into(),
+                    object("ChFX", vec![("enab", Value::Bool(true))]),
                 ),
                 (
                     "SoFi".into(),
@@ -988,7 +1209,7 @@ mod tests {
         let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
         data.extend(crate::psd_vector::encode(&settings));
         let effects = parse(&data, 90.0).unwrap();
-        assert_eq!(effects.skipped, vec!["bevel and emboss".to_string()]);
+        assert_eq!(effects.skipped, vec!["satin".to_string()]);
         assert_eq!(effects.list.len(), 2);
         assert_eq!(effects.list[0].name(), "Drop Shadow");
         assert_eq!(effects.list[0].blend, BlendMode::Multiply);

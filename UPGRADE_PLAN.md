@@ -256,8 +256,17 @@ Stage A - import effects as layers:
 - [x] Clipped layers (effects stay in the clip group, inner ones carry the
       alpha), fill opacity, masks; shape/fill layers' effects follow the
       path's fill, not the shape stroke or gradient transparency
-- [ ] Effects on folders (computed from the folder's composite); skipped and
-      noted for now (ag-psd group-drop-shadows)
+- [x] Effects on folders: computed from the folder's composited contents;
+      outer effects inserted under the contents, inner ones clipped to the
+      folder header. ag-psd group-drop-shadows 163,223 -> 6,330 px off (max 16)
+- [x] Bevel and emboss (inner/outer/emboss/pillow; smooth, chisel hard/soft;
+      depth, size, soften, up/down, angle + altitude): height from the distance
+      field, Lambert lighting, flat parts unchanged; highlight and shadow
+      layers. Mean error 3-18 levels in ag-psd effects and psd-tools
+      effect-enums. Stroke emboss skipped
+- [x] Fixed: a folder starting above a layer ends its clip group, so effects
+      drawn over that layer no longer land inside the folder (layer_comps.psd
+      failed validation)
 - [x] Corpus 2026-10-29: ag-psd 42 -> 51/75 layered, psd-tools 114 -> 138/279;
       no file that imported before got worse; owner's Frieren and Live2D files
       unchanged. Per-effect mean error in ag-psd effects: drop shadow 4.8,
@@ -268,8 +277,8 @@ Stage A - import effects as layers:
       of the shape stroke's outer half (double-stroke-effects); not modelled
 
 Later in stage A (rarer): pattern overlay and pattern strokes (need the file's
-pattern resources), bevel & emboss, satin, non-linear contours, noise, glow
-gradients, "layer mask hides effects".
+pattern resources), satin, stroke emboss, non-linear contours (gloss and
+falloff), noise, glow gradients, "layer mask hides effects".
 
 Stage B - native layer effects:
 

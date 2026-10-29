@@ -257,39 +257,66 @@ fn effect_layers(
     budget: &mut usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<(), String> {
-    use crate::layer_effects::Place;
     let effects = std::mem::take(&mut record.effects.list);
-    let layer = &record.layer;
     let source = record.source.take();
-    let bounds = match &source {
-        Some(source) => source
+    [record.below, record.inside, record.above] = draw_effects(
+        &effects,
+        &record.layer,
+        record.opacity,
+        record.fill,
+        None,
+        source.as_deref(),
+        [width, height],
+        budget,
+        cancel,
+    )?;
+    Ok(())
+}
+/// Draw effects as layers (Photoshop's Create Layers): those under `owner`,
+/// those clipped to it and those over its clip group. They follow `source`
+/// when given (a shape's fill), else `owner`'s alpha, taken from `content`
+/// when given (a folder's composite, one value per canvas pixel), else from
+/// its pixels; `owner`'s mask applies either way.
+#[allow(clippy::too_many_arguments)]
+fn draw_effects(
+    effects: &[crate::layer_effects::Effect],
+    owner: &Layer,
+    opacity: f32,
+    fill: u8,
+    content: Option<&[f32]>,
+    source: Option<&[f32]>,
+    [width, height]: [usize; 2],
+    budget: &mut usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<[Vec<Layer>; 3], String> {
+    use crate::layer_effects::Place;
+    let mut placed: [Vec<Layer>; 3] = Default::default();
+    let union = |a: [usize; 4], b: [usize; 4]| {
+        [
+            a[0].min(b[0]),
+            a[1].min(b[1]),
+            a[2].max(b[2]),
+            a[3].max(b[3]),
+        ]
+    };
+    let covered = |plane: &[f32]| {
+        plane
             .iter()
             .enumerate()
             .filter(|(_, c)| **c > 0.0)
             .map(|(i, _)| [i % width, i / width, i % width + 1, i / width + 1])
-            .reduce(|a, b| {
-                [
-                    a[0].min(b[0]),
-                    a[1].min(b[1]),
-                    a[2].max(b[2]),
-                    a[3].max(b[3]),
-                ]
-            }),
-        None => layer
+            .reduce(union)
+    };
+    let bounds = match (source, content) {
+        (Some(plane), _) | (None, Some(plane)) => covered(plane),
+        (None, None) => owner
             .pixels
             .nonzero_tiles(width, height)
             .into_iter()
-            .reduce(|a, b| {
-                [
-                    a[0].min(b[0]),
-                    a[1].min(b[1]),
-                    a[2].max(b[2]),
-                    a[3].max(b[3]),
-                ]
-            }),
+            .reduce(union),
     };
     let Some(bounds) = bounds else {
-        return Ok(());
+        return Ok(placed);
     };
     let reach = effects.iter().map(|e| e.reach()).max().unwrap_or(0);
     let rect = [
@@ -299,20 +326,27 @@ fn effect_layers(
         (bounds[3] + reach).min(height),
     ];
     let w = rect[2] - rect[0];
-    let rgba = layer.pixels.region(width, rect);
-    let mask = |i: usize| layer.mask_coverage((rect[1] + i / w) * width + rect[0] + i % w, width);
-    let content: Vec<f32> = rgba
-        .chunks_exact(4)
-        .enumerate()
-        .map(|(i, p)| f32::from(p[3]) / 255.0 * mask(i))
-        .collect();
+    let at = |i: usize| (rect[1] + i / w) * width + rect[0] + i % w;
+    let mask = |i: usize| owner.mask_coverage(at(i), width);
+    let content: Vec<f32> = match content {
+        Some(plane) => (0..w * (rect[3] - rect[1]))
+            .map(|i| plane[at(i)] * mask(i))
+            .collect(),
+        None => owner
+            .pixels
+            .region(width, rect)
+            .chunks_exact(4)
+            .enumerate()
+            .map(|(i, p)| f32::from(p[3]) / 255.0 * mask(i))
+            .collect(),
+    };
     let visible: Vec<f32> = content
         .iter()
-        .map(|a| a * f32::from(record.fill) / 255.0)
+        .map(|a| a * f32::from(fill) / 255.0)
         .collect();
-    let values: Vec<f32> = match &source {
+    let values: Vec<f32> = match source {
         Some(source) => (0..content.len())
-            .map(|i| source[(rect[1] + i / w) * width + rect[0] + i % w] * mask(i))
+            .map(|i| source[at(i)] * mask(i))
             .collect(),
         None => content.clone(),
     };
@@ -328,15 +362,15 @@ fn effect_layers(
         ];
     }
     if span[0] > span[2] {
-        return Ok(());
+        return Ok(placed);
     }
     let mut alpha = crate::layer_effects::Alpha::new(rect, values);
     // Inner effects clip to the layer, unless that would apply its fill
     // opacity, the layer is clipped itself (clipping does not nest), or
     // its effects follow a shape rather than its pixels; then they carry
     // that alpha.
-    let clip_inside = !layer.clipped && record.fill == 255 && source.is_none();
-    for effect in &effects {
+    let clip_inside = !owner.clipped && fill == 255 && source.is_none();
+    for effect in effects {
         check(cancel)?;
         *budget = budget
             .checked_add(w * (rect[3] - rect[1]))
@@ -347,15 +381,11 @@ fn effect_layers(
         if place == Place::Below {
             effect.under(&mut coverage, &alpha.values, &visible);
         }
-        let mut out = Layer::raster(
-            format!("{}'s {}", record.layer.name, effect.name()),
-            width,
-            height,
-        );
-        out.visible = record.layer.visible;
+        let mut out = Layer::raster(format!("{}'s {}", owner.name, effect.name()), width, height);
+        out.visible = owner.visible;
         out.blend = effect.blend;
-        out.clipped = record.layer.clipped;
-        out.opacity = effect.opacity * record.opacity;
+        out.clipped = owner.clipped;
+        out.opacity = effect.opacity * opacity;
         if place == Place::Inside {
             for (c, a) in coverage.iter_mut().zip(&alpha.values) {
                 *c *= if clip_inside {
@@ -367,19 +397,15 @@ fn effect_layers(
             if clip_inside {
                 out.clipped = true;
                 out.opacity = effect.opacity;
-            } else if !record.layer.clipped {
+            } else if !owner.clipped {
                 place = Place::Above;
             }
         }
         let pixels = crate::layer_effects::paint(effect, rect, &coverage, span, [width, height]);
         out.pixels.writer().write_region(width, rect, &pixels);
-        match place {
-            Place::Below => record.below.push(out),
-            Place::Inside => record.inside.push(out),
-            Place::Above => record.above.push(out),
-        }
+        placed[place as usize].push(out);
     }
-    Ok(())
+    Ok(placed)
 }
 
 /// A shape layer: its fill clipped by the path, with any stroke on top.
@@ -742,8 +768,7 @@ fn layers(
             }
             layer.opacity *= f32::from(fill) / 255.0;
         }
-        if group != 0 && !effects.list.is_empty() {
-            effects.skipped.push("effects on folders".into());
+        if group == 3 {
             effects.list.clear();
         }
         if !effects.skipped.is_empty() {
@@ -915,14 +940,16 @@ fn layers(
         if let (None, Some(vector)) = (&record.solid, &record.vector) {
             apply_vector_mask(&mut record.layer, vector, width, height, cancel)?;
         }
-        if !record.effects.list.is_empty() {
+        if record.group == 0 && !record.effects.list.is_empty() {
             effect_layers(record, width, height, &mut decoded_budget, cancel)?;
         }
     }
-    if records
-        .iter()
-        .any(|r| !r.below.is_empty() || !r.inside.is_empty() || !r.above.is_empty())
-    {
+    if records.iter().any(|r| {
+        !r.below.is_empty()
+            || !r.inside.is_empty()
+            || !r.above.is_empty()
+            || (r.group != 0 && !r.effects.list.is_empty())
+    }) {
         notes.push("Layer effects became separate layers named after their layer, like Photoshop's Create Layers; they no longer follow edits to that layer.".into());
     }
     // Dudel's stack runs bottom to top with each folder above its contents.
@@ -946,12 +973,47 @@ fn layers(
     // Effects drawn over a layer wait until the layers clipped to it end.
     let mut pending: Vec<Layer> = Vec::new();
     let mut pending_depth = 0;
-    for (record, depth) in records.into_iter().zip(depths) {
+    // Where each open folder's contents start in `result`.
+    let mut starts = Vec::new();
+    for (mut record, depth) in records.into_iter().zip(depths) {
         let Some(depth) = depth else {
+            // A folder starting ends the clip group below it.
+            result.append(&mut pending);
+            starts.push(result.len());
             continue;
         };
         if depth < pending_depth || (depth == pending_depth && !record.layer.clipped) {
             result.append(&mut pending);
+        }
+        if record.group != 0 {
+            let start = starts.pop().ok_or("PSD group nesting exceeds limits")?;
+            if !record.effects.list.is_empty() {
+                // A folder's effects follow its composited contents.
+                let mut contents = Document::new(width, height);
+                contents.layers = result[start..].to_vec();
+                for layer in &mut contents.layers {
+                    layer.depth -= depth + 1;
+                }
+                let alpha: Vec<f32> = contents
+                    .composite_transparent()
+                    .chunks_exact(4)
+                    .map(|p| f32::from(p[3]) / 255.0)
+                    .collect();
+                let [mut below, inside, above] = draw_effects(
+                    &record.effects.list,
+                    &record.layer,
+                    record.opacity,
+                    record.fill,
+                    Some(&alpha),
+                    None,
+                    [width, height],
+                    &mut decoded_budget,
+                    cancel,
+                )?;
+                below.iter_mut().for_each(|l| l.depth = depth);
+                result.splice(start..start, below);
+                (record.inside, record.above) = (inside, above);
+            }
         }
         let mut layers = record.below;
         layers.push(record.layer);
@@ -1811,8 +1873,8 @@ mod tests {
                         Value::List(vec![stroke("CtrF"), stroke("InsF")]),
                     ),
                     (
-                        "ebbl".into(),
-                        object("ebbl", vec![("enab", Value::Bool(true))]),
+                        "ChFX".into(),
+                        object("ChFX", vec![("enab", Value::Bool(true))]),
                     ),
                 ],
             };
@@ -1862,16 +1924,128 @@ mod tests {
             imported.document.layers[0].blend,
             crate::blend::BlendMode::Multiply
         );
-        assert!(
-            imported
-                .notes
-                .iter()
-                .any(|n| n.contains("bevel and emboss"))
-        );
+        assert!(imported.notes.iter().any(|n| n.contains("satin")));
         assert!(imported.notes.iter().any(|n| n.contains("Create Layers")));
         // With the effects switched off the layer imports alone.
         let off = parse(&file(false), &|| false).unwrap();
         assert_eq!(off.document.layers.len(), 2);
+    }
+    #[test]
+    fn folder_effects_follow_the_folder_contents() {
+        use crate::psd_vector::{Descriptor, Value};
+        let effect = |class: &str, mode: &str| {
+            let green = Descriptor {
+                class: "RGBC".into(),
+                items: vec![
+                    ("Rd  ".into(), Value::Number(0.0)),
+                    ("Grn ".into(), Value::Number(255.0)),
+                    ("Bl  ".into(), Value::Number(0.0)),
+                ],
+            };
+            (
+                class.to_string(),
+                Value::Object(Descriptor {
+                    class: class.into(),
+                    items: vec![
+                        ("enab".into(), Value::Bool(true)),
+                        ("Md  ".into(), Value::Enum("BlnM".into(), mode.into())),
+                        ("Clr ".into(), Value::Object(green)),
+                    ],
+                }),
+            )
+        };
+        let settings = Descriptor {
+            class: "null".into(),
+            items: vec![effect("DrSh", "Nrml"), effect("SoFi", "Nrml")],
+        };
+        let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
+        data.extend(crate::psd_vector::encode(&settings));
+        let data: &'static [u8] = Box::leak(data.into_boxed_slice());
+        let keys: &'static [(&'static [u8; 4], &'static [u8])] =
+            Box::leak(vec![(b"lfx2", data)].into_boxed_slice());
+        let file = layer_file(&[
+            group("</Layer set>", 3),
+            raster("Inside", 1, [255, 0, 0, 255], false),
+            Spec {
+                keys,
+                ..group("Group", 1)
+            },
+        ]);
+        let imported = parse(&file, &|| false).unwrap();
+        let doc = &imported.document;
+        let stack: Vec<_> = doc
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.depth, l.clipped))
+            .collect();
+        // The shadow goes under the folder's contents, the overlay clips to
+        // the folder.
+        assert_eq!(
+            stack,
+            [
+                ("Group's Drop Shadow", 0, false),
+                ("Inside", 1, false),
+                ("Group", 0, false),
+                ("Group's Color Overlay", 0, true),
+            ]
+        );
+        // The folder's contents cover pixel 1 only; the shadow (no offset or
+        // blur) adds nothing there, and the overlay paints only it.
+        assert_eq!(doc.layers[0].pixels.rgba(0), [0, 0, 0, 0]);
+        let rendered = doc.composite_transparent();
+        assert_eq!(&rendered[..8], &[0, 0, 0, 0, 0, 255, 0, 255]);
+        // Effects drawn over a layer stay out of a folder that starts above
+        // it: the folder ends the layer's clip group.
+        let Value::Object(shadow) = &settings.items[0].1 else {
+            unreachable!()
+        };
+        let stroke = Descriptor {
+            class: "null".into(),
+            items: vec![(
+                "FrFX".into(),
+                Value::Object(Descriptor {
+                    class: "FrFX".into(),
+                    items: vec![
+                        ("enab".into(), Value::Bool(true)),
+                        ("Styl".into(), Value::Enum("FStl".into(), "CtrF".into())),
+                        ("Sz  ".into(), Value::Unit("#Pxl".into(), 1.0)),
+                        ("Clr ".into(), shadow.get("Clr ").unwrap().clone()),
+                    ],
+                }),
+            )],
+        };
+        let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
+        data.extend(crate::psd_vector::encode(&stroke));
+        // Blocks are padded to even lengths.
+        data.resize(data.len().next_multiple_of(2), 0);
+        let data: &'static [u8] = Box::leak(data.into_boxed_slice());
+        let keys: &'static [(&'static [u8; 4], &'static [u8])] =
+            Box::leak(vec![(b"lfx2", data)].into_boxed_slice());
+        let file = layer_file(&[
+            Spec {
+                keys,
+                ..raster("Below", 0, [255, 0, 0, 255], false)
+            },
+            group("</Layer set>", 3),
+            raster("Inside", 1, [255, 0, 0, 255], false),
+            group("Group", 1),
+        ]);
+        let imported = parse(&file, &|| false).unwrap();
+        let stack: Vec<_> = imported
+            .document
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.depth))
+            .collect();
+        assert_eq!(
+            stack,
+            [
+                ("Below", 0),
+                ("Below's Stroke", 0),
+                ("Inside", 1),
+                ("Group", 0)
+            ]
+        );
     }
     #[test]
     fn white_matte_is_removed_only_from_matted_images() {
