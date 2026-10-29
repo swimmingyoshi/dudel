@@ -29,7 +29,12 @@ the package has been uploaded to a public store.
   folders. CSP and PSD imports map them.
 - PSD import reads each file's own layer order. Some writers list layers top
   first; groups decide it, and flat files are checked against the saved image.
-- PSD layer effects import as separate layers, like Photoshop's Create Layers:
+- Layer effects: **fx** in the layer properties adds editable drop and inner
+  shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
+  and emboss. They follow the layer's pixels, save with the project, and appear in
+  exports. Older Dudel builds open such projects without the effects.
+- PSD layer effects stay editable on ordinary layers, and become separate layers
+  (like Photoshop's Create Layers) on shape and fill layers and folders:
   strokes, color and gradient overlays, drop and inner shadows, outer and inner
   glows, bevel and emboss, also on folders. Satin and pattern effects are listed
   in Import details instead.

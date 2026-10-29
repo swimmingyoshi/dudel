@@ -84,6 +84,12 @@ The blend list has 26 modes in the usual groups (darken, lighten, contrast,
 comparative and color component modes). Hover it and scroll, or press Up/Down,
 to step through modes and judge each one on the canvas.
 
+**fx** next to the blend list opens Layer Effects for the selected layer: drop and
+inner shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
+and emboss. Effects follow the layer's pixels as you paint (they refresh when the
+stroke ends), can be switched off, reordered or removed, and save with the project.
+Merge down bakes them into the merged pixels.
+
 Press **L** for the Lasso: draw a shape and lift to fill it with the current
 color. Its panel switches between **Fill** and **Erase** (or tap **L** again) and
 between Freehand, Rectangle and Ellipse outlines, with options to constrain

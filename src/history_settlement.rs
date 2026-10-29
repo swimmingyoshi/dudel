@@ -50,6 +50,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && a.folder == b.folder
                 && a.depth == b.depth
                 && a.collapsed == b.collapsed
+                && a.effects == b.effects
                 && crate::layer_mask::same_snapshot(&a.mask, &b.mask)
                 && a.pixels.shares(&b.pixels)
         })

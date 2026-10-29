@@ -157,6 +157,12 @@ pub struct Layer {
     pub collapsed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mask: Option<crate::layer_mask::LayerMask>,
+    /// Layer effects, bottom to top, drawn whenever the document is
+    /// composited (`layer_effects::expand`). Raster layers only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<crate::layer_effects::LayerEffect>,
+    #[serde(skip)]
+    pub(crate) effect_cache: crate::layer_effects::Cache,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -178,6 +184,8 @@ pub const MAX_ENTRIES: usize = 2000;
 /// demand more memory than before. Mask-aware documents keep 512 MiB.
 pub const MAX_PAYLOAD: usize = 2 << 30;
 pub const MAX_MASKED_PAYLOAD: usize = 512 * 1024 * 1024;
+/// Effects per layer (Photoshop allows ten of each kind).
+pub const MAX_EFFECTS: usize = 32;
 /// Folder nesting, matching Photoshop's ten levels.
 pub const MAX_DEPTH: u8 = 10;
 
@@ -219,6 +227,8 @@ impl Default for Layer {
             depth: 0,
             collapsed: false,
             mask: None,
+            effects: Vec::new(),
+            effect_cache: Default::default(),
             pixels: Default::default(),
             display_reference: None,
         }
@@ -226,6 +236,9 @@ impl Default for Layer {
 }
 
 impl Layer {
+    pub(crate) fn has_effects(&self) -> bool {
+        !self.folder && self.effects.iter().any(|e| e.enabled)
+    }
     pub(crate) fn display_key(&self) -> usize {
         self.display_reference.as_ref().map_or(0, |r| r.key)
     }
@@ -537,6 +550,10 @@ impl Document {
         }
         Ok(())
     }
+    /// Whether compositing draws layer effects.
+    pub(crate) fn has_effects(&self) -> bool {
+        self.layers.iter().any(Layer::has_effects)
+    }
     pub fn validate_metadata(&self) -> Result<(), String> {
         if self.layers.iter().any(|l| l.display_reference.is_some()) {
             return Err("Reference display snapshots cannot be saved as artwork".into());
@@ -557,6 +574,12 @@ impl Document {
             return Err("Layer masks require document version 2".into());
         }
         for layer in &self.layers {
+            if layer.effects.len() > MAX_EFFECTS || (layer.folder && !layer.effects.is_empty()) {
+                return Err("Invalid layer effects".into());
+            }
+            for effect in &layer.effects {
+                effect.validate()?;
+            }
             if layer.name.len() > 4096
                 || (layer.folder && layer.csp_byte_opacity)
                 || !layer.opacity.is_finite()
@@ -908,6 +931,10 @@ impl Document {
         check: impl Fn() -> Result<(), String> + Sync,
     ) -> Result<Vec<u8>, String> {
         check()?;
+        if self.has_effects() {
+            let expanded = crate::layer_effects::expand(self, false, &|| check().is_err())?;
+            return expanded.composite_bounds_checked(rect, transparent, check);
+        }
         let [left, top, right, bottom] = rect;
         let width = right.saturating_sub(left);
         let height = bottom.saturating_sub(top);
@@ -1046,6 +1073,11 @@ impl Document {
     pub fn pick_color(&self, x: usize, y: usize) -> Option<[u8; 3]> {
         if x >= self.width || y >= self.height {
             return None;
+        }
+        if self.has_effects() {
+            return crate::layer_effects::expand(self, false, &|| false)
+                .ok()?
+                .pick_color(x, y);
         }
         let value = self.composite_pixel(
             y * self.width + x,
@@ -1819,6 +1851,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.alpha_locked != b.alpha_locked
             || a.folder != b.folder
             || a.depth != b.depth
+            || a.effects != b.effects
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
         {
             return None;

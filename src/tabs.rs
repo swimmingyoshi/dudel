@@ -148,6 +148,7 @@ project_session! {
     rename_draft: String,
     opacity_edit: Option<crate::layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
+    effects_edit: Option<crate::effects_panel::Edit>,
     symmetry: crate::symmetry::Symmetry,
     symmetry_drag: bool,
     layer_symmetry: std::collections::HashMap<crate::document::LayerId, crate::symmetry::Symmetry>,
@@ -525,6 +526,7 @@ impl Dudel {
         // a snapshot. No gesture or worker is finished by a blocking join here.
         self.finish_layer_rename(true);
         self.finish_opacity_edit();
+        self.finish_effects_edit();
         self.track_guide_changes();
         if let Some(reason) = self.tab_switch_blocker() {
             self.status = format!("Changing projects after {reason} finishes");

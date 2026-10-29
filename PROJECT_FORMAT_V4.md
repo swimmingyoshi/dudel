@@ -18,7 +18,10 @@ seven bytes `DUDL\x04\r\n`, followed by exactly one gzip member. Its payload is:
 
 Metadata matches document schema 1 with every layer's `pixels` equal to `[]`.
 It retains dimensions, active layer, selection and layer names/properties/folder
-structure. It must validate before tile data is allocated. An optional `guides`
+structure. A layer may carry `effects`, its layer effects bottom to top (each
+`{enabled, effect}`; settings are range-checked on load, at most 32 per layer, raster
+layers only). Builds that predate effects ignore the field and open the artwork
+without them. It must validate before tile data is allocated. An optional `guides`
 object holds drawing guides: shared symmetry (mode, copies, center, rotation),
 per-layer symmetry as `[stack index, symmetry]` pairs, grid, guide lines, guide
 lock and ruler visibility. Files without it open with default guides, and readers

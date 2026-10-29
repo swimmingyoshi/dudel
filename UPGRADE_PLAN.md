@@ -282,12 +282,35 @@ falloff), noise, glow gradients, "layer mask hides effects".
 
 Stage B - native layer effects:
 
-- [ ] Data model: an ordered effect list per layer, saved in the project
-      format (new version, old files unchanged)
-- [ ] Compositor draws effects live from the same renderers, cached per layer
-      and invalidated by edits, so painting stays fast
-- [ ] Layer panel UI: add/remove/reorder/toggle, settings popups, undo
-- [ ] PSD import keeps effects as effects (stage A layers become an option)
+- [x] Data model: `Layer.effects: Vec<LayerEffect>` (serde, validated on load,
+      max 32, raster layers only), saved in v4 metadata as `effects`; no
+      version bump - older builds ignore the field (documented)
+- [x] Compositing: `layer_effects::expand` draws the effects as layers around
+      their layer (same placement as import) inside
+      `Document::composite_bounds_checked`, so export, fill "visible" and the
+      eyedropper see them; the canvas expands its display document. Per-layer
+      cache keyed by pixels/mask identity + settings; while painting, moving
+      or transforming the previous drawing is reused, and a redraw forces a
+      full (signature-checked) canvas update. Merge down bakes effects once.
+      History compares effects (`same_snapshot`, `compact_layer`)
+- [x] UI: **fx** toggle beside the blend list opens Layer Effects
+      (`src/effects_panel.rs`): add preset, enable, reorder, remove, per-kind
+      settings; drags are one undo step (gesture checkpoint, like opacity);
+      bevel halves stay in sync. `Property::Effects` for queued edits.
+      Layer rows show "· fx". Workflow test covers add/toggle/undo
+- [x] PSD import keeps effects native on raster layers (no shape source,
+      fill 255, valid settings); shapes, fill opacity and folders still bake
+- [x] Performance (4096² nearly full layer, release): fresh draw drop shadow
+      0.26 s, stroke 0.30 s, outer glow 0.27 s, bevel 0.44 s (was 1.1-1.5 s);
+      cached 0.01 ms. Parallel row bands on the shared pool, transposes for
+      column passes, distance only on the needed side of the edge
+- [ ] Draw effects in the background (show the previous drawing until ready)
+      so huge layers never pause after a stroke; or redraw only the region a
+      stroke touched plus the effect's reach
+- [ ] Effects on folders natively; fill opacity; satin; pattern effects;
+      gradient editor beyond the two end colors and angle
+- [ ] Effect-layer memory is not yet counted in the memory panel
+- [ ] Manual check in the app with pen (owner)
 - [ ] PSD export writes them back (once PSD export exists)
 
 ## Before committing this batch
@@ -301,6 +324,11 @@ Stage B - native layer effects:
       like `main.rs` made per-feature commits unbuildable). Not pushed.
 
 ## Last session
+
+- 2026-10-29 (Claude, layer effects stage B): native editable effects (see goal
+  7 stage B). Corpus numbers unchanged by the switch from baked to native.
+  Gates pass (968 tests). Committed locally, not pushed. Next: PSD adjustment
+  layers (owner's item 2).
 
 - 2026-10-29 (Claude, layer effects stage A): `src/layer_effects.rs`, importer
   placement in `effect_layers` (psd_import.rs). Tools in the agent scratchpad:

@@ -41,6 +41,8 @@ struct LayerMetadata<'a> {
     collapsed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     mask: Option<MaskMetadata>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    effects: &'a [crate::layer_effects::LayerEffect],
     pixels: [u8; 0],
 }
 #[derive(Serialize)]
@@ -78,6 +80,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
                     enabled: m.enabled,
                     linked: m.linked,
                 }),
+                effects: &layer.effects,
                 pixels: [],
             })
             .collect(),

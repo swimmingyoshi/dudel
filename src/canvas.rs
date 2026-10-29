@@ -174,6 +174,7 @@ impl Dudel {
     pub(crate) fn close_input_gestures(&mut self) {
         self.finish_painted_stroke();
         self.finish_opacity_edit();
+        self.finish_effects_edit();
         self.selection_drag = None;
         self.finish_move_drag();
         self.finish_affine_preview();
@@ -1247,11 +1248,34 @@ impl Dudel {
             .set_viewport(self.canvas_area, self.view(self.canvas_area));
         self.preview.note_damage(self.dirty, &self.dirty_region);
         let scene = self.reference_layers.display_document(&self.doc);
+        let base = scene.as_ref().unwrap_or(&self.doc);
+        // Layer effects are drawn as extra layers; while painting, moving or
+        // transforming, the last drawing stands in until the gesture ends.
+        let gesture = self.stroking || self.move_drag.is_some() || self.affine_preview.is_some();
+        let mut drew = false;
+        let expanded = if base.has_effects() {
+            match crate::layer_effects::expand_tracked(base, gesture, &|| false) {
+                Ok((doc, fresh)) => {
+                    drew = fresh;
+                    Some(doc)
+                }
+                Err(error) => {
+                    self.status = error;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let damage = self.dirty_region.take();
+        // Redrawn effects can change anywhere they reach; a full update
+        // still recomposites only tiles whose layers changed.
+        let full = self.dirty || drew;
         self.texture.update_damage(
             ctx,
-            scene.as_ref().unwrap_or(&self.doc),
-            self.dirty,
-            self.dirty_region.take(),
+            expanded.as_ref().unwrap_or(base),
+            full,
+            damage,
             options,
             &mut self.performance,
         );

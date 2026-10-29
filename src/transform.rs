@@ -372,8 +372,10 @@ impl Document {
         pair.selection = None;
         let merged = pair.composite_transparent();
         self.layers[lower].pixels = merged.into();
-        // Both enabled leaf masks have already contributed to this raster.
+        // Both enabled leaf masks and both layers' effects have already
+        // contributed to this raster.
         self.layers[lower].mask = None;
+        self.layers[lower].effects.clear();
         self.layers.remove(upper);
         self.active = lower;
         Ok(())

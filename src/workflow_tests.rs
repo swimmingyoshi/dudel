@@ -11,6 +11,35 @@ struct Workspace {
 }
 
 #[test]
+fn layer_effects_window_adds_toggles_and_undoes_effects() {
+    let mut w = Workspace::sized([1280., 800.]);
+    w.app.inspector_override = Some(true);
+    w.settle();
+    w.click(w.text("fx"));
+    w.settle();
+    assert!(w.app.effects_window_open);
+    w.click(w.text("Add effect"));
+    w.settle();
+    w.click(w.text("Drop Shadow"));
+    w.settle();
+    let active = w.app.doc.active;
+    assert_eq!(w.app.doc.layers[active].effects.len(), 1);
+    assert!(w.app.effects_edit.is_none(), "a click commits at once");
+    assert!(w.app.history.can_undo());
+    // The effect's checkbox switches it off without removing it.
+    w.click(w.text("Drop Shadow"));
+    w.settle();
+    assert!(!w.app.doc.layers[active].effects[0].enabled);
+    w.app.undo();
+    finish_jobs(&mut w.app);
+    assert!(w.app.doc.layers[active].effects[0].enabled);
+    w.app.undo();
+    finish_jobs(&mut w.app);
+    assert!(w.app.doc.layers[active].effects.is_empty());
+    w.settle();
+}
+
+#[test]
 fn guides_reopen_after_override_with_mouse_and_same_frame_taps() {
     for size in [[1280., 800.], [640., 400.]] {
         let mut w = Workspace::sized(size);
@@ -1123,6 +1152,7 @@ impl Workspace {
             self.app
                 .canvas_after_tool_change(ctx, packets, previous_tool);
             self.app.brush_studio_ui(ctx);
+            self.app.effects_window(ctx);
             self.app.unsaved_dialog(ctx);
         });
     }

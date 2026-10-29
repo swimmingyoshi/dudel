@@ -225,7 +225,7 @@ pub(crate) fn solid_fill(fill: &Descriptor) -> Result<[u8; 3], String> {
 }
 
 /// A gradient fill (`GdFl`, or `vscg` with key GdFl).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Gradient {
     kind: GradientKind,
     angle: f64,
@@ -238,7 +238,7 @@ pub(crate) struct Gradient {
     colors: Vec<(f64, [f64; 3], f64)>,
     opacities: Vec<(f64, f64, f64)>,
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum GradientKind {
     Linear,
     Radial,
@@ -342,6 +342,76 @@ fn ramp<const N: usize>(stops: &[(f64, [f64; N], f64)], t: f64) -> [f64; N] {
     stops[stops.len() - 1].1
 }
 impl Gradient {
+    /// A linear gradient from `start` to `end` along `angle` degrees.
+    pub(crate) fn between(start: [u8; 3], end: [u8; 3], angle: f64) -> Self {
+        Self {
+            kind: GradientKind::Linear,
+            angle,
+            scale: 1.0,
+            reverse: false,
+            aligned: true,
+            offset: [0.0; 2],
+            colors: vec![
+                (0.0, start.map(f64::from), 0.5),
+                (1.0, end.map(f64::from), 0.5),
+            ],
+            opacities: vec![(0.0, 1.0, 0.5)],
+        }
+    }
+    pub(crate) fn angle(&self) -> f64 {
+        self.angle
+    }
+    pub(crate) fn set_angle(&mut self, angle: f64) {
+        self.angle = angle;
+    }
+    /// The first and last color stops.
+    pub(crate) fn ends(&self) -> [[u8; 3]; 2] {
+        let color = |c: [f64; 3]| c.map(|v| v.round().clamp(0.0, 255.0) as u8);
+        [
+            color(self.colors[0].1),
+            color(self.colors[self.colors.len() - 1].1),
+        ]
+    }
+    pub(crate) fn set_ends(&mut self, [start, end]: [[u8; 3]; 2]) {
+        let last = self.colors.len() - 1;
+        self.colors[0].1 = start.map(f64::from);
+        self.colors[last].1 = end.map(f64::from);
+    }
+    /// Reject settings a damaged project could hold.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        // Stops in order inside 0..=1, with midpoints inside their segment.
+        fn stops_ok(stops: impl Iterator<Item = (f64, f64)>) -> bool {
+            let mut last = 0.0;
+            stops.into_iter().all(|(at, midpoint)| {
+                let ok = (last..=1.0).contains(&at) && (0.05..=0.95).contains(&midpoint);
+                last = at;
+                ok
+            })
+        }
+        let finite = [self.angle, self.scale, self.offset[0], self.offset[1]]
+            .iter()
+            .chain(self.colors.iter().flat_map(|c| &c.1))
+            .chain(self.opacities.iter().map(|o| &o.1))
+            .all(|v| v.is_finite());
+        if !finite
+            || !(0.01..=100.0).contains(&self.scale)
+            || self.colors.is_empty()
+            || self.opacities.is_empty()
+            || self.colors.len() > 1024
+            || self.opacities.len() > 1024
+            || !stops_ok(self.colors.iter().map(|c| (c.0, c.2)))
+            || !stops_ok(self.opacities.iter().map(|o| (o.0, o.2)))
+            || self
+                .colors
+                .iter()
+                .flat_map(|c| c.1)
+                .any(|v| !(0.0..=255.0).contains(&v))
+            || self.opacities.iter().any(|o| !(0.0..=1.0).contains(&o.1))
+        {
+            return Err("Invalid gradient settings".into());
+        }
+        Ok(())
+    }
     /// Straight RGBA at pixel (x, y). `layer` is the box the ramp spans when
     /// aligned with the layer; otherwise the document is used.
     pub(crate) fn painter(

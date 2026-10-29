@@ -24,6 +24,8 @@ pub enum Property {
     Locked(bool),
     AlphaLocked(bool),
     Collapsed(bool),
+    /// The layer's whole effect list.
+    Effects(Vec<crate::layer_effects::LayerEffect>),
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Edit {
@@ -262,6 +264,15 @@ impl Edit {
                 ..
             } if !value.is_finite() || !(0.0..=1.0).contains(value) => {
                 Err("Opacity must be finite and between zero and one".into())
+            }
+            Self::Property {
+                property: Property::Effects(effects),
+                ..
+            } => {
+                if effects.len() > crate::document::MAX_EFFECTS {
+                    return Err("Too many layer effects".into());
+                }
+                effects.iter().try_for_each(|e| e.validate())
             }
             _ => Ok(()),
         }
@@ -785,6 +796,12 @@ fn apply_property(layer: &mut Layer, property: &Property) -> Result<bool, String
                 return Err("Collapse applies only to folders".into());
             }
             set!(collapsed, *value)
+        }
+        Property::Effects(effects) => {
+            if layer.folder && !effects.is_empty() {
+                return Err("Effects apply only to layers, not folders".into());
+            }
+            set!(effects, effects.clone())
         }
     })
 }

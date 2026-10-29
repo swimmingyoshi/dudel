@@ -92,15 +92,18 @@ editor's foreground/background colors, pattern fills, dashed strokes,
 adjustment layers, mask feather/density and other unsupported descriptors use the saved composite with an
 explicit Import details report. They are not silently approximated as editable layers.
 
-Layer effects (layer styles) become separate layers, as Photoshop's Layer > Layer
-Style > Create Layers does: drop shadows and outer glows under their layer, color and
+Layer effects (layer styles) on ordinary layers import as Dudel layer effects, so they
+stay editable (fx in the layer properties). Where Dudel has no equivalent (shape and
+fill layers, whose effects follow the shape outline; fill opacity; folders) they become
+separate layers instead, as Photoshop's Layer > Layer Style > Create Layers does. Either
+way they are drawn the same: drop shadows and outer glows under their layer, color and
 gradient overlays, inner shadows, inner glows and inside strokes clipped to it, and
 strokes (outside, inside or centred; color or gradient fill) where Photoshop draws
 them; bevel and emboss (inner, outer, emboss and pillow; smooth or chisel) becomes a
 highlight and a shadow layer lit from the effect's angle and altitude. Effects on
 folders follow the folder's composited contents: their outer effects go under the
-contents and inner ones clip to the folder. Each is named after its layer ("Layer's
-Drop Shadow") and no longer follows edits to that layer. Several effects of one kind, the light angle (global or own),
+contents and inner ones clip to the folder. Separate effect layers are named after
+their layer ("Layer's Drop Shadow") and no longer follow edits to it. Several effects of one kind, the light angle (global or own),
 knockout and fill opacity are respected; shape and fill layers' effects follow the
 shape's outline. Shadows and glows use a Gaussian blur fitted to Photoshop's output
 (Photoshop does not document its blur), within about 5 levels on average in the test

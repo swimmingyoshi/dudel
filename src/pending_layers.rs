@@ -218,7 +218,8 @@ impl PendingLayers {
         let entry = &mut updated.entries[index];
         let mut selected = active;
         match property {
-            Property::Name(_) => {} // Names are deliberately not retained.
+            // Names and effects are deliberately not retained.
+            Property::Name(_) | Property::Effects(_) => {}
             Property::Visible(value) => entry.visible = *value,
             Property::Opacity(value) => entry.opacity = *value,
             Property::Blend(value) => entry.blend = *value,

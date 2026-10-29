@@ -60,7 +60,7 @@ pub(crate) const BLEND_WHEEL_STEP: f32 = 30.0;
 /// the window height before scrolling. Over the closed box the mouse wheel
 /// steps through modes; Up/Down step while it is hovered, focused or open, so
 /// each mode can be judged on the canvas in turn.
-fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool) -> BlendMode {
+pub(crate) fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool) -> BlendMode {
     let mut blend = current;
     let response = ui
         .add(
@@ -718,6 +718,13 @@ impl Dudel {
             if blend != properties.blend {
                 self.set_canvas_property(target, crate::document_edits::Property::Blend(blend));
             }
+            if ui
+                .selectable_label(self.effects_window_open, "fx")
+                .on_hover_text("Layer effects: shadows, glows, strokes, overlays, bevels")
+                .clicked()
+            {
+                self.effects_window_open = !self.effects_window_open;
+            }
             let mut percent = (properties.opacity * 100.0).round();
             let slider = if compact {
                 ui.add(
@@ -1036,6 +1043,9 @@ impl Dudel {
         }
         let layer = &self.doc.layers[index];
         let mut summary = format!("{} · {:.0}%", layer.blend.name(), layer.opacity * 100.0);
+        if layer.has_effects() {
+            summary.push_str(" · fx");
+        }
         if layer.folder {
             let items = self.doc.layers[self.doc.block(index)]
                 .iter()

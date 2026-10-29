@@ -46,6 +46,7 @@ mod document;
 mod document_actions;
 mod document_edits;
 mod dynamics;
+mod effects_panel;
 mod export_jobs;
 mod extension_api;
 mod extensions;
@@ -267,6 +268,8 @@ struct Dudel {
     rename_draft: String,
     opacity_edit: Option<layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
+    effects_edit: Option<effects_panel::Edit>,
+    effects_window_open: bool,
     tool_shift: tool_shift::ToolShift,
     shortcuts_window: bool,
     about_window: bool,
@@ -495,6 +498,8 @@ impl Default for Dudel {
             rename_draft: String::new(),
             opacity_edit: None,
             opacity_preview_modified: None,
+            effects_edit: None,
+            effects_window_open: false,
             tool_shift: Default::default(),
             shortcuts_window: false,
             about_window: false,
@@ -1103,6 +1108,7 @@ impl eframe::App for Dudel {
         if !self.stroking
             && !self.render_queue.busy()
             && self.opacity_edit.is_none()
+            && self.effects_edit.is_none()
             && packets.is_empty()
             && self.adjustment.is_none()
             && self.history.cool_idle(&self.doc)
@@ -1113,6 +1119,7 @@ impl eframe::App for Dudel {
         self.performance_window(ctx);
         self.display_settings_ui(ctx);
         self.storage_window(ctx);
+        self.effects_window(ctx);
         self.drop_overlay(ctx);
         self.note_preview_pointer(ctx);
         self.preview_window(ctx);
