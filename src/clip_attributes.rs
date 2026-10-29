@@ -1,9 +1,13 @@
-//! Strict parser for the observed five-channel offscreen attribute shape.
+//! Strict parser for the observed offscreen attribute shapes: an alpha plane
+//! with four color channels (RGB layers) or one (Gray layers).
 //! Default-color words remain raw; paper and missing-reference semantics are separate.
 use std::io::{Cursor, Read};
 
 const PACKING: [u32; 16] = [
     33, 1, 4, 5, 65536, 4, 1024, 1, 256, 65536, 256, 256, 8, 8, 0, 0,
+];
+pub(crate) const GRAY_PACKING: [u32; 16] = [
+    17, 1, 1, 2, 65536, 1, 256, 1, 256, 65536, 256, 256, 8, 8, 0, 0,
 ];
 pub(crate) const MAX_BYTES: usize = 16 + 102 + 58 + 34 + 256 * 4;
 
@@ -23,6 +27,14 @@ impl Attributes {
     }
     pub(crate) fn transparent_default(&self) -> bool {
         self.init_color_words == [20, 0, 0, 0, 4]
+    }
+    /// Color bytes per pixel after the alpha plane: 4 (B, G, R, unused) or 1 (gray).
+    pub(crate) fn color_channels(&self) -> usize {
+        if self.packing == GRAY_PACKING { 1 } else { 4 }
+    }
+    /// Decoded bytes per 256 x 256 tile: the alpha plane plus the color plane.
+    pub(crate) fn tile_bytes(&self) -> usize {
+        256 * 256 * (1 + self.color_channels())
     }
     pub(crate) fn tile_origin(&self, index: u32) -> Result<[usize; 2], String> {
         if index >= self.columns * self.rows {
@@ -90,8 +102,8 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Attributes, String> {
     for value in &mut packing {
         *value = word(&mut reader)?;
     }
-    if packing != PACKING {
-        return Err("Unsupported offscreen channel packing".into());
+    if packing != PACKING && packing != GRAY_PACKING {
+        return Err(format!("Unsupported offscreen channel packing {packing:?}"));
     }
     tag(&mut reader, "InitColor")?;
     let mut init_color_words = Vec::new();
@@ -135,6 +147,16 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Attributes, String> {
 
 #[cfg(test)]
 pub(crate) fn fixture(width: u32, height: u32, init: &[u32], sizes: &[u32]) -> Vec<u8> {
+    fixture_packed(width, height, init, sizes, PACKING)
+}
+#[cfg(test)]
+pub(crate) fn fixture_packed(
+    width: u32,
+    height: u32,
+    init: &[u32],
+    sizes: &[u32],
+    packing: [u32; 16],
+) -> Vec<u8> {
     fn label(out: &mut Vec<u8>, text: &str) {
         out.extend((text.len() as u32).to_be_bytes());
         for byte in text.bytes() {
@@ -154,7 +176,7 @@ pub(crate) fn fixture(width: u32, height: u32, init: &[u32], sizes: &[u32]) -> V
     for word in [width, height, width.div_ceil(256), height.div_ceil(256)] {
         out.extend(word.to_be_bytes());
     }
-    for word in PACKING {
+    for word in packing {
         out.extend(word.to_be_bytes());
     }
     label(&mut out, "InitColor");

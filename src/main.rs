@@ -31,6 +31,7 @@ mod clip_document;
 mod clip_metadata;
 mod clip_preview;
 mod clip_raster;
+mod clip_timeline;
 mod clipboard;
 #[cfg(windows)]
 mod clipboard_files;

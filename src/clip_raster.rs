@@ -72,10 +72,12 @@ pub(crate) fn decode(
             .ok_or("Clip raster extent overflow")?;
     }
     let mut pixels = Pixels::sparse(width, height);
+    let gray = attributes.color_channels() == 1;
     clip_blocks::decode_layout(
         reader,
         body_bytes,
         &attributes.block_sizes,
+        attributes.tile_bytes(),
         budget,
         cancelled,
         &mut |index, raw| {
@@ -95,10 +97,16 @@ pub(crate) fn decode(
                         continue;
                     }
                     let source = y * 256 + x;
-                    let color = 65536 + source * 4;
-                    // Separate coverage plane followed by straight B/G/R/unused.
-                    // Keep hidden RGB, and never multiply color by coverage here.
-                    let rgba = [raw[color + 2], raw[color + 1], raw[color], raw[source]];
+                    // Separate coverage plane followed by straight B/G/R/unused,
+                    // or one gray byte. Keep hidden RGB, and never multiply color
+                    // by coverage here.
+                    let rgba = if gray {
+                        let value = raw[65536 + source];
+                        [value, value, value, raw[source]]
+                    } else {
+                        let color = 65536 + source * 4;
+                        [raw[color + 2], raw[color + 1], raw[color], raw[source]]
+                    };
                     if rgba != [0; 4] {
                         writer
                             .rgba_mut_at(width, dx as usize, dy as usize)
@@ -202,6 +210,39 @@ mod tests {
         assert_eq!(result.rgba(256), [7, 8, 9, 10]);
         assert_eq!(result.rgba(257), [0; 4]);
         assert_eq!(result.rgba(260), [0; 4]);
+    }
+    #[test]
+    fn gray_layers_expand_one_color_byte_to_rgb_and_keep_alpha() {
+        let mut tile = vec![0; 256 * 256 * 2];
+        for (x, [gray, alpha]) in [[0u8, 255], [200, 128], [77, 0], [255, 1]]
+            .into_iter()
+            .enumerate()
+        {
+            tile[x] = alpha;
+            tile[65536 + x] = gray;
+        }
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        z.write_all(&tile).unwrap();
+        let data = clip_blocks::tests::fixture_sized(&[Some(z.finish().unwrap())], tile.len());
+        let size = u32::from_be_bytes(data[8..12].try_into().unwrap());
+        let attrs = crate::clip_attributes::parse(&crate::clip_attributes::fixture_packed(
+            4,
+            1,
+            &[20, 0, 0, 0, 4],
+            &[size],
+            crate::clip_attributes::GRAY_PACKING,
+        ))
+        .unwrap();
+        let result = run(&data, &attrs, [4, 1], [0, 0], [0, 0]).unwrap();
+        assert_eq!(result.rgba(0), [0, 0, 0, 255]);
+        assert_eq!(result.rgba(1), [200, 200, 200, 128]);
+        // Hidden gray under zero alpha is kept, like hidden RGB.
+        assert_eq!(result.rgba(2), [77, 77, 77, 0]);
+        assert_eq!(result.rgba(3), [255, 255, 255, 1]);
+        // RGBA tiles are rejected for a Gray layer, and the reverse.
+        let rgba = body(&[Some(raw())]);
+        assert!(run(&rgba, &attrs, [4, 1], [0, 0], [0, 0]).is_err());
+        assert!(run(&data, &attributes(4, 1, &data), [4, 1], [0, 0], [0, 0]).is_err());
     }
     #[test]
     fn signed_combined_offsets_clip_without_wrapping_and_empty_tiles_stay_sparse() {

@@ -7,7 +7,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | --- | --- | --- | --- |
 | Dudel `.dudel` | Yes, including supported older native readers | Yes | Editable layers, folders, masks and document state supported by this build |
 | PNG | Image import | Flattened opaque or transparent export | Pixels; no editable layer hierarchy |
-| Clip Studio Paint `.clip` | Editable raster subset; optional saved-preview fallback | No | Supported layers, folders, clipping, standard blends and locks |
+| Clip Studio Paint `.clip` | Editable raster subset; optional saved-preview fallback | No | Raster and Gray layers, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
@@ -31,14 +31,27 @@ and PSD source files, including renamed files recognized by their signatures.
 | Source feature | Current behavior |
 | --- | --- |
 | Supported 8-bit RGBA tiles, partial alpha, names and offsets | Editable raster layers |
+| Gray expression-color layers | Editable raster layers (gray expanded to RGB) |
 | Ordinary folders, nested folders, clipping | Native hierarchy/compositor |
 | Standard blend modes, edit/alpha locks, opacity, visibility | Mapped to native properties |
 | Plain paper | Rasterized color layer |
+| Timelines | The frame the file was saved on; other frames and keyframed layer changes are not imported |
+| Animation folders | Every cel kept as a layer; only the cel shown on the saved frame is visible |
 | Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
-| Masks, palette colors, glow/pass-through blends, vector/text/material/effect payloads | Layered conversion rejected |
-| Animation/timelines | Layered conversion rejected |
+| Vector, text, balloon, material, correction and effect layers; masks, palette colors, monochrome, glow/pass-through blends | That layer (or folder and its contents) is skipped and named in Import details |
+| Layer color settings | Pixels keep their stored colors; noted in Import details |
 | Profiles, proofing and color adjustments | Layered conversion rejected |
-| Unknown channel layouts, damaged references or excessive layer counts | Layered conversion rejected |
+| Unknown channel layouts, damaged references or more than 32 raster layers | Layered conversion rejected |
+
+A skipped layer never has its stored pixels misread as ordinary raster art; it
+is left out and listed by name. If CSP's selected layer was skipped, the first
+imported raster layer is selected instead.
+
+The cel shown on the saved frame comes from the animation folder's track
+keyframes (constant interpolation over the track's time base). If they cannot be
+read, Dudel uses the cel name the track stores and says so, since that value can
+lag behind the saved frame. A cel name that is not inside the folder shows
+nothing, as in CSP.
 
 Folders without a mask no longer fail solely because of their folder masking
 flag. Standard blend identifiers and edit/alpha-lock flags are mapped using the
@@ -49,7 +62,7 @@ rendering uses Dudel's compositor; this is not a promise of CSP rendering parity
 If layered import fails, **CSP import options** offers **Open saved preview**.
 This explicitly imports one flattened saved image at its actual pixel dimensions;
 it never silently upscales it to claim original resolution. Many CSP previews
-are only 1000 ? 1000 even for larger canvases. Animation previews represent one
+are only 1000 × 1000 even for larger canvases. Animation previews represent one
 saved frame. To retain full resolution when layered conversion is unavailable,
 export PNG from CSP and keep the original `.clip` for editing.
 
@@ -89,8 +102,12 @@ A PSD converted from a 2000 × 2000 CSP sample with two folders and Subtract
 layers imported with all 15 entries; 89% of pixels matched exactly, with a mean
 channel difference of 1.2, and the differences lie along anti-aliased line art.
 
-A local 30-file CSP corpus was checked during this change: 9 layered imports
-succeeded and all 30 saved previews decoded. Source hashes stayed unchanged.
+A local 30-file CSP corpus was checked during this change: 29 layered imports
+succeeded (up from 9) and all 30 saved previews decoded. The remaining file has
+more raster layers than Dudel allows. Nine layers were skipped across the corpus
+(4 vector, 1 text, 4 unsupported layer types or blend modes). Downscaled renders
+of animation, Gray-layer and skipped-layer samples were compared by eye with
+CSP's saved previews and showed the same frame. Source hashes stayed unchanged.
 These private samples are not distributed. Unknown formats and full application
 rendering parity remain outside this verification claim.
 

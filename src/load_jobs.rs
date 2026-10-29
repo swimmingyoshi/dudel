@@ -273,13 +273,15 @@ mod tests {
         assert!(crate::document::same_snapshot(&app.doc, &before));
         assert_eq!(std::fs::read(&path).unwrap(), source);
         let unsupported = crate::clip_metadata::tests::worker_fixture_with_sql(
-            "ALTER TABLE Layer ADD COLUMN FilterLayerInfo BLOB; UPDATE Layer SET FilterLayerInfo=x'0102' WHERE MainId=30",
+            // A canvas color profile rejects the whole file (an unsupported
+            // layer would only be skipped).
+            "ALTER TABLE Canvas ADD COLUMN CanvasDstProfile BLOB; UPDATE Canvas SET CanvasDstProfile=x'0102'",
         );
         std::fs::write(&path, &unsupported).unwrap();
         app.load_document(path.clone(), false);
         let job = app.load_job.take().unwrap();
         let result = job.worker.join().unwrap();
-        assert!(result.as_ref().err().unwrap().contains("FilterLayerInfo"));
+        assert!(result.as_ref().err().unwrap().contains("CanvasDstProfile"));
         app.commit_load(job.path, job.kind, job.revision, false, result);
         assert!(crate::document::same_snapshot(&app.doc, &before));
         assert!(app.modified);

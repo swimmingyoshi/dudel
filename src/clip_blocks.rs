@@ -8,6 +8,8 @@ use std::{
 };
 
 const TILE_BYTES: usize = 256 * 256 * 5;
+/// Gray layers store one color byte per pixel after the alpha plane.
+const GRAY_TILE_BYTES: usize = 256 * 256 * 2;
 const MAX_SLOTS: usize = 256;
 const MAX_COMPRESSED: usize = 1024 * 1024;
 const MAX_BODY: u64 = 64 * 1024 * 1024;
@@ -16,10 +18,14 @@ pub(crate) struct Budget {
     decoded: usize,
 }
 impl Default for Budget {
+    /// Enough for the largest document Dudel can hold: every raster layer a
+    /// full-size canvas. Tiles inflate one at a time, so this bounds work,
+    /// not memory held at once.
     fn default() -> Self {
+        let slots = crate::document::MAX_RASTER_LAYERS * MAX_SLOTS;
         Self {
-            slots: 4096,
-            decoded: 512 * 1024 * 1024,
+            slots,
+            decoded: slots * TILE_BYTES,
         }
     }
 }
@@ -46,9 +52,17 @@ pub(crate) fn validate_layout(
     reader: &mut impl Read,
     bytes: u64,
     sizes: &[u32],
+    tile_bytes: usize,
     budget: &mut Budget,
 ) -> Result<(), String> {
-    let parsed = scan(reader, bytes, budget)?;
+    let parsed = scan_each(
+        reader,
+        bytes,
+        Some(tile_bytes),
+        budget,
+        &|| false,
+        &mut |_, _| Ok(()),
+    )?;
     if parsed.blocks.len() != sizes.len()
         || parsed.blocks.iter().zip(sizes).any(|(block, size)| {
             *size as usize
@@ -112,12 +126,12 @@ fn adler32(data: &[u8]) -> u32 {
     (b << 16) | a
 }
 
-fn decode_zlib(data: &[u8]) -> Result<Vec<u8>, String> {
+fn decode_zlib(data: &[u8], tile_bytes: usize) -> Result<Vec<u8>, String> {
     if data.len() > MAX_COMPRESSED {
         return Err("Clip compressed block exceeds limit".into());
     }
     // One extra byte detects expansion beyond the exact observed block layout.
-    let mut output = vec![0; TILE_BYTES + 1];
+    let mut output = vec![0; tile_bytes + 1];
     let mut decoder = Decompress::new(true);
     loop {
         let before = (decoder.total_in(), decoder.total_out());
@@ -129,13 +143,13 @@ fn decode_zlib(data: &[u8]) -> Result<Vec<u8>, String> {
             )
             .map_err(|error| format!("Invalid clip zlib stream: {error}"))?;
         if status == Status::StreamEnd {
-            if decoder.total_in() != data.len() as u64 || decoder.total_out() != TILE_BYTES as u64 {
+            if decoder.total_in() != data.len() as u64 || decoder.total_out() != tile_bytes as u64 {
                 return Err("Clip zlib block has trailing data or wrong decoded length".into());
             }
-            output.truncate(TILE_BYTES);
+            output.truncate(tile_bytes);
             return Ok(output);
         }
-        if decoder.total_out() > TILE_BYTES as u64
+        if decoder.total_out() > tile_bytes as u64
             || before == (decoder.total_in(), decoder.total_out())
         {
             return Err("Clip zlib stream is truncated or exceeds decoded block size".into());
@@ -152,7 +166,9 @@ fn array(reader: &mut impl Read, tag: &str, count: usize) -> Result<Vec<u32>, St
 }
 
 fn scan(reader: &mut impl Read, body_bytes: u64, budget: &mut Budget) -> Result<Blocks, String> {
-    scan_each(reader, body_bytes, budget, &|| false, &mut |_, _| Ok(()))
+    scan_each(reader, body_bytes, None, budget, &|| false, &mut |_, _| {
+        Ok(())
+    })
 }
 
 // Consumers must keep their result unpublished and discard it on any error,
@@ -161,11 +177,19 @@ pub(crate) fn decode_layout(
     reader: &mut impl Read,
     body_bytes: u64,
     sizes: &[u32],
+    tile_bytes: usize,
     budget: &mut Budget,
     cancelled: &impl Fn() -> bool,
     consume: &mut impl FnMut(u32, &[u8]) -> Result<(), String>,
 ) -> Result<(), String> {
-    let parsed = scan_each(reader, body_bytes, budget, cancelled, consume)?;
+    let parsed = scan_each(
+        reader,
+        body_bytes,
+        Some(tile_bytes),
+        budget,
+        cancelled,
+        consume,
+    )?;
     if parsed.blocks.len() != sizes.len()
         || parsed.blocks.iter().zip(sizes).any(|(block, size)| {
             *size as usize
@@ -181,9 +205,12 @@ pub(crate) fn decode_layout(
     Ok(())
 }
 
+/// `tile_bytes` is the layer's decoded tile size when known; a bare block
+/// inspection accepts either observed size as each block declares it.
 fn scan_each(
     reader: &mut impl Read,
     body_bytes: u64,
+    tile_bytes: Option<usize>,
     budget: &mut Budget,
     cancelled: &impl Fn() -> bool,
     consume: &mut impl FnMut(u32, &[u8]) -> Result<(), String>,
@@ -227,12 +254,13 @@ fn scan_each(
                 return Err("Trailing clip block envelope data".into());
             }
             let populated = blocks.iter().filter(|block| block.populated).count();
+            let decoded_bytes = blocks.iter().map(|block| block.decoded_bytes).sum();
             return Ok(Blocks {
                 body_bytes,
                 blocks,
                 status_values,
                 populated,
-                decoded_bytes: populated * TILE_BYTES,
+                decoded_bytes,
             });
         }
         if blocks.len() >= MAX_SLOTS || prefix < 104 || prefix as u64 > reader.limit() + 4 {
@@ -245,8 +273,10 @@ fn scan_each(
         let mut record = (&mut reader).take(prefix as u64 - 4);
         name(&mut record, "BlockDataBeginChunk")?;
         let index = word(&mut record)?;
+        let declared = word(&mut record)? as usize;
         if index as usize != blocks.len()
-            || word(&mut record)? as usize != TILE_BYTES
+            || ![TILE_BYTES, GRAY_TILE_BYTES].contains(&declared)
+            || tile_bytes.is_some_and(|expected| expected != declared)
             || word(&mut record)? != 256
             || word(&mut record)? != 256
         {
@@ -270,7 +300,7 @@ fn scan_each(
             1 => {
                 budget.decoded = budget
                     .decoded
-                    .checked_sub(TILE_BYTES)
+                    .checked_sub(declared)
                     .ok_or("Clip block inspection exceeds total inflate budget")?;
                 let wrapper_size = word(&mut record)? as usize;
                 let little_size = bytes::<4>(&mut record)?;
@@ -289,7 +319,7 @@ fn scan_each(
                     .map_err(|error| error.to_string())?;
                 block.envelope_adler32 = adler32(&compressed);
                 // No raw artwork is retained or written by this inspector.
-                let decoded = decode_zlib(&compressed[4..])?;
+                let decoded = decode_zlib(&compressed[4..], declared)?;
                 if cancelled() {
                     return Err("Clip raster decoding canceled".into());
                 }
@@ -353,6 +383,9 @@ pub(crate) mod tests {
         writer.finish().unwrap()
     }
     pub(crate) fn fixture(streams: &[Option<Vec<u8>>]) -> Vec<u8> {
+        fixture_sized(streams, TILE_BYTES)
+    }
+    pub(crate) fn fixture_sized(streams: &[Option<Vec<u8>>], tile_bytes: usize) -> Vec<u8> {
         let mut data = vec![0; 8];
         let mut checksums = Vec::new();
         for (index, stream) in streams.iter().enumerate() {
@@ -361,7 +394,7 @@ pub(crate) mod tests {
             tag(&mut data, "BlockDataBeginChunk");
             for value in [
                 index as u32,
-                TILE_BYTES as u32,
+                tile_bytes as u32,
                 256,
                 256,
                 u32::from(stream.is_some()),
@@ -420,7 +453,7 @@ pub(crate) mod tests {
         assert_eq!(block.compressed_offset, Some(186));
         let start = block.compressed_offset.unwrap() as usize;
         assert_eq!(&data[start..start + block.compressed_bytes], stream);
-        assert_eq!(decode_zlib(&stream).unwrap(), raw);
+        assert_eq!(decode_zlib(&stream, TILE_BYTES).unwrap(), raw);
         assert_eq!(
             block.envelope_adler32,
             adler32(&data[start - 4..start + stream.len()])
@@ -446,12 +479,16 @@ pub(crate) mod tests {
         let report = checked(&data).unwrap();
         assert_eq!(report.status_values, [0, 0]);
         assert_eq!(report.populated, 1);
-        assert_eq!(decode_zlib(&stream).unwrap(), vec![19; TILE_BYTES]);
+        assert_eq!(
+            decode_zlib(&stream, TILE_BYTES).unwrap(),
+            vec![19; TILE_BYTES]
+        );
         let sizes = [104, 112 + stream.len() as u32];
         validate_layout(
             &mut &data[..],
             data.len() as u64,
             &sizes,
+            TILE_BYTES,
             &mut Budget::default(),
         )
         .unwrap();
@@ -465,11 +502,23 @@ pub(crate) mod tests {
                     &mut &data[..],
                     data.len() as u64,
                     &sizes,
+                    TILE_BYTES,
                     &mut Budget::default()
                 )
                 .is_err()
             );
         }
+        // A layer whose packing says Gray must not accept RGBA tiles.
+        assert!(
+            validate_layout(
+                &mut &data[..],
+                data.len() as u64,
+                &sizes,
+                GRAY_TILE_BYTES,
+                &mut Budget::default()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -551,10 +600,10 @@ pub(crate) mod tests {
 
     #[test]
     fn inflation_and_count_limits_reject_before_unbounded_work() {
-        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES - 1])).is_err());
-        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES + 1])).is_err());
-        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES * 4])).is_err());
-        assert!(decode_zlib(&vec![0; MAX_COMPRESSED + 1]).is_err());
+        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES - 1]), TILE_BYTES).is_err());
+        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES + 1]), TILE_BYTES).is_err());
+        assert!(decode_zlib(&zlib(&vec![0; TILE_BYTES * 4]), TILE_BYTES).is_err());
+        assert!(decode_zlib(&vec![0; MAX_COMPRESSED + 1], TILE_BYTES).is_err());
         assert!(scan(&mut std::io::empty(), MAX_BODY + 1, &mut Budget::default()).is_err());
         assert!(
             checked(&fixture(&vec![None; MAX_SLOTS + 1]))

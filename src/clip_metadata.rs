@@ -101,6 +101,25 @@ struct Report {
     document_properties: BTreeMap<i64, String>,
     #[serde(skip)]
     locks: BTreeMap<i64, i64>,
+    /// Import mode: problems confined to one layer. That layer (and a
+    /// folder's contents) is skipped with a note instead of failing the file.
+    #[serde(skip)]
+    layer_issues: BTreeMap<i64, Vec<String>>,
+    /// Import mode: the cel each animation folder shows on the saved frame.
+    #[serde(skip)]
+    animation: Animation,
+}
+#[derive(Debug, Default)]
+struct Animation {
+    current_frame: Option<f64>,
+    frame_rate: Option<f64>,
+    /// Animation folder id to the cel name it shows, or None for no cel.
+    folders: BTreeMap<i64, Option<String>>,
+    /// Folder id to the external chunk holding its track's keyframes.
+    mixers: BTreeMap<i64, String>,
+    /// Folders whose keyframes could not be read; they show the cel name the
+    /// track stores, which can lag behind the saved frame.
+    uncertain: BTreeSet<i64>,
 }
 
 fn db_error(error: rusqlite::Error) -> String {
@@ -130,6 +149,14 @@ fn table_columns(db: &Connection, table: &str) -> Result<BTreeSet<String>, Strin
 
 fn document_features(db: &Connection, report: &mut Report) -> Result<(), String> {
     document_features_mode(db, report, false)
+}
+/// Strict inspection rejects the file; import mode skips just that layer.
+fn layer_issue(report: &mut Report, study: bool, id: i64, message: String) {
+    if study {
+        report.layer_issues.entry(id).or_default().push(message);
+    } else {
+        report.import_issues.push(format!("Layer {id}: {message}"));
+    }
 }
 fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> Result<(), String> {
     let columns = table_columns(db, "Layer")?;
@@ -186,9 +213,12 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             || palette != 0
             || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
         {
-            report.import_issues.push(format!(
-                "Layer {id}: unsupported lock/mask/palette metadata"
-            ));
+            layer_issue(
+                report,
+                study,
+                id,
+                "unsupported lock/mask/palette metadata".into(),
+            );
         }
         report.document_properties.insert(id, name);
     }
@@ -250,9 +280,23 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                     ));
                     continue;
                 }
-                report
-                    .import_issues
-                    .push(format!("Layer {id}: unsupported {field}"));
+                if study && field == "AnimationFolder" {
+                    continue;
+                }
+                // Expression color Gray (1) is stored as gray tiles, which the
+                // raster decoder expands; other expression colors stay skipped.
+                if study
+                    && field == "LayerColorTypeIndex"
+                    && kind == "integer"
+                    && scalar == 1
+                    && report
+                        .full_scale
+                        .iter()
+                        .any(|full| full.layer == id && full.attributes.color_channels() == 1)
+                {
+                    continue;
+                }
+                layer_issue(report, study, id, format!("unsupported {field}"));
             }
         }
     }
@@ -288,9 +332,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             if (paper && value != Some(paper_expected))
                 || (!paper && value.is_some_and(|value| value != 0))
             {
-                report
-                    .import_issues
-                    .push(format!("Layer {id}: unsupported {field}"));
+                layer_issue(report, study, id, format!("unsupported {field}"));
             }
         }
     }
@@ -326,9 +368,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             if paper && data.as_deref() == Some(canonical.as_slice()) {
                 checked.insert(id);
             } else if length != 0 {
-                report
-                    .import_issues
-                    .push(format!("Layer {id}: unsupported monochrome fill"));
+                layer_issue(report, study, id, "unsupported monochrome fill".into());
             }
         }
         for layer in &report.layers {
@@ -343,6 +383,24 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         report
             .import_issues
             .push("Paper fill metadata is unavailable".into());
+    }
+    if study && columns.contains("DrawColorEnable") {
+        let tinted = rows(
+            db,
+            "SELECT MainId FROM Layer WHERE LayerType!=1584 AND coalesce(DrawColorEnable,0)!=0",
+            MAX_ENTRIES + 1,
+            |row| row.get::<_, i64>(0),
+        )?;
+        for id in tinted {
+            report.rendering_study_omissions.push(format!(
+                "Layer color on “{}” was not applied; its pixels keep their stored colors.",
+                report
+                    .document_properties
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_default()
+            ));
+        }
     }
     let canvas_columns = table_columns(db, "Canvas")?;
     for field in [
@@ -394,24 +452,194 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             .import_issues
             .push("Canvas source color profile is unsupported".into());
     }
-    if report.timeline_present || report.unsupported_track_schema {
+    if report.unsupported_track_schema || (report.timeline_present && !study) {
         report
             .import_issues
             .push("Animation/timeline content is unsupported by static raster import".into());
+    } else if report.timeline_present {
+        report.animation = saved_frame(db, &columns)?;
     }
-    for layer in &report.layers {
-        if !layer.supported_kind()
-            || ![0, 1, 4, 5].contains(&layer.visibility)
-            || (layer.composite != 0 && (!study || clip_blend(layer.composite).is_none()))
-            || ![0, 1].contains(&layer.clip)
-        {
-            report.import_issues.push(format!(
-                "Layer {}: unsupported type/folder/visibility/blend/clipping metadata",
-                layer.id
-            ));
-        }
+    let flagged: Vec<i64> = report
+        .layers
+        .iter()
+        .filter(|layer| {
+            !layer.supported_kind()
+                || ![0, 1, 4, 5].contains(&layer.visibility)
+                || (layer.composite != 0 && (!study || clip_blend(layer.composite).is_none()))
+                || ![0, 1].contains(&layer.clip)
+        })
+        .map(|layer| layer.id)
+        .collect();
+    for id in flagged {
+        layer_issue(
+            report,
+            study,
+            id,
+            "unsupported type/folder/visibility/blend/clipping metadata".into(),
+        );
     }
     Ok(())
+}
+
+/// The frame a CSP file was saved on and the cel each animation folder shows
+/// there. A folder's track stores that cel name under `ImageCelName`.
+fn saved_frame(db: &Connection, layer_columns: &BTreeSet<String>) -> Result<Animation, String> {
+    let mut animation = Animation::default();
+    let timeline = table_columns(db, "TimeLine")?;
+    if timeline.contains("CurrentFrame") {
+        let rate = if timeline.contains("FrameRate") {
+            "FrameRate"
+        } else {
+            "NULL"
+        };
+        if let Some((frame, rate)) = rows(
+            db,
+            &format!("SELECT CurrentFrame,{rate} FROM TimeLine"),
+            1,
+            |row| Ok((row.get::<_, f64>(0)?, row.get::<_, Option<f64>>(1)?)),
+        )?
+        .first()
+        {
+            animation.current_frame = Some(*frame).filter(|f| f.is_finite() && *f >= 0.0);
+            animation.frame_rate = rate.filter(|r| r.is_finite() && *r > 0.0);
+        }
+    }
+    if !layer_columns.contains("AnimationFolder") {
+        return Ok(animation);
+    }
+    let folders = rows(
+        db,
+        "SELECT MainId FROM Layer WHERE coalesce(AnimationFolder,0)!=0",
+        MAX_ENTRIES + 1,
+        |row| row.get::<_, i64>(0),
+    )?;
+    for id in folders {
+        animation.folders.insert(id, None);
+    }
+    let track_columns = table_columns(db, "Track")?;
+    if animation.folders.is_empty()
+        || !layer_columns.contains("LayerUuid")
+        || !["TrackKind", "TrackValueMap", "LayerUuidWithTrack"]
+            .iter()
+            .all(|c| track_columns.contains(*c))
+    {
+        return Ok(animation);
+    }
+    let uuids: BTreeMap<String, i64> = rows(
+        db,
+        "SELECT MainId,LayerUuid FROM Layer WHERE typeof(LayerUuid)='text' AND length(LayerUuid)<=64",
+        MAX_ENTRIES + 1,
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+    )?
+    .into_iter()
+    .map(|(id, uuid)| (uuid.replace('-', "").to_ascii_lowercase(), id))
+    .collect();
+    let mixer = if track_columns.contains("TrackActionMixer") {
+        "CASE WHEN typeof(TrackActionMixer) IN ('text','blob') AND length(TrackActionMixer)<=64 THEN CAST(TrackActionMixer AS TEXT) END"
+    } else {
+        "NULL"
+    };
+    let tracks = rows(
+        db,
+        &format!(
+            "SELECT TrackValueMap,LayerUuidWithTrack,{mixer} FROM Track WHERE TrackKind=2000 AND length(TrackValueMap)<=4096 AND length(LayerUuidWithTrack)=16"
+        ),
+        MAX_ENTRIES + 1,
+        |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        },
+    )?;
+    for (values, uuid, mixer) in tracks {
+        let hex: String = uuid.iter().map(|b| format!("{b:02x}")).collect();
+        if let Some(id) = uuids.get(&hex)
+            && let Some(cel) = animation.folders.get_mut(id)
+        {
+            *cel = cel_name(&values);
+            match mixer {
+                Some(mixer) => {
+                    animation.mixers.insert(*id, mixer);
+                }
+                None => {
+                    animation.uncertain.insert(*id);
+                }
+            }
+        }
+    }
+    Ok(animation)
+}
+/// Replace each animation folder's stored cel with the one its keyframes
+/// show on the saved frame. Unreadable keyframes keep the stored cel.
+fn resolve_keyframes(
+    source: &mut File,
+    inventory: &clip_container::Inventory,
+    external: &[(String, u64)],
+    animation: &mut Animation,
+) {
+    let (Some(frame), Some(frame_rate)) = (animation.current_frame, animation.frame_rate) else {
+        animation.uncertain.extend(animation.mixers.keys());
+        return;
+    };
+    for (folder, mixer) in &animation.mixers {
+        let cel = (|| -> Result<Option<String>, String> {
+            let (_, chunk) = external
+                .iter()
+                .find(|(id, _)| id == mixer)
+                .ok_or("Missing track mixer chunk")?;
+            let (offset, bytes) = inventory.external_body_bounds(*chunk, mixer.len())?;
+            if bytes > 1024 * 1024 {
+                return Err("Track mixer exceeds limits".into());
+            }
+            let mut body = vec![0; bytes as usize];
+            source
+                .seek(SeekFrom::Start(offset))
+                .and_then(|_| source.read_exact(&mut body))
+                .map_err(|e| e.to_string())?;
+            let keys = crate::clip_timeline::keys(&body)?;
+            Ok(keys.cel_at(frame, frame_rate).map(String::from))
+        })();
+        match cel {
+            Ok(cel) => {
+                animation.folders.insert(*folder, cel);
+            }
+            Err(_) => {
+                animation.uncertain.insert(*folder);
+            }
+        }
+    }
+}
+/// `ImageCelName` from a track value map: big-endian header size and entry
+/// count, then entries of (byte length, UTF-16BE key, UTF-16BE value, ...).
+fn cel_name(map: &[u8]) -> Option<String> {
+    let u32_at = |at: usize| -> Option<usize> {
+        Some(u32::from_be_bytes(map.get(at..at.checked_add(4)?)?.try_into().ok()?) as usize)
+    };
+    let text_at = |at: usize| -> Option<(String, usize)> {
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(u32_at(at)?.checked_mul(2)?)?;
+        let units: Vec<u16> = map
+            .get(start..end)?
+            .chunks_exact(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect();
+        Some((String::from_utf16(&units).ok()?, end))
+    };
+    let mut at = u32_at(0)?;
+    for _ in 0..u32_at(4)?.min(64) {
+        let length = u32_at(at)?;
+        if length < 8 || at.checked_add(length)? > map.len() {
+            return None;
+        }
+        let (key, next) = text_at(at + 4)?;
+        if key == "ImageCelName" {
+            return text_at(next).map(|(value, _)| value);
+        }
+        at += length;
+    }
+    None
 }
 
 fn configure(db: &Connection) -> Result<(), String> {
@@ -915,6 +1143,8 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         rendering_study_omissions: Vec::new(),
         document_properties: BTreeMap::new(),
         locks: BTreeMap::new(),
+        layer_issues: BTreeMap::new(),
+        animation: Animation::default(),
     })
 }
 
@@ -937,6 +1167,7 @@ fn read_source_mode(
     let mut report = metadata(&db, &external)?;
     if study {
         document_features_mode(&db, &mut report, true)?;
+        resolve_keyframes(&mut source, &inventory, &external, &mut report.animation);
     } else {
         document_features(&db, &mut report)?;
     }
@@ -955,6 +1186,7 @@ pub(crate) fn inspect(input: &Path, output: Option<&Path>) -> Result<(), String>
                 &mut source,
                 size,
                 &full.attributes.block_sizes,
+                full.attributes.tile_bytes(),
                 &mut budget,
             )
             .map_err(|error| format!("Layer {}: {error}", full.layer))?;
@@ -1188,17 +1420,112 @@ fn prepare_document_mode(
     {
         issues.push("Root container has unsupported rendering properties".into());
     }
+    if let Some(reasons) = report.layer_issues.get(&report.canvas.root) {
+        issues.push(format!("Root container: {}", reasons.join(", ")));
+    }
     if !issues.is_empty() {
         return Err(format!("Unsupported clip content: {}", issues.join("; ")));
     }
+    let mut notes = report.rendering_study_omissions;
+    let layer_of = |id: i64| report.layers.iter().find(|layer| layer.id == id).unwrap();
+    let name_of = |id: i64| {
+        report
+            .document_properties
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
+    };
+    // Skip layers with unsupported content, and a skipped folder's contents,
+    // so the rest of the file still opens. Each skip is listed for the user.
+    let mut kept: Vec<(&Entry, Option<i64>)> = Vec::new();
+    let mut ancestors: Vec<&Entry> = Vec::new();
+    let mut skipped_folder: Option<u8> = None;
+    for entry in &report.root_child_next_order {
+        if skipped_folder.is_some_and(|depth| entry.depth > depth) {
+            continue;
+        }
+        skipped_folder = None;
+        while ancestors.last().is_some_and(|a| a.depth >= entry.depth) {
+            ancestors.pop();
+        }
+        let layer = layer_of(entry.id);
+        let known = layer.layer_type == 1
+            || layer.layer_type == 1584
+            || (matches!(layer.layer_type, 0 | 256) && layer.is_folder());
+        let reasons = match report.layer_issues.get(&entry.id) {
+            Some(reasons) => skip_reason(reasons),
+            None if !known => "unsupported layer type".into(),
+            None => {
+                if layer.is_folder() {
+                    ancestors.push(entry);
+                }
+                kept.push((
+                    entry,
+                    ancestors
+                        .iter()
+                        .rev()
+                        .find(|a| a.id != entry.id)
+                        .map(|a| a.id),
+                ));
+                continue;
+            }
+        };
+        if layer.is_folder() {
+            skipped_folder = Some(entry.depth);
+            notes.push(format!(
+                "Skipped folder “{}” and its contents: {reasons}.",
+                name_of(entry.id)
+            ));
+        } else {
+            notes.push(format!("Skipped layer “{}”: {reasons}.", name_of(entry.id)));
+        }
+    }
+    if report.timeline_present {
+        let frame = report
+            .animation
+            .current_frame
+            .map_or(String::new(), |f| format!(" (frame {})", f as i64 + 1));
+        notes.push(format!("This file has a timeline. Dudel imported the picture on the frame it was saved on{frame}; other frames and keyframed layer changes are not imported."));
+    }
+    for (&folder, cel) in &report.animation.folders {
+        if !kept.iter().any(|(entry, _)| entry.id == folder) {
+            continue;
+        }
+        let cels = kept.iter().filter(|(_, parent)| *parent == Some(folder));
+        let found = cels
+            .clone()
+            .any(|(entry, _)| Some(name_of(entry.id)) == *cel);
+        if report.animation.uncertain.contains(&folder) {
+            notes.push(format!(
+                "Dudel could not read the keyframes of animation folder “{}”, so it uses the cel the folder stores; this can differ from the saved frame.",
+                name_of(folder)
+            ));
+        }
+        notes.push(match cel {
+            Some(cel) if found => format!(
+                "Animation folder “{}” shows cel “{cel}”; its other {} cels are kept as hidden layers.",
+                name_of(folder),
+                cels.count() - 1
+            ),
+            Some(cel) => format!(
+                "Animation folder “{}” is set to show cel “{cel}”, which is not inside it, so it shows nothing on the saved frame; its cels are kept as hidden layers.",
+                name_of(folder)
+            ),
+            None => format!(
+                "Animation folder “{}” shows no cel on the saved frame; its cels are kept as hidden layers.",
+                name_of(folder)
+            ),
+        });
+    }
     let mut entries = Vec::new();
     let canvas = [report.canvas.width as usize, report.canvas.height as usize];
-    for order in &report.root_child_next_order {
-        let layer = report
-            .layers
-            .iter()
-            .find(|layer| layer.id == order.id)
-            .unwrap();
+    for &(order, parent) in &kept {
+        let layer = layer_of(order.id);
+        // An animation folder shows only the cel for the current frame.
+        let cel_shown = match parent.and_then(|p| report.animation.folders.get(&p)) {
+            Some(cel) => cel.as_deref() == Some(name_of(order.id).as_str()),
+            None => true,
+        };
         let content = match layer.layer_type {
             1 => crate::clip_document::Content::Raster,
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
@@ -1231,34 +1558,31 @@ fn prepare_document_mode(
                 }
                 crate::clip_document::Content::Paper(color.high_byte_rgb)
             }
-            _ => {
-                issues.push(format!("Layer {} has unsupported content", layer.id));
-                continue;
-            }
+            _ => unreachable!("unsupported content is skipped above"),
         };
-        let name = report
-            .document_properties
-            .get(&layer.id)
-            .cloned()
-            .unwrap_or_default();
         entries.push(crate::clip_document::Entry {
             source_id: layer.id,
-            name,
+            name: name_of(layer.id),
             depth: order.depth,
-            visible: layer.visibility & 1 != 0,
+            visible: layer.visibility & 1 != 0 && cel_shown,
             opacity: layer.opacity as u16,
             clipped: layer.clip == 1,
             content,
         });
     }
+    // CSP's selected layer may have been skipped; select an imported raster.
+    let active = if entries.iter().any(|e| e.source_id == report.canvas.current) {
+        report.canvas.current
+    } else {
+        entries
+            .iter()
+            .find(|e| !matches!(e.content, crate::clip_document::Content::Folder))
+            .or(entries.first())
+            .map_or(report.canvas.current, |e| e.source_id)
+    };
     let mut budget = crate::clip_blocks::Budget::default();
-    let mut doc = crate::clip_document::assemble(
-        canvas,
-        entries,
-        report.canvas.current,
-        &issues,
-        cancelled,
-        &mut |id| {
+    let mut doc =
+        crate::clip_document::assemble(canvas, entries, active, &issues, cancelled, &mut |id| {
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
             let full = report
                 .full_scale
@@ -1288,13 +1612,12 @@ fn prepare_document_mode(
                 &mut budget,
                 cancelled,
             )
-        },
-    )?;
+        })?;
     // Assembly stores children before their folder; map source identities using
     // the same postorder rather than names (which need not be unique).
     let mut order = Vec::new();
     let mut pending = Vec::new();
-    for entry in &report.root_child_next_order {
+    for &(entry, _) in &kept {
         while pending
             .last()
             .is_some_and(|e: &&Entry| e.depth >= entry.depth)
@@ -1324,7 +1647,34 @@ fn prepare_document_mode(
         layer.alpha_locked = !layer.folder && lock & 16 != 0;
     }
     doc.validate()?;
-    Ok((doc, report.rendering_study_omissions))
+    Ok((doc, notes))
+}
+/// A short, user-facing reason for skipping a layer.
+fn skip_reason(issues: &[String]) -> String {
+    let mut reasons = BTreeSet::new();
+    for issue in issues {
+        reasons.insert(match () {
+            _ if issue.contains("Vector") => "vector layer",
+            _ if issue.contains("TextLayer") => "text layer",
+            _ if issue.contains("Balloon") => "speech balloon",
+            _ if issue.contains("FilterLayer") => "correction layer",
+            _ if issue.contains("Gradation") => "gradient fill",
+            _ if issue.contains("LayerEffect") => "layer effect",
+            _ if issue.contains("Material") => "material layer",
+            _ if issue.contains("lock/mask/palette") => "layer mask or palette colors",
+            _ if issue.contains("monochrome") => "monochrome fill",
+            _ if issue.contains("type/folder/visibility/blend") => {
+                "unsupported layer type or blend mode"
+            }
+            _ => "unsupported CSP feature",
+        });
+    }
+    // A vector or text layer also reports its render metadata; name it once.
+    if reasons.len() > 1 {
+        reasons.remove("unsupported CSP feature");
+        reasons.remove("unsupported layer type or blend mode");
+    }
+    reasons.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 pub(crate) fn compare_rendering(input: &Path, output: Option<&Path>) -> Result<(), String> {
@@ -1620,21 +1970,126 @@ pub(crate) mod tests {
         worker_fixture_with_sql("")
     }
     pub(crate) fn worker_fixture_with_sql(mutation: &str) -> Vec<u8> {
+        worker_fixture_with_externals(mutation, &[])
+    }
+    /// The worker fixture plus extra external chunks (id, body), each
+    /// registered in ExternalChunk after the raster chunk.
+    pub(crate) fn worker_fixture_with_externals(
+        mutation: &str,
+        extra: &[(&str, Vec<u8>)],
+    ) -> Vec<u8> {
         let db = fixture();
         db.execute_batch("UPDATE Layer SET LayerType=1 WHERE MainId=40; ALTER TABLE Layer ADD COLUMN LayerName TEXT; ALTER TABLE Layer ADD COLUMN LayerLock INTEGER; ALTER TABLE Layer ADD COLUMN LayerMasking INTEGER; ALTER TABLE Layer ADD COLUMN LayerLayerMaskMipmap INTEGER; ALTER TABLE Layer ADD COLUMN LayerUsePaletteColor INTEGER; UPDATE Layer SET LayerName='Fixture',LayerLock=0,LayerMasking=0,LayerLayerMaskMipmap=0,LayerUsePaletteColor=0; UPDATE Layer SET LayerMasking=32 WHERE MainId=20;").unwrap();
         db.execute_batch(mutation).unwrap();
-        let body = crate::clip_blocks::tests::fixture(&[None]);
-        let mut ext = b"CHNKExta".to_vec();
-        ext.extend((48 + body.len() as u64).to_be_bytes());
-        ext.extend(40u64.to_be_bytes());
-        ext.extend(ID.as_bytes());
-        ext.extend(body);
+        let chunk = |id: &str, body: &[u8]| {
+            let mut ext = b"CHNKExta".to_vec();
+            ext.extend((8 + id.len() as u64 + body.len() as u64).to_be_bytes());
+            ext.extend((id.len() as u64).to_be_bytes());
+            ext.extend(id.as_bytes());
+            ext.extend(body);
+            ext
+        };
+        let mut ext = chunk(ID, &crate::clip_blocks::tests::fixture(&[None]));
+        for (id, body) in extra {
+            db.execute(
+                "INSERT INTO ExternalChunk VALUES (?1,?2)",
+                rusqlite::params![id.as_bytes(), 80 + ext.len() as i64],
+            )
+            .unwrap();
+            ext.extend(chunk(id, body));
+        }
         let mut data = container(&db.serialize("main").unwrap());
         data[48..56].copy_from_slice(&(80 + ext.len() as u64).to_be_bytes());
         data.splice(80..80, ext);
         let size = data.len() as u64;
         data[8..16].copy_from_slice(&size.to_be_bytes());
         data
+    }
+    /// A track value map holding `ImageCelName`, as CSP stores it.
+    fn cel_map(cel: &str) -> Vec<u8> {
+        let utf16 = |text: &str| {
+            let mut out = (text.encode_utf16().count() as u32).to_be_bytes().to_vec();
+            out.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
+            out
+        };
+        let mut entry = utf16("ImageCelName");
+        entry.extend(utf16(cel));
+        entry.extend([0, 0, 0, 2, 0, 0, 0, 0]);
+        let mut map = vec![0, 0, 0, 8, 0, 0, 0, 1];
+        map.extend((entry.len() as u32 + 4).to_be_bytes());
+        map.extend(entry);
+        map
+    }
+    #[test]
+    fn track_value_maps_name_the_current_cel_and_reject_bad_bounds() {
+        assert_eq!(cel_name(&cel_map("1")).as_deref(), Some("1"));
+        assert_eq!(
+            cel_name(&cel_map("1 Copy 20")).as_deref(),
+            Some("1 Copy 20")
+        );
+        let map = cel_map("12");
+        for end in 0..map.len() - 8 {
+            assert_eq!(cel_name(&map[..end]), None, "{end}");
+        }
+        let mut huge = map.clone();
+        huge[8..12].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(cel_name(&huge), None);
+        assert_eq!(cel_name(&[0, 0, 0, 8, 0, 0, 0, 0]), None);
+    }
+    #[test]
+    fn animation_folders_show_only_the_saved_frames_cel() {
+        // Layer 40 becomes an animation folder whose only cel is layer 30,
+        // saved on frame 5 (index 4) of a 6 fps timeline: time 40 in 1/60 s.
+        let tree = "UPDATE Layer SET LayerType=0,LayerFolder=1,LayerRenderMipmap=0,LayerFirstChildIndex=30 WHERE MainId=40; UPDATE Layer SET LayerNextIndex=0 WHERE MainId=30; UPDATE Layer SET LayerFirstChildIndex=40 WHERE MainId=20; UPDATE Layer SET LayerName='Cel A' WHERE MainId=30; ALTER TABLE Layer ADD COLUMN AnimationFolder INTEGER; UPDATE Layer SET AnimationFolder=1 WHERE MainId=40; ALTER TABLE Layer ADD COLUMN LayerUuid TEXT; UPDATE Layer SET LayerUuid='00112233-4455-6677-8899-aabbccddeeff' WHERE MainId=40; CREATE TABLE TimeLine (MainId INTEGER, CurrentFrame REAL, FrameRate REAL); INSERT INTO TimeLine VALUES (1, 4.0, 6.0); CREATE TABLE Track (MainId INTEGER, TrackKind INTEGER, TrackValueMap BLOB, LayerUuidWithTrack BLOB, TrackActionMixer BLOB);";
+        let uuid = "x'00112233445566778899aabbccddeeff'";
+        let mixer_id = "extrnlidFEDCBA9876543210FEDCBA9876543210";
+        let mixer = |cels: &[&str]| crate::clip_timeline::tests::mixer(&[0., 30., 50.], cels, 60.0);
+        // (keyframes, stored cel, cel shown?, expected note)
+        let cases: [(Option<Vec<u8>>, &str, bool, &str); 3] = [
+            // Keyframes win over a stale stored cel.
+            (
+                Some(mixer(&["Cel B", "Cel A", "Cel B"])),
+                "Cel B",
+                true,
+                "shows cel “Cel A”",
+            ),
+            (
+                Some(mixer(&["Cel A", "Cel B", "Cel A"])),
+                "Cel A",
+                false,
+                "cel “Cel B”, which is not inside it",
+            ),
+            // Without keyframes the stored cel is used, with a caveat.
+            (None, "Cel A", true, "could not read the keyframes"),
+        ];
+        for (keys, stored, shown, note) in cases {
+            let hex: String = cel_map(stored).iter().map(|b| format!("{b:02x}")).collect();
+            let mixer_ref = if keys.is_some() {
+                format!("CAST('{mixer_id}' AS BLOB)")
+            } else {
+                "NULL".into()
+            };
+            let extra: Vec<(&str, Vec<u8>)> = keys.into_iter().map(|k| (mixer_id, k)).collect();
+            let source = worker_fixture_with_externals(
+                &format!(
+                    "{tree} INSERT INTO Track VALUES (1, 2000, x'{hex}', {uuid}, {mixer_ref}); INSERT INTO Track VALUES (2, 2001, x'00000008', NULL, NULL);"
+                ),
+                &extra,
+            );
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("animation.clip");
+            std::fs::write(&path, &source).unwrap();
+            let imported = import_document(&path, &|| false).unwrap();
+            let doc = imported.document;
+            assert_eq!(doc.layers.len(), 2);
+            assert!(doc.layers[1].folder && !doc.layers[0].folder);
+            assert_eq!(doc.layers[0].visible, shown, "{note}");
+            let notes = imported.notes.join("\n");
+            assert!(notes.contains("frame 5"), "{notes}");
+            assert!(notes.contains(note), "{notes}");
+            // Strict inspection still refuses timelines.
+            assert!(prepare_document_mode(&path, &|| false, false).is_err());
+        }
     }
     #[test]
     fn editable_import_accepts_supported_folders_and_clipping() {
@@ -1743,20 +2198,28 @@ pub(crate) mod tests {
             let sql = format!(
                 "ALTER TABLE Layer ADD COLUMN {field}; UPDATE Layer SET {field}={payload} WHERE MainId=30"
             );
-            let source = worker_fixture_with_sql(&sql);
-            std::fs::write(&path, &source).unwrap();
-            for study in [false, true] {
-                let error = prepare_document_mode(&path, &|| false, study)
-                    .err()
-                    .unwrap();
-                assert!(error.contains(&format!("unsupported {field}")), "{error}");
-                assert!(!error.contains("private source text"));
-            }
-            assert_eq!(std::fs::read(&path).unwrap(), source);
             let inactive =
                 worker_fixture_with_sql(&format!("{sql}; UPDATE Layer SET {field}=NULL"));
             std::fs::write(&path, inactive).unwrap();
-            assert!(prepare_document(&path, &|| false).is_ok());
+            let complete = prepare_document(&path, &|| false).unwrap().layers.len();
+            let source = worker_fixture_with_sql(&sql);
+            std::fs::write(&path, &source).unwrap();
+            // Strict inspection rejects the file.
+            let error = prepare_document_mode(&path, &|| false, false)
+                .err()
+                .unwrap();
+            assert!(error.contains(&format!("unsupported {field}")), "{error}");
+            assert!(!error.contains("private source text"));
+            // Import leaves the layer out entirely and says so; its payload is
+            // never read as raster pixels and its text never reaches a note.
+            let (doc, notes) = prepare_document_mode(&path, &|| false, true).unwrap();
+            assert_eq!(doc.layers.len(), complete - 1, "{field}");
+            assert!(
+                notes.iter().any(|n| n.starts_with("Skipped layer")),
+                "{notes:?}"
+            );
+            assert!(notes.iter().all(|n| !n.contains("private source text")));
+            assert_eq!(std::fs::read(&path).unwrap(), source);
         }
     }
     #[test]
@@ -2055,9 +2518,11 @@ pub(crate) mod tests {
         .unwrap();
         let mut study = check(&db).unwrap();
         document_features_mode(&db, &mut study, true).unwrap();
+        // Import never renders the mask without it: the layer is skipped.
+        assert!(study.import_issues.is_empty());
         assert!(
-            !study.import_issues.is_empty(),
-            "study must never bypass rendering features"
+            study.layer_issues.contains_key(&30),
+            "import must never bypass rendering features"
         );
     }
 

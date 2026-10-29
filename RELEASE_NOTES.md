@@ -15,9 +15,12 @@ the package has been uploaded to a public store.
   Settings now opens a scrollable window with four categories.
 - Extension API 2 contributes brushes, native tool presets, commands and panels,
   with capability validation, namespaced IDs and an SDK example. API 1 stays supported.
-- CSP adds ordinary folders/clipping, standard blends and locks. Unsupported files
-  offer an explicitly flattened saved-preview import. PSD RGB import supports
-  bounded editable subsets and a reported saved-composite fallback.
+- CSP adds ordinary folders/clipping, standard blends, locks and Gray layers.
+  Animation files open on their saved frame with every cel kept as a layer.
+  Vector, text and other unsupported layers are skipped and listed instead of
+  failing the import. Files that still fail offer an explicitly flattened
+  saved-preview import. PSD RGB import supports bounded editable subsets and a
+  reported saved-composite fallback.
 
 See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
 changes require rebuilt release artifacts and do not extend the historical

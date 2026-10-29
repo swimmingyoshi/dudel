@@ -109,15 +109,28 @@ CSP (`src/clip_*.rs`):
 - [x] Unsupported files offer an explicit "Open saved preview" (flattened, real
       preview size, never upscaled) with an Import details report (`src/import_report.rs`)
 - [x] `--verify-import` / `--verify-clip-preview` CLI checks
-- [x] Owner's 30-file local corpus: 9 layered imports succeed, 30/30 previews
-      decode, source files unchanged. The corpus is private; ask the owner for its path.
-- [ ] Pixel comparison of layered imports against an independent converter
-      (clip_to_psd) - started, not finished
-- [ ] Remaining blockers seen in the corpus, roughly by frequency: layer masks,
-      vector layers, text, palette-color layers, glow/pass-through blends,
-      animation/timelines, unknown channel layouts, layer count above Dudel's limit
-- [ ] Per-blocker decision: implement, rasterize from layer data, or skip the layer
-      with a report entry (a skipped layer beats rejecting the file)
+- [x] Unsupported layers are skipped and named in Import details instead of
+      rejecting the file (`layer_issues`, import mode only; strict inspection
+      still rejects). A skipped layer's payload is never read as raster pixels.
+- [x] Timelines: import the saved frame. Animation folders keep every cel as a
+      layer and show the cel from the track keyframes (`src/clip_timeline.rs`:
+      byte-packed "binc" mixer, `Frame`/`Tag` arrays in 1/`Rate` s units);
+      fallback to the stored `ImageCelName` with a caveat note
+- [x] Gray expression-color layers decode (1 color byte + alpha per pixel)
+- [x] Decoder budgets sized for Dudel's own limits (32 full-size layers)
+- [x] Owner's 30-file corpus (private; path in agent memory or ask the owner):
+      **29 layered imports** (was 9), 30/30 previews, sources unchanged. Renders
+      of animation, Gray and skipped-layer samples checked by eye against CSP
+      previews (anim/rabbit/cauldron confirmed the keyframe path).
+- [ ] goblincatgirl: more than 32 raster layers. Raise Dudel's layer limit, or
+      offer to import the first 32 and list the rest (owner decision)
+- [ ] Skipped across the corpus: 4 vector layers, 1 text layer, 4 "unsupported
+      type or blend mode" (glow / pass-through blends, Purplelady and rude).
+      Next: rasterize vector layers from their render cache if CSP stores one
+      (rude's line art is a vector layer, so it imports without line art);
+      approximate glow blends; then layer masks and palette colors
+- [ ] Pixel comparison against CSP previews at full size (most previews are
+      smaller than the canvas, so only by-eye checks so far)
 
 PSD (`src/psd_import.rs`, new):
 
@@ -160,6 +173,10 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       like `main.rs` made per-feature commits unbuildable). Not pushed.
 
 ## Last session
+
+- 2026-10-28 (Claude, CSP): skip-and-report for unsupported layers, saved
+  animation frame from track keyframes, Gray layers, larger decode budgets.
+  Corpus 9 → 29 of 30. Gates pass (936 tests). Committed locally, not pushed.
 
 - 2026-10-28 (Claude, checkpoint): full Verify passed; fixed PSD layer order and
   group nesting; added saved-composite comparison; committed locally. Next: CSP
