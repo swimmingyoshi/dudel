@@ -13,7 +13,7 @@
     "format_clippy_release": "passed"
   },
   "packaging": {
-    "archive": "D:\\a\\dudel\\dudel\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-234842-869-source.zip",
+    "archive": "<repo>\\artifacts\\releases\\dudel-0.1.0-candidate-20261018-234842-869-source.zip",
     "sha256": "4EFDDA16F1F7561EFF6E50B1C79CA64E0CDE963C55423FC6303BBB2369B5F050",
     "dependencies": 458,
     "manual_review": [
