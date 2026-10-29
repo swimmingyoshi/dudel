@@ -166,6 +166,15 @@ PSD (`src/psd_import.rs`, new):
       fallback); verifier compared invisible colors and failed on files without a
       flattened image. Text and smart objects now import as pixels; fill opacity.
       ag-psd: 9 → 36/75 layered (+5 background-only). psd-tools: 28/279 layered.
+- [x] 2026-10-29: grayscale documents, 16-bit ZIP prediction, folder masks (the
+      cut-off Codex session, reviewed and committed); vector shapes with solid fill
+      and stroke, vector masks, path operations, non-zero winding (`psd_vector.rs`:
+      descriptor reader, path parser, rasterizer); clipping onto pass-through
+      folders fixed in the compositor. psd-tools: 31 -> 106/279 layered; ag-psd 42/75.
+- [ ] Known vector differences: miter joins drawn round; stroke AA approximate;
+      Photoshop strokes under intersect/subtract path ops differ (psd-tools
+      path-operations/* files); color burn / hard mix / vivid light layer
+      tests differ (~1500 px) - check fill-opacity/special-8 handling
 - [ ] Remaining PSD gaps by frequency in those sets: vector shape layers (~70,
       need vector rendering; Photoshop marks their pixels irrelevant), adjustment
       and fill layers (~40), layer effects lfx2/lfxs (~30: owner decision whether

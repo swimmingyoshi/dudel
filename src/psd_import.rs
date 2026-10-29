@@ -224,58 +224,91 @@ struct Record {
     group: u32,
     mask: Option<([i32; 4], u8, u8)>,
     solid: Option<[u8; 3]>,
+    /// Vector mask path; for a shape layer it outlines the fill.
+    vector: Option<crate::psd_vector::VectorMask>,
+    stroke: Option<crate::psd_vector::Stroke>,
+    /// Whether a shape layer's fill is drawn (strokes may stand alone).
+    filled: bool,
 }
 
-// A plain RGB solid-color fill is editable as a rasterized paper layer. Other
-// descriptors (gradients, pattern fills, vector masks) take the composite path.
-fn solid_color(mut r: Reader<'_>) -> Result<[u8; 3], String> {
-    fn key<'a>(r: &mut Reader<'a>) -> Result<&'a [u8], String> {
-        let size = r.u32()? as usize;
-        if size > 4096 {
-            return Err("PSD descriptor key exceeds bounds".into());
+/// A shape layer: its fill clipped by the path, with any stroke on top.
+#[allow(clippy::too_many_arguments)]
+fn draw_shape(
+    layer: &mut Layer,
+    color: [u8; 3],
+    vector: &crate::psd_vector::VectorMask,
+    stroke: Option<crate::psd_vector::Stroke>,
+    filled: bool,
+    width: usize,
+    height: usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<(), String> {
+    let mut fill = vector.coverage(width, height, cancel)?;
+    if vector.inverted {
+        fill.iter_mut().for_each(|c| *c = 1.0 - *c);
+    }
+    let outline = match stroke {
+        Some(stroke) => Some((
+            vector.stroke_coverage(&stroke, &fill, width, height, cancel)?,
+            stroke,
+        )),
+        None => None,
+    };
+    let mut writer = layer.pixels.writer();
+    for i in 0..width * height {
+        let f = if filled { fill[i].clamp(0.0, 1.0) } else { 0.0 };
+        let (s, stroke_color) = outline.as_ref().map_or((0.0, color), |(plane, stroke)| {
+            (plane[i] * stroke.opacity, stroke.color)
+        });
+        let alpha = s + f * (1.0 - s);
+        let a = (alpha * 255.0).round() as u8;
+        if a == 0 {
+            continue;
         }
-        r.take(if size == 0 { 4 } else { size })
+        let rgb: [u8; 3] = std::array::from_fn(|c| {
+            ((f32::from(stroke_color[c]) * s + f32::from(color[c]) * f * (1.0 - s)) / alpha).round()
+                as u8
+        });
+        writer
+            .rgba_mut(i)
+            .copy_from_slice(&[rgb[0], rgb[1], rgb[2], a]);
     }
-    fn descriptor(r: &mut Reader<'_>, class: &[u8], fields: u32) -> Result<(), String> {
-        let n = r.u32()? as usize;
-        if n > 2048 {
-            return Err("PSD descriptor name exceeds bounds".into());
+    Ok(())
+}
+/// A vector mask on an ordinary layer or folder becomes its layer mask,
+/// multiplied into any raster mask it already has.
+fn apply_vector_mask(
+    layer: &mut Layer,
+    vector: &crate::psd_vector::VectorMask,
+    width: usize,
+    height: usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<(), String> {
+    let coverage = vector.coverage(width, height, cancel)?;
+    let value = |i: usize| {
+        let c = coverage[i].clamp(0.0, 1.0);
+        if vector.inverted { 1.0 - c } else { c }
+    };
+    if layer.mask.is_none() {
+        layer.mask = Some(crate::layer_mask::LayerMask {
+            id: crate::document::LayerId::new(),
+            enabled: true,
+            linked: true,
+            coverage: crate::layer_mask::Mask::new(width, height, 255)?,
+        });
+    }
+    let mask = &mut layer.mask.as_mut().unwrap().coverage;
+    for y in 0..height {
+        check(cancel)?;
+        for x in 0..width {
+            let existing = f32::from(mask.at(x, y));
+            let next = (existing * value(y * width + x)).round() as u8;
+            if next != mask.at(x, y) {
+                mask.writer().set(x, y, next);
+            }
         }
-        r.take(n * 2)?;
-        if key(r)? != class || r.u32()? != fields {
-            return Err("Unsupported PSD solid-fill descriptor".into());
-        }
-        Ok(())
     }
-    if r.u32()? != 16 {
-        return Err("Unsupported PSD descriptor version".into());
-    }
-    descriptor(&mut r, b"null", 1)?;
-    if key(&mut r)? != b"Clr " || r.take(4)? != b"Objc" {
-        return Err("Unsupported PSD solid color".into());
-    }
-    descriptor(&mut r, b"RGBC", 3)?;
-    let mut color = [None; 3];
-    for _ in 0..3 {
-        let channel = match key(&mut r)? {
-            b"Rd  " => 0,
-            b"Grn " => 1,
-            b"Bl  " => 2,
-            _ => return Err("Unknown solid color channel".into()),
-        };
-        if color[channel].is_some() || r.take(4)? != b"doub" {
-            return Err("Invalid PSD solid channel".into());
-        }
-        let value = f64::from_be_bytes(r.take(8)?.try_into().unwrap());
-        if !value.is_finite() || !(0.0..=255.0).contains(&value) {
-            return Err("PSD solid color outside RGB range".into());
-        }
-        color[channel] = Some(value.round() as u8);
-    }
-    if !r.0.is_empty() {
-        return Err("Trailing PSD solid-fill data".into());
-    }
-    Ok(color.map(Option::unwrap))
+    Ok(())
 }
 /// Which way a file lists its layer records.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -398,6 +431,9 @@ fn layers(
         let mut shapes = true;
         let mut fill = 255u8;
         let mut rendered = None;
+        let mut vector = None;
+        let mut stroke = None;
+        let mut filled = true;
         while extra.0.len() >= 12 {
             if extra.take(4)? != b"8BIM" {
                 return Err("Unsupported PSD additional-info signature".into());
@@ -410,8 +446,27 @@ fn layers(
             }
             match key {
                 b"SoCo" => {
-                    solid = Some(solid_color(value)?);
+                    solid = Some(crate::psd_vector::solid_fill(
+                        &crate::psd_vector::versioned(value.0)?,
+                    )?);
                 }
+                b"vscg" => {
+                    let (fill, settings) = crate::psd_vector::keyed(value.0)?;
+                    if fill != "SoCo" {
+                        return Err(format!("PSD shape fill {fill} needs the saved composite"));
+                    }
+                    solid = Some(crate::psd_vector::solid_fill(&settings)?);
+                }
+                b"vmsk" | b"vsms" => {
+                    vector = Some(crate::psd_vector::vector_mask(value.0, width, height)?);
+                }
+                b"vstk" => {
+                    (filled, stroke) =
+                        crate::psd_vector::stroke(&crate::psd_vector::versioned(value.0)?)?;
+                }
+                // Live-shape parameters, pixel-aligned rendering and a vector
+                // version word; the path itself is in vmsk/vsms.
+                b"vogk" | b"sn2P" | b"vowv" => {}
                 b"luni" => {
                     let n = value.u32()? as usize;
                     if n > 2048 {
@@ -463,7 +518,15 @@ fn layers(
         }
         // Bit 4 (with bit 3 saying it is meaningful) marks pixel data that does
         // not affect the document: normal for group records, unknown elsewhere.
-        if flags & 24 == 24 && group == 0 {
+        // A disabled vector mask does not apply.
+        if vector.as_ref().is_some_and(|v| v.disabled) {
+            vector = None;
+        }
+        if stroke.is_some() && (solid.is_none() || vector.is_none()) {
+            return Err("PSD shape stroke without a shape needs the saved composite".into());
+        }
+        // Shape layers are drawn from their path and fill, not their pixels.
+        if flags & 24 == 24 && group == 0 && solid.is_none() {
             return Err("PSD layer pixels are marked irrelevant to its appearance".into());
         }
         if fill != 255 {
@@ -514,6 +577,9 @@ fn layers(
             group,
             mask,
             solid,
+            vector,
+            stroke,
+            filled,
         });
     }
     let mut decoded_budget = 0usize;
@@ -537,7 +603,18 @@ fn layers(
                 .ok_or("PSD layer payload exceeds memory budget")?;
             planes.insert(id, decode(data, cw, ch, 1, 8, cancel)?);
         }
-        if let Some(color) = record.solid {
+        if let (Some(color), Some(vector)) = (record.solid, &record.vector) {
+            draw_shape(
+                &mut record.layer,
+                color,
+                vector,
+                record.stroke,
+                record.filled,
+                width,
+                height,
+                cancel,
+            )?;
+        } else if let Some(color) = record.solid {
             let row = [color[0], color[1], color[2], 255].repeat(width);
             let mut writer = record.layer.pixels.writer();
             for y in 0..height {
@@ -602,6 +679,9 @@ fn layers(
                 linked: true,
                 coverage,
             });
+        }
+        if let (None, Some(vector)) = (record.solid, &record.vector) {
+            apply_vector_mask(&mut record.layer, vector, width, height, cancel)?;
         }
     }
     // Dudel's stack runs bottom to top with each folder above its contents.

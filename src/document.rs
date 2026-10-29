@@ -276,6 +276,10 @@ struct Level {
     out: [f32; 4],
     group: [f32; 4],
     mode: crate::blend::BlendMode,
+    /// Alpha of this level's own contents, as if composited alone. Blend
+    /// modes never change alpha, so this holds even for a pass-through level
+    /// whose `out` also contains everything below it.
+    coverage: f32,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct CompositeState {
@@ -286,6 +290,7 @@ const EMPTY_LEVEL: Level = Level {
     out: [0.0; 4],
     group: [0.0; 4],
     mode: crate::blend::BlendMode::Normal,
+    coverage: 0.0,
 };
 
 fn commit(out: &mut [f32; 4], group: [f32; 4], mode: crate::blend::BlendMode) {
@@ -325,6 +330,7 @@ impl Level {
     fn add(&mut self, color: [f32; 3], a: f32, clipped: bool, blend: crate::blend::BlendMode) {
         if !clipped {
             commit(&mut self.out, self.group, self.mode);
+            self.coverage = self.contents_alpha();
             self.group = [color[0] * a, color[1] * a, color[2] * a, a];
             self.mode = blend;
         } else if a > 0.0 && self.group[3] > 0.0 {
@@ -347,6 +353,10 @@ impl Level {
     fn finish(mut self) -> [f32; 4] {
         commit(&mut self.out, self.group, self.mode);
         self.out
+    }
+    /// `coverage` with the open group included.
+    fn contents_alpha(&self) -> f32 {
+        self.group[3] + self.coverage * (1.0 - self.group[3])
     }
     /// A pass-through folder's contents start from everything below them.
     fn passing_through(parent: &Level) -> Level {
@@ -692,21 +702,34 @@ impl Document {
             if layer.folder && layer.blend == crate::blend::BlendMode::PassThrough {
                 // The contents were composited onto everything below; fade
                 // that result in by the folder's visibility, opacity and mask.
-                let below = levels[depth].finish();
-                let content = if top > depth {
+                let parent = levels[depth];
+                let below = parent.finish();
+                let (content, coverage) = if top > depth {
                     top -= 1;
-                    levels[top + 1].finish()
+                    let inner = levels[top + 1];
+                    (inner.finish(), inner.contents_alpha())
                 } else {
-                    below
+                    (below, 0.0)
                 };
                 let t = if layer.visible {
                     layer.opacity * layer.mask_coverage(index, self.width)
                 } else {
                     0.0
                 };
+                // Express the faded result as a normal layer over `below` whose
+                // alpha is the folder's own coverage, so layers clipped to the
+                // folder clip to its contents. Normal compositing of this
+                // group reproduces below + (content - below) * t exactly.
+                let alpha = coverage * t;
+                let mut group: [f32; 4] = std::array::from_fn(|c| {
+                    below[c] + (content[c] - below[c]) * t - below[c] * (1.0 - alpha)
+                });
+                group[3] = alpha;
                 levels[depth] = Level {
-                    out: std::array::from_fn(|c| below[c] + (content[c] - below[c]) * t),
-                    ..EMPTY_LEVEL
+                    out: below,
+                    group,
+                    mode: crate::blend::BlendMode::Normal,
+                    coverage: parent.contents_alpha(),
                 };
                 continue;
             }
@@ -3318,6 +3341,15 @@ mod tests {
         doc.layers[2].opacity = 0.5;
         near(pixel(&doc), &[89.1, 89.1, 89.1, 255.0]);
         doc.layers[2].visible = false;
+        assert_eq!(pixel(&doc), vec![128, 128, 128, 255]);
+        // A layer clipped to a pass-through folder clips to its contents.
+        doc.layers[2].visible = true;
+        doc.layers[2].opacity = 1.0;
+        doc.add_layer();
+        doc.layers[3].pixels = vec![0, 200, 0, 255].into();
+        doc.layers[3].clipped = true;
+        assert_eq!(pixel(&doc), vec![0, 200, 0, 255]);
+        doc.layers[1].pixels = vec![0, 0, 0, 0].into();
         assert_eq!(pixel(&doc), vec![128, 128, 128, 255]);
 
         // Glow modes are brighter than their plain forms at partial alpha.

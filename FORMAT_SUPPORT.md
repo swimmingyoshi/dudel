@@ -78,9 +78,14 @@ Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glo
 forms), locks, isolated and pass-through groups, and simple raster masks. Plain RGB
 solid fills become raster layers. Text and smart-object layers import as the pixels
 Photoshop stored for them (named in Import details); fill opacity applies except on the
-dodge/burn family, where it behaves differently. Effects, vector shapes (whose stored
-pixels Photoshop marks as not matching what it draws), adjustment and fill layers,
-mask feather/density and other unsupported descriptors use the saved composite with an
+dodge/burn family, where it behaves differently. Grayscale documents expand to RGB.
+Vector shapes with solid fills are drawn from their paths (Photoshop marks their stored
+pixels as not matching what it draws): all four path operations, even-odd and non-zero
+winding, and solid strokes inside, centred or outside the combined outline. Vector
+masks on ordinary layers and folders become layer masks. Strokes use round joins
+(Photoshop's miter corners differ slightly) and stroke anti-aliasing is approximate.
+Gradient and pattern shape fills, dashed strokes, effects, adjustment layers, mask
+feather/density and other unsupported descriptors use the saved composite with an
 explicit Import details report. They are not silently approximated as editable layers.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.

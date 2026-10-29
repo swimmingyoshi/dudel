@@ -98,6 +98,7 @@ mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
 mod psd_import;
+mod psd_vector;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
 mod native_session;
