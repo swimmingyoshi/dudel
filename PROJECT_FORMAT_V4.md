@@ -8,9 +8,14 @@ Layer limits were raised to 1,000 raster layers and 2,000 entries with a 2 GiB p
 ## Layout
 
 All binary integers are unsigned little-endian u32. The raw file begins with
-seven bytes `DUDL\x04\r\n`, followed by exactly one gzip member. Its payload is:
+seven bytes `DUDL\x04\r\n`, followed by exactly one gzip member. Projects with layer
+masks use `DUDL\x05\r\n` (schema version 2), and projects where any layer has layer
+effects (even switched off) or is an adjustment layer use `DUDL\x06\r\n` (schema
+version 1 or 2). The layout after the header is the same. Builds that predate a
+header refuse the file instead of opening it without data they do not know, so a
+resave there cannot silently drop masks, effects or adjustments. Its payload is:
 
-1. Metadata byte length (1 to 1,048,576), then that many UTF-8 JSON bytes.
+1. Metadata byte length (1 to 16,777,216), then that many UTF-8 JSON bytes.
 2. For each raster layer in metadata stack order: tile count, then that many tile
    records. Folder entries have no count or records.
 3. Each tile record: tile index followed by packed straight RGBA8 pixels. There
@@ -20,10 +25,10 @@ Metadata matches document schema 1 with every layer's `pixels` equal to `[]`.
 It retains dimensions, active layer, selection and layer names/properties/folder
 structure. A layer may carry `effects`, its layer effects bottom to top (each
 `{enabled, effect}`; settings are range-checked on load, at most 32 per layer, raster
-layers only). Builds that predate effects ignore the field and open the artwork
-without them. A raster layer may instead be an adjustment layer: `adjustment` holds
+layers only). A raster layer may instead be an adjustment layer: `adjustment` holds
 its settings (one of the documented kinds, range-checked on load); its pixels are
-unused. Older builds ignore the field and show it as an empty layer. It must validate before tile data is allocated. An optional `guides`
+unused. Bevels carry a `pair` number shared by their highlight and shadow entries
+(0 in files saved before pairing). It must validate before tile data is allocated. An optional `guides`
 object holds drawing guides: shared symmetry (mode, copies, center, rotation),
 per-layer symmetry as `[stack index, symmetry]` pairs, grid, guide lines, guide
 lock and ruler visibility. Files without it open with default guides, and readers

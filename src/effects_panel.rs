@@ -12,6 +12,10 @@ pub(crate) struct Edit {
     target: crate::document::LayerId,
     original: Vec<LayerEffect>,
     modified: bool,
+    /// While the render queue is busy the document is not edited directly:
+    /// the gesture's latest list waits here and is sent as one edit when the
+    /// pointer lifts.
+    queued: Option<Vec<LayerEffect>>,
 }
 
 impl Dudel {
@@ -49,6 +53,9 @@ impl Dudel {
             ui.label("No layer selected.");
             return;
         };
+        if !self.render_queue.busy() {
+            self.effects_sent = None;
+        }
         let Some(layer) = self.doc.layers.iter().find(|l| l.id == target) else {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -61,13 +68,42 @@ impl Dudel {
             ui.label("Effects apply to layers, not folders.");
             return;
         }
-        let original = layer.effects.clone();
+        // Build on what the user last set, even before the render queue has
+        // published it: the open gesture's draft, then the last list sent.
+        let original = self
+            .effects_edit
+            .as_ref()
+            .filter(|edit| edit.target == target)
+            .and_then(|edit| edit.queued.clone())
+            .or_else(|| {
+                self.effects_sent
+                    .as_ref()
+                    .filter(|(sent, _)| *sent == target)
+                    .map(|(_, effects)| effects.clone())
+            })
+            .unwrap_or_else(|| layer.effects.clone());
         let mut effects = original.clone();
         ui.menu_button("Add effect", |ui| {
             for name in crate::layer_effects::PRESETS {
-                if ui.button(name).clicked() {
+                let needed = if name == "Bevel and Emboss" { 2 } else { 1 };
+                if ui
+                    .add_enabled(
+                        effects.len() + needed <= crate::document::MAX_EFFECTS,
+                        egui::Button::new(name),
+                    )
+                    .clicked()
+                {
                     if name == "Bevel and Emboss" {
-                        effects.extend(Effect::bevel_presets().map(LayerEffect::new));
+                        let pair = effects
+                            .iter()
+                            .filter_map(|e| match e.effect.kind {
+                                Kind::Bevel { pair, .. } => Some(pair),
+                                _ => None,
+                            })
+                            .max()
+                            .unwrap_or(0)
+                            + 1;
+                        effects.extend(Effect::bevel_presets(pair).map(LayerEffect::new));
                     } else if let Some(effect) = Effect::preset(name) {
                         effects.push(LayerEffect::new(effect));
                     }
@@ -122,24 +158,44 @@ impl Dudel {
         }
         sync_bevel_halves(&original, &mut effects);
         if effects != original {
-            self.apply_effects(target, effects);
+            self.apply_effects(target, original, effects);
         }
     }
 
     /// Apply a changed effect list: live under one gesture when possible,
     /// otherwise as a queued property edit once the pointer is released.
-    fn apply_effects(&mut self, target: crate::document::LayerId, effects: Vec<LayerEffect>) {
-        if self.render_queue.busy() {
-            self.finish_effects_edit();
-            self.set_canvas_property(target, crate::document_edits::Property::Effects(effects));
+    pub(crate) fn apply_effects(
+        &mut self,
+        target: crate::document::LayerId,
+        original: Vec<LayerEffect>,
+        effects: Vec<LayerEffect>,
+    ) {
+        if effects.len() > crate::document::MAX_EFFECTS {
+            self.status = "Too many layer effects".into();
             return;
         }
-        if self
-            .effects_edit
-            .as_ref()
-            .is_some_and(|edit| edit.target != target)
-        {
+        if let Err(error) = effects.iter().try_for_each(LayerEffect::validate) {
+            self.status = error;
+            return;
+        }
+        if self.effects_edit.as_ref().is_some_and(|edit| {
+            edit.target != target || edit.queued.is_some() != self.render_queue.busy()
+        }) {
             self.finish_effects_edit();
+        }
+        if self.render_queue.busy() {
+            match &mut self.effects_edit {
+                Some(edit) => edit.queued = Some(effects),
+                None => {
+                    self.effects_edit = Some(Edit {
+                        target,
+                        original,
+                        modified: self.modified,
+                        queued: Some(effects),
+                    });
+                }
+            }
+            return;
         }
         let Some(index) = self.doc.layers.iter().position(|l| l.id == target) else {
             return;
@@ -152,6 +208,7 @@ impl Dudel {
                 target,
                 original: self.doc.layers[index].effects.clone(),
                 modified: self.modified,
+                queued: None,
             });
         }
         self.doc.layers[index].effects = effects;
@@ -162,6 +219,17 @@ impl Dudel {
         let Some(edit) = self.effects_edit.take() else {
             return;
         };
+        if let Some(queued) = edit.queued {
+            // One queued edit per gesture, after the pointer lifts.
+            if queued != edit.original {
+                self.set_canvas_property(
+                    edit.target,
+                    crate::document_edits::Property::Effects(queued.clone()),
+                );
+                self.effects_sent = Some((edit.target, queued));
+            }
+            return;
+        }
         let unchanged = self
             .doc
             .layers
@@ -177,8 +245,10 @@ impl Dudel {
     }
 }
 
-/// Settings shared by a bevel's highlight and shadow follow each other.
-fn sync_bevel_halves(original: &[LayerEffect], effects: &mut [LayerEffect]) {
+/// Settings shared by a bevel's highlight and shadow follow each other: the
+/// other half is the bevel with the same pair number (or, for bevels saved
+/// before pairing, an unpaired neighbor).
+pub(crate) fn sync_bevel_halves(original: &[LayerEffect], effects: &mut [LayerEffect]) {
     for index in 0..effects.len() {
         let Kind::Bevel {
             highlight,
@@ -189,6 +259,7 @@ fn sync_bevel_halves(original: &[LayerEffect], effects: &mut [LayerEffect]) {
             soften,
             light,
             up,
+            pair,
         } = effects[index].effect.kind
         else {
             continue;
@@ -199,22 +270,32 @@ fn sync_bevel_halves(original: &[LayerEffect], effects: &mut [LayerEffect]) {
         {
             continue;
         }
-        for other in [index.wrapping_sub(1), index + 1] {
-            if let Some(Kind::Bevel { highlight: h, .. }) =
-                effects.get(other).map(|e| e.effect.kind)
-                && h != highlight
-            {
-                effects[other].effect.kind = Kind::Bevel {
-                    highlight: h,
-                    style,
-                    technique,
-                    depth,
-                    size,
-                    soften,
-                    light,
-                    up,
-                };
-            }
+        let partner = |other: usize| {
+            other != index
+                && matches!(
+                    effects[other].effect.kind,
+                    Kind::Bevel { highlight: h, pair: p, .. } if h != highlight && p == pair
+                )
+        };
+        let other = if pair != 0 {
+            (0..effects.len()).find(|&other| partner(other))
+        } else {
+            [index.wrapping_sub(1), index + 1]
+                .into_iter()
+                .find(|&other| other < effects.len() && partner(other))
+        };
+        if let Some(other) = other {
+            effects[other].effect.kind = Kind::Bevel {
+                highlight: !highlight,
+                style,
+                technique,
+                depth,
+                size,
+                soften,
+                light,
+                up,
+                pair,
+            };
         }
         return;
     }
@@ -444,5 +525,97 @@ fn shadow_offset(ui: &mut egui::Ui, offset: &mut [f64; 2]) {
         .changed();
     if changed {
         *offset = crate::layer_effects::offset(a, d);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bevel_halves_follow_their_own_pair_only() {
+        let size = |e: &LayerEffect| match e.effect.kind {
+            Kind::Bevel { size, .. } => size,
+            _ => unreachable!(),
+        };
+        // Two bevels, with another effect moved between the first's halves.
+        let [shadow, highlight] = Effect::bevel_presets(1).map(LayerEffect::new);
+        let mut effects = vec![
+            shadow,
+            LayerEffect::new(Effect::preset("Stroke").unwrap()),
+            highlight,
+        ];
+        effects.extend(Effect::bevel_presets(2).map(LayerEffect::new));
+        let original = effects.clone();
+        if let Kind::Bevel { size, .. } = &mut effects[2].effect.kind {
+            *size = 12.0;
+        }
+        sync_bevel_halves(&original, &mut effects);
+        assert_eq!(size(&effects[0]), 12.0, "its own shadow follows");
+        assert_eq!(
+            (size(&effects[3]), size(&effects[4])),
+            (5.0, 5.0),
+            "the other bevel stays"
+        );
+    }
+
+    #[test]
+    fn busy_queue_sends_one_edit_per_gesture_and_builds_on_it() {
+        let mut app = Dudel {
+            doc: crate::document::Document::new(4, 4),
+            ..Default::default()
+        };
+        let target = app.doc.layers[0].id;
+        app.render_queue.redo().unwrap();
+        assert!(app.render_queue.busy());
+        let overlay = |opacity: f32| {
+            let mut effect = Effect::preset("Color Overlay").unwrap();
+            effect.opacity = opacity;
+            LayerEffect::new(effect)
+        };
+        // A drag through three values while rendering is busy.
+        for opacity in [0.2, 0.4, 0.6] {
+            app.apply_effects(target, Vec::new(), vec![overlay(opacity)]);
+        }
+        assert!(
+            app.doc.layers[0].effects.is_empty(),
+            "nothing applied mid-drag"
+        );
+        app.finish_effects_edit();
+        // The next change starts from what was sent, not the stale document.
+        assert_eq!(app.effects_sent, Some((target, vec![overlay(0.6)])));
+        app.flush_render_queue();
+        assert_eq!(app.doc.layers[0].effects, vec![overlay(0.6)]);
+        // One undo step for the whole drag.
+        app.undo();
+        app.flush_render_queue();
+        assert!(app.doc.layers[0].effects.is_empty());
+    }
+
+    #[test]
+    fn effects_window_rejects_over_limit_edits_before_mutating_history() {
+        let mut app = Dudel {
+            doc: crate::document::Document::new(1, 1),
+            ..Default::default()
+        };
+        let target = app.doc.layers[0].id;
+        let effect = LayerEffect::new(Effect::preset("Color Overlay").unwrap());
+        app.doc.layers[0].effects = vec![effect.clone(); crate::document::MAX_EFFECTS];
+        app.apply_effects(
+            target,
+            app.doc.layers[0].effects.clone(),
+            vec![effect; crate::document::MAX_EFFECTS + 1],
+        );
+        app.finish_effects_edit();
+        assert!(
+            app.doc.validate().is_ok(),
+            "the effects window made an unsavable document"
+        );
+        assert_eq!(
+            app.doc.layers[0].effects.len(),
+            crate::document::MAX_EFFECTS
+        );
+        assert!(!app.history.can_undo());
+        assert!(!app.modified);
     }
 }

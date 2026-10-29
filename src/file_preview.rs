@@ -65,6 +65,12 @@ fn render(doc: &Document) -> Option<(usize, usize, Vec<u8>)> {
     if doc.width == 0 || doc.height == 0 {
         return None;
     }
+    let expanded = if doc.has_effects() {
+        Some(crate::layer_effects::expand(doc, false, &|| false).ok()?)
+    } else {
+        None
+    };
+    let doc = expanded.as_ref().unwrap_or(doc);
     let scale = (doc.width.max(doc.height) as f32 / SIDE as f32).max(1.0);
     let width = ((doc.width as f32 / scale).round() as usize).clamp(1, SIDE);
     let height = ((doc.height as f32 / scale).round() as usize).clamp(1, SIDE);
@@ -94,6 +100,17 @@ fn render(doc: &Document) -> Option<(usize, usize, Vec<u8>)> {
         rgb.extend(line.ok()?);
     }
     Some((width, height, rgb))
+}
+
+#[test]
+fn saved_preview_includes_native_layer_effects() {
+    use crate::layer_effects::{Effect, LayerEffect, Paint};
+    let mut doc = Document::new(1, 1);
+    doc.layers[0].pixels = vec![255, 0, 0, 255].into();
+    let mut overlay = Effect::preset("Color Overlay").unwrap();
+    overlay.paint = Paint::Color([0, 0, 255]);
+    doc.layers[0].effects.push(LayerEffect::new(overlay));
+    assert_eq!(render(&doc).unwrap().2, vec![0, 0, 255]);
 }
 
 /// Registers (or removes) dudel_thumbnails.dll beside dudel.exe as the

@@ -270,12 +270,17 @@ struct Dudel {
     opacity_edit: Option<layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
     effects_edit: Option<effects_panel::Edit>,
+    /// The effects list last sent through the busy render queue, which the
+    /// window builds on until the queue has published it.
+    effects_sent: Option<(document::LayerId, Vec<layer_effects::LayerEffect>)>,
     effects_window_open: bool,
     /// Show the targeted layer mask on the canvas instead of the artwork.
     mask_view: bool,
     mask_view_layers: Option<([usize; 2], pixels::Pixels, pixels::Pixels)>,
     mask_view_ids: (document::LayerId, document::LayerId),
     mask_view_shown: bool,
+    /// Effect drawings (generations) the canvas tiles last showed.
+    effects_shown: Vec<u64>,
     tool_shift: tool_shift::ToolShift,
     shortcuts_window: bool,
     about_window: bool,
@@ -505,11 +510,13 @@ impl Default for Dudel {
             opacity_edit: None,
             opacity_preview_modified: None,
             effects_edit: None,
+            effects_sent: None,
             effects_window_open: false,
             mask_view: false,
             mask_view_layers: None,
             mask_view_ids: (document::LayerId::new(), document::LayerId::new()),
             mask_view_shown: false,
+            effects_shown: Vec::new(),
             tool_shift: Default::default(),
             shortcuts_window: false,
             about_window: false,

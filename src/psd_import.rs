@@ -744,6 +744,13 @@ fn layers(
     let mut decoded_budget = 0usize;
     for record in &mut records {
         check(cancel)?;
+        if record.dropped {
+            // Keep the stream aligned, but never decode a skipped layer's pixels.
+            for &(_, bytes) in &record.channels {
+                info.take(bytes)?;
+            }
+            continue;
+        }
         let [w, h] = geometry(record.rect)?;
         let mut planes = std::collections::BTreeMap::new();
         for &(id, bytes) in &record.channels {
@@ -979,6 +986,14 @@ fn reversed_matches_better(doc: &Document, saved: &[u8]) -> bool {
     let mut reversed = doc.clone();
     reversed.layers.reverse();
     let error = |doc: &Document| -> u64 {
+        // Compare the same appearance the imported document will render.
+        // Expand once per candidate rather than once per sampled pixel.
+        let expanded = if doc.has_effects() {
+            crate::layer_effects::expand(doc, false, &|| false).ok()
+        } else {
+            None
+        };
+        let doc = expanded.as_ref().unwrap_or(doc);
         (0..doc.width * doc.height)
             .step_by(step)
             .map(|i| {
@@ -1434,6 +1449,50 @@ mod tests {
         assert_eq!(mask.at(0, 0), 255);
         assert_eq!(mask.at(1, 0), 75);
         assert!(imported.notes.iter().any(|n| n.contains("editable")));
+    }
+    #[test]
+    fn dropped_adjustments_do_not_decode_irrelevant_channel_payloads() {
+        let mut file = layer_file(&[
+            Spec {
+                keys: &[(b"blnc", &[])],
+                ..raster("Unsupported adjustment", 0, [91, 92, 93, 255], false)
+            },
+            raster("Keep", 1, [10, 20, 30, 255], false),
+        ]);
+        let channel = file
+            .windows(9)
+            .position(|w| w == [0, 0, 91, 0, 0, 92, 0, 0, 93])
+            .unwrap();
+        // These bytes belong to a record already reported as left out.
+        file[channel..channel + 2].copy_from_slice(&99u16.to_be_bytes());
+        let imported = parse(&file, &|| false).unwrap();
+        assert_eq!(imported.document.layers.len(), 1);
+        assert_eq!(imported.document.layers[0].name, "Keep");
+        assert_eq!(
+            imported.document.layers[0].pixels.rgba(1),
+            [10, 20, 30, 255]
+        );
+        assert!(imported.notes.iter().any(|n| n.contains("left out")));
+    }
+    #[test]
+    fn flat_layer_order_detection_includes_native_effects() {
+        use crate::layer_effects::{Effect, LayerEffect, Paint};
+        // Top-first: red painted green above green painted blue.
+        // Photoshop's saved result is green, so the stack must be reversed.
+        let mut doc = Document::new(1, 1);
+        doc.add_layer();
+        for (layer, (pixel, color)) in doc.layers.iter_mut().zip([
+            ([255, 0, 0, 255], [0, 255, 0]),
+            ([0, 255, 0, 255], [0, 0, 255]),
+        ]) {
+            layer.pixels = pixel.to_vec().into();
+            let mut overlay = Effect::preset("Color Overlay").unwrap();
+            overlay.paint = Paint::Color(color);
+            layer.effects.push(LayerEffect::new(overlay));
+        }
+        assert!(reversed_matches_better(&doc, &[0, 255, 0, 255]));
+        doc.layers.reverse();
+        assert!(!reversed_matches_better(&doc, &[0, 255, 0, 255]));
     }
     #[test]
     fn grayscale_layers_keep_alpha_offsets_masks_and_groups() {

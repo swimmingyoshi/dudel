@@ -1296,11 +1296,11 @@ impl Dudel {
         // Layer effects are drawn as extra layers; while painting, moving or
         // transforming, the last drawing stands in until the gesture ends.
         let gesture = self.stroking || self.move_drag.is_some() || self.affine_preview.is_some();
-        let mut drew = false;
+        let mut drawings = Vec::new();
         let expanded = if base.has_effects() {
             match crate::layer_effects::expand_tracked(base, gesture, &|| false) {
-                Ok((doc, fresh)) => {
-                    drew = fresh;
+                Ok((doc, used)) => {
+                    drawings = used;
                     Some(doc)
                 }
                 Err(error) => {
@@ -1317,7 +1317,13 @@ impl Dudel {
         // Switching between the mask view and the artwork replaces everything.
         let switched = mask_view.is_some() != self.mask_view_shown;
         self.mask_view_shown = mask_view.is_some();
-        let full = self.dirty || drew || switched;
+        // Effect drawings this canvas has not shown yet (drawn here or by an
+        // export, preview or color pick) can differ anywhere they reach.
+        let redrawn = drawings != self.effects_shown;
+        if redrawn {
+            self.effects_shown = drawings;
+        }
+        let full = self.dirty || redrawn || switched;
         self.texture.update_damage(
             ctx,
             expanded.as_ref().unwrap_or(base),

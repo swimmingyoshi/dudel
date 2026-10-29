@@ -143,9 +143,9 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   2 GiB of stored pixels (512 MiB including masks in mask-aware projects).
   Projects using more than 32 layers or the newer blend modes need this
   version or later.
-- Native saves use project format v4, or v5 when layer masks are used; newer
-  files need a compatible Dudel. Builds before layer effects and adjustment
-  layers open such projects without them. Indexed `.didx` storage is experimental.
+- Native saves use project format v4, v5 when layer masks are used, or v6 when
+  layer effects or adjustment layers are used; newer files need a compatible
+  Dudel (older builds refuse them rather than drop that data). Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD
   layer features use the saved composite when available. Color-managed print

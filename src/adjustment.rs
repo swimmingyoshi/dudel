@@ -6,6 +6,8 @@
 //! github.com/psd-tools/psd-tools, `composite/adjustments.py`): levels,
 //! natural cubic curves, exposure in linear light with gamma 2.2, the
 //! brightness and contrast curves, and hue/saturation in HSL.
+//! Copyright (c) 2019 Kota Yamaguchi; see `LICENSE-psd-tools` for the
+//! permission notice, which ships with source and binary packages.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -69,7 +71,7 @@ fn srgb_gamma() -> f32 {
 }
 /// Settings plus the lookup tables drawn from them, built once.
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(from = "Settings", into = "Settings")]
+#[serde(try_from = "Settings", into = "Settings")]
 pub(crate) struct Adjustment(Arc<Prepared>);
 struct Prepared {
     settings: Settings,
@@ -79,9 +81,12 @@ struct Prepared {
     /// Color by luminance step, for gradient maps.
     map: Option<Box<[[f32; 3]; 256]>>,
 }
-impl From<Settings> for Adjustment {
-    fn from(settings: Settings) -> Self {
-        Self::new(settings)
+impl TryFrom<Settings> for Adjustment {
+    type Error = String;
+
+    fn try_from(settings: Settings) -> Result<Self, Self::Error> {
+        settings.validate()?;
+        Ok(Self::new(settings))
     }
 }
 impl From<Adjustment> for Settings {
@@ -186,8 +191,15 @@ impl Adjustment {
     }
     /// Reject settings a damaged project could hold.
     pub(crate) fn validate(&self) -> Result<(), String> {
+        self.0.settings.validate()
+    }
+}
+
+impl Settings {
+    /// Check structural bounds before building lookup tables from file data.
+    fn validate(&self) -> Result<(), String> {
         let finite = |values: &[f32]| values.iter().all(|v| v.is_finite());
-        let ok = match &self.0.settings {
+        let ok = match self {
             Settings::Invert | Settings::Posterize { .. } | Settings::Threshold { .. } => true,
             Settings::Levels { channels } => {
                 channels.len() <= 4
@@ -1035,6 +1047,23 @@ mod tests {
     }
 
     #[test]
+    fn damaged_adjustments_are_rejected_before_preparing_lookup_tables() {
+        for settings in [
+            r#"{"GradientMap":{"stops":[],"reverse":false}}"#,
+            r#"{"Curves":{"channels":[[0,[]]]}}"#,
+            r#"{"Curves":{"channels":[[0,[[0,0]]]]}}"#,
+            r#"{"Curves":{"channels":[[0,[[255,255],[0,0]]]]}}"#,
+        ] {
+            let parsed = std::panic::catch_unwind(|| serde_json::from_str::<Adjustment>(settings));
+            assert!(parsed.is_ok(), "damaged settings panicked: {settings}");
+            assert!(
+                parsed.unwrap().is_err(),
+                "accepted damaged settings: {settings}"
+            );
+        }
+    }
+
+    #[test]
     fn folders_scope_adjustments() {
         // In a pass-through folder an adjustment reaches below the folder;
         // in an isolated folder it only changes the folder's contents.
@@ -1068,8 +1097,16 @@ mod tests {
         assert!(doc.paint_blocker().is_some());
         let mut bytes = Vec::new();
         crate::tile_project::encode(&doc, &mut bytes).unwrap();
-        let loaded =
-            crate::tile_project::decode(&bytes[crate::tile_project::MAGIC.len()..]).unwrap();
+        // Saved under the header older builds refuse, so they cannot drop
+        // the styles on resave; the project loader reads it back.
+        assert!(bytes.starts_with(crate::tile_project::STYLE_MAGIC));
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        assert!(
+            crate::tile_project::decode(&bytes[crate::tile_project::MAGIC.len()..]).is_ok()
+                == (doc.version == 1)
+        );
         assert_eq!(loaded.layers[1].adjustment, doc.layers[1].adjustment);
         assert_eq!(pixels(&loaded), pixels(&doc));
         // Merging the adjustment down applies it to the layer below once.

@@ -17,7 +17,7 @@ try {
     }
     # Hash actual build inputs, including uncommitted/untracked Rust modules.
     function Get-SourceIdentity {
-        $inputs = @('Cargo.toml', 'Cargo.lock', 'LICENSE', 'shell/thumbnails/Cargo.toml', 'shell/thumbnails/Cargo.lock') + @(Get-ChildItem src,examples,plugins,shell/thumbnails/src -File -Recurse | ForEach-Object {
+        $inputs = @('Cargo.toml', 'Cargo.lock', 'LICENSE', 'LICENSE-psd-tools', 'shell/thumbnails/Cargo.toml', 'shell/thumbnails/Cargo.lock') + @(Get-ChildItem src,examples,plugins,shell/thumbnails/src -File -Recurse | ForEach-Object {
             $_.FullName.Substring($repository.Length + 1).Replace('\', '/')
         })
         @($inputs | Sort-Object | ForEach-Object {

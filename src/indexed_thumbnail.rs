@@ -40,6 +40,12 @@ pub(crate) fn encode(doc: &Document, cancel: &impl Fn() -> bool) -> Result<Vec<u
         return Err("Indexed thumbnail source pixel geometry differs".into());
     }
     let dimensions = size([doc.width, doc.height])?;
+    let expanded = if doc.has_effects() {
+        Some(crate::layer_effects::expand(doc, false, cancel)?)
+    } else {
+        None
+    };
+    let doc = expanded.as_ref().unwrap_or(doc);
     let [width, height] = dimensions.map(usize::from);
     let mut rgba = Vec::with_capacity(width * height * 4);
     for y in 0..height {
@@ -72,6 +78,17 @@ pub(crate) fn decode(encoded: &[u8], canvas: [usize; 2]) -> Result<Thumbnail, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_preview_includes_native_layer_effects() {
+        use crate::layer_effects::{Effect, LayerEffect, Paint};
+        let mut doc = Document::new(1, 1);
+        doc.layers[0].pixels = vec![255, 0, 0, 255].into();
+        let mut overlay = Effect::preset("Color Overlay").unwrap();
+        overlay.paint = Paint::Color([0, 0, 255]);
+        doc.layers[0].effects.push(LayerEffect::new(overlay));
+        let encoded = encode(&doc, &|| false).unwrap();
+        assert_eq!(decode(&encoded, [1, 1]).unwrap().rgba, vec![0, 0, 255, 255]);
+    }
     #[test]
     fn preview_matches_native_canvas_pixels_with_folders_clipping_and_byte_opacity() {
         let mut doc = crate::indexed_document::fixture();

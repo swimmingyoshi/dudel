@@ -10,6 +10,30 @@ use flate2::{Compression, bufread::GzDecoder};
 use std::io::{Read, Write};
 pub const MAGIC: &[u8] = b"DUDL\x04\r\n";
 pub const MASK_MAGIC: &[u8] = b"DUDL\x05\r\n";
+/// Projects with layer effects or adjustment layers. Builds that predate them
+/// reject this header instead of opening the file and dropping them on resave.
+pub const STYLE_MAGIC: &[u8] = b"DUDL\x06\r\n";
+/// Which header a project was read from.
+#[derive(Clone, Copy, PartialEq)]
+enum Container {
+    Plain,
+    Masked,
+    Styled,
+}
+/// The header `doc` is saved with.
+pub(crate) fn magic(doc: &Document) -> &'static [u8] {
+    if doc
+        .layers
+        .iter()
+        .any(|l| !l.effects.is_empty() || l.adjustment.is_some())
+    {
+        STYLE_MAGIC
+    } else if doc.version == 2 {
+        MASK_MAGIC
+    } else {
+        MAGIC
+    }
+}
 const MASK_TRAILER: &[u8; 5] = b"MSEL\x01";
 
 /// Recovery snapshots skip the file-browser preview; nobody browses them.
@@ -39,9 +63,7 @@ fn encode_with(
         header = header.extra(extra);
     }
     check()?;
-    writer
-        .write_all(if doc.version == 2 { MASK_MAGIC } else { MAGIC })
-        .map_err(|e| e.to_string())?;
+    writer.write_all(magic(doc)).map_err(|e| e.to_string())?;
     let mut gzip = header.write(writer, Compression::fast());
     gzip.write_all(&(metadata.len() as u32).to_le_bytes())
         .map_err(|e| e.to_string())?;
@@ -92,10 +114,13 @@ fn read_u32(reader: &mut impl Read) -> Result<usize, String> {
     Ok(u32::from_le_bytes(bytes) as usize)
 }
 pub fn decode(reader: impl Read) -> Result<Document, String> {
-    decode_inner(reader, None, false)
+    decode_inner(reader, None, Container::Plain)
 }
 pub(crate) fn decode_masked(reader: impl Read) -> Result<Document, String> {
-    decode_inner(reader, None, true)
+    decode_inner(reader, None, Container::Masked)
+}
+pub(crate) fn decode_styled(reader: impl Read) -> Result<Document, String> {
+    decode_inner(reader, None, Container::Styled)
 }
 /// Replay fixtures reject multi-layer metadata and over-budget tile counts
 /// before decoding pixel data, rather than checking after allocating it.
@@ -103,16 +128,22 @@ pub(crate) fn decode_single_layer(
     reader: impl Read,
     payload_budget: usize,
 ) -> Result<Document, String> {
-    decode_inner(reader, Some(payload_budget), false)
+    decode_inner(reader, Some(payload_budget), Container::Plain)
 }
 fn decode_inner(
     reader: impl Read,
     single_layer_budget: Option<usize>,
-    masked: bool,
+    container: Container,
 ) -> Result<Document, String> {
     let mut gzip = GzDecoder::new(std::io::BufReader::new(reader));
     let mut doc = binary_project::read_metadata(&mut gzip)?;
-    if doc.version != if masked { 2 } else { 1 } {
+    let version_ok = match container {
+        Container::Plain => doc.version == 1,
+        Container::Masked => doc.version == 2,
+        // Effects and adjustments come with or without masks.
+        Container::Styled => matches!(doc.version, 1 | 2),
+    };
+    if !version_ok {
         return Err("Document version differs from project container".into());
     }
     let mut payload_used = 0usize;
@@ -146,7 +177,7 @@ fn decode_inner(
             let bottom = (top + SIDE).min(doc.height);
             let length = (right - left) * (bottom - top) * 4;
             payload_used += length;
-            let budget = if masked {
+            let budget = if doc.version == 2 {
                 crate::document::MAX_MASKED_PAYLOAD
             } else {
                 crate::document::MAX_PAYLOAD
@@ -245,6 +276,33 @@ fn read_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn styled_header_marks_projects_with_effects_or_adjustments() {
+        let mut doc = Document::new(4, 4);
+        assert_eq!(magic(&doc), MAGIC);
+        doc.layers[0]
+            .effects
+            .push(crate::layer_effects::LayerEffect::new(
+                crate::layer_effects::Effect::preset("Stroke").unwrap(),
+            ));
+        assert_eq!(magic(&doc), STYLE_MAGIC);
+        // Switched-off effects still need a reader that keeps them.
+        doc.layers[0].effects[0].enabled = false;
+        assert_eq!(magic(&doc), STYLE_MAGIC);
+        doc.layers[0].effects.clear();
+        doc.layers[0].adjustment = Some(crate::adjustment::Adjustment::new(
+            crate::adjustment::Settings::Invert,
+        ));
+        assert_eq!(magic(&doc), STYLE_MAGIC);
+        let mut bytes = Vec::new();
+        encode(&doc, &mut bytes).unwrap();
+        let loaded = decode_styled(&bytes[STYLE_MAGIC.len()..]).unwrap();
+        assert!(loaded.layers[0].adjustment.is_some());
+        // A styled container still checks the document schema version.
+        let mut masked = loaded;
+        masked.version = 3;
+        assert!(masked.validate_metadata().is_err());
+    }
     #[test]
     fn encoding_can_cancel_between_payload_writes_without_changing_uncanceled_roundtrip() {
         use std::sync::atomic::{AtomicBool, Ordering};

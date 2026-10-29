@@ -39,7 +39,7 @@ def bundle(repository, destination, binary, metadata_path):
     check_thumbnail_dependencies(metadata, repository / "shell/thumbnails/Cargo.lock")
     build = json.loads((binary / "BUILD.json").read_text(encoding="utf-8-sig"))
     paths = set()
-    for name in ("Cargo.toml", "Cargo.lock", ".gitattributes", "LICENSE", "README.md", "QUICK_START.md",
+    for name in ("Cargo.toml", "Cargo.lock", ".gitattributes", "LICENSE", "LICENSE-psd-tools", "README.md", "QUICK_START.md",
                  "RELEASE_NOTES.md", "RELEASE_CHECKLIST.md", "RELEASE_STATUS.md", "RELEASE_DECISION.md", "RELEASE_ACCEPTANCE.json", "DELIVERY_PLAN.md", "DISTRIBUTION.md",
                  "XP_PEN_VALIDATION.md", "FORMAT_SUPPORT.md", "PROJECT_FORMAT_V4.md", "LINUX_PORT.md", "PLUGIN_DEVELOPMENT.md", "CREATOR_FEATURES.md", "TESTING.md", "build.rs", "rust-toolchain.toml"):
         if (repository / name).is_file():

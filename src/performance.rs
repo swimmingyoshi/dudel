@@ -68,6 +68,11 @@ impl Dudel {
                 mib(projects.canvas_rgba_bytes), mib(projects.auxiliary_rgba_bytes)));
             ui.small("Includes parked projects and shared reference pixels counted once. RGBA payload estimates exclude GPU allocation overhead, auxiliary mipmaps and preview-window textures; not process memory or VRAM commitment.");
             ui.separator();
+            ui.label(format!(
+                "Layer effect drawings (all projects): {:.2} / {} MiB",
+                mib(crate::layer_effects::retained_bytes()),
+                crate::layer_effects::RETAINED_LIMIT >> 20
+            ));
             ui.label(format!("Retained history: {:.2} MiB ({} compressed regions)", self.history.retained_bytes() as f64 / (1024.0 * 1024.0), self.history.compressed_regions()));
             ui.label(format!("Prefetched undo: {:.2} / {} MiB", self.history.prefetched_bytes() as f64 / (1024.0*1024.0), crate::document::History::PREFETCH_MIB));
             ui.label(format!("Previous UI update: {:.2} ms", self.performance.frame_ms));

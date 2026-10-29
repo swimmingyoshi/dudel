@@ -8,9 +8,10 @@ Any agent picking this up: read this first, update the checkboxes and the
 ## Base state
 
 - Released source: commit `67716b6` "Dudel 0.1.0", tag `v0.1.0` (master and linux).
-- All work below is **committed locally, not pushed**: 13 commits on top of
-  `origin/master`, `130f16f` .. `da51809` (`git log --oneline origin/master..HEAD`).
-  Pushing starts hosted CI; ask the owner first.
+- All work is **committed locally, not pushed**: commits on top of
+  `origin/master` from `130f16f` (`git log --oneline origin/master..HEAD`),
+  including the independent review's fixes and its follow-ups. Pushing starts
+  hosted CI; ask the owner first.
 - Local gates (see [TESTING.md](TESTING.md)): `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test`,
   `python scripts/check_public_tree.py`, then `scripts/Verify.ps1` for the full set.
@@ -23,7 +24,7 @@ Both hosted runs on `67716b6` failed, for reasons outside the app code:
 
 | Run | Result | Cause | Status |
 | --- | --- | --- | --- |
-| Windows verification | 918 tests, Clippy and Python tests passed; failed at `check_public_tree.py` | `benchmarks/linux-ci-introduction-windows-20261018.json` held the CI runner's checkout path, which the public-tree rule flags only on the runner | Fixed in working tree (`<repo>` placeholder, like the other benchmark files) |
+| Windows verification | 918 tests, Clippy and Python tests passed; failed at `check_public_tree.py` | `benchmarks/linux-ci-introduction-windows-20261018.json` held the CI runner's checkout path, which the public-tree rule flags only on the runner | Fixed in local commit `130f16f` (`<repo>` placeholder, like the other benchmark files) |
 | Linux verification | Verify and X11 OpenGL startup passed; failed at "Upload Linux startup evidence" | Account artifact storage quota hit; no repo currently stores artifacts, GitHub recalculates every 6-12 h | Wait for quota reset; consider `continue-on-error: true` on evidence uploads |
 
 Steps after the public-tree check (maximum project round-trip, masked noisy
@@ -297,7 +298,9 @@ Stage B - native layer effects:
       History compares effects (`same_snapshot`, `compact_layer`)
 - [x] UI: Layer Effects window (`src/effects_panel.rs`): add preset, enable,
       reorder, remove, per-kind settings; drags are one undo step (gesture
-      checkpoint, like opacity); bevel halves stay in sync.
+      checkpoint, like opacity); while the render queue is busy the gesture
+      is held and sent as one edit when the pointer lifts, and later edits
+      build on it; bevel halves synchronize by pair number.
       `Property::Effects` for queued edits. Workflow test covers add, toggle,
       undo and the window growing (button and badge placement: see the owner
       feedback item below)
@@ -354,14 +357,31 @@ Stage B - native layer effects:
 
 ## Before pushing (next candidate)
 
+- [x] Review follow-ups (2026-10-29, Claude), each with a regression test:
+      effect drawings share one 1 GiB budget across all caches with LRU
+      eviction, release when effects are switched off, count 4 bytes per pixel
+      when drawing, and show in the Performance window; projects with effects
+      or adjustments save under a new `DUDL\x06` header older builds refuse;
+      the canvas tracks which effect drawings it has shown (a redraw by an
+      export, preview or color pick still forces the full tile check); busy
+      queue effects edits are one edit per gesture and build on the last sent
+      list; bevel halves pair by a stored pair number; `LICENSE-psd-tools`
+      ships in source and binary packages. See [REVIEW_2026-10-29.md](REVIEW_2026-10-29.md).
+
 - [x] Local gates pass at `da51809` (2026-10-29): `cargo fmt --check`, Clippy
       with `-D warnings`, `cargo test` (974 passed, 8 ignored),
       `python scripts/check_public_tree.py`
-- [ ] Independent review of the 2026-10-29 work (effects, adjustments,
-      compositor and display caching changes). The owner is handing a review
-      prompt to a new agent; record its findings and fixes here
-- [ ] `scripts/Verify.ps1 -Mode Full` (last full run 2026-10-28, before the
-      effects/adjustments work)
+- [x] Review working-tree gates pass (2026-10-29): formatting, Clippy default
+      and all features, 980 default / 989 all-feature tests (8 ignored each),
+      3 thumbnail tests, 42 Python tests, public-tree check and release builds.
+- [x] Independent review of the 2026-10-29 work (effects, adjustments,
+      compositor and display caching changes): [findings and fixes](REVIEW_2026-10-29.md).
+      Five bugs fixed after six failing regressions: adjustment decode validation,
+      effects-window limit, dropped PSD payloads, native effects in layer-order
+      detection, and both project thumbnail paths. Changes remain uncommitted.
+- [x] `scripts/Verify.ps1 -Mode Full` passed on the review working tree,
+      2026-10-29. Initial release replacement hit access denied; the final run
+      passed. Thumbnail DLL emitted LNK4104 export warnings. See the review report.
 - [ ] Owner's manual pen pass: Layer Effects window and badges, mask view,
       PSDs with effects and adjustment layers, settings window
 - [ ] Owner approves the push; then one hosted run of both workflows (see CI
@@ -371,6 +391,19 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
+  (see "Before pushing"), committed together with the review's own fixes.
+  Corpora and pen testing not rerun.
+
+- 2026-10-29 (Codex, independent review): inspected the 14 local commits with
+  emphasis on the last five feature commits. Reproduced and fixed five bugs;
+  open findings and verification scope are in REVIEW_2026-10-29.md. Default
+  suite now has 980 passing tests, 8 ignored; all features has 989 passing,
+  8 ignored. Final Full verification passed, including both release builds;
+  the initial attempt hit access denied replacing the executable. Six open
+  findings remain, including cache memory and old-build data loss. No files
+  moved/deleted, no commit or push.
 
 - 2026-10-29 (Claude, owner feedback + handoff): fx button moved into the layer
   action row, sparkle badge on layer rows, effects window auto-sizes, mask

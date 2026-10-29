@@ -225,6 +225,8 @@ pub(crate) fn solid_fill(fill: &Descriptor) -> Result<[u8; 3], String> {
 }
 
 /// A gradient fill (`GdFl`, or `vscg` with key GdFl).
+/// Its geometry (reach, center, types) follows psd-tools' gradient fill,
+/// Copyright (c) 2019 Kota Yamaguchi; see `LICENSE-psd-tools`.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Gradient {
     kind: GradientKind,

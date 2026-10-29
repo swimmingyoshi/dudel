@@ -77,6 +77,10 @@ pub(crate) enum Kind {
         light: [f64; 3],
         /// Raised (true) or pressed in.
         up: bool,
+        /// Shared by the two halves of one bevel (unique within a layer);
+        /// 0 in projects saved before pairing, which pair by adjacency.
+        #[serde(default)]
+        pair: u32,
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -265,7 +269,7 @@ impl Effect {
         })
     }
     /// The two halves of a default inner bevel.
-    pub(crate) fn bevel_presets() -> [Self; 2] {
+    pub(crate) fn bevel_presets(pair: u32) -> [Self; 2] {
         [false, true].map(|highlight| Self {
             kind: Kind::Bevel {
                 highlight,
@@ -276,6 +280,7 @@ impl Effect {
                 soften: 0.0,
                 light: light(120.0, 30.0),
                 up: true,
+                pair,
             },
             paint: Paint::Color(if highlight { [255; 3] } else { [0; 3] }),
             blend: if highlight {
@@ -472,7 +477,7 @@ pub(crate) fn draw(
             return Err("Canceled".into());
         }
         *budget = budget
-            .checked_add(w * (rect[3] - rect[1]))
+            .checked_add(w * (rect[3] - rect[1]) * 4)
             .filter(|b| *b <= crate::document::MAX_PAYLOAD)
             .ok_or("Layer effects exceed the memory budget")?;
         let mut coverage = coverage(effect, &mut alpha, cancel)?;
@@ -509,9 +514,17 @@ pub(crate) fn draw(
 
 /// Effect layers drawn for one layer, kept until the layer or its effects
 /// change. Clones share the cache, which holds a few layers by identity.
+/// All caches share one byte budget (`RETAINED_LIMIT`): the least recently
+/// used drawings anywhere are dropped first.
 #[derive(Clone, Default)]
-pub(crate) struct Cache(std::sync::Arc<std::sync::Mutex<Vec<Cached>>>);
+pub(crate) struct Cache(Entries);
+type Entries = std::sync::Arc<std::sync::Mutex<Vec<Cached>>>;
 struct Cached {
+    /// Unique per drawing, so a display can tell it has not shown it yet.
+    generation: u64,
+    /// Pixel bytes held by the drawing.
+    bytes: usize,
+    used: u64,
     id: crate::document::LayerId,
     pixels: crate::pixels::Pixels,
     mask: Option<crate::layer_mask::LayerMask>,
@@ -521,7 +534,70 @@ struct Cached {
     layers: [Vec<Layer>; 3],
 }
 const CACHED_LAYERS: usize = 4;
+/// Effect drawings kept across every open document, in pixel bytes.
+pub(crate) const RETAINED_LIMIT: usize = 1 << 30;
+static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static CACHES: std::sync::Mutex<Vec<std::sync::Weak<std::sync::Mutex<Vec<Cached>>>>> =
+    std::sync::Mutex::new(Vec::new());
+fn tick() -> u64 {
+    TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+/// Pixel bytes of all retained effect drawings (busy caches are skipped).
+pub(crate) fn retained_bytes() -> usize {
+    let caches = CACHES.lock().unwrap_or_else(|e| e.into_inner());
+    caches
+        .iter()
+        .filter_map(std::sync::Weak::upgrade)
+        .filter_map(|cache| {
+            cache
+                .try_lock()
+                .ok()
+                .map(|entries| entries.iter().map(|c| c.bytes).sum::<usize>())
+        })
+        .sum()
+}
+/// Drop the least recently used drawings anywhere until all fit the budget,
+/// sparing `keep` (the drawing just made). Only `try_lock`s caches, so it
+/// never waits on one while holding the registry.
+fn enforce_budget(keep: u64) {
+    let mut caches = CACHES.lock().unwrap_or_else(|e| e.into_inner());
+    caches.retain(|weak| weak.strong_count() > 0);
+    let live: Vec<Entries> = caches.iter().filter_map(std::sync::Weak::upgrade).collect();
+    drop(caches);
+    evict(&live, keep, RETAINED_LIMIT);
+}
+/// Drop the least recently used drawings in `live` until they total at most
+/// `limit` bytes, sparing the drawing `keep`.
+fn evict(live: &[Entries], keep: u64, limit: usize) {
+    loop {
+        let mut total = 0;
+        let mut oldest: Option<(u64, usize, u64)> = None;
+        for (index, cache) in live.iter().enumerate() {
+            let Ok(entries) = cache.try_lock() else {
+                continue;
+            };
+            for cached in entries.iter() {
+                total += cached.bytes;
+                if cached.generation != keep && oldest.is_none_or(|(used, ..)| cached.used < used) {
+                    oldest = Some((cached.used, index, cached.generation));
+                }
+            }
+        }
+        let Some((_, index, generation)) = oldest.filter(|_| total > limit) else {
+            return;
+        };
+        let Ok(mut entries) = live[index].try_lock() else {
+            return;
+        };
+        entries.retain(|c| c.generation != generation);
+    }
+}
 impl Cache {
+    /// Forget `id`'s drawing, once its effects are gone or switched off.
+    fn forget(&self, id: crate::document::LayerId) {
+        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        entries.retain(|c| c.id != id);
+    }
     /// The effect layers of `layer`, drawn now unless cached. `stale`
     /// accepts a cached drawing that no longer matches (while painting).
     fn layers(
@@ -531,7 +607,7 @@ impl Cache {
         size: [usize; 2],
         stale: bool,
         cancel: &dyn Fn() -> bool,
-    ) -> Result<([Vec<Layer>; 3], bool), String> {
+    ) -> Result<([Vec<Layer>; 3], u64), String> {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let look = (
             layer.name.clone(),
@@ -547,10 +623,11 @@ impl Cache {
                 && c.size == size
         };
         if let Some(cached) = entries
-            .iter()
+            .iter_mut()
             .find(|c| c.id == layer.id && (fresh(c) || (stale && c.size == size)))
         {
-            return Ok((cached.layers.clone(), false));
+            cached.used = tick();
+            return Ok((cached.layers.clone(), cached.generation));
         }
         let mut budget = 0;
         let layers = draw(
@@ -564,11 +641,24 @@ impl Cache {
             &mut budget,
             &cancel,
         )?;
+        let generation = tick();
+        let bytes: usize = layers
+            .iter()
+            .flatten()
+            .map(|l| l.pixels.payload_bound())
+            .sum();
         entries.retain(|c| c.id != layer.id);
+        // A drawing larger than the whole budget is used once, not kept.
+        if bytes > RETAINED_LIMIT {
+            return Ok((layers, generation));
+        }
         if entries.len() >= CACHED_LAYERS {
             entries.remove(0);
         }
         entries.push(Cached {
+            generation,
+            bytes,
+            used: generation,
             id: layer.id,
             pixels: layer.pixels.clone(),
             mask: layer.mask.clone(),
@@ -577,7 +667,18 @@ impl Cache {
             size,
             layers: layers.clone(),
         });
-        Ok((layers, true))
+        drop(entries);
+        {
+            let mut caches = CACHES.lock().unwrap_or_else(|e| e.into_inner());
+            if !caches
+                .iter()
+                .any(|weak| weak.as_ptr() == std::sync::Arc::as_ptr(&self.0))
+            {
+                caches.push(std::sync::Arc::downgrade(&self.0));
+            }
+        }
+        enforce_budget(generation);
+        Ok((layers, generation))
     }
 }
 /// The document with each layer's enabled effects drawn as layers around
@@ -591,14 +692,14 @@ pub(crate) fn expand(
 ) -> Result<Document, String> {
     expand_tracked(doc, stale, cancel).map(|(doc, _)| doc)
 }
-/// `expand`, also telling whether any effect was drawn anew (rather than
-/// taken from the cache): then it may have changed anywhere it reaches.
+/// `expand`, also identifying the effect drawings it used: when that changes
+/// (whoever drew them), effects may have changed anywhere they reach.
 pub(crate) fn expand_tracked(
     doc: &Document,
     stale: bool,
     cancel: &dyn Fn() -> bool,
-) -> Result<(Document, bool), String> {
-    let mut drew = false;
+) -> Result<(Document, Vec<u64>), String> {
+    let mut drawings = Vec::new();
     let mut out = doc.clone();
     out.layers = Vec::with_capacity(doc.layers.len() * 2);
     // Effects drawn over a layer wait until the layers clipped to it end.
@@ -615,6 +716,7 @@ pub(crate) fn expand_tracked(
             .map(|e| e.effect.clone())
             .collect();
         let [below, inside, above] = if layer.folder || effects.is_empty() {
+            layer.effect_cache.forget(layer.id);
             Default::default()
         } else {
             let (layers, fresh) = layer.effect_cache.layers(
@@ -624,7 +726,7 @@ pub(crate) fn expand_tracked(
                 stale,
                 cancel,
             )?;
-            drew |= fresh;
+            drawings.push(fresh);
             layers
         };
         let depth = layer.depth;
@@ -646,7 +748,7 @@ pub(crate) fn expand_tracked(
         }
     }
     out.layers.append(&mut pending);
-    Ok((out, drew))
+    Ok((out, drawings))
 }
 
 /// Settings beyond these are rejected as damaged.
@@ -681,7 +783,14 @@ pub(crate) fn parse(data: &[u8], global_angle: f64) -> Result<Effects, String> {
                 continue;
             }
             if effect.class == "ebbl" {
-                match bevel(effect, global_angle, &mut effects.approximated) {
+                let pair = effects
+                    .list
+                    .iter()
+                    .filter(|e| matches!(e.kind, Kind::Bevel { .. }))
+                    .count() as u32
+                    / 2
+                    + 1;
+                match bevel(effect, global_angle, pair, &mut effects.approximated) {
                     Ok(halves) => effects.list.extend(halves),
                     Err(skipped) => effects.skipped.push(skipped),
                 }
@@ -816,6 +925,7 @@ fn read(
 fn bevel(
     effect: &Descriptor,
     global_angle: f64,
+    pair: u32,
     approximated: &mut Vec<String>,
 ) -> Result<Vec<Effect>, String> {
     let style = match effect.enumerated("bvlS") {
@@ -880,6 +990,7 @@ fn bevel(
                 soften: pixels("Sftn"),
                 light,
                 up: effect.enumerated("bvlD") != Some("Out "),
+                pair,
             },
             paint: Paint::Color(match effect.object(color) {
                 Some(color) => crate::psd_vector::color(color)?,
@@ -1436,6 +1547,7 @@ pub(crate) fn coverage(
             soften,
             light,
             up,
+            ..
         } => {
             let surface = Kind::Bevel {
                 highlight: false,
@@ -1446,6 +1558,7 @@ pub(crate) fn coverage(
                 soften,
                 light,
                 up,
+                pair: 0,
             };
             if alpha.lit.as_ref().is_none_or(|(kind, _)| *kind != surface) {
                 let lit = lit_surface(alpha, style, technique, depth, size, light, up, cancel)?;
@@ -1687,6 +1800,7 @@ mod tests {
                     // From straight above the top edge, 30 degrees up.
                     light: [0.0, -(30f64.to_radians().cos()), 30f64.to_radians().sin()],
                     up: true,
+                    pair: 0,
                 }),
                 &mut alpha,
                 &|| false,
@@ -1774,10 +1888,53 @@ mod tests {
     }
 
     #[test]
+    fn effect_drawings_share_one_budget_and_are_released() {
+        let overlay_doc = || doc_with(vec![overlay()]);
+        let (a, b) = (overlay_doc(), overlay_doc());
+        let (_, first) = expand_tracked(&a, false, &|| false).unwrap();
+        let (_, second) = expand_tracked(&b, false, &|| false).unwrap();
+        let held = |doc: &Document| doc.layers[0].effect_cache.0.lock().unwrap().len();
+        assert_eq!((held(&a), held(&b)), (1, 1));
+        let bytes = a.layers[0].effect_cache.0.lock().unwrap()[0].bytes;
+        assert!(bytes > 0);
+        // Over budget, the least recently used drawing goes first.
+        let live = [
+            a.layers[0].effect_cache.0.clone(),
+            b.layers[0].effect_cache.0.clone(),
+        ];
+        evict(&live, second[0], bytes);
+        assert_eq!((held(&a), held(&b)), (0, 1));
+        assert!(first != second);
+        // Switching effects off releases the drawing.
+        let mut b = b;
+        b.layers[0].effects[0].enabled = false;
+        expand(&b, false, &|| false).unwrap();
+        assert_eq!(held(&b), 0);
+    }
+
+    #[test]
+    fn displays_see_drawings_made_elsewhere() {
+        let mut doc = doc_with(vec![overlay()]);
+        let (_, shown) = expand_tracked(&doc, false, &|| false).unwrap();
+        let (_, again) = expand_tracked(&doc, false, &|| false).unwrap();
+        assert_eq!(shown, again);
+        // An export (or preview, or color pick) redraws after an edit; the
+        // canvas then gets the cached drawing but must still notice it is new.
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(2)
+            .copy_from_slice(&[255, 0, 0, 255]);
+        doc.composite_transparent();
+        let (_, now) = expand_tracked(&doc, false, &|| false).unwrap();
+        assert_ne!(now, shown);
+    }
+
+    #[test]
     fn effects_survive_saving_and_damaged_settings_are_rejected() {
         let mut shadow = Effect::preset("Drop Shadow").unwrap();
         shadow.blend = BlendMode::Screen;
-        let mut bevel = Effect::bevel_presets().map(LayerEffect::new).to_vec();
+        let mut bevel = Effect::bevel_presets(1).map(LayerEffect::new).to_vec();
         bevel[0].enabled = false;
         let mut effects = vec![LayerEffect::new(shadow), overlay()];
         effects.append(&mut bevel);
@@ -1787,8 +1944,16 @@ mod tests {
         let doc = doc_with(effects);
         let mut bytes = Vec::new();
         crate::tile_project::encode(&doc, &mut bytes).unwrap();
-        let loaded =
-            crate::tile_project::decode(&bytes[crate::tile_project::MAGIC.len()..]).unwrap();
+        // Saved under the header older builds refuse, so they cannot drop
+        // the styles on resave; the project loader reads it back.
+        assert!(bytes.starts_with(crate::tile_project::STYLE_MAGIC));
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        assert!(
+            crate::tile_project::decode(&bytes[crate::tile_project::MAGIC.len()..]).is_ok()
+                == (doc.version == 1)
+        );
         assert_eq!(loaded.layers[0].effects, doc.layers[0].effects);
         assert_eq!(loaded.composite_transparent(), doc.composite_transparent());
         // Out-of-range settings from a damaged file fail validation.
