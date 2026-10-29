@@ -62,6 +62,10 @@ brush packs validate and import with explicit compatibility errors.
 
 ## Milestone 5 — General plugin platform
 
+API 2 now provides brush/tool presets, guarded commands and declarative panels.
+Custom stroke engines, import/export hooks, arbitrary UI layouts, dependencies
+and plugin-specific settings remain beyond this first contribution API.
+
 - Versioned manifests and a documented WASM host ABI.
 - Explicit capabilities for filters, brushes, commands, panels and document access.
 - Fuel/memory/time limits, cancellation, isolated execution and transactional edits.

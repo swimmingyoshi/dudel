@@ -179,6 +179,111 @@ fn merged(a: ([u8; 4], u8), b: ([u8; 4], u8)) -> ([u8; 4], u8) {
     (pixel, total.min(255) as u8)
 }
 
+/// The selection's reflected partner and, when the two overlap, the selection
+/// split along the axis into the driving side and the side that follows it.
+struct Split {
+    partner: Mask,
+    divided: Option<(Mask, Mask)>,
+}
+fn split(
+    doc: &Document,
+    core: Coverage<'_>,
+    bounds: Selection,
+    mirror: Mirror,
+    cancel: Option<&AtomicBool>,
+) -> Result<Split, String> {
+    let reflection = mirror.matrix();
+    let partner_bounds = clip(reflected_bounds(rect_array(bounds), mirror), doc);
+    let mut partner = crate::selection_mask::Builder::new(doc.width, doc.height)?;
+    let mut overlaps = false;
+    for y in partner_bounds.top..partner_bounds.bottom {
+        crate::fill::check_cancel(cancel)?;
+        for x in partner_bounds.left..partner_bounds.right {
+            let value = coverage_at(core, doc, reflection.point(x as f64 + 0.5, y as f64 + 0.5));
+            if value > 0 {
+                if core.at(x, y) > 0 {
+                    overlaps = true;
+                }
+                partner.set(x, y, value);
+            }
+        }
+    }
+    let partner = partner.finish(cancel)?;
+    // An overlapping pair owns the union exactly once. Partition the overlap
+    // by pixel centers on the mirror line, keeping the side containing the selection's
+    // weighted centroid as the driver (negative side for a centered selection).
+    if !overlaps {
+        return Ok(Split {
+            partner,
+            divided: None,
+        });
+    }
+    let (sin, cos) = mirror.angle_degrees.to_radians().sin_cos();
+    let distance = |x: usize, y: usize| {
+        cos * (x as f64 + 0.5 - mirror.center[0]) + sin * (y as f64 + 0.5 - mirror.center[1])
+    };
+    let mut moment = 0.0;
+    for y in bounds.top..bounds.bottom {
+        crate::fill::check_cancel(cancel)?;
+        for x in bounds.left..bounds.right {
+            moment += distance(x, y) * f64::from(core.at(x, y));
+        }
+    }
+    let positive = moment > 1e-8;
+    let mut primary = crate::selection_mask::Builder::new(doc.width, doc.height)?;
+    let mut other = crate::selection_mask::Builder::new(doc.width, doc.height)?;
+    for y in bounds.top.min(partner_bounds.top)..bounds.bottom.max(partner_bounds.bottom) {
+        crate::fill::check_cancel(cancel)?;
+        for x in bounds.left.min(partner_bounds.left)..bounds.right.max(partner_bounds.right) {
+            let a = core.at(x, y);
+            let b = partner.at(x, y);
+            if a == 0 || b == 0 {
+                if a > 0 {
+                    primary.set(x, y, a);
+                }
+                if b > 0 {
+                    other.set(x, y, b);
+                }
+                continue;
+            }
+            let value = a.max(b);
+            if value == 0 {
+                continue;
+            }
+            if (distance(x, y) > 1e-8) == positive {
+                primary.set(x, y, value);
+            } else {
+                other.set(x, y, value);
+            }
+        }
+    }
+    Ok(Split {
+        partner,
+        divided: Some((primary.finish(cancel)?, other.finish(cancel)?)),
+    })
+}
+fn selection_coverage(doc: &Document) -> Coverage<'_> {
+    doc.selection_mask
+        .as_ref()
+        .map_or(Coverage::Rectangle(Settings::bounds(doc)), Coverage::Mask)
+}
+/// The transform box for a selection that crosses the mirror axis: the bounds
+/// of the half that drives the pair. None when the selection stays on one side.
+pub(crate) fn driver_frame(
+    doc: &Document,
+    mirror: Mirror,
+    cancel: Option<&AtomicBool>,
+) -> Result<Option<Selection>, String> {
+    mirror.validate()?;
+    let core = selection_coverage(doc);
+    let Some(bounds) = core.bounds() else {
+        return Ok(None);
+    };
+    Ok(split(doc, core, bounds, mirror, cancel)?
+        .divided
+        .and_then(|(primary, _)| primary.bounds()))
+}
+
 pub(crate) fn apply_pair(
     doc: &mut Document,
     mapping: Mapping,
@@ -201,33 +306,31 @@ pub(crate) fn apply_pair(
     if let Mapping::Affine(matrix) = mapping {
         matrix.validate()?;
     }
-    let frame = Settings::bounds(doc);
-    let core = doc
-        .selection_mask
-        .as_ref()
-        .map_or(Coverage::Rectangle(frame), Coverage::Mask);
+    let core = selection_coverage(doc);
     let Some(bounds) = core.bounds() else {
         return Ok(false);
     };
     if mapping.is_identity() {
         return Ok(false);
     }
-    let reflection = mirror.matrix();
-    let partner_bounds = clip(reflected_bounds(rect_array(bounds), mirror), doc);
-    let mut partner = crate::selection_mask::Builder::new(doc.width, doc.height)?;
-    for y in partner_bounds.top..partner_bounds.bottom {
-        crate::fill::check_cancel(cancel)?;
-        for x in partner_bounds.left..partner_bounds.right {
-            let value = coverage_at(core, doc, reflection.point(x as f64 + 0.5, y as f64 + 0.5));
-            if value > 0 {
-                if core.at(x, y) > 0 {
-                    return Err("Select only one side of the mirror axis; its partner is included automatically".into());
-                }
-                partner.set(x, y, value);
-            }
-        }
+    // A mesh is laid over the box it was built on, which for a crossing
+    // selection is the driving half rather than the whole selection.
+    let frame = match mapping {
+        Mapping::Mesh { bounds, .. } => bounds,
+        _ => Settings::bounds(doc),
+    };
+    let Split {
+        mut partner,
+        divided,
+    } = split(doc, core, bounds, mirror, cancel)?;
+    let mut primary_doc = doc.clone();
+    if let Some((primary, other)) = divided {
+        primary_doc.selection = primary.bounds();
+        primary_doc.selection_mask = Some(primary);
+        partner = other;
     }
-    let partner = partner.finish(cancel)?;
+    let partner_bounds = clip(reflected_bounds(rect_array(bounds), mirror), doc);
+    let core = selection_coverage(&primary_doc);
     let mut partner_doc = doc.clone();
     partner_doc.selection = partner.bounds();
     partner_doc.selection_mask = Some(partner.clone());
@@ -285,7 +388,7 @@ pub(crate) fn apply_pair(
             crate::fill::check_cancel(cancel)?;
             for x in rect.left..rect.right {
                 let first = if primary_rect.contains(x, y) {
-                    read(doc, core, inverse.source(x, y))
+                    read(&primary_doc, core, inverse.source(x, y))
                 } else {
                     ([0; 4], 0)
                 };
@@ -357,6 +460,139 @@ pub(crate) fn apply_pair(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn crossing_selection_splits_at_vertical_horizontal_and_diagonal_axes() {
+        for angle in [0., 90., 45.] {
+            let mut doc = Document::new(8, 8);
+            doc.selection = Some(Selection {
+                left: 2,
+                top: 2,
+                right: 6,
+                bottom: 6,
+            });
+            let axis = Mirror {
+                center: [4., 4.],
+                angle_degrees: angle,
+            };
+            let (sin, cos) = angle.to_radians().sin_cos();
+            let mut expected = vec![[0; 4]; 64];
+            // Move along a lattice vector normal to the axis, away from the seam.
+            let delta = if angle == 0. {
+                [-1., 0.]
+            } else if angle == 90. {
+                [0., -1.]
+            } else {
+                [-1., -1.]
+            };
+            for y in 2..6 {
+                for x in 2..6 {
+                    let primary = cos * (x as f64 + 0.5 - 4.) + sin * (y as f64 + 0.5 - 4.) <= 1e-8;
+                    let pixel = if primary {
+                        [255, 0, 0, 255]
+                    } else {
+                        [0, 0, 255, 255]
+                    };
+                    doc.layers[0]
+                        .pixels
+                        .writer()
+                        .rgba_mut(y * 8 + x)
+                        .copy_from_slice(&pixel);
+                    let sign = if primary { 1. } else { -1. };
+                    let dx = (x as f64 + sign * delta[0]) as usize;
+                    let dy = (y as f64 + sign * delta[1]) as usize;
+                    expected[dy * 8 + dx] = pixel;
+                }
+            }
+            apply_settings(
+                &mut doc,
+                Settings {
+                    mirror: Some(axis),
+                    translation: delta,
+                    sampling: Sampling::Nearest,
+                    ..Default::default()
+                },
+                Target::Raster,
+                None,
+            )
+            .unwrap();
+            for (i, pixel) in expected.iter().enumerate() {
+                assert_eq!(
+                    doc.layers[0].pixels.rgba(i),
+                    *pixel,
+                    "axis {angle}, pixel {i}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn crossing_selection_frames_its_driving_half_and_meshes_use_that_frame() {
+        let mut doc = Document::new(32, 16);
+        doc.layers[0].pixels = (0..32 * 16)
+            .flat_map(|i| [(i * 13 % 251) as u8, (i * 7 % 253) as u8, 83, 255])
+            .collect::<Vec<_>>()
+            .into();
+        doc.selection = Some(Selection {
+            left: 10,
+            top: 4,
+            right: 22,
+            bottom: 12,
+        });
+        let axis = Mirror {
+            center: [16., 8.],
+            angle_degrees: 0.,
+        };
+        // A centered selection is driven by its negative (left) half.
+        let half = Selection {
+            left: 10,
+            top: 4,
+            right: 16,
+            bottom: 12,
+        };
+        assert_eq!(driver_frame(&doc, axis, None).unwrap(), Some(half));
+        let mut one_side = doc.clone();
+        one_side.selection = Some(Selection {
+            left: 2,
+            top: 4,
+            right: 8,
+            bottom: 12,
+        });
+        assert_eq!(driver_frame(&one_side, axis, None).unwrap(), None);
+
+        let moved = Settings {
+            mirror: Some(axis),
+            pair_frame: Some(half),
+            translation: [-3., 1.],
+            sampling: Sampling::Nearest,
+            ..Default::default()
+        };
+        let run = |settings: Settings| {
+            let mut result = doc.clone();
+            apply_settings(&mut result, settings, Target::Raster, None).unwrap();
+            (0..32 * 16)
+                .map(|i| result.layers[0].pixels.rgba(i))
+                .collect::<Vec<_>>()
+        };
+        let fitted = run(moved);
+        // A move does not depend on the box it is measured from.
+        assert_eq!(
+            fitted,
+            run(Settings {
+                pair_frame: None,
+                ..moved
+            })
+        );
+        // A mesh laid over the fitted half lands exactly where the move does.
+        let mesh = moved.mesh(&doc, 3, 3).unwrap();
+        assert_eq!(
+            fitted,
+            run(Settings {
+                warp: Some(Warp::Mesh(mesh)),
+                translation: [0.; 2],
+                ..moved
+            })
+        );
+        assert_ne!(fitted, run(Settings::default()));
+    }
     fn fixture() -> Document {
         let mut doc = Document::new(64, 32);
         doc.layers[0].pixels = (0..64 * 32)
@@ -594,7 +830,7 @@ mod tests {
             assert_ne!(doc.layers[0].pixels, before.layers[0].pixels);
         }
         let original = fixture();
-        for case in 0..4 {
+        for case in [0, 2, 3] {
             let mut doc = original.clone();
             let mut settings = Settings {
                 mirror: Some(mirror()),
@@ -604,9 +840,6 @@ mod tests {
             if case == 0 {
                 doc.selection = None;
                 doc.selection_mask = None;
-            }
-            if case == 1 {
-                settings.mirror.as_mut().unwrap().center[0] = 11.;
             }
             if case == 2 {
                 settings.mirror.as_mut().unwrap().angle_degrees = f64::NAN;

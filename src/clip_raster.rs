@@ -51,7 +51,12 @@ pub(crate) fn decode(
     cancelled: &impl Fn() -> bool,
 ) -> Result<Pixels, String> {
     let [width, height] = placement.canvas;
-    if width == 0 || height == 0 || width > 4096 || height > 4096 || width * height > 4_194_304 {
+    if width == 0
+        || height == 0
+        || width > 4096
+        || height > 4096
+        || width * height > crate::document::MAX_PIXELS
+    {
         return Err("Clip raster canvas exceeds Dudel limits".into());
     }
     if !attributes.transparent_default() {
@@ -222,7 +227,7 @@ mod tests {
         );
         assert!(run(&data, &attrs, [3, 2], [i64::MAX, 0], [1, 0]).is_err());
         assert!(run(&data, &attrs, [3, 2], [i64::MAX, 0], [0, 0]).is_err());
-        assert!(run(&data, &attrs, [4096, 4096], [0, 0], [0, 0]).is_err());
+        assert!(run(&data, &attrs, [4097, 4096], [0, 0], [0, 0]).is_err());
     }
     #[test]
     fn grid_stride_uses_bitmap_geometry_when_canvas_is_a_single_pixel() {

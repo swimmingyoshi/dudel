@@ -87,9 +87,11 @@ fn save_project_controlled(
     if path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("clip"))
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("clip") || extension.eq_ignore_ascii_case("psd")
+        })
     {
-        return Err("Choose a .dudel filename; Dudel cannot save over a CSP .clip source".into());
+        return Err("Choose a .dudel filename; Dudel cannot save over a CSP/PSD source".into());
     }
     // Also protect a CSP file renamed/linked to a different extension.
     match std::fs::File::open(path) {
@@ -105,6 +107,12 @@ fn save_project_controlled(
                 Ok(()) if &magic == b"CSFCHUNK" => {
                     return Err(
                         "Choose a new .dudel file; this destination contains CSP artwork".into(),
+                    );
+                }
+                Ok(()) if &magic[..4] == b"8BPS" => {
+                    return Err(
+                        "Choose a new .dudel file; this destination contains Photoshop artwork"
+                            .into(),
                     );
                 }
                 Ok(()) => {}

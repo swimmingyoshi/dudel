@@ -60,8 +60,9 @@ impl Dudel {
         let (mut create, mut cancel) = (false, false);
         let mut changed_option = false;
         let response = egui::Modal::new(egui::Id::new("new canvas form")).show(ctx, |ui| {
-            ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, 380.0));
+            ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, 440.0));
             ui.heading("New canvas");
+            ui.label("Choose a starting size, then make it yours.");
             egui::ScrollArea::vertical()
                 .id_salt("new canvas fields")
                 .max_height((ctx.content_rect().height() - 144.0).max(80.0))
@@ -70,6 +71,10 @@ impl Dudel {
                         for (label, width, height) in [
                             ("Sketch", 1024, 1024),
                             ("Square", 2048, 2048),
+                            ("Portrait", 1600, 2000),
+                            ("Landscape", 2000, 1600),
+                            ("Full HD", 1920, 1080),
+                            ("A4 · 300 dpi", 2480, 3508),
                             ("4K", 3840, 2160),
                         ] {
                             let selected = self.new_canvas_form.dimensions() == Ok([width, height]);
@@ -116,6 +121,17 @@ impl Dudel {
                         });
                     }
                     if let Ok([width, height]) = self.new_canvas_form.dimensions() {
+                        let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 148.0), egui::Sense::hover());
+                        let scale = ((area.width() - 84.0) / width as f32).min(106.0 / height as f32);
+                        let canvas = egui::Rect::from_center_size(area.center() - egui::vec2(0.0, 8.0), egui::vec2(width as f32, height as f32) * scale);
+                        let painter = ui.painter();
+                        painter.rect_filled(area, 8.0, ui.visuals().faint_bg_color);
+                        painter.rect_filled(canvas.translate(egui::vec2(3.0, 3.0)), 2.0, egui::Color32::from_black_alpha(45));
+                        painter.rect_filled(canvas, 2.0, egui::Color32::WHITE);
+                        painter.rect_stroke(canvas, 2.0, egui::Stroke::new(1.0_f32, ui.visuals().selection.stroke.color), egui::StrokeKind::Outside);
+                        painter.text(egui::pos2(canvas.center().x, canvas.bottom() + 10.0), egui::Align2::CENTER_TOP, format!("{width} px"), egui::FontId::proportional(12.0), ui.visuals().text_color());
+                        painter.text(egui::pos2(canvas.right() + 8.0, canvas.center().y), egui::Align2::LEFT_CENTER, format!("{height}\npx"), egui::FontId::proportional(12.0), ui.visuals().text_color());
+                        ui.add_space(4.0);
                         ui.small(format!("{:.1} MP · {:.0} MiB per fully painted layer", width as f64 * height as f64 / 1_000_000.0, (width * height * 4) as f64 / (1024.0 * 1024.0)))
                             .on_hover_text("Empty areas use sparse storage. Undo, masks, display textures and timelapse use additional memory.");
                     }

@@ -103,8 +103,11 @@ Both features must be on the active layer (or active mask).
 
 The axis starts from the active layer's symmetry guide, or the canvas center
 when no guide is configured. **Mirror axis** adjusts its center and tilt;
-**Use symmetry guide** copies the guide again. Select only one side of the
-axis—the opposite selection is included automatically. Apply commits both
+**Use symmetry guide** copies the guide again. Select one side of the
+axis—the opposite selection is included automatically. A selection that
+crosses the axis, such as a circle in the middle, splits along it; the box fits
+the driving half. Hold **Ctrl** while moving to snap that half back onto the
+axis so both halves meet again. Apply commits both
 sides as one undo step, and Escape restores both. The driving selection remains
 selected afterward. Turn **Mirror pair** off for an ordinary one-sided edit.
 

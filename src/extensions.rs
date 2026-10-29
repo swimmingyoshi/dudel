@@ -25,16 +25,23 @@ pub struct Package {
     pub source: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wasm: Vec<u8>,
+    #[serde(default)]
+    pub contributes: crate::extension_api::Contributions,
 }
 impl Package {
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(
-            self.format.as_str(),
-            "dudel-rhai-extension" | "dudel-wasm-extension"
-        ) || self.version != 1
-            || self.api != 1
+        let modern = self.format == "dudel-extension" && self.version == 2 && self.api == 2;
+        if !modern
+            && (!matches!(
+                self.format.as_str(),
+                "dudel-rhai-extension" | "dudel-wasm-extension"
+            ) || self.version != 1
+                || self.api != 1)
         {
-            return Err("Incompatible extension format or API (supported: 1)".into());
+            return Err(
+                "Incompatible extension format/API (supported: legacy filters 1, contributions 2)"
+                    .into(),
+            );
         }
         if self.id.is_empty()
             || self.id.len() > 80
@@ -54,6 +61,15 @@ impl Package {
             if value.trim().is_empty() || value.len() > max || value.chars().any(char::is_control) {
                 return Err("Invalid extension metadata".into());
             }
+        }
+        if modern {
+            if !self.source.is_empty() || !self.wasm.is_empty() {
+                return Err("API 2 programs belong in contributed commands".into());
+            }
+            return self.contributes.validate(&self.capabilities);
+        }
+        if !self.contributes.commands.is_empty() || !self.contributes.panels.is_empty() {
+            return Err("Contributions require API 2".into());
         }
         if self.capabilities != ["pixels.filter"] {
             return Err("Only the pixels.filter capability is supported".into());
@@ -201,9 +217,9 @@ impl Dudel {
     }
     pub(crate) fn extension_manager_ui(&mut self, ctx: &eframe::egui::Context) {
         let mut open = self.extension_manager;
-        eframe::egui::Window::new("Extensions").open(&mut open).default_width(440.0).default_height(320.0).vscroll(true).show(ctx, |ui| {
-            ui.label("Installed filter extensions");
-            ui.label("Apply filters to the active layer and selection. You can cancel a running filter or undo its completed result.");
+        eframe::egui::Window::new("Extensions").open(&mut open).default_width(480.0).default_height(480.0).vscroll(true).show(ctx, |ui| {
+            ui.heading("Your extensions");
+            ui.label("Brushes, tool presets, commands, panels and filters. Enabled extensions contribute tools to the rail; their panels open here or from the Filter menu.");
             ui.horizontal(|ui| { if ui.button("Install…").clicked() { self.install_extension(); }
 if ui.button("Refresh").clicked() { self.load_extensions(); } });
             if self.extensions.is_empty() { ui.label("No installed extensions. Install a .dudelplugin package."); }
@@ -211,17 +227,20 @@ if ui.button("Refresh").clicked() { self.load_extensions(); } });
             let mut uninstall = None;
             for index in 0..self.extensions.len() {
                 ui.separator();
+                let package_id = self.extensions[index].package.id.clone();
+                ui.push_id(&package_id, |ui| {
                 let extension = &self.extensions[index];
                 ui.strong(&extension.package.name);
                 ui.label(format!("{} · {}", extension.package.release, extension.package.author));
                 ui.label(&extension.package.description);
+                ui.weak(format!("API {} · {}", extension.package.api, extension.package.capabilities.join(" · ")));
                 let mut enabled = extension.enabled;
                 ui.horizontal_wrapped(|ui| {
                     if ui.checkbox(&mut enabled, "Enabled").changed() {
                         let mut updated = self.extensions[index].clone(); updated.enabled = enabled;
                         match directory().and_then(|root| save(&root, &updated)) { Ok(()) => self.extensions[index] = updated, Err(error) => self.status = error }
                     }
-                    if ui.add_enabled(enabled && self.filter_job.is_none(), eframe::egui::Button::new("Run filter")).clicked() { run = Some(self.extensions[index].package.program()); }
+                    if self.extensions[index].package.api == 1 && ui.add_enabled(enabled && self.filter_job.is_none(), eframe::egui::Button::new("Run filter")).clicked() { run = Some(self.extensions[index].package.program()); }
                     if ui.button("Export package...").clicked() {
                         let package = self.extensions[index].package.clone();
                         let dialog = rfd::AsyncFileDialog::new().add_filter("Dudel extension", &["dudelplugin"]).set_file_name(format!("{}-{}.dudelplugin", package.id, package.release));
@@ -231,6 +250,8 @@ if ui.button("Refresh").clicked() { self.load_extensions(); } });
                         });
                     }
                     if ui.button("Uninstall…").clicked() { uninstall = Some(index); }
+                });
+                self.extension_contributions_ui(ui, Some(&package_id));
                 });
             }
             if let Some(program) = run { self.start_filter(program); }
@@ -314,6 +335,7 @@ mod tests {
             capabilities: vec!["pixels.filter".into()],
             source: include_str!("../plugins/invert.rhai").into(),
             wasm: vec![],
+            contributes: Default::default(),
         }
     }
     #[test]

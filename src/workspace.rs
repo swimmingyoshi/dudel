@@ -421,6 +421,9 @@ impl Dudel {
                 if menu_item(ui, "CSP raster canvas…", "", true) {
                     self.import_clip();
                 }
+                if menu_item(ui, "Photoshop document (.psd)…", "", true) {
+                    self.import_psd();
+                }
                 if menu_item(ui, "Images as layers…", "", self.doc.has_room(1, 1)) {
                     self.import_png_layer();
                 }
@@ -705,6 +708,8 @@ impl Dudel {
                 self.extension_manager = true;
                 ui.close();
             }
+            ui.separator();
+            self.extension_contributions_ui(ui, None);
         });
         let view_menu = bounded_menu(ui, "View", |ui| {
             ui.menu_button("Theme", |ui| self.theme_menu(ui));
@@ -726,47 +731,10 @@ impl Dudel {
                     self.preview_menu(ui);
                 },
             );
-            ui.menu_button("Settings", |ui| {
-                ui.checkbox(&mut self.performance.open, "Performance");
-                if ui
-                    .button("Display…")
-                    .on_hover_text("Graphics API and low-latency drawing")
-                    .clicked()
-                {
-                    self.display_window = true;
-                    ui.close();
-                }
-                if ui
-                    .button("Storage & folders…")
-                    .on_hover_text("Where projects, exports, packages, themes and brushes go")
-                    .clicked()
-                {
-                    self.storage_window = true;
-                    ui.close();
-                }
-                #[cfg(windows)]
-                ui.menu_button("File Explorer previews", |ui| {
-                    for (enable, label, hover) in [
-                        (true, "Show .dudel previews", "Thumbnails of your artwork in File Explorer, like CSP files. Run again if you move Dudel's folder."),
-                        (false, "Remove .dudel previews", "Back to plain file icons"),
-                    ] {
-                        if ui.button(label).on_hover_text(hover).clicked() {
-                            self.status = crate::file_preview::set_explorer_thumbnails(enable)
-                                .unwrap_or_else(|error| format!("File Explorer previews: {error}"));
-                            ui.close();
-                        }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Tab limit");
-                    let open = self.tabs.len().max(1);
-                    ui.add(
-                        egui::DragValue::new(&mut self.tabs.max)
-                            .range(open..=crate::tabs::LIMIT),
-                    )
-                    .on_hover_text("Most projects open at once. Parked projects use memory but no processing time.");
-                });
-            });
+            if ui.button("Settings?").clicked() {
+                self.settings_open = true;
+                ui.close();
+            }
             ui.checkbox(&mut self.show_panels, "Show all panels · Tab");
             if menu_item(ui, "Automatic panel layout", "", true) {
                 self.tool_panel_override = None;
@@ -1145,6 +1113,9 @@ impl Dudel {
                         self.opacity_slider(ui);
                     }
                 }
+                Tool::Select => {
+                    self.selection_transform_ui(ui);
+                }
                 tool => {
                     ui.label(egui::RichText::new(tool.target_hint(!self.input_stroke_target().is_raster())).weak());
                 }
@@ -1215,6 +1186,7 @@ impl Dudel {
                     ui.add_space(2.0);
                     ui.separator();
                     ui.add_space(2.0);
+                    self.extension_tools_ui(ui, side);
                     self.paint_color_chips(ui, side);
                 })
             });
@@ -2035,6 +2007,9 @@ impl Dudel {
         self.shortcuts_ui(ctx);
         self.about_ui(ctx);
         self.extension_manager_ui(ctx);
+        self.import_report_ui(ctx);
+        self.extension_panels_ui(ctx);
+        self.settings_ui(ctx);
         self.references_ui(ctx);
         let mut input_settings = self.input_settings;
         egui::Window::new("Tablet input")

@@ -1,5 +1,7 @@
 # Rhai extension API 1
 
+For brush/tool contributions, commands and panels, see [Extension API 2](API_2.md).
+
 Open Filter → Manage extensions → Install and choose
 `example-invert.dudelplugin`. Enable it and select Run filter to apply it to the
 active layer. Undo reverses the committed result once. An active rectangle
@@ -32,4 +34,4 @@ existing ID. Disabling prevents new manager runs; it does not cancel a worker
 already running. Uninstall cancels pending filter work. Maximum 64 installed filters.
 
 Raw `.rhai` files remain supported by Filter → Run filter extension. This API
-covers Rhai pixel filters. WASM pixel packages use the parallel contract in WASM_SDK.md; brush plugins and UI contributions remain pending.
+covers Rhai pixel filters. WASM pixel packages use the parallel contract in WASM_SDK.md; brush/tool presets and UI contributions use API_2.md.

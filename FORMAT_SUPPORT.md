@@ -7,11 +7,11 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | --- | --- | --- | --- |
 | Dudel `.dudel` | Yes, including supported older native readers | Yes | Editable layers, folders, masks and document state supported by this build |
 | PNG | Image import | Flattened opaque or transparent export | Pixels; no editable layer hierarchy |
-| Clip Studio Paint `.clip` | Restricted raster subset below | No | Only features accepted by strict preflight |
+| Clip Studio Paint `.clip` | Editable raster subset; optional saved-preview fallback | No | Supported layers, folders, clipping, standard blends and locks |
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | No | No | Not supported |
+| Photoshop `.psd` | RGB 8/16-bit PSD v1 | No | Supported 8-bit layers/groups/masks; saved composite for other features |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -19,50 +19,80 @@ a mask-aware Dudel build; do not assume an older executable can read a newer fil
 The supported document envelope is 1-4096 pixels per side, at most 16,777,216 pixels
 in total (a full 4096 x 4096), 32 raster layers, 64 total layer/folder entries and folder
 depth six. Mask-aware projects have a combined 512 MiB raster-and-layer-mask payload budget.
-These limits also apply to PNG and clipboard imports. Restricted CSP import keeps its
-tested 4,194,304-pixel limit. Builds before 2026-10-22 accept at most 4,194,304 pixels and
-cannot open larger projects.
+These limits also apply to PNG, CSP and PSD document imports. Builds before
+2026-10-22 accept at most 4,194,304 pixels and cannot open larger native projects.
 
 ## Clip Studio Paint import
 
-Choose the CSP raster import action. A successful import opens an **unsaved copy**;
-save it as a new `.dudel` project. Dudel does not write `.clip` files and protects
-CSP sources from being overwritten by native saves.
+Open or drop a `.clip`, or choose File > Import > CSP raster canvas. Successful
+imports create an **unsaved copy**. Save as `.dudel`; native saving protects CSP
+and PSD source files, including renamed files recognized by their signatures.
 
-The reader accepts only the observed static, pixel-unit raster representation:
-resolved supported raster tiles, Normal blending, visibility, layer opacity,
-names and positions, with supported plain paper metadata where present. Acceptance
-depends on the file's complete metadata and tile layout, not just its visible image.
-There is no general promise of compatibility with a CSP version.
-
-| Source feature | Current import behavior |
+| Source feature | Current behavior |
 | --- | --- |
-| Supported raster channels, partial alpha and offsets | Converted into editable raster layers |
-| Ordinary folders, nested folders or clipping layers | Rejected pending controlled CSP rendering comparisons |
-| Non-Normal blending, layer masks, lock or palette metadata | Rejected |
-| Text, vector, material, gradient or effect payloads | Rejected |
-| Animation/timelines | Rejected |
-| Source profiles, proofing or color adjustments | Rejected; no color-managed print fidelity claim |
-| Unsupported rulers/guides/light-table metadata | Rejected |
-| Missing raster references, damaged blocks or out-of-limit documents | Rejected; missing content is not assumed blank |
+| Supported 8-bit RGBA tiles, partial alpha, names and offsets | Editable raster layers |
+| Ordinary folders, nested folders, clipping | Native hierarchy/compositor |
+| Standard blend modes, edit/alpha locks, opacity, visibility | Mapped to native properties |
+| Plain paper | Rasterized color layer |
+| Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
+| Masks, palette colors, glow/pass-through blends, vector/text/material/effect payloads | Layered conversion rejected |
+| Animation/timelines | Layered conversion rejected |
+| Profiles, proofing and color adjustments | Layered conversion rejected |
+| Unknown channel layouts, damaged references or excessive layer counts | Layered conversion rejected |
 
-Unsupported content produces an error identifying the category or source field.
-A failed, canceled or stale background import preserves the current document.
-For unsupported artwork, export a flattened PNG from CSP and import that PNG;
-retain the original `.clip` for editing in CSP.
+Folders without a mask no longer fail solely because of their folder masking
+flag. Standard blend identifiers and edit/alpha-lock flags are mapped using the
+observed file representation and the independent
+[clip_to_psd reader](https://github.com/dobrokot/clip_to_psd). Group and blend
+rendering uses Dudel's compositor; this is not a promise of CSP rendering parity.
 
-Developer read-only comparison tools can study additional features with explicit
-omissions. Their results do not make those features eligible for editor import.
+If layered import fails, **CSP import options** offers **Open saved preview**.
+This explicitly imports one flattened saved image at its actual pixel dimensions;
+it never silently upscales it to claim original resolution. Many CSP previews
+are only 1000 ? 1000 even for larger canvases. Animation previews represent one
+saved frame. To retain full resolution when layered conversion is unavailable,
+export PNG from CSP and keep the original `.clip` for editing.
+
+## Photoshop import
+
+Open/drop `.psd` or use File > Import > Photoshop document. The bounded reader
+implements PSD v1 RGB, raw/PackBits/ZIP, and 8-bit ZIP prediction. Supported 8-bit
+raster layers retain offsets, alpha, opacity, visibility, clipping, common blends,
+locks, ordinary isolated groups, and simple raster masks. Plain RGB solid fills
+become raster layers. Pass-through groups, complex masks, effects, smart objects,
+text and other unsupported descriptors use the saved composite with an explicit
+Import details report. They are not silently approximated as editable layers.
+
+16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
+alpha channels are not mistaken for transparency; merged transparency uses the
+PSD layer-count marker. Embedded profiles are reported but not converted.
+PSB, non-RGB modes, 32-bit channels and 16-bit ZIP prediction are unsupported.
+Files are capped at 512 MiB and decoded layer payload is bounded. A PSD without
+a usable compatibility composite cannot fall back when layer conversion fails;
+save it with Maximize Compatibility enabled in the source editor.
+
+The reader follows [Adobe's PSD specification](https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/).
+Neither format has an export writer. Failed, canceled and stale background loads
+preserve current artwork.
 
 ## Verification scope
 
-The current source has generated container, tile, preflight and background-load
-regressions. The latest focused audit passed 42 format tests and five load-job tests;
-`benchmarks/format-support-audit.json` identifies the test executable and logs.
-These tests establish the checked conversions and rejections, not independent CSP
-rendering parity. Controlled matching CSP/PNG fixtures for folders and clipping
-remain follow-up work before those currently rejected features can be supported.
-The bounded first-release decision is recorded in `RELEASE_DECISION.md`.
+Regression tests cover container/tile validation, PSD raw/RLE/ZIP decoding,
+layer offsets/order/alpha/masks, truncated streams, cancellation, source protection
+and background publication. `--verify-import INPUT [NEW_REPORT.json]` exercises
+the same editable import path without opening the editor;
+`--verify-clip-preview INPUT [NEW_REPORT.json]` validates the explicit preview path.
+Reports include dimensions, layer counts, notes and per-layer pixel hashes.
+For PSD input the report also compares Dudel's rendering of the import with the
+file's saved composite (`saved_composite`: exact, differing and mean difference).
+A PSD converted from a 2000 × 2000 CSP sample with two folders and Subtract
+layers imported with all 15 entries; 89% of pixels matched exactly, with a mean
+channel difference of 1.2, and the differences lie along anti-aliased line art.
+
+A local 30-file CSP corpus was checked during this change: 9 layered imports
+succeeded and all 30 saved previews decoded. Source hashes stayed unchanged.
+These private samples are not distributed. Unknown formats and full application
+rendering parity remain outside this verification claim.
 
 ## Image layers and reference boards
 

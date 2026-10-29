@@ -1,9 +1,10 @@
 # Developing and sharing Dudel plugins
 
-Plugins use versioned API 1 packages (`.dudelplugin`, JSON) and run in the
-existing extension host. Install, enable, disable, run and uninstall them from
-Filter > Manage extensions. Execution runs in a background job, respects the
-active layer and selection/mask, commits atomically and supports undo/cancel.
+Plugins use versioned `.dudelplugin` JSON packages. API 1 covers filters;
+[API 2](plugins/API_2.md) adds brushes, native tool presets, commands and panels.
+Install, enable, disable, run and uninstall them from Filter > Manage extensions.
+Filter execution runs in a background job, respects the active layer and
+selection/mask, commits atomically and supports undo/cancel.
 Installed packages persist in Dudel's per-user data directory.
 
 ## Make a plugin
@@ -11,8 +12,10 @@ Installed packages persist in Dudel's per-user data directory.
 Copy `plugins/sdk/warm-paper` to a new folder. Change the manifest's ID, name,
 author, release and description, then edit `filter.rhai`. IDs contain lowercase
 letters, digits and hyphens. Keep an ID stable when publishing an update.
-API and package version must both be 1. Only `pixels.filter` is currently
-supported; arbitrary UI panels, tools and document access are not plugin APIs.
+For this filter-only example, API and package version are 1. To contribute
+brushes, tools or panels, start with `plugins/sdk/studio-kit`, use version/API 2,
+and follow its [contribution contract](plugins/API_2.md). Arbitrary document
+scripting and native pointer-event tool implementations remain future work.
 
 ```powershell
 cargo build --locked

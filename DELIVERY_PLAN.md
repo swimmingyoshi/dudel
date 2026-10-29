@@ -1,6 +1,7 @@
 ﻿# Dudel completion and release plan
 
-Updated 2026-10-28. This is the execution-plan history.
+Updated 2026-10-28. This is the execution-plan history. Post-0.1.0 work is
+tracked in [UPGRADE_PLAN.md](UPGRADE_PLAN.md).
 [The current assessment](research/PROJECT_ASSESSMENT_2026-10-17.md)
 records source findings. [The previous delivery history](research/DELIVERY_HISTORY_2026-10-17.md)
 is preserved verbatim; its next steps and verification totals are historical.

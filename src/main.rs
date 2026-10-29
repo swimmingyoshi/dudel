@@ -46,6 +46,7 @@ mod document_actions;
 mod document_edits;
 mod dynamics;
 mod export_jobs;
+mod extension_api;
 mod extensions;
 mod file_preview;
 mod fill;
@@ -56,6 +57,7 @@ mod guides;
 mod history_pixels;
 mod icons;
 mod image_paste;
+mod import_report;
 mod indexed_commit;
 mod indexed_document;
 mod indexed_mask;
@@ -94,6 +96,7 @@ mod move_preview;
 mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
+mod psd_import;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
 mod native_session;
@@ -131,6 +134,7 @@ mod selection_contour;
 mod selection_mask;
 mod selection_ui;
 mod settings_store;
+mod settings_ui;
 mod snapshot_memory;
 mod storage;
 mod stroke;
@@ -295,6 +299,8 @@ struct Dudel {
     /// Ruler kind the next Pointer drag creates.
     ruler_create: Option<rulers::Kind>,
     display_window: bool,
+    settings_open: bool,
+    settings_section: usize,
     /// Library folder and per-kind file locations for dialogs.
     locations: locations::Locations,
     storage_window: bool,
@@ -371,6 +377,8 @@ struct Dudel {
     extensions: Vec<extensions::Installed>,
     extension_errors: Vec<String>,
     extension_manager: bool,
+    import_notes: Vec<String>,
+    extension_panels: std::collections::BTreeSet<String>,
     references: references::References,
     /// Images placed on the canvas to draw from; saved with the project.
     reference_layers: reference_layers::State,
@@ -510,6 +518,8 @@ impl Default for Dudel {
             ruler_drag: None,
             ruler_create: None,
             display_window: false,
+            settings_open: false,
+            settings_section: 0,
             locations: Default::default(),
             storage_window: false,
             preview: Default::default(),
@@ -576,6 +586,8 @@ impl Default for Dudel {
             extensions: vec![],
             extension_errors: vec![],
             extension_manager: false,
+            import_notes: Vec::new(),
+            extension_panels: Default::default(),
             references: references::References::default(),
             reference_layers: Default::default(),
             show_transparency: false,
@@ -695,7 +707,8 @@ impl Dudel {
             locations::Kind::Projects,
             rfd::AsyncFileDialog::new()
                 .add_filter("Dudel project", &["dudel"])
-                .add_filter("CSP raster canvas", &["clip"]),
+                .add_filter("CSP raster canvas", &["clip"])
+                .add_filter("Photoshop document", &["psd"]),
         );
         if self.experimental_indexed_storage {
             dialog = dialog.add_filter("Experimental indexed project", &["didx"]);
@@ -832,6 +845,12 @@ impl Dudel {
             locations::Kind::Projects,
             rfd::AsyncFileDialog::new().add_filter("CSP raster canvas", &["clip"]),
         );
+        self.ask_open_file(dialog, |app, path| {
+            app.open_in_tab(move |app| app.load_document(path, false));
+        });
+    }
+    fn import_psd(&mut self) {
+        let dialog = rfd::AsyncFileDialog::new().add_filter("Photoshop document", &["psd"]);
         self.ask_open_file(dialog, |app, path| {
             app.open_in_tab(move |app| app.load_document(path, false));
         });
@@ -1241,6 +1260,8 @@ fn main() -> eframe::Result {
                 | "--inspect-clip-blocks"
                 | "--verify-clip-raster"
                 | "--verify-clip-document"
+                | "--verify-import"
+                | "--verify-clip-preview"
                 | "--compare-clip-rendering"
                 | "--compare-clip-folder-caches"
         )
@@ -1260,7 +1281,16 @@ fn main() -> eframe::Result {
             );
             std::process::exit(1);
         }
-        let result = if mode.as_deref() == Some("--inspect-clip-metadata") {
+        let result = if matches!(
+            mode.as_deref(),
+            Some("--verify-import" | "--verify-clip-preview")
+        ) {
+            import_report::verify(
+                &input,
+                report.as_deref(),
+                mode.as_deref() == Some("--verify-clip-preview"),
+            )
+        } else if mode.as_deref() == Some("--inspect-clip-metadata") {
             clip_metadata::inspect(&input, report.as_deref())
         } else if mode.as_deref() == Some("--compare-clip-folder-caches") {
             clip_metadata::compare_folder_caches(&input, report.as_deref())
@@ -1586,6 +1616,7 @@ fn main() -> eframe::Result {
         )
     );
     let capture_extensions = mode.as_deref() == Some("--capture-extensions");
+    let capture_settings = mode.as_deref() == Some("--capture-settings");
     let capture_preview = mode.as_deref() == Some("--capture-preview");
     let capture_project_memory = mode.as_deref() == Some("--capture-project-memory");
     let capture_tabs = mode.as_deref() == Some("--capture-tabs") || capture_project_memory;
@@ -1639,6 +1670,7 @@ fn main() -> eframe::Result {
         || capture_new_canvas
         || capture_long_toolbar
         || capture_extensions
+        || capture_settings
         || capture_references
         || capture_reference_layers
         || capture_tabs
@@ -2145,14 +2177,17 @@ fn main() -> eframe::Result {
                 }
                 if capture_extensions {
                     app.extension_manager = true;
-                    if let Ok(package) =
-                        serde_json::from_str(include_str!("../plugins/example-invert.dudelplugin"))
-                    {
+                    if let Ok(package) = serde_json::from_str(include_str!(
+                        "../plugins/example-studio-kit.dudelplugin"
+                    )) {
                         app.extensions.push(extensions::Installed {
                             package,
                             enabled: true,
                         });
                     }
+                }
+                if capture_settings {
+                    app.settings_open = true;
                 }
                 if capture_references {
                     app.reference_capture_fixture(&cc.egui_ctx);

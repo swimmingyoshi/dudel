@@ -35,7 +35,8 @@ display or tablet.
 - Selections (rectangle, lasso, polygon, magic wand) and free transform with
   scale/rotate, distort, perspective and mesh, plus *mirror pair* edits for
   symmetric features such as eyes.
-- Adjustments and filters, including Rhai and WebAssembly extensions.
+- Adjustments and filters, including Rhai and WebAssembly extensions; API 2
+  plugins contribute brush presets, tool presets, commands and panels.
 
 **Your work stays safe**
 - Editable `.dudel` projects with atomic saves, cancelable background saves and
@@ -44,7 +45,8 @@ display or tablet.
   boards that never become part of the artwork.
 - Per-canvas **timelapse** recording that plays back in the app and exports as GIF
   or PNG frames; portable UI themes.
-- PNG import/export; a restricted [Clip Studio Paint `.clip` raster import](FORMAT_SUPPORT.md).
+- PNG import/export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable raster
+  subsets and clearly identified flattened fallbacks.
 
 | | |
 |---|---|
@@ -111,7 +113,7 @@ Enable **Windows Ink** in your tablet driver and pick a pressure-sensitive brush
 **Low latency drawing is on by default.** Dudel shows each frame without waiting
 for the display refresh, so ink keeps up with the pen; waiting for vsync with two
 queued frames adds roughly 35-50 ms on a 60 Hz screen. If your display shows
-brief tearing, untick **Low latency** in **View > Settings > Display...** and
+brief tearing, untick **Low latency** in **View > Settings > Display > Graphics API and latency...** and
 restart; Dudel keeps your choice. The same window chooses OpenGL (default),
 DirectX 12 or Vulkan. With the stabilizer at 0 the stroke itself follows the pen
 exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind-the-pen).
@@ -138,8 +140,10 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   512 MiB raster-and-mask budget.
 - Native saves use project format v4, or v5 when layer masks are used; newer
   files need a compatible Dudel. Indexed `.didx` storage is experimental.
-- `.clip` import covers a restricted raster subset and rejects anything else.
-  PSD and color-managed print workflows are not supported.
+- CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP
+  files can open their saved preview, often at lower resolution. Unsupported PSD
+  layer features use the saved composite when available. Color-managed print
+  workflows and universal format compatibility are not supported.
 - Windows x64 is the supported platform; Linux builds are experimental.
 
 See [release notes](RELEASE_NOTES.md#current-boundaries) for the full list.

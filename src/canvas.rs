@@ -737,7 +737,11 @@ impl Dudel {
                     start,
                     end,
                     area.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id),
-                    crate::affine_preview::Modifiers { shift, alt },
+                    crate::affine_preview::Modifiers {
+                        shift,
+                        alt,
+                        ctrl: command,
+                    },
                 );
                 continue;
             }
@@ -1499,6 +1503,10 @@ const SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
             ),
             ("Enter  /  Esc", "Apply / cancel free transform"),
             ("Arrows  (Shift)", "Nudge free transform 1px (10px)"),
+            (
+                "Ctrl + drag (mirror pair)",
+                "Snap the moving half onto the mirror axis",
+            ),
             ("[  /  ]", "Smaller / larger brush"),
             ("X", "Swap main and secondary color"),
         ],

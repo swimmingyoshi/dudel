@@ -186,6 +186,75 @@ mod tests {
             None,
         )
     }
+    #[test]
+    fn ctrl_snaps_a_moving_mirror_half_back_onto_its_axis() {
+        let snap = |center: [f64; 2], angle_degrees: f64| Snap {
+            xs: vec![],
+            ys: vec![],
+            grid: None,
+            tolerance: 8.0,
+            mirror: Some(crate::affine::Mirror {
+                center,
+                angle_degrees,
+            }),
+        };
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        };
+        // The left half of a split circle, its right edge on the axis.
+        let half = Selection {
+            left: 100,
+            top: 100,
+            right: 200,
+            bottom: 200,
+        };
+        let drag = HandleDrag {
+            handle: Handle::Translate,
+            settings: Settings::default(),
+            start: [150.0, 150.0],
+        };
+        let axis = snap([200.0, 150.0], 0.0);
+        let to = |at, b, modifiers, snap: &Snap| {
+            dragged_settings(drag, at, b, modifiers, Some(snap)).translation
+        };
+        // Without Ctrl it stays where it is dropped.
+        assert_eq!(
+            to([110.0, 163.0], half, Modifiers::default(), &axis),
+            [-40.0, 13.0]
+        );
+        // With Ctrl, pulled away or pushed across, it rejoins along the normal.
+        assert_eq!(to([110.0, 163.0], half, ctrl, &axis), [0.0, 13.0]);
+        assert_eq!(to([190.0, 150.0], half, ctrl, &axis), [0.0, 0.0]);
+        // A half that started a sub-pixel gap away returns to that gap exactly.
+        assert_eq!(
+            to([110.0, 150.0], half, ctrl, &snap([200.5, 150.0], 0.0)),
+            [0.0, 0.0]
+        );
+        // A feature away from the axis is centered onto it.
+        let eye = Selection { right: 150, ..half };
+        assert_eq!(to([155.0, 150.0], eye, ctrl, &axis), [50.0, 0.0]);
+        // On a tilted axis the rotated box's nearest corner lands on the line.
+        let tilted = snap([200.0, 150.0], 30.0);
+        let turned = HandleDrag {
+            settings: Settings {
+                angle_degrees: 10.0,
+                ..Settings::default()
+            },
+            ..drag
+        };
+        let s = dragged_settings(turned, [120.0, 140.0], eye, ctrl, Some(&tilted));
+        let frame = Frame::new(s, eye);
+        let (sin, cos) = 30f64.to_radians().sin_cos();
+        let gap = CORNERS
+            .map(|g| {
+                let [x, y] = frame.point([g[0] as f64, g[1] as f64]);
+                -(cos * (x - 200.0) + sin * (y - 150.0))
+            })
+            .into_iter()
+            .fold(f64::INFINITY, f64::min);
+        assert!(gap.abs() < 1e-9, "{gap}");
+    }
     fn mapped(settings: Settings, point: [f64; 2]) -> [f64; 2] {
         let mut doc = Document::new(1000, 1000);
         doc.selection = Some(Selection {
@@ -293,7 +362,10 @@ mod tests {
                 drag,
                 to,
                 mode,
-                Modifiers { shift, alt: false },
+                Modifiers {
+                    shift,
+                    ..Modifiers::default()
+                },
             ))
         };
         // Distort: only the dragged corner moves.
@@ -328,7 +400,7 @@ mod tests {
             Mode::Distort,
             Modifiers {
                 shift: true,
-                alt: false,
+                ..Modifiers::default()
             },
         ));
         assert!(
@@ -448,7 +520,7 @@ mod tests {
         // Shift keeps proportions using the larger change.
         let shift = Modifiers {
             shift: true,
-            alt: false,
+            ..Modifiers::default()
         };
         let s = free_drag(Handle::Scale([1, 1]), [300.0, 200.0], [400.0, 210.0], shift);
         assert!(close(
@@ -458,8 +530,8 @@ mod tests {
         assert!(close(mapped(s, [100.0, 100.0]), [100.0, 100.0]));
         // Alt scales about the center.
         let alt = Modifiers {
-            shift: false,
             alt: true,
+            ..Modifiers::default()
         };
         let s = free_drag(Handle::Scale([1, 1]), [300.0, 200.0], [350.0, 225.0], alt);
         assert!(close(
@@ -481,7 +553,7 @@ mod tests {
     fn free_transform_rotation_snaps_and_moves_snap_to_guides() {
         let shift = Modifiers {
             shift: true,
-            alt: false,
+            ..Modifiers::default()
         };
         // Center (200, 150); a quarter turn plus a little snaps to 90 degrees.
         let s = free_drag(Handle::Rotate, [300.0, 150.0], [205.0, 260.0], shift);
@@ -491,6 +563,7 @@ mod tests {
             ys: vec![],
             grid: None,
             tolerance: 8.0,
+            mirror: None,
         };
         let b = Selection {
             left: 100,
@@ -573,6 +646,33 @@ mod tests {
             }
         }
         panic!("preview did not finish");
+    }
+    #[test]
+    fn mirror_pair_box_fits_the_driving_half_of_a_crossing_selection() {
+        let mut app = app();
+        // The selection spans x 2..4; the heavier right column drives the pair.
+        app.affine_settings.mirror = Some(crate::affine::Mirror {
+            center: [3., 2.],
+            angle_degrees: 0.,
+        });
+        app.toggle_free_transform();
+        ready(&mut app);
+        assert_eq!(
+            app.affine_settings.pair_frame,
+            Some(Selection {
+                left: 3,
+                top: 1,
+                right: 4,
+                bottom: 3,
+            })
+        );
+        app.cancel_affine_preview();
+        // A plain transform keeps the whole selection's box.
+        app.affine_settings.mirror = None;
+        app.toggle_free_transform();
+        ready(&mut app);
+        assert_eq!(app.affine_settings.pair_frame, None);
+        app.cancel_affine_preview();
     }
     #[test]
     fn mirror_pair_preview_cancel_pending_apply_and_single_undo_preserve_both_artworks() {
@@ -833,6 +933,7 @@ mod tests {
             flip: [false; 2],
             warp: None,
             mirror: None,
+            pair_frame: None,
         };
         app.poll_affine_preview(); // Cancels gated old generation without joining.
         assert!(crate::document::same_snapshot(&source, &app.doc));
@@ -1161,13 +1262,15 @@ mod tests {
         }
     }
 }
-/// Shift and Alt while dragging a free-transform handle.
+/// Shift, Alt and Ctrl while dragging a free-transform handle.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Modifiers {
     /// Keep proportions, snap rotation to 15 degrees, or move along one axis.
     pub shift: bool,
     /// Scale about the center instead of the opposite edge.
     pub alt: bool,
+    /// Move a mirror pair's half onto its axis so the halves meet.
+    pub ctrl: bool,
 }
 /// Corner and side handles carry local signs: -1 left/top, 1 right/bottom,
 /// 0 along an axis they do not change.
@@ -1240,7 +1343,7 @@ fn warp_outline(
     settings: crate::affine::Settings,
     view: crate::view::View,
 ) -> Option<Vec<crate::egui::Pos2>> {
-    let b = bounds(source);
+    let b = settings.frame(source);
     let mapping = settings.mapping(source).ok()?;
     let (l, t, r, bt) = (b.left as f64, b.top as f64, b.right as f64, b.bottom as f64);
     let steps = 24;
@@ -1436,7 +1539,7 @@ fn handles(
 ) -> Option<Handles> {
     use crate::egui::pos2;
     settings.validate().ok()?;
-    let frame = Frame::new(settings, bounds(source));
+    let frame = Frame::new(settings, settings.frame(source));
     let project = |g: [i8; 2]| {
         let [x, y] = frame.point([g[0] as f64, g[1] as f64]);
         view.to_screen(pos2(x as f32, y as f32))
@@ -1496,6 +1599,8 @@ pub(crate) struct Snap {
     pub ys: Vec<f64>,
     pub grid: Option<f64>,
     pub tolerance: f64,
+    /// The mirror-pair axis that Ctrl snaps a moving half onto.
+    pub mirror: Option<crate::affine::Mirror>,
 }
 impl Snap {
     /// Smallest correction that brings one of `values` onto a target.
@@ -1515,6 +1620,41 @@ impl Snap {
         }
         best
     }
+}
+/// Move `delta` along the axis normal so the box edge nearest the mirror axis
+/// lies on it and the two halves meet. A half that started touching the axis
+/// returns to its original sub-pixel gap, so it rejoins exactly.
+fn mirror_snap(
+    mirror: crate::affine::Mirror,
+    b: crate::selection::Selection,
+    frame: &Frame,
+    delta: [f64; 2],
+) -> [f64; 2] {
+    let (sin, cos) = mirror.angle_degrees.to_radians().sin_cos();
+    let distance = |p: [f64; 2]| cos * (p[0] - mirror.center[0]) + sin * (p[1] - mirror.center[1]);
+    let side = distance(frame.pivot).signum();
+    if distance(frame.pivot) == 0.0 {
+        return delta;
+    }
+    let gap = |points: [[f64; 2]; 4]| {
+        points
+            .iter()
+            .map(|p| side * distance(*p))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let (l, t, r, bt) = (b.left as f64, b.top as f64, b.right as f64, b.bottom as f64);
+    let rest = gap([[l, t], [r, t], [r, bt], [l, bt]]);
+    let target = if (0.0..1.0).contains(&rest) {
+        rest
+    } else {
+        0.0
+    };
+    let moved = gap(CORNERS.map(|g| {
+        let p = frame.point([g[0] as f64, g[1] as f64]);
+        [p[0] + delta[0], p[1] + delta[1]]
+    }));
+    let shift = side * (target - moved);
+    [delta[0] + cos * shift, delta[1] + sin * shift]
 }
 fn dragged_settings(
     drag: HandleDrag,
@@ -1553,6 +1693,11 @@ fn dragged_settings(
                         delta[axis] += correction;
                     }
                 }
+            }
+            if modifiers.ctrl
+                && let Some(mirror) = snap.and_then(|s| s.mirror)
+            {
+                delta = mirror_snap(mirror, b, &frame, delta);
             }
             for (translation, (start, delta)) in settings
                 .translation
@@ -1659,6 +1804,43 @@ impl Preview {
 }
 impl Dudel {
     pub(crate) fn mirror_pair_ui(&mut self, ui: &mut crate::egui::Ui) {
+        let before = self.affine_settings.mirror;
+        self.mirror_pair_controls(ui);
+        let in_session = self
+            .affine_preview
+            .as_ref()
+            .is_some_and(|p| p.session.is_some());
+        if self.affine_settings.mirror != before && in_session && self.sync_pair_frame() {
+            // The box now covers a different half; edits made on the old one
+            // would land somewhere unexpected.
+            self.affine_settings = crate::affine::Settings {
+                sampling: self.affine_settings.sampling,
+                mirror: self.affine_settings.mirror,
+                pair_frame: self.affine_settings.pair_frame,
+                ..crate::affine::Settings::default()
+            };
+            self.transform_mode = Mode::ScaleRotate;
+            self.status = "Mirror axis changed; the transform box was reset to fit".into();
+        }
+    }
+    /// Fit the transform box to the driving half when a mirror-pair selection
+    /// crosses the axis. Returns whether the box changed.
+    fn sync_pair_frame(&mut self) -> bool {
+        let source = self
+            .affine_preview
+            .as_ref()
+            .and_then(|p| p.session.as_ref())
+            .map_or(&self.doc, |s| s.engine.original());
+        let frame = self.affine_settings.mirror.and_then(|mirror| {
+            crate::affine::driver_frame(source, mirror, None)
+                .ok()
+                .flatten()
+        });
+        let changed = frame != self.affine_settings.pair_frame;
+        self.affine_settings.pair_frame = frame;
+        changed
+    }
+    fn mirror_pair_controls(&mut self, ui: &mut crate::egui::Ui) {
         let source = self
             .affine_preview
             .as_ref()
@@ -1677,7 +1859,7 @@ impl Dudel {
             }
         }
         if self.affine_settings.mirror.is_some() {
-            ui.label("Select one side; its partner follows across the dashed axis.");
+            ui.label("Select one side; its partner follows across the dashed axis. A selection across the axis is split into two halves. Hold Ctrl while moving to snap the halves together at the axis.");
             ui.collapsing("Mirror axis", |ui| {
                 let mirror = self.affine_settings.mirror.as_mut().unwrap();
                 for (axis, label) in [(0, "Center X"), (1, "Center Y")] {
@@ -1722,7 +1904,7 @@ impl Dudel {
             return;
         };
         let screen = |[x, y]: [f64; 2]| view.to_screen(pos2(x as f32, y as f32));
-        let b = crate::affine::Settings::bounds(source);
+        let b = self.affine_settings.frame(source);
         let corners = [
             [b.left as f64, b.top as f64],
             [b.right as f64, b.top as f64],
@@ -1812,6 +1994,7 @@ impl Dudel {
                 self.status = "Turn off Lock transparency to transform pixels".into();
                 return;
             }
+            self.sync_pair_frame();
             self.begin_geometry_preview();
             preview.session = Some(Session {
                 engine: Engine::with_target(&self.doc, preview.paint_target),
@@ -1986,7 +2169,7 @@ impl Dudel {
         if source.layers.iter().any(|l| l.mask.is_some()) {
             return;
         }
-        let b = bounds(source);
+        let b = self.affine_settings.frame(source);
         let at = view.to_doc(pos);
         let warping = self.affine_settings.warp.is_some();
         if start && can_start {
@@ -2039,6 +2222,7 @@ impl Dudel {
             ys,
             grid: self.grid.visible.then_some(self.grid.spacing as f64),
             tolerance: 8.0 / view.zoom.max(1e-3) as f64,
+            mirror: self.affine_settings.mirror,
         }
     }
     /// Cursor showing what a drag from `pos` would do to the transform box.
@@ -2195,7 +2379,7 @@ impl Dudel {
         };
         let accent = Color32::from_rgb(75, 180, 255);
         let stroke = Stroke::new(1.5_f32, accent);
-        let b = bounds(source);
+        let b = settings.frame(source);
         let (l, t) = (b.left as f64, b.top as f64);
         let (w, h) = ((b.right - b.left) as f64, (b.bottom - b.top) as f64);
         let screen = |x: f64, y: f64| {

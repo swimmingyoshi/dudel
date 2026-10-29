@@ -99,6 +99,8 @@ struct Report {
     rendering_study_omissions: Vec<String>,
     #[serde(skip)]
     document_properties: BTreeMap<i64, String>,
+    #[serde(skip)]
+    locks: BTreeMap<i64, i64>,
 }
 
 fn db_error(error: rusqlite::Error) -> String {
@@ -175,10 +177,11 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 .any(|layer| layer.id == id && layer.is_folder() && layer.supported_kind());
         if study_folder_masking {
             report.rendering_study_omissions.push(format!(
-                "Layer {id}: folder LayerMasking=32 treated as neutral in read-only study; semantics unverified and unsupported by import"
+                "Layer {id}: folder LayerMasking=32 without a mask uses the native folder compositor"
             ));
         }
-        if lock != 0
+        report.locks.insert(id, lock);
+        if (lock != 0 && (!study || lock & !17 != 0))
             || mask != 0
             || palette != 0
             || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
@@ -242,7 +245,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                     ]
                     .contains(&field)
                 {
-                    report.rendering_study_omissions.push(format!("Layer {id}: {field} omitted from read-only rendering study; unsupported by import"));
+                    report.rendering_study_omissions.push(format!(
+                        "Layer {id}: CSP editing guide {field} was not imported"
+                    ));
                     continue;
                 }
                 report
@@ -397,7 +402,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
     for layer in &report.layers {
         if !layer.supported_kind()
             || ![0, 1, 4, 5].contains(&layer.visibility)
-            || layer.composite != 0
+            || (layer.composite != 0 && (!study || clip_blend(layer.composite).is_none()))
             || ![0, 1].contains(&layer.clip)
         {
             report.import_issues.push(format!(
@@ -609,7 +614,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         || canvas.height.fract() != 0.
         || !(1. ..=4096.).contains(&canvas.width)
         || !(1. ..=4096.).contains(&canvas.height)
-        || canvas.width * canvas.height > 4_194_304.
+        || canvas.width * canvas.height > crate::document::MAX_PIXELS as f64
     {
         return Err("Clip canvas exceeds Dudel dimensions or pixel limit".into());
     }
@@ -909,6 +914,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         import_issues: Vec::new(),
         rendering_study_omissions: Vec::new(),
         document_properties: BTreeMap::new(),
+        locks: BTreeMap::new(),
     })
 }
 
@@ -1034,7 +1040,117 @@ pub(crate) fn prepare_document(
     input: &Path,
     cancelled: &impl Fn() -> bool,
 ) -> Result<crate::document::Document, String> {
-    prepare_document_mode(input, cancelled, false).map(|(doc, _)| doc)
+    prepare_document_mode(input, cancelled, true).map(|(doc, _)| doc)
+}
+
+/// Native equivalents of the standard CSP blend identifiers. Glow and
+/// pass-through modes remain unsupported because their alpha semantics differ.
+fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
+    use crate::blend::BlendMode::*;
+    Some(match value {
+        0 => Normal,
+        1 => Darken,
+        2 => Multiply,
+        3 => ColorBurn,
+        4 => LinearBurn,
+        5 => Subtract,
+        6 => DarkerColor,
+        7 => Lighten,
+        8 => Screen,
+        9 => ColorDodge,
+        11 => LinearDodge,
+        13 => LighterColor,
+        14 => Overlay,
+        15 => SoftLight,
+        16 => HardLight,
+        17 => VividLight,
+        18 => LinearLight,
+        19 => PinLight,
+        20 => HardMix,
+        21 => Difference,
+        22 => Exclusion,
+        23 => Hue,
+        24 => Saturation,
+        25 => Color,
+        26 => Luminosity,
+        36 => Divide,
+        _ => return None,
+    })
+}
+
+pub(crate) fn import_document(
+    input: &Path,
+    cancelled: &impl Fn() -> bool,
+) -> Result<crate::import_report::Imported, String> {
+    let (document, mut notes) = prepare_document_mode(input, cancelled, true)?;
+    notes.insert(0, "CSP raster layers imported as an unsaved copy. Folder, clipping and blend rendering uses Dudel's compositor; it may differ from CSP. Keep the source for CSP-specific editing.".into());
+    Ok(crate::import_report::Imported { document, notes })
+}
+
+pub(crate) fn import_preview(
+    input: &Path,
+    cancelled: &impl Fn() -> bool,
+) -> Result<crate::import_report::Imported, String> {
+    use image::ImageDecoder;
+    if cancelled() {
+        return Err("Import canceled".into());
+    }
+    let mut file = File::open(input).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    let inventory = clip_container::scan(&mut file, size)?;
+    let (offset, size) = inventory.selected_sql_payload();
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|e| e.to_string())?;
+    let db = open_snapshot(file.take(size), size as usize)?;
+    ordinary_tables(&db)?;
+    let previews = rows(
+        &db,
+        "SELECT ImageType,ImageWidth,ImageHeight,ImageData FROM CanvasPreview",
+        1,
+        |r| {
+            let data = r.get_ref(3)?.as_blob()?;
+            if data.len() > 64 * 1024 * 1024 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, u32>(1)?,
+                r.get::<_, u32>(2)?,
+                data.to_vec(),
+            ))
+        },
+    )?;
+    let (kind, width, height, data) = previews.into_iter().next().ok_or("No saved CSP preview")?;
+    if kind != 1 || width == 0 || height == 0 || width > 4096 || height > 4096 {
+        return Err("Unsupported saved CSP preview dimensions or encoding".into());
+    }
+    let mut reader =
+        image::ImageReader::with_format(std::io::Cursor::new(data), image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(4096);
+    limits.max_image_height = Some(4096);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let decoder = reader.into_decoder().map_err(|e| e.to_string())?;
+    if decoder.dimensions() != (width, height) {
+        return Err("CSP preview header differs from metadata".into());
+    }
+    let pixels = image::DynamicImage::from_decoder(decoder)
+        .map_err(|e| e.to_string())?
+        .into_rgba8();
+    if cancelled() {
+        return Err("Import canceled".into());
+    }
+    let mut document = crate::document::Document::new(width as usize, height as usize);
+    document.layers[0].name = "CSP saved preview (flattened)".into();
+    document.layers[0].pixels = pixels.into_raw().into();
+    document.validate()?;
+    Ok(crate::import_report::Imported {
+        document,
+        notes: vec![format!(
+            "Opened the saved preview at {width} × {height} px. This may be reduced resolution. Layers, masks and animation were flattened by CSP when it saved this preview; they are not editable here."
+        )],
+    })
 }
 fn prepare_document_mode(
     input: &Path,
@@ -1136,7 +1252,7 @@ fn prepare_document_mode(
         });
     }
     let mut budget = crate::clip_blocks::Budget::default();
-    let doc = crate::clip_document::assemble(
+    let mut doc = crate::clip_document::assemble(
         canvas,
         entries,
         report.canvas.current,
@@ -1174,6 +1290,40 @@ fn prepare_document_mode(
             )
         },
     )?;
+    // Assembly stores children before their folder; map source identities using
+    // the same postorder rather than names (which need not be unique).
+    let mut order = Vec::new();
+    let mut pending = Vec::new();
+    for entry in &report.root_child_next_order {
+        while pending
+            .last()
+            .is_some_and(|e: &&Entry| e.depth >= entry.depth)
+        {
+            order.push(pending.pop().unwrap().id);
+        }
+        if report
+            .layers
+            .iter()
+            .find(|l| l.id == entry.id)
+            .unwrap()
+            .is_folder()
+        {
+            pending.push(entry);
+        } else {
+            order.push(entry.id);
+        }
+    }
+    while let Some(entry) = pending.pop() {
+        order.push(entry.id);
+    }
+    for (layer, id) in doc.layers.iter_mut().zip(order) {
+        let source = report.layers.iter().find(|l| l.id == id).unwrap();
+        layer.blend = clip_blend(source.composite).ok_or("Unsupported CSP blend mode")?;
+        let lock = report.locks.get(&id).copied().unwrap_or(0);
+        layer.locked = lock & 1 != 0;
+        layer.alpha_locked = !layer.folder && lock & 16 != 0;
+    }
+    doc.validate()?;
     Ok((doc, report.rendering_study_omissions))
 }
 
@@ -1487,7 +1637,7 @@ pub(crate) mod tests {
         data
     }
     #[test]
-    fn strict_import_rejects_unvalidated_folder_and_clipping_rendering() {
+    fn editable_import_accepts_supported_folders_and_clipping() {
         for mutation in [
             "UPDATE Layer SET LayerType=256,LayerFolder=1,LayerRenderMipmap=0 WHERE MainId=40",
             "UPDATE Layer SET LayerType=0,LayerFolder=1,LayerRenderMipmap=0 WHERE MainId=40",
@@ -1497,8 +1647,8 @@ pub(crate) mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("generated.clip");
             std::fs::write(&path, worker_fixture_with_sql(mutation)).unwrap();
-            let error = prepare_document(&path, &|| false).err().unwrap();
-            assert!(error.contains("Folder/clipping import awaits"), "{error}");
+            let doc = prepare_document(&path, &|| false).unwrap();
+            doc.validate().unwrap();
         }
     }
     #[test]
@@ -1562,7 +1712,7 @@ pub(crate) mod tests {
         assert_eq!(report["omissions"].as_array().unwrap().len(), 1);
         assert_eq!(std::fs::read(&path).unwrap(), source);
         assert!(compare_folder_caches(&path, Some(&output)).is_err());
-        assert!(prepare_document(&path, &|| false).is_err());
+        assert!(prepare_document(&path, &|| false).is_ok());
         let missing = worker_fixture_with_sql(&format!(
             "{mutation}; UPDATE Layer SET LayerRenderMipmap=0 WHERE MainId=30"
         ));
@@ -1777,7 +1927,7 @@ pub(crate) mod tests {
             "UPDATE ExternalChunk SET ExternalID=123",
             "INSERT INTO ExternalChunk SELECT * FROM ExternalChunk",
             "UPDATE Canvas SET CanvasWidth=4097",
-            "UPDATE Canvas SET CanvasWidth=2049,CanvasHeight=2048",
+            "UPDATE Canvas SET CanvasWidth=4097,CanvasHeight=4096",
             "UPDATE Canvas SET CanvasWidth=32.5",
             "UPDATE Canvas SET CanvasUnit=3,CanvasWidth=2,CanvasHeight=3",
             "UPDATE Canvas SET CanvasResolution=0",

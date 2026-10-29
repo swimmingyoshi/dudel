@@ -13,6 +13,8 @@ enum LoadKind {
     Indexed,
     Png,
     Clip,
+    ClipPreview,
+    Psd,
     Recovery,
 }
 pub struct LoadJob {
@@ -21,6 +23,7 @@ pub struct LoadJob {
     kind: LoadKind,
     revision: u64,
     cancel: Arc<AtomicBool>,
+    notes: Arc<std::sync::Mutex<Vec<String>>>,
 }
 impl Dudel {
     pub(crate) fn load_document(&mut self, path: PathBuf, png: bool) {
@@ -42,6 +45,12 @@ impl Dudel {
             .is_some_and(|extension| extension.eq_ignore_ascii_case("clip"))
         {
             LoadKind::Clip
+        } else if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("psd"))
+        {
+            LoadKind::Psd
         } else {
             LoadKind::Project
         };
@@ -61,15 +70,30 @@ impl Dudel {
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let worker_path = path.clone();
+        let notes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let worker_notes = notes.clone();
         let worker = std::thread::spawn(move || {
             if worker_cancel.load(Ordering::Relaxed) {
                 return Err("Load canceled".into());
             }
             match kind {
                 LoadKind::Png => storage::import_png(&worker_path),
-                LoadKind::Clip => crate::clip_metadata::prepare_document(&worker_path, &|| {
-                    worker_cancel.load(Ordering::Relaxed)
-                }),
+                LoadKind::Clip | LoadKind::ClipPreview | LoadKind::Psd => {
+                    let canceled = || worker_cancel.load(Ordering::Relaxed);
+                    let imported = match kind {
+                        LoadKind::Clip => {
+                            crate::clip_metadata::import_document(&worker_path, &canceled)
+                        }
+                        LoadKind::ClipPreview => {
+                            crate::clip_metadata::import_preview(&worker_path, &canceled)
+                        }
+                        _ => crate::psd_import::import(&worker_path, &canceled),
+                    }?;
+                    *worker_notes
+                        .lock()
+                        .map_err(|_| "Import report unavailable")? = imported.notes;
+                    Ok(imported.document)
+                }
                 LoadKind::Project => storage::load_project(&worker_path),
                 LoadKind::Indexed => crate::indexed_commit::load_document(&worker_path, &|| {
                     worker_cancel.load(Ordering::Relaxed)
@@ -85,6 +109,7 @@ impl Dudel {
             kind,
             revision: self.revision,
             cancel,
+            notes,
         });
         self.status = "Opening document in background…".into();
     }
@@ -122,13 +147,34 @@ impl Dudel {
                     status: match kind {
                         LoadKind::Png => "PNG imported — save a project to keep editable artwork",
                         LoadKind::Clip => "CSP raster imported — save as a Dudel project",
+                        LoadKind::ClipPreview => {
+                            "CSP saved preview imported — flattened, possibly reduced resolution"
+                        }
+                        LoadKind::Psd => {
+                            "PSD imported — see Import details and save as a Dudel project"
+                        }
                         LoadKind::Project => "Project opened",
                         LoadKind::Indexed => "Experimental indexed project opened",
                         LoadKind::Recovery => "Recovered painting — save a new project to keep it",
                     },
                 });
             }
-            Err(error) => self.status = format!("Could not open {}: {error}", path.display()),
+            Err(error) => {
+                self.status = format!("Could not open {}: {error}", path.display());
+                if kind == LoadKind::Clip {
+                    let text = format!(
+                        "Editable layers could not be imported: {error}\n\nYou can open CSP's saved preview as one flattened image. It may be smaller than the original canvas and represents only the saved frame, without editable layers or animation."
+                    );
+                    self.confirm(
+                        "CSP import options",
+                        text,
+                        "Open saved preview",
+                        move |app| {
+                            app.open_in_tab(move |app| app.start_load(path, LoadKind::ClipPreview));
+                        },
+                    );
+                }
+            }
         }
     }
     pub(crate) fn poll_load(&mut self, ctx: &egui::Context) {
@@ -143,6 +189,9 @@ impl Dudel {
                 .worker
                 .join()
                 .unwrap_or_else(|_| Err("Document loading worker failed".into()));
+            if !canceled && job.revision == self.revision && result.is_ok() {
+                self.import_notes = job.notes.lock().map(|n| n.clone()).unwrap_or_default();
+            }
             self.commit_load(job.path, job.kind, job.revision, canceled, result);
             self.settle_tab_after_load();
         }

@@ -68,9 +68,24 @@ impl Dudel {
         }
     }
     pub(crate) fn selection_options_ui(&mut self, ui: &mut egui::Ui) {
+        self.selection_transform_ui(ui);
+        self.selection_shape_ui(ui);
+    }
+    pub(crate) fn selection_transform_ui(&mut self, ui: &mut egui::Ui) {
         if ui
             .add_enabled(
-                self.doc.selection.is_some(),
+                self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
+                egui::Button::new("Transform selection…"),
+            )
+            .on_hover_text("Move, scale, rotate or warp the selection · Ctrl+T")
+            .clicked()
+        {
+            self.affine_settings.mirror = None;
+            self.toggle_free_transform();
+        }
+        if ui
+            .add_enabled(
+                self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
                 egui::Button::new("Transform mirrored pair…"),
             )
             .on_hover_text(
@@ -85,6 +100,8 @@ impl Dudel {
             ));
             self.toggle_free_transform();
         }
+    }
+    fn selection_shape_ui(&mut self, ui: &mut egui::Ui) {
         let previous = self.selection_shape;
         ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut self.selection_shape, Shape::Rectangle, "Rectangle");

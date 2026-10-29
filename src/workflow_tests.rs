@@ -11,6 +11,82 @@ struct Workspace {
 }
 
 #[test]
+fn guides_reopen_after_override_with_mouse_and_same_frame_taps() {
+    for size in [[1280., 800.], [640., 400.]] {
+        let mut w = Workspace::sized(size);
+        w.app.inspector_override = Some(true);
+        w.app.tool_panel_override = Some(false);
+        w.settle();
+        for tap in [false, true, false] {
+            let at = w.text("Guides");
+            if tap {
+                w.frame(vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Default::default(),
+                    },
+                ]);
+                w.settle();
+            } else {
+                w.click(at);
+            }
+            w.click(w.text("Layer symmetry override"));
+            w.key(egui::Key::Escape, Default::default());
+            w.settle();
+        }
+    }
+}
+
+#[test]
+fn selection_transform_button_clears_previous_mirror_mode() {
+    for sidebar in [true, false] {
+        let mut w = Workspace::sized([1280., 800.]);
+        w.app.tool_panel_override = Some(sidebar);
+        w.app.doc.selection = Some(crate::selection::Selection {
+            left: 8,
+            top: 8,
+            right: 24,
+            bottom: 24,
+        });
+        w.app.affine_settings.mirror = Some(crate::affine::Mirror {
+            center: [16., 16.],
+            angle_degrees: 0.,
+        });
+        w.app.select_tool(crate::tools::Tool::Select);
+        w.settle();
+        w.click(w.text("Transform selection…"));
+        assert!(w.app.affine_preview.is_some());
+        assert!(w.app.affine_settings.mirror.is_none());
+    }
+}
+
+#[test]
+fn extension_panel_opens_and_runs_its_command_through_ui() {
+    let mut w = Workspace::sized([1280., 800.]);
+    w.app.extensions.push(crate::extensions::Installed {
+        package: serde_json::from_str(include_str!("../plugins/example-studio-kit.dudelplugin"))
+            .unwrap(),
+        enabled: true,
+    });
+    w.app.extension_manager = true;
+    w.settle();
+    w.click(w.text("Studio kit…"));
+    assert!(w.app.extension_panels.contains("dudel-studio-kit/drawing"));
+    w.click(w.text("New layer"));
+    w.app.flush_render_queue();
+    assert_eq!(w.app.doc.layers.len(), 2);
+}
+
+#[test]
 fn mirrored_pair_is_reachable_from_selection_and_transform_toolbar() {
     for sidebar in [true, false] {
         let mut w = Workspace::sized([1280., 800.]);

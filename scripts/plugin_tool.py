@@ -1,4 +1,4 @@
-"""Build shareable Rhai/WASM packages using Dudel's own API validator."""
+"""Build API 1 filter or API 2 contribution packages using Dudel's validator."""
 import argparse
 import json
 import os
@@ -10,24 +10,28 @@ import tempfile
 def build(project: Path, output: Path, executable: Path) -> None:
     project = project.resolve(strict=True)
     manifest_path = project / "manifest.json"
-    if manifest_path.stat().st_size > 8192:
-        raise ValueError("Manifest exceeds 8 KiB")
+    if manifest_path.stat().st_size > 5 * 1024 * 1024:
+        raise ValueError("Manifest exceeds 5 MiB")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    entry = (project / manifest.pop("entry")).resolve(strict=True)
-    if not entry.is_relative_to(project):
-        raise ValueError("Entry must stay inside the plugin project")
     if output.suffix != ".dudelplugin":
         raise ValueError("Output must end in .dudelplugin")
-    if entry.suffix == ".rhai":
-        if entry.stat().st_size > 32768:
-            raise ValueError("Rhai source exceeds 32 KiB")
-        manifest.update(format="dudel-rhai-extension", source=entry.read_text(encoding="utf-8"), wasm=[])
-    elif entry.suffix == ".wasm":
-        if entry.stat().st_size > 1024 * 1024:
-            raise ValueError("WASM exceeds 1 MiB")
-        manifest.update(format="dudel-wasm-extension", wasm=list(entry.read_bytes()), source="")
+    if manifest.get("api") == 2:
+        if "entry" in manifest:
+            raise ValueError("API 2 defines programs inside contributed commands")
     else:
-        raise ValueError("Entry must be a .rhai or compiled .wasm file")
+        entry = (project / manifest.pop("entry")).resolve(strict=True)
+        if not entry.is_relative_to(project):
+            raise ValueError("Entry must stay inside the plugin project")
+        if entry.suffix == ".rhai":
+            if entry.stat().st_size > 32768:
+                raise ValueError("Rhai source exceeds 32 KiB")
+            manifest.update(format="dudel-rhai-extension", source=entry.read_text(encoding="utf-8"), wasm=[])
+        elif entry.suffix == ".wasm":
+            if entry.stat().st_size > 1024 * 1024:
+                raise ValueError("WASM exceeds 1 MiB")
+            manifest.update(format="dudel-wasm-extension", wasm=list(entry.read_bytes()), source="")
+        else:
+            raise ValueError("Entry must be a .rhai or compiled .wasm file")
     payload = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
     if len(payload) > 5 * 1024 * 1024:
         raise ValueError("Package exceeds 5 MiB")

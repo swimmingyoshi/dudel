@@ -467,6 +467,7 @@ impl Dudel {
                 self.affine_settings = crate::affine::Settings {
                     sampling: self.affine_settings.sampling,
                     mirror: self.affine_settings.mirror,
+                    pair_frame: self.affine_settings.pair_frame,
                     ..crate::affine::Settings::default()
                 };
                 self.transform_mode = crate::affine_preview::Mode::ScaleRotate;

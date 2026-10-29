@@ -3,7 +3,7 @@ use crate::{document::Document, pixels::Pixels, selection::Selection, selection_
 use std::sync::atomic::AtomicBool;
 #[path = "paired_transform.rs"]
 mod paired;
-pub(crate) use paired::{Mirror, apply_pair};
+pub(crate) use paired::{Mirror, apply_pair, driver_frame};
 
 /// x'=a*x+c*y+tx, y'=b*x+d*y+ty, in document coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -31,6 +31,10 @@ pub struct Settings {
     /// Link the selected region to its reflected partner, preserving both artworks.
     #[serde(default)]
     pub mirror: Option<Mirror>,
+    /// The driving half's bounds when a mirror-pair selection crosses its
+    /// axis, so the box fits that half. Computed per transform session.
+    #[serde(skip)]
+    pub pair_frame: Option<Selection>,
 }
 
 /// Distort, perspective and mesh warp shapes, in document coordinates.
@@ -140,6 +144,7 @@ impl Default for Settings {
             flip: [false; 2],
             warp: None,
             mirror: None,
+            pair_frame: None,
         }
     }
 }
@@ -184,10 +189,14 @@ impl Settings {
             bottom: doc.height,
         })
     }
+    /// The box the handles, pivot and warps are laid over.
+    pub(crate) fn frame(self, doc: &Document) -> Selection {
+        self.pair_frame.unwrap_or_else(|| Self::bounds(doc))
+    }
     /// How the selection maps: affine from scale/rotate/move, or the warp.
     pub(crate) fn mapping(self, doc: &Document) -> Result<Mapping, String> {
         self.validate()?;
-        let bounds = Self::bounds(doc);
+        let bounds = self.frame(doc);
         match self.warp {
             None => Ok(Mapping::Affine(self.matrix(doc)?)),
             Some(Warp::Corners(corners)) => Ok(Mapping::Projective(Homography::rect_to_quad(
@@ -199,7 +208,7 @@ impl Settings {
     /// Where the current transform puts the selection's corners (TL, TR,
     /// BR, BL), to start distorting from what is shown.
     pub(crate) fn corners(self, doc: &Document) -> Result<[[f64; 2]; 4], String> {
-        let b = Self::bounds(doc);
+        let b = self.frame(doc);
         let mapping = self.mapping(doc)?;
         Ok([
             [b.left as f64, b.top as f64],
@@ -212,7 +221,7 @@ impl Settings {
     /// The current transform sampled as a mesh grid, to start warping.
     /// Resampling an existing mesh at a new size keeps its shape closely.
     pub(crate) fn mesh(self, doc: &Document, columns: u8, rows: u8) -> Result<Mesh, String> {
-        let b = Self::bounds(doc);
+        let b = self.frame(doc);
         let mapping = self.mapping(doc)?;
         let (w, h) = ((b.right - b.left) as f64, (b.bottom - b.top) as f64);
         let (columns, rows) = (
@@ -227,14 +236,11 @@ impl Settings {
     }
     pub(crate) fn matrix(self, doc: &Document) -> Result<Matrix, String> {
         self.validate()?;
-        let [px, py] =
-            doc.selection
-                .map_or([doc.width as f64 / 2.0, doc.height as f64 / 2.0], |s| {
-                    [
-                        (s.left as f64 + s.right as f64) / 2.0,
-                        (s.top as f64 + s.bottom as f64) / 2.0,
-                    ]
-                });
+        let s = self.frame(doc);
+        let [px, py] = [
+            (s.left as f64 + s.right as f64) / 2.0,
+            (s.top as f64 + s.bottom as f64) / 2.0,
+        ];
         let angle = self.angle_degrees.rem_euclid(360.0);
         let (sin, cos) = if angle == 0.0 {
             (0.0, 1.0)

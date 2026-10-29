@@ -39,7 +39,7 @@ pub(crate) fn assemble(
         || height == 0
         || width > 4096
         || height > 4096
-        || width * height > 4_194_304
+        || width * height > crate::document::MAX_PIXELS
         || entries.is_empty()
         || entries.len() > MAX_ENTRIES
     {

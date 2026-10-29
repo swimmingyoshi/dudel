@@ -1,0 +1,143 @@
+{
+  "format": "dudel-extension",
+  "version": 2,
+  "api": 2,
+  "id": "dudel-studio-kit",
+  "name": "Studio kit",
+  "author": "Dudel",
+  "release": "1.0.0",
+  "description": "An example brush, shape tool, selection tool and drawing panel.",
+  "capabilities": [
+    "brushes",
+    "tools",
+    "commands",
+    "ui.panels",
+    "pixels.filter"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ink",
+        "label": "Studio ink",
+        "action": {
+          "type": "brush",
+          "brush": {
+            "name": "Studio ink",
+            "size": 12.0,
+            "opacity": 1.0,
+            "hardness": 0.95,
+            "spacing": 0.08,
+            "pressure_size": true,
+            "pressure_opacity": false,
+            "group": "Pen",
+            "stabilization": 8.0
+          }
+        }
+      },
+      {
+        "id": "circle",
+        "label": "Circle tool",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "shape",
+            "options": {
+              "shape": "Ellipse",
+              "constrain": true,
+              "from_center": true
+            }
+          }
+        }
+      },
+      {
+        "id": "polygon",
+        "label": "Polygon selection",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "selection",
+            "shape": "polygon"
+          }
+        }
+      },
+      {
+        "id": "invert",
+        "label": "Invert selection",
+        "action": {
+          "type": "filter",
+          "source": "fn filter(r,g,b,a) { [255-r,255-g,255-b,a] }"
+        }
+      },
+      {
+        "id": "new-layer",
+        "label": "New layer",
+        "action": {
+          "type": "host",
+          "command": "new_layer"
+        }
+      },
+      {
+        "id": "fit",
+        "label": "Fit canvas",
+        "action": {
+          "type": "host",
+          "command": "fit_canvas"
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "drawing",
+        "title": "Studio kit",
+        "widgets": [
+          {
+            "type": "label",
+            "text": "A small workspace for ink and shapes."
+          },
+          {
+            "type": "button",
+            "command": "ink"
+          },
+          {
+            "type": "brush_size"
+          },
+          {
+            "type": "opacity"
+          },
+          {
+            "type": "color"
+          },
+          {
+            "type": "separator"
+          },
+          {
+            "type": "button",
+            "command": "circle"
+          },
+          {
+            "type": "button",
+            "command": "polygon"
+          },
+          {
+            "type": "snapping"
+          },
+          {
+            "type": "guide_lock"
+          },
+          {
+            "type": "button",
+            "command": "new-layer"
+          },
+          {
+            "type": "button",
+            "command": "invert"
+          },
+          {
+            "type": "button",
+            "command": "fit"
+          }
+        ]
+      }
+    ]
+  }
+}

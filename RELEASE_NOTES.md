@@ -5,6 +5,24 @@ existing automated, performance and owner workflow evidence, within the limits
 in [the release decision](RELEASE_DECISION.md). This document does not imply that
 the package has been uploaded to a public store.
 
+## Unreleased workflow and extension changes
+
+- Selection options and the compact toolbar expose Transform selection directly.
+  Overlapping mirror pairs split ownership along the mirror line.
+- Guides settings use stable popup IDs and work after layer override changes
+  with both mouse clicks and same-frame taps.
+- New canvas has a live size preview, portrait/landscape/HD/A4 presets and rotation.
+  Settings now opens a scrollable window with four categories.
+- Extension API 2 contributes brushes, native tool presets, commands and panels,
+  with capability validation, namespaced IDs and an SDK example. API 1 stays supported.
+- CSP adds ordinary folders/clipping, standard blends and locks. Unsupported files
+  offer an explicitly flattened saved-preview import. PSD RGB import supports
+  bounded editable subsets and a reported saved-composite fallback.
+
+See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
+changes require rebuilt release artifacts and do not extend the historical
+release approval to universal CSP/PSD compatibility or a complete plugin platform.
+
 ## Use
 
 Extract the complete archive and run `dudel.exe`. See `QUICK_START.md` for drawing,
@@ -25,7 +43,7 @@ SHA-256 with the published `.sha256` file to confirm the download is intact.
 
 - **Low latency drawing is on by default.** Ink no longer trails the pen by the
   two queued vsync frames the owner saw on the Artist 12. If a display tears,
-  untick **View > Settings > Display... > Low latency** and restart; a saved
+  untick **View > Settings > Display > Graphics API and latency... > Low latency** and restart; a saved
   choice is kept.
 - The brush toolbar keeps the same layout in Smooth and Rope mode. Follow mode,
   Rope distance and "Less smoothing on fast strokes" moved into the new

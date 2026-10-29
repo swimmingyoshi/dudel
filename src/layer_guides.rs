@@ -167,20 +167,20 @@ impl Dudel {
             },
         );
         let button = egui::Button::new("Global").selected(self.symmetry.active());
-        egui::containers::menu::MenuButton::from_button(button)
-            .config(
-                egui::containers::menu::MenuConfig::default()
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
-            )
-            .ui(ui, |ui| {
+        let response = ui
+            .push_id("global symmetry button", |ui| ui.add(button))
+            .inner;
+        egui::Popup::from_toggle_button_response(&response)
+            .id(egui::Id::new("global symmetry settings popup"))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
                 ui.set_width(280.0);
                 self.global_symmetry_ui(ui);
-            })
-            .0
-            .on_hover_text(format!(
-                "Global symmetry: {} · layer overrides stay independent",
-                self.symmetry.mode.name()
-            ));
+            });
+        response.on_hover_text(format!(
+            "Global symmetry: {} · layer overrides stay independent",
+            self.symmetry.mode.name()
+        ));
         if let Some(index) = self.input_layer() {
             let global = self.guide_lines.len()
                 + (0..self.rulers.len())
@@ -192,10 +192,14 @@ impl Dudel {
             } else {
                 format!("Guides: {global}")
             };
-            egui::containers::menu::MenuButton::new(label)
-                .config(egui::containers::menu::MenuConfig::default().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
-                .ui(ui, |ui| self.layer_guides_popup(ui, index))
-                .0.on_hover_text("Symmetry and guides for the selected layer; the count includes global guides and grid");
+            let response = ui
+                .push_id("layer guides button", |ui| ui.button(label))
+                .inner;
+            egui::Popup::from_toggle_button_response(&response)
+                .id(egui::Id::new("layer guides settings popup"))
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| self.layer_guides_popup(ui, index));
+            response.on_hover_text("Symmetry and guides for the selected layer; the count includes global guides and grid");
         }
     }
 
