@@ -112,8 +112,15 @@ pub(crate) fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool
     let mut step = 0;
     if response.hovered() && !open {
         let wheel = response.id.with("blend wheel");
-        let mut travel = ui.data(|d| d.get_temp::<f32>(wheel)).unwrap_or(0.0)
-            + ui.input(|i| i.raw_scroll_delta.y);
+        // Take the wheel for the box, so a scrolling panel or window around
+        // it does not move as well.
+        let delta = ui.input_mut(|i| {
+            let delta = i.raw_scroll_delta.y;
+            i.raw_scroll_delta = egui::Vec2::ZERO;
+            i.smooth_scroll_delta = egui::Vec2::ZERO;
+            delta
+        });
+        let mut travel = ui.data(|d| d.get_temp::<f32>(wheel)).unwrap_or(0.0) + delta;
         // Wheel up moves up the list, like the open menu.
         while travel >= BLEND_WHEEL_STEP {
             step -= 1;

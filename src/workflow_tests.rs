@@ -970,6 +970,43 @@ fn clicking_a_tool_shows_settings_the_automatic_layout_hid_on_a_laptop_screen() 
 }
 
 #[test]
+fn wheel_over_an_effect_blend_box_steps_it_without_scrolling_the_window() {
+    use crate::blend::BlendMode;
+    use crate::layer_effects::{Effect, LayerEffect};
+    // A short window, so the effects list scrolls.
+    let mut w = Workspace::sized([1280.0, 600.0]);
+    w.app.inspector_override = Some(true);
+    let active = w.app.doc.active;
+    w.app.doc.layers[active].effects = ["Drop Shadow", "Outer Glow", "Stroke"]
+        .into_iter()
+        .map(|name| LayerEffect::new(Effect::preset(name).unwrap()))
+        .collect();
+    w.app.effects_window_open = true;
+    w.settle();
+    // The top entry (listed first) is the stroke, blend Normal; the layer's
+    // own blend box elsewhere also reads Normal, so find the one in the window.
+    let window = w
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("Layer Effects")))
+        .unwrap();
+    let combo = w.text_in("Normal", window);
+    let marker = w.text_in("Opacity", window);
+    w.frame(vec![
+        egui::Event::PointerMoved(combo),
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -super::layers_panel::BLEND_WHEEL_STEP),
+            modifiers: Default::default(),
+        },
+    ]);
+    w.settle();
+    finish_jobs(&mut w.app);
+    let stroke = w.app.doc.layers[active].effects.last().unwrap();
+    assert_eq!(stroke.effect.blend, BlendMode::Dissolve);
+    assert_eq!(w.text_in("Opacity", window), marker, "the window scrolled");
+}
+
+#[test]
 fn blend_modes_step_with_wheel_and_arrows_and_the_full_list_fits_without_scrolling() {
     use crate::blend::BlendMode;
     let mut w = Workspace::sized([1920.0, 1080.0]);
@@ -1201,6 +1238,36 @@ impl Workspace {
         for _ in 0..4 {
             self.frame(vec![]);
         }
+    }
+    /// The topmost visible `wanted` text inside `area`.
+    fn text_in(&self, wanted: &str, area: egui::Rect) -> egui::Pos2 {
+        fn collect(shape: &egui::Shape, wanted: &str, clip: egui::Rect, out: &mut Vec<egui::Pos2>) {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text() == wanted => {
+                    let visible = text
+                        .galley
+                        .rect
+                        .translate(text.pos.to_vec2())
+                        .intersect(clip);
+                    if visible.is_positive() {
+                        out.push(visible.center());
+                    }
+                }
+                egui::Shape::Vec(shapes) => shapes
+                    .iter()
+                    .for_each(|shape| collect(shape, wanted, clip, out)),
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        for shape in &self.output.shapes {
+            collect(&shape.shape, wanted, shape.clip_rect, &mut found);
+        }
+        found
+            .into_iter()
+            .filter(|at| area.contains(*at))
+            .min_by(|a, b| a.y.total_cmp(&b.y))
+            .unwrap_or_else(|| panic!("{wanted} not shown in {area:?}"))
     }
     fn text(&self, wanted: &str) -> egui::Pos2 {
         fn find(shape: &egui::Shape, wanted: &str, clip: egui::Rect) -> Option<egui::Pos2> {
