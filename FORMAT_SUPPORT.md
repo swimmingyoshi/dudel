@@ -76,9 +76,19 @@ implements PSD v1 RGB, raw/PackBits/ZIP, and 8-bit ZIP prediction. Supported 8-b
 raster layers retain offsets, alpha, opacity, visibility, clipping, blends (including
 Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glow
 forms), locks, isolated and pass-through groups, and simple raster masks. Plain RGB
-solid fills become raster layers. Complex masks, effects, smart objects, text and
-other unsupported descriptors use the saved composite with an explicit Import details
-report. They are not silently approximated as editable layers.
+solid fills become raster layers. Text and smart-object layers import as the pixels
+Photoshop stored for them (named in Import details); fill opacity applies except on the
+dodge/burn family, where it behaves differently. Effects, vector shapes (whose stored
+pixels Photoshop marks as not matching what it draws), adjustment and fill layers,
+mask feather/density and other unsupported descriptors use the saved composite with an
+explicit Import details report. They are not silently approximated as editable layers.
+Document-wide blocks after the layer list (patterns, text engine data, linked files)
+no longer block layered import; files with only a background open as one layer.
+
+Photoshop saves a transparent document's flattened image blended with white. Dudel
+detects this (no semi-transparent pixel can be darker than its white share) and
+removes it, so flattened imports keep their true edge colors; plain-color images from
+other writers are left as they are.
 
 Writers disagree on layer order: Photoshop lists the bottom layer first, others the
 top. Group markers only nest one way, so grouped files decide it themselves. For flat
@@ -86,6 +96,16 @@ files Dudel renders a sample grid both ways and keeps the order matching the fil
 saved image, saying so in Import details when it reads a file top first. A 146-layer
 4096 x 2249 rig PSD written top first imported with every pixel within one level of
 its saved image.
+
+Public Photoshop-saved test files from the MIT-licensed
+[ag-psd](https://github.com/Agamnentzar/ag-psd) and
+[psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
+distributed). ag-psd: 36 of 75 import with layers and 5 are background-only; psd-tools,
+which concentrates on edge features: 28 of 279 with layers. Layered imports match the
+saved image except anti-aliased text edges (Photoshop renders text slightly differently
+for the flattened image), a writer that flattened onto white without a background layer,
+and two small pass-through/fill cases. The rest fall back to the flattened image or are
+unsupported color modes (grayscale, CMYK, indexed, bitmap, 32-bit) and PSB.
 
 16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the

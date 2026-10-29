@@ -1275,10 +1275,21 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         };
         let report = args.next().map(PathBuf::from);
+        // --verify-import also takes a reference image to compare against.
+        let reference = if mode.as_deref() == Some("--verify-import") {
+            args.next().map(PathBuf::from)
+        } else {
+            None
+        };
         if args.next().is_some() {
             eprintln!(
-                "Usage: {} FILE.clip [NEW_REPORT.json]",
-                mode.as_deref().unwrap()
+                "Usage: {} FILE.clip [NEW_REPORT.json]{}",
+                mode.as_deref().unwrap(),
+                if mode.as_deref() == Some("--verify-import") {
+                    " [REFERENCE.png]"
+                } else {
+                    ""
+                }
             );
             std::process::exit(1);
         }
@@ -1289,6 +1300,7 @@ fn main() -> eframe::Result {
             import_report::verify(
                 &input,
                 report.as_deref(),
+                reference.as_deref(),
                 mode.as_deref() == Some("--verify-clip-preview"),
             )
         } else if mode.as_deref() == Some("--inspect-clip-metadata") {

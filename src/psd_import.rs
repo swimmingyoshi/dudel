@@ -289,17 +289,18 @@ fn layers(
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
-) -> Result<(Document, Order), String> {
-    let mut outer = Reader(data);
-    let mut info = outer.section()?;
-    if !outer.0.is_empty() && (!outer.section()?.0.is_empty() || outer.0.iter().any(|b| *b != 0)) {
-        return Err("PSD global masks or effects require the saved composite".into());
-    }
+) -> Result<(Document, Order, Vec<String>), String> {
+    // After the layer records come the global layer mask (how masks are shown
+    // in the editor, not pixels) and document-wide blocks such as patterns,
+    // text engine data and linked files. Those only matter to layers that use
+    // them, and such layers carry their own markers, checked per layer.
+    let mut info = Reader(data).section()?;
     let count = (info.u16()? as i16).unsigned_abs() as usize;
     if count == 0 || count > MAX_ENTRIES * 2 {
         return Err("PSD layer count exceeds limits or is empty".into());
     }
     let mut records = Vec::new();
+    let mut notes = Vec::new();
     for _ in 0..count {
         check(cancel)?;
         let rect = info.rect()?;
@@ -328,9 +329,6 @@ fn layers(
         }
         let flags = info.u8()?;
         info.u8()?;
-        if flags & 24 == 24 {
-            return Err("PSD layer appearance requires the saved composite".into());
-        }
         let mut extra = info.section()?;
         let mut mask_data = extra.section()?;
         let mask = if mask_data.0.is_empty() {
@@ -369,6 +367,8 @@ fn layers(
         let mut group = 0;
         let mut solid = None;
         let mut shapes = true;
+        let mut fill = 255u8;
+        let mut rendered = None;
         while extra.0.len() >= 12 {
             if extra.take(4)? != b"8BIM" {
                 return Err("Unsupported PSD additional-info signature".into());
@@ -414,6 +414,11 @@ fn layers(
                     shapes = value.u8()? == 1;
                 }
                 b"clbl" if value.u8()? == 1 => {}
+                // Photoshop stores what text and smart objects look like in the
+                // layer's own channels, so they import as pixels.
+                b"TySh" | b"tySh" => rendered = Some("text"),
+                b"PlLd" | b"SoLd" | b"SoLE" | b"plLd" => rendered = Some("smart object"),
+                b"iOpa" => fill = value.u8()?,
                 b"infx" | b"knko" if value.u8()? == 0 => {}
                 b"lyid" | b"lclr" | b"lnsr" | b"shmd" | b"fxrp" | b"lyvr" => {}
                 _ => {
@@ -426,6 +431,36 @@ fn layers(
         }
         if extra.0.iter().any(|b| *b != 0) {
             return Err("Truncated PSD additional info".into());
+        }
+        // Bit 4 (with bit 3 saying it is meaningful) marks pixel data that does
+        // not affect the document: normal for group records, unknown elsewhere.
+        if flags & 24 == 24 && group == 0 {
+            return Err("PSD layer pixels are marked irrelevant to its appearance".into());
+        }
+        if fill != 255 {
+            use crate::blend::BlendMode::*;
+            // These modes treat fill opacity differently from opacity.
+            if matches!(
+                layer.blend,
+                ColorBurn
+                    | LinearBurn
+                    | ColorDodge
+                    | LinearDodge
+                    | VividLight
+                    | LinearLight
+                    | HardMix
+                    | Difference
+            ) {
+                return Err("PSD fill opacity on this blend mode needs the saved composite".into());
+            }
+            layer.opacity *= f32::from(fill) / 255.0;
+        }
+        if let Some(kind) = rendered {
+            notes.push(format!(
+                "“{}” is a {kind} layer; Dudel imported its pixels. Its {} cannot be edited here.",
+                layer.name,
+                if kind == "text" { "text" } else { "source" }
+            ));
         }
         // With Transparency Shapes off, Photoshop's dodge modes blend the
         // alpha-weighted color at full strength: CSP's glow modes.
@@ -584,7 +619,7 @@ fn layers(
         1
     };
     doc.validate()?;
-    Ok((doc, order))
+    Ok((doc, order, notes))
 }
 /// Whether reversing a flat stack matches the saved image better, judged on
 /// a grid of sample pixels.
@@ -642,7 +677,40 @@ fn saved_image(
             },
         ]);
     }
+    remove_white_matte(&mut pixels);
     Ok(pixels)
+}
+/// Photoshop stores a transparent document's saved image blended against
+/// white: a pixel of color C and alpha a is stored as C·a + 255·(1 − a).
+/// Such an image never has a semi-transparent pixel darker than its white
+/// share, so that decides it; other writers store plain colors. Returns
+/// whether the matte was removed.
+fn remove_white_matte(pixels: &mut [u8]) -> bool {
+    let partial = || pixels.chunks_exact(4).filter(|p| p[3] > 0 && p[3] < 255);
+    let total = partial().count();
+    let darker = partial()
+        .filter(|p| {
+            p[..3]
+                .iter()
+                .any(|c| u16::from(*c) + 1 < 255 - u16::from(p[3]))
+        })
+        .count();
+    if total == 0 || darker * 100 > total {
+        return false;
+    }
+    for pixel in pixels.chunks_exact_mut(4) {
+        let a = f32::from(pixel[3]);
+        for c in &mut pixel[..3] {
+            *c = if a == 0.0 {
+                0
+            } else {
+                ((f32::from(*c) - (255.0 - a)) * 255.0 / a)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            };
+        }
+    }
+    true
 }
 
 pub(crate) fn import(path: &Path, cancel: &impl Fn() -> bool) -> Result<Imported, String> {
@@ -733,10 +801,15 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
                 .into(),
         );
     }
-    if layered && depth == 8 && !layer_data.0.is_empty() {
+    // An empty layer list means the document is just its background image.
+    let background_only = Reader(layer_data.0).u32().is_ok_and(|length| length == 0);
+    if background_only {
+        notes.push("This file holds only a background image; it was imported as one layer.".into());
+    } else if layered && depth == 8 && !layer_data.0.is_empty() {
         match layers(layer_data.0, width, height, cancel) {
-            Ok((mut document, order)) => {
+            Ok((mut document, order, layer_notes)) => {
                 notes.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
+                notes.extend(layer_notes);
                 let flipped = match order {
                     Order::BottomFirst => false,
                     Order::TopFirst => true,
@@ -767,7 +840,13 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         notes.push("Imported the saved flattened composite as one layer.".into());
     }
     if !has_composite {
-        return Err("PSD needs a saved compatibility composite for unsupported layer features. Save it with Maximize Compatibility enabled.".into());
+        let reason = notes
+            .iter()
+            .find_map(|n| n.split_once("unavailable: ").map(|(_, why)| why.to_owned()))
+            .unwrap_or_default();
+        return Err(format!(
+            "The layers could not be imported ({reason}) and the file has no saved flattened image to fall back to. Save it with Maximize Compatibility enabled."
+        ));
     }
     let pixels = saved_image(reader.0, width, height, channels, depth, has_alpha, cancel)?;
     if depth == 16 {
@@ -805,6 +884,9 @@ mod tests {
         blend: [u8; 4],
         /// Transparency Shapes Layer flag, when written.
         shapes: Option<u8>,
+        flags: u8,
+        /// Extra additional-info blocks (key, value).
+        keys: &'static [(&'static [u8; 4], &'static [u8])],
     }
     fn layer_file(specs: &[Spec]) -> Vec<u8> {
         let mut records = Vec::new();
@@ -835,7 +917,7 @@ mod tests {
             }
             records.extend(b"8BIM");
             records.extend(spec.blend);
-            records.extend([255, 0, 0, 0]);
+            records.extend([255, 0, spec.flags, 0]);
             let mut extra = Vec::new();
             if spec.mask {
                 let mut m = Vec::new();
@@ -864,6 +946,11 @@ mod tests {
                 extra.extend(b"8BIMtsly");
                 extra.extend(section(&[flag, 0, 0, 0]));
             }
+            for (key, value) in spec.keys {
+                extra.extend(b"8BIM");
+                extra.extend(*key);
+                extra.extend(section(value));
+            }
             records.extend(section(&extra));
         }
         let mut info = (-(specs.len() as i16)).to_be_bytes().to_vec();
@@ -888,6 +975,8 @@ mod tests {
             section: None,
             blend: *b"norm",
             shapes: None,
+            flags: 0,
+            keys: &[],
         }
     }
     fn group(name: &'static str, kind: u32) -> Spec {
@@ -899,6 +988,8 @@ mod tests {
             section: Some(kind),
             blend: *b"norm",
             shapes: None,
+            flags: 0,
+            keys: &[],
         }
     }
     #[test]
@@ -1010,6 +1101,76 @@ mod tests {
             );
             assert_eq!(imported.document.active, 1);
         }
+    }
+    #[test]
+    fn photoshop_records_text_fill_opacity_and_irrelevant_pixels() {
+        use crate::blend::BlendMode;
+        // Photoshop marks group records' pixels as irrelevant (flags 8 | 16),
+        // stores text pixels in the layer and may set fill opacity.
+        let file = layer_file(&[
+            group("</Layer set>", 3),
+            Spec {
+                keys: &[(b"TySh", &[0, 0, 0, 1]), (b"iOpa", &[128, 0, 0, 0])],
+                ..raster("Title", 0, [9, 9, 9, 255], false)
+            },
+            Spec {
+                flags: 24,
+                ..group("Group", 1)
+            },
+        ]);
+        let imported = parse(&file, &|| false).unwrap();
+        let text = &imported.document.layers[0];
+        assert_eq!(text.pixels.rgba(0), [9, 9, 9, 255]);
+        assert!((text.opacity - 128.0 / 255.0).abs() < 1e-6);
+        assert!(
+            imported
+                .notes
+                .iter()
+                .any(|n| n.contains("“Title” is a text layer"))
+        );
+        // On an ordinary raster layer the same flag means its pixels do not
+        // show what Photoshop draws, so they are not imported as art.
+        let irrelevant = layer_file(&[Spec {
+            flags: 24,
+            ..raster("Shape", 0, [1, 1, 1, 255], false)
+        }]);
+        assert!(parse(&irrelevant, &|| false).is_err());
+        // Fill opacity differs from opacity for the dodge/burn family.
+        let dodge = layer_file(&[Spec {
+            blend: *b"div ",
+            keys: &[(b"iOpa", &[128, 0, 0, 0])],
+            ..raster("Dodge", 0, [1, 1, 1, 255], false)
+        }]);
+        assert!(parse(&dodge, &|| false).is_err());
+        assert_eq!(BlendMode::Normal, imported.document.layers[0].blend);
+    }
+    #[test]
+    fn white_matte_is_removed_only_from_matted_images() {
+        // Photoshop: 50% red stored as red blended with white.
+        let mut matted = vec![255, 128, 128, 128, 0, 0, 0, 255, 255, 255, 255, 0];
+        assert!(remove_white_matte(&mut matted));
+        assert_eq!(matted, [255, 2, 2, 128, 0, 0, 0, 255, 0, 0, 0, 0]);
+        // A straight dark semi-transparent pixel cannot be matted.
+        let mut straight = vec![20, 20, 20, 128, 200, 10, 10, 64];
+        assert!(!remove_white_matte(&mut straight));
+        assert_eq!(straight, [20, 20, 20, 128, 200, 10, 10, 64]);
+    }
+    #[test]
+    fn background_only_files_open_as_one_layer_with_a_plain_note() {
+        let mut file = fixture(&[]);
+        file.truncate(34);
+        // Layer and mask section holding an empty layer list.
+        file.extend(section(&[0, 0, 0, 0]));
+        file.extend([0, 0, 10, 20, 30, 40, 50, 60]);
+        let imported = parse(&file, &|| false).unwrap();
+        assert_eq!(imported.document.layers.len(), 1);
+        assert!(
+            imported
+                .notes
+                .iter()
+                .any(|n| n.contains("only a background image"))
+        );
+        assert!(!imported.notes.iter().any(|n| n.contains("unavailable")));
     }
     #[test]
     fn groups_nest_with_the_divider_below_their_contents() {

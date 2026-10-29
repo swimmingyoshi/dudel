@@ -7,6 +7,7 @@ pub(crate) struct Imported {
 pub(crate) fn verify(
     path: &std::path::Path,
     output: Option<&std::path::Path>,
+    reference: Option<&std::path::Path>,
     preview: bool,
 ) -> Result<(), String> {
     let psd = path
@@ -32,16 +33,34 @@ pub(crate) fn verify(
         /// Dudel's rendering of the import against the PSD's saved composite.
         #[serde(skip_serializing_if = "Option::is_none")]
         saved_composite: Option<Difference>,
+        /// Against a reference image given on the command line.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reference: Option<Difference>,
     }
     let doc = imported.document;
+    let rendered = doc.composite_transparent();
+    // Files saved without a flattened image have nothing to compare against.
     let saved_composite = if psd {
-        let saved = crate::psd_import::saved_composite(path)?.document;
-        Some(difference(
-            &doc.composite_transparent(),
-            &saved.layers[0].pixels,
-        ))
+        crate::psd_import::saved_composite(path).ok().map(|saved| {
+            let saved: Vec<u8> = (0..doc.width * doc.height)
+                .flat_map(|i| saved.document.layers[0].pixels.rgba(i))
+                .collect();
+            difference(&rendered, &saved)
+        })
     } else {
         None
+    };
+    let reference = match reference {
+        Some(reference) => {
+            let image = image::open(reference)
+                .map_err(|e| format!("Reference image: {e}"))?
+                .into_rgba8();
+            if image.dimensions() != (doc.width as u32, doc.height as u32) {
+                return Err("Reference image size differs from the import".into());
+            }
+            Some(difference(&rendered, image.as_raw()))
+        }
+        None => None,
     };
     let report = Report {
         canvas: [doc.width, doc.height],
@@ -56,20 +75,28 @@ pub(crate) fn verify(
             .map(|l| crate::clip_raster::statistics(&l.pixels))
             .collect(),
         saved_composite,
+        reference,
     };
     crate::clip_container::write_report(&report, output)
 }
 
+/// How far a render is from a reference, on what is visible: colors are
+/// weighted by alpha, so color stored under transparent pixels is ignored.
 #[derive(serde::Serialize)]
 struct Difference {
     total_pixels: usize,
     exact_pixels: usize,
-    /// Pixels where any channel differs by more than 2.
+    /// Pixels where any alpha-weighted channel differs by more than 2.
     differing_pixels: usize,
     max_channel_difference: u8,
     mean_absolute_channel_difference: f64,
 }
-fn difference(rendered: &[u8], saved: &crate::pixels::Pixels) -> Difference {
+fn difference(rendered: &[u8], reference: &[u8]) -> Difference {
+    let visible = |p: &[u8]| -> [u8; 4] {
+        let a = u32::from(p[3]);
+        let c = |v: u8| ((u32::from(v) * a + 127) / 255) as u8;
+        [c(p[0]), c(p[1]), c(p[2]), p[3]]
+    };
     let mut result = Difference {
         total_pixels: rendered.len() / 4,
         exact_pixels: 0,
@@ -78,19 +105,11 @@ fn difference(rendered: &[u8], saved: &crate::pixels::Pixels) -> Difference {
         mean_absolute_channel_difference: 0.0,
     };
     let mut sum = 0u64;
-    for (i, a) in rendered.chunks_exact(4).enumerate() {
-        let b = saved.rgba(i);
-        let worst = a
-            .iter()
-            .zip(b)
-            .map(|(a, b)| a.abs_diff(b))
-            .max()
-            .unwrap_or(0);
-        sum += a
-            .iter()
-            .zip(b)
-            .map(|(a, b)| u64::from(a.abs_diff(b)))
-            .sum::<u64>();
+    for (a, b) in rendered.chunks_exact(4).zip(reference.chunks_exact(4)) {
+        let (a, b) = (visible(a), visible(b));
+        let channels = [0, 1, 2, 3].map(|c| a[c].abs_diff(b[c]));
+        let worst = channels.into_iter().max().unwrap_or(0);
+        sum += channels.into_iter().map(u64::from).sum::<u64>();
         result.exact_pixels += usize::from(worst == 0);
         result.differing_pixels += usize::from(worst > 2);
         result.max_channel_difference = result.max_channel_difference.max(worst);

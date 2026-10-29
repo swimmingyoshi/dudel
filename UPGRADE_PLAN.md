@@ -158,7 +158,23 @@ PSD (`src/psd_import.rs`, new):
       nesting, flat files by sampling the saved image both ways. Owner's
       Frieren VTuber PSD (146 layers, 4096 x 2249, written top first) imports
       editable and matches its saved image to within one level everywhere.
-- [ ] Test against PSDs saved by Photoshop itself and by Krita
+- [x] Tested against public Photoshop-saved files (2026-10-28): ag-psd test/read
+      (75 PSDs, MIT) and psd-tools tests/psd_files (279, MIT), fetched to the
+      session scratchpad, not the repo. Fixed: document-wide blocks rejected every
+      real Photoshop file; group records' "pixels irrelevant" flag rejected every
+      file with groups; white-matted flattened images (lightened edges on
+      fallback); verifier compared invisible colors and failed on files without a
+      flattened image. Text and smart objects now import as pixels; fill opacity.
+      ag-psd: 9 → 36/75 layered (+5 background-only). psd-tools: 28/279 layered.
+- [ ] Remaining PSD gaps by frequency in those sets: vector shape layers (~70,
+      need vector rendering; Photoshop marks their pixels irrelevant), adjustment
+      and fill layers (~40), layer effects lfx2/lfxs (~30: owner decision whether
+      to import without effects + note, or keep falling back), grayscale/CMYK/
+      indexed/32-bit modes (~60; grayscale is cheap and also covers the Live2D
+      tool's _depth.psd files), mask feather/density (~13), 16-bit layers (Lr16)
+- [ ] Owner's Live2D recovery outputs: all open; earlier "10% exact" was the
+      comparison counting invisible colors, not an import problem
+- [ ] Test against PSDs saved by Krita
 - [ ] Performance: adding a layer costs ~2 ms at 100 layers, ~28 ms at 500,
       ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
 - [ ] PSB, CMYK/grayscale, 16-bit layered, pass-through groups, adjustment layers
