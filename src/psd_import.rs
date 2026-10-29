@@ -217,6 +217,36 @@ fn blend(key: &[u8]) -> Result<crate::blend::BlendMode, String> {
         }
     })
 }
+/// Notes of one kind collected per layer, then written as one line each.
+#[derive(Default)]
+struct Grouped(Vec<(String, Vec<String>)>);
+impl Grouped {
+    fn add(&mut self, kind: String, name: &str) {
+        match self.0.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, names)) => names.push(name.to_owned()),
+            None => self.0.push((kind, vec![name.to_owned()])),
+        }
+    }
+    fn lines(self) -> impl Iterator<Item = String> {
+        self.0
+            .into_iter()
+            .map(|(kind, names)| format!("{kind}: {}.", crate::clip_metadata::name_list(&names)))
+    }
+}
+/// A layer's mask record: the user mask, its density and feather, the vector
+/// mask's density and feather, and the "real" user mask Photoshop stores
+/// separately (channel -3) when the layer also has a vector mask.
+#[derive(Clone, Copy)]
+struct MaskInfo {
+    rect: [i32; 4],
+    default: u8,
+    flags: u8,
+    density: Option<u8>,
+    feather: f64,
+    vector_density: Option<u8>,
+    vector_feather: f64,
+    real: Option<([i32; 4], u8, u8)>,
+}
 /// What a fill or shape layer paints.
 #[derive(Clone)]
 enum Fill {
@@ -228,7 +258,7 @@ struct Record {
     rect: [i32; 4],
     channels: Vec<(i16, usize)>,
     group: u32,
-    mask: Option<([i32; 4], u8, u8)>,
+    mask: Option<MaskInfo>,
     solid: Option<Fill>,
     /// Vector mask path; for a shape layer it outlines the fill.
     vector: Option<crate::psd_vector::VectorMask>,
@@ -289,6 +319,38 @@ fn effect_layers(
     )?;
     Ok(())
 }
+/// Photoshop's mask density (how much of what the mask hides stays hidden)
+/// and feather (a Gaussian blur of `feather` pixels).
+fn soften_mask(
+    mask: &mut crate::layer_mask::Mask,
+    density: Option<u8>,
+    feather: f64,
+    width: usize,
+    height: usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<(), String> {
+    if feather > 0.0 {
+        let mut values: Vec<f32> = (0..width * height)
+            .map(|i| f32::from(mask.at(i % width, i / width)))
+            .collect();
+        crate::layer_effects::gaussian(&mut values, width, height, feather, cancel)?;
+        let mut writer = mask.writer();
+        for (i, v) in values.iter().enumerate() {
+            writer.set(i % width, i / width, v.round().clamp(0.0, 255.0) as u8);
+        }
+    }
+    if let Some(density) = density.filter(|d| *d < 255) {
+        let mut writer = mask.writer();
+        for y in 0..height {
+            check(cancel)?;
+            for x in 0..width {
+                let v = u16::from(writer.at(x, y));
+                writer.set(x, y, (255 - (255 - v) * u16::from(density) / 255) as u8);
+            }
+        }
+    }
+    Ok(())
+}
 /// A shape layer: its fill clipped by the path, with any stroke on top.
 /// Returns the fill's coverage, which is what the layer's effects follow.
 #[allow(clippy::too_many_arguments)]
@@ -298,12 +360,14 @@ fn draw_shape(
     vector: Option<&crate::psd_vector::VectorMask>,
     stroke: Option<crate::psd_vector::Stroke>,
     filled: bool,
+    // The vector mask's density and feather.
+    (density, feather): (Option<u8>, f64),
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<f32>, String> {
     // A fill layer without a path covers the whole canvas.
-    let fill = match vector {
+    let mut fill = match vector {
         Some(vector) => {
             let mut fill = vector.coverage(width, height, cancel)?;
             if vector.inverted {
@@ -320,6 +384,16 @@ fn draw_shape(
         )),
         _ => None,
     };
+    // The stroke follows the sharp outline; the fill takes the mask's
+    // feather and density.
+    if vector.is_some() && feather > 0.0 {
+        crate::layer_effects::gaussian(&mut fill, width, height, feather, cancel)?;
+    }
+    if let Some(density) = density.filter(|d| *d < 255) {
+        let density = f32::from(density) / 255.0;
+        fill.iter_mut()
+            .for_each(|c| *c = 1.0 - (1.0 - *c) * density);
+    }
     let mut writer = layer.pixels.writer();
     for y in 0..height {
         check(cancel)?;
@@ -352,18 +426,26 @@ fn draw_shape(
 }
 /// A vector mask on an ordinary layer or folder becomes its layer mask,
 /// multiplied into any raster mask it already has.
+#[allow(clippy::too_many_arguments)]
 fn apply_vector_mask(
     layer: &mut Layer,
     vector: &crate::psd_vector::VectorMask,
+    density: Option<u8>,
+    feather: f64,
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<(), String> {
-    let coverage = vector.coverage(width, height, cancel)?;
-    let value = |i: usize| {
-        let c = coverage[i].clamp(0.0, 1.0);
-        if vector.inverted { 1.0 - c } else { c }
-    };
+    let mut coverage = vector.coverage(width, height, cancel)?;
+    for c in &mut coverage {
+        let v = c.clamp(0.0, 1.0);
+        *c = if vector.inverted { 1.0 - v } else { v };
+    }
+    if feather > 0.0 {
+        crate::layer_effects::gaussian(&mut coverage, width, height, feather, cancel)?;
+    }
+    let density = f32::from(density.unwrap_or(255)) / 255.0;
+    let value = |i: usize| 1.0 - (1.0 - coverage[i]) * density;
     if layer.mask.is_none() {
         layer.mask = Some(crate::layer_mask::LayerMask {
             id: crate::document::LayerId::new(),
@@ -438,6 +520,8 @@ fn layers(
     let mut records = Vec::new();
     let mut notes = Vec::new();
     let gray = matches!(mode, ColorMode::Gray);
+    // Per-layer notes of one kind become one line naming the layers.
+    let mut grouped = Grouped::default();
     for _ in 0..count {
         check(cancel)?;
         let rect = info.rect()?;
@@ -450,7 +534,7 @@ fn layers(
         for _ in 0..count {
             let id = info.u16()? as i16;
             let len = info.u32()? as usize;
-            if !(-2..mode.channels() as i16).contains(&id)
+            if !(-3..mode.channels() as i16).contains(&id)
                 || channels.iter().any(|(other, _)| *other == id)
             {
                 return Err("Unsupported or duplicate PSD layer channel".into());
@@ -473,17 +557,59 @@ fn layers(
         let mask = if mask_data.0.is_empty() {
             None
         } else {
-            if mask_data.0.len() != 20 {
-                return Err("Extended PSD masks need the saved composite".into());
-            }
-            let r = mask_data.rect()?;
-            geometry(r)?;
+            let rect = mask_data.rect()?;
+            geometry(rect)?;
             let default = mask_data.u8()?;
             let flags = mask_data.u8()?;
-            if flags & !7 != 0 {
+            // 1 position relative to the layer, 2 disabled, 4 inverted,
+            // 8 rendered from other data (a vector mask), 16 parameters follow.
+            if flags & !31 != 0 {
                 return Err("Unsupported PSD mask flags".into());
             }
-            Some((r, default, flags))
+            let f64 = |r: &mut Reader| -> Result<f64, String> {
+                let v = f64::from_be_bytes(r.take(8)?.try_into().unwrap());
+                if v.is_finite() && (0.0..=1000.0).contains(&v) {
+                    Ok(v)
+                } else {
+                    Err("Invalid PSD mask feather".into())
+                }
+            };
+            let mut info = MaskInfo {
+                rect,
+                default,
+                flags,
+                density: None,
+                feather: 0.0,
+                vector_density: None,
+                vector_feather: 0.0,
+                real: None,
+            };
+            if flags & 16 != 0 {
+                let parameters = mask_data.u8()?;
+                if parameters & 1 != 0 {
+                    info.density = Some(mask_data.u8()?);
+                }
+                if parameters & 2 != 0 {
+                    info.feather = f64(&mut mask_data)?;
+                }
+                if parameters & 4 != 0 {
+                    info.vector_density = Some(mask_data.u8()?);
+                }
+                if parameters & 8 != 0 {
+                    info.vector_feather = f64(&mut mask_data)?;
+                }
+            }
+            if mask_data.0.len() >= 18 {
+                let flags = mask_data.u8()?;
+                let default = mask_data.u8()?;
+                let rect = mask_data.rect()?;
+                geometry(rect)?;
+                if flags & !15 != 0 {
+                    return Err("Unsupported PSD mask flags".into());
+                }
+                info.real = Some((rect, default, flags));
+            }
+            Some(info)
         };
         let ranges = extra.section()?;
         if !ranges
@@ -647,10 +773,10 @@ fn layers(
         let adjustment = adjustment.or(legacy_brightness);
         let dropped = unsupported.is_some() || (adjustment.is_some() && group != 0);
         if let Some(kind) = &unsupported {
-            notes.push(format!(
-                "“{}” is a {kind} adjustment layer, which Dudel cannot apply yet; it was left out.",
-                layer.name
-            ));
+            grouped.add(
+                format!("Adjustment layers left out ({kind} cannot be applied yet)"),
+                &layer.name,
+            );
         }
         if let Some(settings) = adjustment {
             layer.adjustment = Some(crate::adjustment::Adjustment::new(settings));
@@ -685,25 +811,29 @@ fn layers(
             effects.list.clear();
         }
         if !effects.skipped.is_empty() {
-            notes.push(format!(
-                "“{}” uses layer effects Dudel cannot draw yet ({}); they were left out.",
-                layer.name,
-                effects.skipped.join(", ")
-            ));
+            grouped.add(
+                format!("Layer effects left out ({})", effects.skipped.join(", ")),
+                &layer.name,
+            );
         }
         if !effects.approximated.is_empty() {
-            notes.push(format!(
-                "“{}”: layer effects were drawn without some settings ({}).",
-                layer.name,
-                effects.approximated.join(", ")
-            ));
+            grouped.add(
+                format!(
+                    "Layer effects drawn without some settings ({})",
+                    effects.approximated.join(", ")
+                ),
+                &layer.name,
+            );
         }
         if let Some(kind) = rendered {
-            notes.push(format!(
-                "“{}” is a {kind} layer; Dudel imported its pixels. Its {} cannot be edited here.",
-                layer.name,
-                if kind == "text" { "text" } else { "source" }
-            ));
+            grouped.add(
+                if kind == "text" {
+                    "Text layers imported as pixels (their text cannot be edited here)".into()
+                } else {
+                    "Smart objects imported as pixels (their source cannot be edited here)".into()
+                },
+                &layer.name,
+            );
         }
         // With Transparency Shapes off, Photoshop's dodge modes blend the
         // alpha-weighted color at full strength: CSP's glow modes.
@@ -741,6 +871,7 @@ fn layers(
             dropped,
         });
     }
+    notes.extend(grouped.lines());
     let mut decoded_budget = 0usize;
     for record in &mut records {
         check(cancel)?;
@@ -755,13 +886,19 @@ fn layers(
         let mut planes = std::collections::BTreeMap::new();
         for &(id, bytes) in &record.channels {
             let data = info.take(bytes)?;
-            if record.group != 0 && id != -2 {
+            if record.group != 0 && id > -2 {
                 continue;
             }
-            let [cw, ch] = if id == -2 {
-                geometry(record.mask.ok_or("PSD mask channel has no metadata")?.0)?
-            } else {
-                [w, h]
+            let [cw, ch] = match id {
+                -2 => geometry(record.mask.ok_or("PSD mask channel has no metadata")?.rect)?,
+                -3 => geometry(
+                    record
+                        .mask
+                        .and_then(|m| m.real)
+                        .ok_or("PSD real mask channel has no metadata")?
+                        .0,
+                )?,
+                _ => [w, h],
             };
             decoded_budget = decoded_budget
                 .checked_add(cw * ch)
@@ -792,6 +929,9 @@ fn layers(
                 record.vector.as_ref(),
                 record.stroke,
                 record.filled,
+                record
+                    .mask
+                    .map_or((None, 0.0), |m| (m.vector_density, m.vector_feather)),
                 width,
                 height,
                 cancel,
@@ -826,8 +966,22 @@ fn layers(
                 }
             }
         }
-        if let Some((rect, default, flags)) = record.mask {
-            let plane = planes.get(&-2).ok_or("PSD mask metadata has no pixels")?;
+        // With a vector mask, the -2 channel holds the mask Photoshop rendered
+        // from it (drawn here from the path instead); the user's own mask is
+        // then the "real" one in channel -3.
+        let user_mask = record
+            .mask
+            .and_then(|info| match (info.real, planes.get(&-3)) {
+                (Some((rect, default, flags)), Some(plane)) => Some((rect, default, flags, plane)),
+                _ if info.flags & 8 != 0 && record.vector.is_some() => None,
+                _ => planes
+                    .get(&-2)
+                    .map(|plane| (info.rect, info.default, info.flags, plane)),
+            });
+        if record.mask.is_some() && user_mask.is_none() && planes.get(&-2).is_none() {
+            return Err("PSD mask metadata has no pixels".into());
+        }
+        if let Some((rect, default, flags, plane)) = user_mask {
             let [mw, mh] = geometry(rect)?;
             let invert = |v: u8| if flags & 4 != 0 { 255 - v } else { v };
             let mut coverage = crate::layer_mask::Mask::new(width, height, invert(default))?;
@@ -851,6 +1005,15 @@ fn layers(
                     }
                 }
             }
+            let info = record.mask.unwrap();
+            soften_mask(
+                &mut coverage,
+                info.density,
+                info.feather,
+                width,
+                height,
+                cancel,
+            )?;
             record.layer.mask = Some(crate::layer_mask::LayerMask {
                 id: crate::document::LayerId::new(),
                 enabled: flags & 2 == 0,
@@ -859,7 +1022,18 @@ fn layers(
             });
         }
         if let (None, Some(vector)) = (&record.solid, &record.vector) {
-            apply_vector_mask(&mut record.layer, vector, width, height, cancel)?;
+            let (density, feather) = record
+                .mask
+                .map_or((None, 0.0), |m| (m.vector_density, m.vector_feather));
+            apply_vector_mask(
+                &mut record.layer,
+                vector,
+                density,
+                feather,
+                width,
+                height,
+                cancel,
+            )?;
         }
         if record.group == 0 && !record.effects.list.is_empty() {
             effect_layers(record, width, height, &mut decoded_budget, cancel)?;
@@ -1451,6 +1625,22 @@ mod tests {
         assert!(imported.notes.iter().any(|n| n.contains("editable")));
     }
     #[test]
+    fn mask_density_reveals_and_feather_softens() {
+        // Left half hidden, right half shown.
+        let mut mask = crate::layer_mask::Mask::new(8, 1, 255).unwrap();
+        for x in 0..4 {
+            mask.writer().set(x, 0, 0);
+        }
+        let mut dense = mask.clone();
+        soften_mask(&mut dense, Some(64), 0.0, 8, 1, &|| false).unwrap();
+        // A quarter density hides only a quarter of what the mask hides.
+        assert_eq!((dense.at(0, 0), dense.at(7, 0)), (191, 255));
+        let mut feathered = mask;
+        soften_mask(&mut feathered, None, 2.0, 8, 1, &|| false).unwrap();
+        assert!(feathered.at(3, 0) > 30 && feathered.at(4, 0) < 225);
+        assert!(feathered.at(3, 0) < feathered.at(4, 0));
+    }
+    #[test]
     fn dropped_adjustments_do_not_decode_irrelevant_channel_payloads() {
         let mut file = layer_file(&[
             Spec {
@@ -1767,10 +1957,8 @@ mod tests {
         assert_eq!(text.pixels.rgba(0), [9, 9, 9, 255]);
         assert!((text.opacity - 128.0 / 255.0).abs() < 1e-6);
         assert!(
-            imported
-                .notes
-                .iter()
-                .any(|n| n.contains("“Title” is a text layer"))
+            imported.notes.iter().any(|n| n
+                == "Text layers imported as pixels (their text cannot be edited here): “Title”.")
         );
         // On an ordinary raster layer the same flag means its pixels do not
         // show what Photoshop draws, so they are not imported as art.

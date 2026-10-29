@@ -1342,6 +1342,16 @@ fn blur(
 /// Sigma of the Gaussian matching an effect size of one pixel, fitted to
 /// Photoshop's saved images of shadows and glows (ag-psd effects test).
 const BLUR_SIGMA: f64 = 0.4;
+/// Gaussian-like blur with standard deviation `sigma` pixels.
+pub(crate) fn gaussian(
+    values: &mut [f32],
+    w: usize,
+    h: usize,
+    sigma: f64,
+    cancel: &impl Fn() -> bool,
+) -> Result<(), String> {
+    blur(values, w, h, sigma / BLUR_SIGMA, cancel)
+}
 fn box_line(src: &[f32], dst: &mut [f32], radius: usize) {
     let n = src.len();
     let at = |i: isize| src[i.clamp(0, n as isize - 1) as usize];

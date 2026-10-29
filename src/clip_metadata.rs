@@ -1324,7 +1324,7 @@ fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
 }
 
 /// “A”, “B” and “C”, or the first few and how many more.
-fn name_list(names: &[String]) -> String {
+pub(crate) fn name_list(names: &[String]) -> String {
     const SHOWN: usize = 5;
     let quoted: Vec<String> = names.iter().take(SHOWN).map(|n| format!("“{n}”")).collect();
     match names.len() {
