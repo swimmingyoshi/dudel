@@ -84,8 +84,12 @@ pixels as not matching what it draws): all four path operations, even-odd and no
 winding, and solid strokes inside, centred or outside the combined outline. Vector
 masks on ordinary layers and folders become layer masks. Strokes use round joins
 (Photoshop's miter corners differ slightly) and stroke anti-aliasing is approximate.
-Gradient and pattern shape fills, dashed strokes, effects, adjustment layers, mask
-feather/density and other unsupported descriptors use the saved composite with an
+Gradient fill layers and gradient-filled shapes are drawn too (linear, radial, angle,
+reflected and diamond; angle, scale, offset, reverse, align with layer; color and
+opacity stops with midpoints). Stops blend linearly, where Photoshop smooths them, so
+gradients can differ by up to about 16 levels. Noise gradients, stops using the
+editor's foreground/background colors, pattern fills, dashed strokes, effects,
+adjustment layers, mask feather/density and other unsupported descriptors use the saved composite with an
 explicit Import details report. They are not silently approximated as editable layers.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.

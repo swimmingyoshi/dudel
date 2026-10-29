@@ -217,13 +217,19 @@ fn blend(key: &[u8]) -> Result<crate::blend::BlendMode, String> {
         }
     })
 }
+/// What a fill or shape layer paints.
+#[derive(Clone)]
+enum Fill {
+    Solid([u8; 3]),
+    Gradient(crate::psd_vector::Gradient),
+}
 struct Record {
     layer: Layer,
     rect: [i32; 4],
     channels: Vec<(i16, usize)>,
     group: u32,
     mask: Option<([i32; 4], u8, u8)>,
-    solid: Option<[u8; 3]>,
+    solid: Option<Fill>,
     /// Vector mask path; for a shape layer it outlines the fill.
     vector: Option<crate::psd_vector::VectorMask>,
     stroke: Option<crate::psd_vector::Stroke>,
@@ -235,43 +241,59 @@ struct Record {
 #[allow(clippy::too_many_arguments)]
 fn draw_shape(
     layer: &mut Layer,
-    color: [u8; 3],
-    vector: &crate::psd_vector::VectorMask,
+    paint: &dyn Fn(usize, usize) -> [u8; 4],
+    vector: Option<&crate::psd_vector::VectorMask>,
     stroke: Option<crate::psd_vector::Stroke>,
     filled: bool,
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<(), String> {
-    let mut fill = vector.coverage(width, height, cancel)?;
-    if vector.inverted {
-        fill.iter_mut().for_each(|c| *c = 1.0 - *c);
-    }
-    let outline = match stroke {
-        Some(stroke) => Some((
+    // A fill layer without a path covers the whole canvas.
+    let fill = match vector {
+        Some(vector) => {
+            let mut fill = vector.coverage(width, height, cancel)?;
+            if vector.inverted {
+                fill.iter_mut().for_each(|c| *c = 1.0 - *c);
+            }
+            fill
+        }
+        None => vec![1.0; width * height],
+    };
+    let outline = match (stroke, vector) {
+        (Some(stroke), Some(vector)) => Some((
             vector.stroke_coverage(&stroke, &fill, width, height, cancel)?,
             stroke,
         )),
-        None => None,
+        _ => None,
     };
     let mut writer = layer.pixels.writer();
-    for i in 0..width * height {
-        let f = if filled { fill[i].clamp(0.0, 1.0) } else { 0.0 };
-        let (s, stroke_color) = outline.as_ref().map_or((0.0, color), |(plane, stroke)| {
-            (plane[i] * stroke.opacity, stroke.color)
-        });
-        let alpha = s + f * (1.0 - s);
-        let a = (alpha * 255.0).round() as u8;
-        if a == 0 {
-            continue;
+    for y in 0..height {
+        check(cancel)?;
+        for x in 0..width {
+            let i = y * width + x;
+            let (s, stroke_color) = outline.as_ref().map_or((0.0, [0; 3]), |(plane, stroke)| {
+                (plane[i] * stroke.opacity, stroke.color)
+            });
+            let covered = if filled { fill[i].clamp(0.0, 1.0) } else { 0.0 };
+            if s <= 0.0 && covered <= 0.0 {
+                continue;
+            }
+            let color = paint(x, y);
+            let f = covered * f32::from(color[3]) / 255.0;
+            let alpha = s + f * (1.0 - s);
+            let a = (alpha * 255.0).round() as u8;
+            if a == 0 {
+                continue;
+            }
+            let rgb: [u8; 3] = std::array::from_fn(|c| {
+                ((f32::from(stroke_color[c]) * s + f32::from(color[c]) * f * (1.0 - s)) / alpha)
+                    .round() as u8
+            });
+            writer
+                .rgba_mut(i)
+                .copy_from_slice(&[rgb[0], rgb[1], rgb[2], a]);
         }
-        let rgb: [u8; 3] = std::array::from_fn(|c| {
-            ((f32::from(stroke_color[c]) * s + f32::from(color[c]) * f * (1.0 - s)) / alpha).round()
-                as u8
-        });
-        writer
-            .rgba_mut(i)
-            .copy_from_slice(&[rgb[0], rgb[1], rgb[2], a]);
     }
     Ok(())
 }
@@ -446,16 +468,24 @@ fn layers(
             }
             match key {
                 b"SoCo" => {
-                    solid = Some(crate::psd_vector::solid_fill(
+                    solid = Some(Fill::Solid(crate::psd_vector::solid_fill(
                         &crate::psd_vector::versioned(value.0)?,
-                    )?);
+                    )?));
+                }
+                b"GdFl" => {
+                    solid = Some(Fill::Gradient(crate::psd_vector::gradient(
+                        &crate::psd_vector::versioned(value.0)?,
+                    )?));
                 }
                 b"vscg" => {
                     let (fill, settings) = crate::psd_vector::keyed(value.0)?;
-                    if fill != "SoCo" {
-                        return Err(format!("PSD shape fill {fill} needs the saved composite"));
-                    }
-                    solid = Some(crate::psd_vector::solid_fill(&settings)?);
+                    solid = Some(match fill.as_str() {
+                        "SoCo" => Fill::Solid(crate::psd_vector::solid_fill(&settings)?),
+                        "GdFl" => Fill::Gradient(crate::psd_vector::gradient(&settings)?),
+                        _ => {
+                            return Err(format!("PSD shape fill {fill} needs the saved composite"));
+                        }
+                    });
                 }
                 b"vmsk" | b"vsms" => {
                     vector = Some(crate::psd_vector::vector_mask(value.0, width, height)?);
@@ -603,24 +633,33 @@ fn layers(
                 .ok_or("PSD layer payload exceeds memory budget")?;
             planes.insert(id, decode(data, cw, ch, 1, 8, cancel)?);
         }
-        if let (Some(color), Some(vector)) = (record.solid, &record.vector) {
+        if let Some(fill) = &record.solid {
+            // A gradient spans the shape's path, else the layer's own bounds.
+            let rect = record.rect.map(f64::from);
+            let layer_box = record.vector.as_ref().and_then(|v| v.bounds()).unwrap_or(
+                if rect[2] > rect[0] && rect[3] > rect[1] {
+                    [rect[1], rect[0], rect[3], rect[2]]
+                } else {
+                    [0.0, 0.0, width as f64, height as f64]
+                },
+            );
+            let paint: Box<dyn Fn(usize, usize) -> [u8; 4] + '_> = match fill {
+                Fill::Solid(c) => {
+                    let c = *c;
+                    Box::new(move |_, _| [c[0], c[1], c[2], 255])
+                }
+                Fill::Gradient(g) => Box::new(g.painter(layer_box, [width, height])),
+            };
             draw_shape(
                 &mut record.layer,
-                color,
-                vector,
+                &paint,
+                record.vector.as_ref(),
                 record.stroke,
                 record.filled,
                 width,
                 height,
                 cancel,
             )?;
-        } else if let Some(color) = record.solid {
-            let row = [color[0], color[1], color[2], 255].repeat(width);
-            let mut writer = record.layer.pixels.writer();
-            for y in 0..height {
-                check(cancel)?;
-                writer.write_region(width, [0, y, width, y + 1], &row);
-            }
         } else if record.group == 0 && w * h != 0 {
             if !(0..mode.channels() as i16).all(|id| planes.contains_key(&id)) {
                 return Err("PSD layer is missing color pixels".into());
@@ -680,7 +719,7 @@ fn layers(
                 coverage,
             });
         }
-        if let (None, Some(vector)) = (record.solid, &record.vector) {
+        if let (None, Some(vector)) = (&record.solid, &record.vector) {
             apply_vector_mask(&mut record.layer, vector, width, height, cancel)?;
         }
     }

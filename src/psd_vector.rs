@@ -196,6 +196,23 @@ pub(crate) fn color(object: &Descriptor) -> Result<[u8; 3], String> {
     };
     let rgb = match object.class.as_str() {
         "RGBC" => [channel("Rd  ")?, channel("Grn ")?, channel("Bl  ")?],
+        "HSBC" => {
+            let (h, s, v) = (
+                channel("H   ")?.rem_euclid(360.0) / 60.0,
+                channel("Strt")? / 100.0,
+                channel("Brgh")? / 100.0 * 255.0,
+            );
+            let f = h.fract();
+            let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
+            match h as u32 {
+                0 => [v, t, p],
+                1 => [q, v, p],
+                2 => [p, v, t],
+                3 => [p, q, v],
+                4 => [t, p, v],
+                _ => [v, p, q],
+            }
+        }
         // Gray is a percentage of black ink.
         "Grsc" => [255.0 * (1.0 - channel("Gry ")? / 100.0); 3],
         other => return Err(format!("Unsupported PSD color model {other}")),
@@ -205,6 +222,180 @@ pub(crate) fn color(object: &Descriptor) -> Result<[u8; 3], String> {
 /// The solid color of a fill descriptor (`SoCo`, or `vscg` with key SoCo).
 pub(crate) fn solid_fill(fill: &Descriptor) -> Result<[u8; 3], String> {
     color(fill.object("Clr ").ok_or("PSD solid fill has no color")?)
+}
+
+/// A gradient fill (`GdFl`, or `vscg` with key GdFl).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Gradient {
+    kind: GradientKind,
+    angle: f64,
+    scale: f64,
+    reverse: bool,
+    /// Lay the ramp out over the layer (true) or the whole document.
+    aligned: bool,
+    offset: [f64; 2],
+    /// (location 0..=1, color, midpoint 0..=1 of the segment ending here).
+    colors: Vec<(f64, [f64; 3], f64)>,
+    opacities: Vec<(f64, f64, f64)>,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum GradientKind {
+    Linear,
+    Radial,
+    Angle,
+    Reflected,
+    Diamond,
+}
+pub(crate) fn gradient(settings: &Descriptor) -> Result<Gradient, String> {
+    let ramp = settings.object("Grad").ok_or("PSD gradient has no ramp")?;
+    if ramp.enumerated("GrdF") != Some("CstS") {
+        return Err("Noise PSD gradients need the saved composite".into());
+    }
+    let kind = match settings.enumerated("Type") {
+        Some("Lnr ") | None => GradientKind::Linear,
+        Some("Rdl ") => GradientKind::Radial,
+        Some("Angl") => GradientKind::Angle,
+        Some("Rflc") => GradientKind::Reflected,
+        Some("Dmnd") => GradientKind::Diamond,
+        Some(other) => return Err(format!("Unsupported PSD gradient type {other}")),
+    };
+    let stops = |key: &str| -> Result<Vec<&Descriptor>, String> {
+        match ramp.get(key) {
+            Some(Value::List(items)) => items
+                .iter()
+                .map(|item| match item {
+                    Value::Object(stop) => Ok(stop),
+                    _ => Err("Invalid PSD gradient stop".to_string()),
+                })
+                .collect(),
+            None => Ok(Vec::new()),
+            _ => Err("Invalid PSD gradient stops".into()),
+        }
+    };
+    let place = |stop: &Descriptor| {
+        (
+            (stop.number("Lctn").unwrap_or(0.0) / 4096.0).clamp(0.0, 1.0),
+            (stop.number("Mdpn").unwrap_or(50.0) / 100.0).clamp(0.05, 0.95),
+        )
+    };
+    let mut colors = Vec::new();
+    for stop in stops("Clrs")? {
+        // Foreground/background stops depend on the editor's colors.
+        if !matches!(stop.enumerated("Type"), None | Some("UsrS")) {
+            return Err("PSD gradient stops using editor colors need the saved composite".into());
+        }
+        let color = color(
+            stop.object("Clr ")
+                .ok_or("PSD gradient stop has no color")?,
+        )?;
+        let (location, midpoint) = place(stop);
+        colors.push((location, color.map(f64::from), midpoint));
+    }
+    let mut opacities = Vec::new();
+    for stop in stops("Trns")? {
+        let (location, midpoint) = place(stop);
+        let opacity = (stop.number("Opct").unwrap_or(100.0) / 100.0).clamp(0.0, 1.0);
+        opacities.push((location, opacity, midpoint));
+    }
+    if colors.is_empty() || colors.len() > 1024 || opacities.len() > 1024 {
+        return Err("PSD gradient stops exceed limits".into());
+    }
+    if opacities.is_empty() {
+        opacities.push((0.0, 1.0, 0.5));
+    }
+    let offset = settings.object("Ofst").map_or([0.0; 2], |point| {
+        [
+            point.number("Hrzn").unwrap_or(0.0) / 100.0,
+            point.number("Vrtc").unwrap_or(0.0) / 100.0,
+        ]
+    });
+    let finite = |v: f64| v.is_finite().then_some(v);
+    Ok(Gradient {
+        kind,
+        angle: settings.number("Angl").and_then(finite).unwrap_or(0.0),
+        scale: (settings.number("Scl ").and_then(finite).unwrap_or(100.0) / 100.0)
+            .clamp(0.01, 100.0),
+        reverse: settings.flag("Rvrs").unwrap_or(false),
+        aligned: settings.flag("Algn").unwrap_or(true),
+        offset: offset.map(|v| if v.is_finite() { v } else { 0.0 }),
+        colors,
+        opacities,
+    })
+}
+/// Interpolate stops at `t`, honoring each segment's midpoint.
+fn ramp<const N: usize>(stops: &[(f64, [f64; N], f64)], t: f64) -> [f64; N] {
+    let first = stops[0];
+    if t <= first.0 {
+        return first.1;
+    }
+    for pair in stops.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        if t <= b.0 {
+            let span = b.0 - a.0;
+            let mut u = if span > 0.0 { (t - a.0) / span } else { 1.0 };
+            if (b.2 - 0.5).abs() > 1e-6 {
+                u = u.powf(0.5f64.ln() / b.2.ln());
+            }
+            return std::array::from_fn(|c| a.1[c] + (b.1[c] - a.1[c]) * u);
+        }
+    }
+    stops[stops.len() - 1].1
+}
+impl Gradient {
+    /// Straight RGBA at pixel (x, y). `layer` is the box the ramp spans when
+    /// aligned with the layer; otherwise the document is used.
+    pub(crate) fn painter(
+        &self,
+        layer: [f64; 4],
+        document: [usize; 2],
+    ) -> impl Fn(usize, usize) -> [u8; 4] + '_ {
+        let [left, top, right, bottom] = if self.aligned {
+            layer
+        } else {
+            [0.0, 0.0, document[0] as f64, document[1] as f64]
+        };
+        let (w, h) = ((right - left).max(1.0), (bottom - top).max(1.0));
+        let ratio = self.angle.rem_euclid(90.0);
+        let reach = self.scale * ((90.0 - ratio) / 90.0 * w + ratio / 90.0 * h);
+        let center = [
+            left + w / 2.0 + self.offset[0] * w,
+            top + h / 2.0 + self.offset[1] * h,
+        ];
+        let theta = self.angle.to_radians();
+        let (sin, cos) = theta.sin_cos();
+        let colors: Vec<_> = self.colors.clone();
+        let opacities: Vec<(f64, [f64; 1], f64)> = self
+            .opacities
+            .iter()
+            .map(|&(l, o, m)| (l, [o], m))
+            .collect();
+        move |x, y| {
+            // Ramp coordinates: -1..1 across the box (scaled).
+            let gx = 2.0 * (x as f64 + 0.5 - center[0]) / reach;
+            let gy = 2.0 * (y as f64 + 0.5 - center[1]) / reach;
+            let mut t = match self.kind {
+                GradientKind::Linear => 0.5 * (cos * gx - sin * gy + 1.0),
+                GradientKind::Radial => (gx * gx + gy * gy).sqrt(),
+                GradientKind::Angle => {
+                    ((gy.atan2(gx).to_degrees() + self.angle).rem_euclid(360.0)) / 360.0
+                }
+                GradientKind::Reflected => (cos * gx - sin * gy).abs(),
+                GradientKind::Diamond => (cos * gx - sin * gy).abs() + (sin * gx + cos * gy).abs(),
+            }
+            .clamp(0.0, 1.0);
+            if self.reverse {
+                t = 1.0 - t;
+            }
+            let rgb = ramp(&colors, t);
+            let alpha = ramp(&opacities, t)[0];
+            [
+                rgb[0].round().clamp(0.0, 255.0) as u8,
+                rgb[1].round().clamp(0.0, 255.0) as u8,
+                rgb[2].round().clamp(0.0, 255.0) as u8,
+                (alpha * 255.0).round().clamp(0.0, 255.0) as u8,
+            ]
+        }
+    }
 }
 
 /// A vector shape's outline settings from `vstk`.
@@ -474,6 +665,20 @@ fn fill(
 }
 
 impl VectorMask {
+    /// Bounds of the path's anchors and control points, in pixels.
+    pub(crate) fn bounds(&self) -> Option<[f64; 4]> {
+        let points = self.paths.iter().flat_map(|p| &p.knots).map(|k| k.anchor);
+        points.fold(None, |b: Option<[f64; 4]>, p| {
+            Some(b.map_or([p[0], p[1], p[0], p[1]], |b| {
+                [
+                    b[0].min(p[0]),
+                    b[1].min(p[1]),
+                    b[2].max(p[0]),
+                    b[3].max(p[1]),
+                ]
+            }))
+        })
+    }
     /// Coverage of the filled path (before `inverted`), one value per pixel.
     pub(crate) fn coverage(
         &self,
@@ -737,6 +942,65 @@ mod tests {
         let mask = vector_mask(&polygon_mask(&[(3, &square)], 8.0, 8.0), 8, 8).unwrap();
         let c = mask.coverage(8, 8, &never).unwrap();
         assert_eq!((c[0], c[3 * 8 + 3]), (0.0, 1.0));
+    }
+    #[test]
+    fn gradients_follow_type_direction_stops_and_midpoints() {
+        let base = Gradient {
+            kind: GradientKind::Linear,
+            angle: 0.0,
+            scale: 1.0,
+            reverse: false,
+            aligned: true,
+            offset: [0.0; 2],
+            colors: vec![(0.0, [0.0; 3], 0.5), (1.0, [255.0; 3], 0.5)],
+            opacities: vec![(0.0, 1.0, 0.5)],
+        };
+        let at = |g: &Gradient, x: usize, y: usize| {
+            g.painter([0.0, 0.0, 100.0, 100.0], [100, 100])(x, y)
+        };
+        // Linear at 0 degrees runs left to right across the box.
+        assert!(at(&base, 0, 50)[0] < 5 && at(&base, 99, 50)[0] > 250);
+        assert!((i32::from(at(&base, 50, 50)[0]) - 128).abs() <= 2);
+        // 90 degrees runs bottom to top; reversed swaps the ends.
+        let up = Gradient {
+            angle: 90.0,
+            ..base.clone()
+        };
+        assert!(at(&up, 50, 99)[0] < 5 && at(&up, 50, 0)[0] > 250);
+        let reversed = Gradient {
+            reverse: true,
+            ..base.clone()
+        };
+        assert!(at(&reversed, 0, 50)[0] > 250);
+        // Radial is darkest at the centre, reflected is symmetric.
+        let radial = Gradient {
+            kind: GradientKind::Radial,
+            ..base.clone()
+        };
+        assert!(at(&radial, 50, 50)[0] < 10 && at(&radial, 0, 50)[0] > 240);
+        let reflected = Gradient {
+            kind: GradientKind::Reflected,
+            ..base.clone()
+        };
+        assert_eq!(at(&reflected, 20, 50), at(&reflected, 79, 50));
+        // A 25% midpoint reaches the halfway color a quarter of the way along.
+        let early = Gradient {
+            colors: vec![(0.0, [0.0; 3], 0.5), (1.0, [255.0; 3], 0.25)],
+            ..base.clone()
+        };
+        assert!((i32::from(at(&early, 25, 50)[0]) - 128).abs() <= 4);
+        // Opacity stops fade alpha independently of color.
+        let fading = Gradient {
+            opacities: vec![(0.0, 1.0, 0.5), (1.0, 0.0, 0.5)],
+            ..base.clone()
+        };
+        assert!(at(&fading, 0, 50)[3] > 250 && at(&fading, 99, 50)[3] < 5);
+        // Not aligned with the layer: the ramp spans the document instead.
+        let document = Gradient {
+            aligned: false,
+            ..base
+        };
+        assert!(document.painter([0.0, 0.0, 10.0, 10.0], [100, 100])(50, 0)[0] > 120);
     }
     #[test]
     fn strokes_follow_alignment_and_damaged_paths_fail() {

@@ -171,6 +171,12 @@ PSD (`src/psd_import.rs`, new):
       and stroke, vector masks, path operations, non-zero winding (`psd_vector.rs`:
       descriptor reader, path parser, rasterizer); clipping onto pass-through
       folders fixed in the compositor. psd-tools: 31 -> 106/279 layered; ag-psd 42/75.
+- [x] 2026-10-29: gradient fill layers and gradient shapes (`Gradient` in
+      psd_vector.rs; geometry follows psd-tools). psd-tools 106 -> 114 layered.
+- [ ] Layer effects (owner asked for a real fix): plan agreed in chat - shared
+      effect renderers (drop shadow, stroke, color/gradient overlay, outer glow
+      first), used at import to turn each effect into its own layer like
+      Photoshop's Create Layers, then as native editable layer styles.
 - [ ] Known vector differences: miter joins drawn round; stroke AA approximate;
       Photoshop strokes under intersect/subtract path ops differ (psd-tools
       path-operations/* files); color burn / hard mix / vivid light layer
