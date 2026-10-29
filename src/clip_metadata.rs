@@ -97,6 +97,12 @@ struct Report {
     unsupported_track_schema: bool,
     import_issues: Vec<String>,
     rendering_study_omissions: Vec<String>,
+    /// For the import summary: editing-guide fields not imported, with the
+    /// layers carrying them, and layers whose layer color was not applied.
+    #[serde(skip)]
+    guide_omissions: BTreeMap<&'static str, BTreeSet<i64>>,
+    #[serde(skip)]
+    tinted_layers: Vec<i64>,
     #[serde(skip)]
     document_properties: BTreeMap<i64, String>,
     #[serde(skip)]
@@ -278,6 +284,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                     report.rendering_study_omissions.push(format!(
                         "Layer {id}: CSP editing guide {field} was not imported"
                     ));
+                    report.guide_omissions.entry(field).or_default().insert(id);
                     continue;
                 }
                 if study && field == "AnimationFolder" {
@@ -392,6 +399,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             |row| row.get::<_, i64>(0),
         )?;
         for id in tinted {
+            report.tinted_layers.push(id);
             report.rendering_study_omissions.push(format!(
                 "Layer color on “{}” was not applied; its pixels keep their stored colors.",
                 report
@@ -1141,6 +1149,8 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         unsupported_track_schema,
         import_issues: Vec::new(),
         rendering_study_omissions: Vec::new(),
+        guide_omissions: BTreeMap::new(),
+        tinted_layers: Vec::new(),
         document_properties: BTreeMap::new(),
         locks: BTreeMap::new(),
         layer_issues: BTreeMap::new(),
@@ -1313,12 +1323,24 @@ fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
     })
 }
 
+/// “A”, “B” and “C”, or the first few and how many more.
+fn name_list(names: &[String]) -> String {
+    const SHOWN: usize = 5;
+    let quoted: Vec<String> = names.iter().take(SHOWN).map(|n| format!("“{n}”")).collect();
+    match names.len() {
+        0 => String::new(),
+        1 => quoted[0].clone(),
+        n if n <= SHOWN => format!("{} and {}", quoted[..n - 1].join(", "), quoted[n - 1]),
+        n => format!("{} and {} more", quoted.join(", "), n - SHOWN),
+    }
+}
+
 pub(crate) fn import_document(
     input: &Path,
     cancelled: &impl Fn() -> bool,
 ) -> Result<crate::import_report::Imported, String> {
     let (document, mut notes) = prepare_document_mode(input, cancelled, true)?;
-    notes.insert(0, "CSP raster layers imported as an unsaved copy. Folder, clipping and blend rendering uses Dudel's compositor; it may differ from CSP. Keep the source for CSP-specific editing.".into());
+    notes.insert(0, "Dudel draws folders, clipping and blend modes itself, so small differences from Clip Studio Paint are possible.".into());
     Ok(crate::import_report::Imported { document, notes })
 }
 
@@ -1429,7 +1451,9 @@ fn prepare_document_mode(
     if !issues.is_empty() {
         return Err(format!("Unsupported clip content: {}", issues.join("; ")));
     }
-    let mut notes = report.rendering_study_omissions;
+    // The detailed omissions serve the study reports; the user gets a short
+    // summary (the folder-masking detail is internal and left out).
+    let mut notes = Vec::new();
     let layer_of = |id: i64| report.layers.iter().find(|layer| layer.id == id).unwrap();
     let name_of = |id: i64| {
         report
@@ -1438,6 +1462,43 @@ fn prepare_document_mode(
             .cloned()
             .unwrap_or_default()
     };
+    if !report.tinted_layers.is_empty() {
+        let names: Vec<String> = report.tinted_layers.iter().map(|&id| name_of(id)).collect();
+        notes.push(format!(
+            "Layer color was not applied on {}; {} stored colors.",
+            name_list(&names),
+            if names.len() == 1 {
+                "it keeps its"
+            } else {
+                "they keep their"
+            }
+        ));
+    }
+    if !report.guide_omissions.is_empty() {
+        let kinds: Vec<&str> = report
+            .guide_omissions
+            .keys()
+            .map(|field| match *field {
+                "LightTableInfo" => "light table",
+                "SpecialRulerManager" => "special rulers",
+                "RulerRange" => "ruler ranges",
+                "GuideMove" => "guides",
+                other => other,
+            })
+            .collect();
+        let layers: BTreeSet<i64> = report.guide_omissions.values().flatten().copied().collect();
+        notes.push(format!(
+            "Drawing aids ({}) on {} were not imported; they do not change the picture.",
+            kinds.join(", "),
+            if layers.len() == 1 {
+                "1 layer".to_string()
+            } else {
+                format!("{} layers", layers.len())
+            }
+        ));
+    }
+    // Skips grouped by reason, one note each.
+    let mut skips: Vec<(String, Vec<String>)> = Vec::new();
     // Skip layers with unsupported content, and a skipped folder's contents,
     // so the rest of the file still opens. Each skip is listed for the user.
     let mut kept: Vec<(&Entry, Option<i64>)> = Vec::new();
@@ -1485,15 +1546,27 @@ fn prepare_document_mode(
                 continue;
             }
         };
-        if layer.is_folder() {
+        let name = if layer.is_folder() {
             skipped_folder = Some(entry.depth);
-            notes.push(format!(
-                "Skipped folder “{}” and its contents: {reasons}.",
-                name_of(entry.id)
-            ));
+            format!("{} (folder, with its contents)", name_of(entry.id))
         } else {
-            notes.push(format!("Skipped layer “{}”: {reasons}.", name_of(entry.id)));
+            name_of(entry.id)
+        };
+        match skips.iter_mut().find(|(r, _)| *r == reasons) {
+            Some((_, names)) => names.push(name),
+            None => skips.push((reasons, vec![name])),
         }
+    }
+    for (reasons, names) in skips {
+        notes.push(format!(
+            "Skipped {} {}: {reasons}.",
+            if names.len() == 1 {
+                "layer".to_string()
+            } else {
+                format!("{} layers", names.len())
+            },
+            name_list(&names)
+        ));
     }
     if report.timeline_present {
         let frame = report
@@ -1518,9 +1591,13 @@ fn prepare_document_mode(
         }
         notes.push(match cel {
             Some(cel) if found => format!(
-                "Animation folder “{}” shows cel “{cel}”; its other {} cels are kept as hidden layers.",
+                "Animation folder “{}” shows cel “{cel}”{}.",
                 name_of(folder),
-                cels.count() - 1
+                match cels.count() - 1 {
+                    0 => String::new(),
+                    1 => "; its other cel is kept as a hidden layer".into(),
+                    others => format!("; its other {others} cels are kept as hidden layers"),
+                }
             ),
             Some(cel) => format!(
                 "Animation folder “{}” is set to show cel “{cel}”, which is not inside it, so it shows nothing on the saved frame; its cels are kept as hidden layers.",
@@ -2207,9 +2284,9 @@ pub(crate) mod tests {
                 "UPDATE Layer SET LayerType=0,LayerFolder={folder},LayerRenderMipmap=0,LayerNextIndex=0,LayerFirstChildIndex=40,LayerMasking=32 WHERE MainId=30"
             );
             std::fs::write(&path, worker_fixture_with_sql(&sql)).unwrap();
-            let (doc, omissions) = prepare_document_mode(&path, &|| false, true).unwrap();
-            assert_eq!(omissions.len(), 1);
-            assert!(omissions[0].contains("folder LayerMasking=32"));
+            let (doc, notes) = prepare_document_mode(&path, &|| false, true).unwrap();
+            // The folder-masking detail is internal: no note for the user.
+            assert!(notes.is_empty(), "{notes:?}");
             assert_eq!(doc.layers.len(), 2);
             assert!(!doc.layers[0].folder);
             assert_eq!(doc.layers[0].depth, 1);
@@ -2306,10 +2383,7 @@ pub(crate) mod tests {
             // never read as raster pixels and its text never reaches a note.
             let (doc, notes) = prepare_document_mode(&path, &|| false, true).unwrap();
             assert_eq!(doc.layers.len(), complete - 1, "{field}");
-            assert!(
-                notes.iter().any(|n| n.starts_with("Skipped layer")),
-                "{notes:?}"
-            );
+            assert!(notes.iter().any(|n| n.starts_with("Skipped")), "{notes:?}");
             assert!(notes.iter().all(|n| !n.contains("private source text")));
             assert_eq!(std::fs::read(&path).unwrap(), source);
         }
