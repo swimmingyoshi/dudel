@@ -11,7 +11,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB 8/16-bit PSD v1 | No | Supported 8-bit layers/groups/masks; saved composite for other features |
+| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | No | 8-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -72,7 +72,7 @@ export PNG from CSP and keep the original `.clip` for editing.
 ## Photoshop import
 
 Open/drop `.psd` or use File > Import > Photoshop document. The bounded reader
-implements PSD v1 RGB, raw/PackBits/ZIP, and 8-bit ZIP prediction. Supported 8-bit
+implements PSD v1 RGB and grayscale, raw/PackBits/ZIP, and ZIP prediction. Supported 8-bit
 raster layers retain offsets, alpha, opacity, visibility, clipping, blends (including
 Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glow
 forms), locks, isolated and pass-through groups, and simple raster masks. Plain RGB
@@ -147,12 +147,12 @@ which concentrates on edge features: 181 of 279 with layers. Layered imports mat
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are
-unsupported color modes (grayscale, CMYK, indexed, bitmap, 32-bit) and PSB.
+unsupported color modes (CMYK, Lab, indexed, bitmap, 32-bit) and PSB.
 
 16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the
 PSD layer-count marker. Embedded profiles are reported but not converted.
-PSB, non-RGB modes, 32-bit channels and 16-bit ZIP prediction are unsupported.
+PSB, CMYK, Lab, indexed and bitmap modes, and 32-bit channels are unsupported.
 Files are capped at 2 GB (the PSD limit) and decoded layer payload shares the 2 GiB
 document budget. A PSD without
 a usable compatibility composite cannot fall back when layer conversion fails;
@@ -171,7 +171,8 @@ the same editable import path without opening the editor;
 `--verify-clip-preview INPUT [NEW_REPORT.json]` validates the explicit preview path.
 Reports include dimensions, layer counts, notes and per-layer pixel hashes.
 For PSD input the report also compares Dudel's rendering of the import with the
-file's saved composite (`saved_composite`: exact, differing and mean difference)
+file's saved composite (`saved_composite`: exact, differing and mean difference;
+layer effects and adjustment layers are included, as they are in exports)
 and lists the imported stack (`stack`). With `DUDEL_VERIFY_IMAGES` set, the
 rendering, the saved image and each layer are also written as PNGs next to the report.
 A PSD converted from a 2000 × 2000 CSP sample with two folders and Subtract

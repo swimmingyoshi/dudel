@@ -1,6 +1,6 @@
 # Dudel 0.2 upgrade plan and handoff
 
-Updated 2026-10-28. This file is the working checklist for the post-0.1.0 work.
+Updated 2026-10-29. This file is the working checklist for the post-0.1.0 work.
 Any agent picking this up: read this first, update the checkboxes and the
 "Last session" notes as you go, and keep [DELIVERY_PLAN.md](DELIVERY_PLAN.md) for
 0.1 history only.
@@ -8,7 +8,9 @@ Any agent picking this up: read this first, update the checkboxes and the
 ## Base state
 
 - Released source: commit `67716b6` "Dudel 0.1.0", tag `v0.1.0` (master and linux).
-- All work below is **uncommitted** in the working tree on top of `67716b6`.
+- All work below is **committed locally, not pushed**: 13 commits on top of
+  `origin/master`, `130f16f` .. `da51809` (`git log --oneline origin/master..HEAD`).
+  Pushing starts hosted CI; ask the owner first.
 - Local gates (see [TESTING.md](TESTING.md)): `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test`,
   `python scripts/check_public_tree.py`, then `scripts/Verify.ps1` for the full set.
@@ -173,23 +175,23 @@ PSD (`src/psd_import.rs`, new):
       folders fixed in the compositor. psd-tools: 31 -> 106/279 layered; ag-psd 42/75.
 - [x] 2026-10-29: gradient fill layers and gradient shapes (`Gradient` in
       psd_vector.rs; geometry follows psd-tools). psd-tools 106 -> 114 layered.
-- [ ] Layer effects: see goal 7.
+- [x] Layer effects: see goal 7. Adjustment layers: see goal 8.
 - [ ] Known vector differences: miter joins drawn round; stroke AA approximate;
       Photoshop strokes under intersect/subtract path ops differ (psd-tools
       path-operations/* files); color burn / hard mix / vivid light layer
       tests differ (~1500 px) - check fill-opacity/special-8 handling
-- [ ] Remaining PSD gaps by frequency in those sets: vector shape layers (~70,
-      need vector rendering; Photoshop marks their pixels irrelevant), adjustment
-      and fill layers (~40), layer effects lfx2/lfxs (~30: owner decision whether
-      to import without effects + note, or keep falling back), grayscale/CMYK/
-      indexed/32-bit modes (~60; grayscale is cheap and also covers the Live2D
-      tool's _depth.psd files), mask feather/density (~13), 16-bit layers (Lr16)
-- [ ] Owner's Live2D recovery outputs: all open; earlier "10% exact" was the
-      comparison counting invisible colors, not an import problem
+- [ ] Remaining PSD fallbacks in the public sets (2026-10-29; psd-tools 181/279
+      and ag-psd 53/75 layered): CMYK (15), unsupported mask flags such as
+      feather/density (14), canvases over 4096 (10), knockout `knko` (9), files
+      left with no layer after dropping unsupported adjustments (7), artboards
+      (6), other color modes (8); 16-bit layered (Lr16) files use the composite
+- [x] Owner's Live2D recovery outputs: all 51 open layered; earlier "10% exact"
+      was the comparison counting invisible colors, not an import problem
 - [ ] Test against PSDs saved by Krita
 - [ ] Performance: adding a layer costs ~2 ms at 100 layers, ~28 ms at 500,
       ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
-- [ ] PSB, CMYK/grayscale, 16-bit layered, pass-through groups, adjustment layers
+- [ ] PSB, CMYK, 16-bit layered (grayscale, pass-through groups and adjustment
+      layers are done)
 - [ ] PSD export (none yet)
 
 Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md).
@@ -293,11 +295,12 @@ Stage B - native layer effects:
       or transforming the previous drawing is reused, and a redraw forces a
       full (signature-checked) canvas update. Merge down bakes effects once.
       History compares effects (`same_snapshot`, `compact_layer`)
-- [x] UI: **fx** toggle beside the blend list opens Layer Effects
-      (`src/effects_panel.rs`): add preset, enable, reorder, remove, per-kind
-      settings; drags are one undo step (gesture checkpoint, like opacity);
-      bevel halves stay in sync. `Property::Effects` for queued edits.
-      Layer rows show "· fx". Workflow test covers add/toggle/undo
+- [x] UI: Layer Effects window (`src/effects_panel.rs`): add preset, enable,
+      reorder, remove, per-kind settings; drags are one undo step (gesture
+      checkpoint, like opacity); bevel halves stay in sync.
+      `Property::Effects` for queued edits. Workflow test covers add, toggle,
+      undo and the window growing (button and badge placement: see the owner
+      feedback item below)
 - [x] PSD import keeps effects native on raster layers (no shape source,
       fill 255, valid settings); shapes, fill opacity and folders still bake
 - [x] Performance (4096² nearly full layer, release): fresh draw drop shadow
@@ -349,17 +352,32 @@ Stage B - native layer effects:
       (14), canvases over 4096 (10), knockout `knko` (9), no layers left
       after dropping unsupported adjustments (7), artboards (6)
 
-## Before committing this batch
+## Before pushing (next candidate)
 
-- [x] Local gates pass (fmt, Clippy, 927 tests, public-tree check) - 2026-10-28,
-      after fixing formatting and 5 Clippy errors in `psd_import.rs`/`extension_api.rs`
-- [x] `scripts/Verify.ps1 -Mode Full` passed (2026-10-28)
-- [x] Manual tablet pass for items 1-3 (owner); settings window not yet checked
-- [x] Reviewed `src/psd_import.rs` (found the layer-order bug) and `src/extension_api.rs`
-- [x] Committed locally: CI evidence fix, then the feature batch (shared files
-      like `main.rs` made per-feature commits unbuildable). Not pushed.
+- [x] Local gates pass at `da51809` (2026-10-29): `cargo fmt --check`, Clippy
+      with `-D warnings`, `cargo test` (974 passed, 8 ignored),
+      `python scripts/check_public_tree.py`
+- [ ] Independent review of the 2026-10-29 work (effects, adjustments,
+      compositor and display caching changes). The owner is handing a review
+      prompt to a new agent; record its findings and fixes here
+- [ ] `scripts/Verify.ps1 -Mode Full` (last full run 2026-10-28, before the
+      effects/adjustments work)
+- [ ] Owner's manual pen pass: Layer Effects window and badges, mask view,
+      PSDs with effects and adjustment layers, settings window
+- [ ] Owner approves the push; then one hosted run of both workflows (see CI
+      status above; artifact quota may still block uploads)
+
+Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
+tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-29 (Claude, owner feedback + handoff): fx button moved into the layer
+  action row, sparkle badge on layer rows, effects window auto-sizes, mask
+  view (Mask actions > Show mask on canvas, Alt+click). Docs brought up to
+  date; a review prompt was written for a new agent. Gates pass (974 tests).
+  Committed locally, not pushed. Open: review findings, full Verify, owner
+  pen pass, push approval.
 
 - 2026-10-29 (Claude, adjustment layers): goal 8. Gates pass (973 tests).
   Committed locally, not pushed.

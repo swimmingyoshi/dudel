@@ -162,6 +162,19 @@ visitation payload is one bitset, not all edge masks, allocations or RSS.
 The normal tests compare scanline connectivity and painting with independent
 scalar oracles, including tile boundaries, soft selections and cancellation.
 
+Layer effects and the mask view have an isolated UI capture: a masked layer with
+a drop shadow and stroke, the Layer Effects window open, the sparkle badge in its
+row and the mask shown on the canvas:
+
+```powershell
+target/release/dudel.exe --capture-layer-effects artifacts/layer-effects.png 1280 800 1
+```
+
+PSD import checks: `--verify-import FILE.psd NEW_REPORT.json` reports the layer
+stack and the difference from the file's saved composite; with
+`DUDEL_VERIFY_IMAGES` set it also writes the rendering, the saved image and every
+layer as PNGs beside the report.
+
 Mirrored free transforms have an isolated UI capture:
 
 ```powershell

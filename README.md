@@ -32,6 +32,8 @@ display or tablet.
 
 **Layers and editing**
 - Raster layers, folders, clipping, blend modes and nondestructive **layer masks**.
+- Editable **layer effects** (shadows, glows, strokes, overlays, bevel) and
+  **adjustment layers** (levels, curves, hue/saturation and more, from PSD).
 - Selections (rectangle, lasso, polygon, magic wand) and free transform with
   scale/rotate, distort, perspective and mesh, plus *mirror pair* edits for
   symmetric features such as eyes.
@@ -45,8 +47,9 @@ display or tablet.
   boards that never become part of the artwork.
 - Per-canvas **timelapse** recording that plays back in the app and exports as GIF
   or PNG frames; portable UI themes.
-- PNG import/export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable raster
-  subsets and clearly identified flattened fallbacks.
+- PNG import/export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+  (PSD shapes, gradient fills, layer effects and adjustment layers included) and
+  clearly identified flattened fallbacks.
 
 | | |
 |---|---|
@@ -141,7 +144,8 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   Projects using more than 32 layers or the newer blend modes need this
   version or later.
 - Native saves use project format v4, or v5 when layer masks are used; newer
-  files need a compatible Dudel. Indexed `.didx` storage is experimental.
+  files need a compatible Dudel. Builds before layer effects and adjustment
+  layers open such projects without them. Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD
   layer features use the saved composite when available. Color-managed print
