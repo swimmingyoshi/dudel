@@ -29,6 +29,10 @@ the package has been uploaded to a public store.
   folders. CSP and PSD imports map them.
 - PSD import reads each file's own layer order. Some writers list layers top
   first; groups decide it, and flat files are checked against the saved image.
+- PSD layer effects import as separate layers, like Photoshop's Create Layers:
+  strokes, color and gradient overlays, drop and inner shadows, outer and inner
+  glows. Bevel, satin, pattern effects and effects on folders are listed in
+  Import details instead.
 
 See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
 changes require rebuilt release artifacts and do not extend the historical

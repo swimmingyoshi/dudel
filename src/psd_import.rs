@@ -235,9 +235,155 @@ struct Record {
     stroke: Option<crate::psd_vector::Stroke>,
     /// Whether a shape layer's fill is drawn (strokes may stand alone).
     filled: bool,
+    effects: crate::layer_effects::Effects,
+    /// Layer opacity without fill opacity, which effects ignore.
+    opacity: f32,
+    fill: u8,
+    /// For shape and fill layers, the coverage their effects follow: the
+    /// path's fill, without the shape's stroke or the fill's transparency.
+    source: Option<Vec<f32>>,
+    /// Effect layers: under the layer, clipped to it, and over its clip group.
+    below: Vec<Layer>,
+    inside: Vec<Layer>,
+    above: Vec<Layer>,
+}
+
+/// Draw a layer's effects as layers (Photoshop's Create Layers), from its
+/// final pixels and mask.
+fn effect_layers(
+    record: &mut Record,
+    width: usize,
+    height: usize,
+    budget: &mut usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<(), String> {
+    use crate::layer_effects::Place;
+    let effects = std::mem::take(&mut record.effects.list);
+    let layer = &record.layer;
+    let source = record.source.take();
+    let bounds = match &source {
+        Some(source) => source
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| **c > 0.0)
+            .map(|(i, _)| [i % width, i / width, i % width + 1, i / width + 1])
+            .reduce(|a, b| {
+                [
+                    a[0].min(b[0]),
+                    a[1].min(b[1]),
+                    a[2].max(b[2]),
+                    a[3].max(b[3]),
+                ]
+            }),
+        None => layer
+            .pixels
+            .nonzero_tiles(width, height)
+            .into_iter()
+            .reduce(|a, b| {
+                [
+                    a[0].min(b[0]),
+                    a[1].min(b[1]),
+                    a[2].max(b[2]),
+                    a[3].max(b[3]),
+                ]
+            }),
+    };
+    let Some(bounds) = bounds else {
+        return Ok(());
+    };
+    let reach = effects.iter().map(|e| e.reach()).max().unwrap_or(0);
+    let rect = [
+        bounds[0].saturating_sub(reach),
+        bounds[1].saturating_sub(reach),
+        (bounds[2] + reach).min(width),
+        (bounds[3] + reach).min(height),
+    ];
+    let w = rect[2] - rect[0];
+    let rgba = layer.pixels.region(width, rect);
+    let mask = |i: usize| layer.mask_coverage((rect[1] + i / w) * width + rect[0] + i % w, width);
+    let content: Vec<f32> = rgba
+        .chunks_exact(4)
+        .enumerate()
+        .map(|(i, p)| f32::from(p[3]) / 255.0 * mask(i))
+        .collect();
+    let visible: Vec<f32> = content
+        .iter()
+        .map(|a| a * f32::from(record.fill) / 255.0)
+        .collect();
+    let values: Vec<f32> = match &source {
+        Some(source) => (0..content.len())
+            .map(|i| source[(rect[1] + i / w) * width + rect[0] + i % w] * mask(i))
+            .collect(),
+        None => content.clone(),
+    };
+    // Gradients span the layer's visible pixels.
+    let mut span = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for (i, _) in values.iter().enumerate().filter(|(_, a)| **a > 0.0) {
+        let (x, y) = ((rect[0] + i % w) as f64, (rect[1] + i / w) as f64);
+        span = [
+            span[0].min(x),
+            span[1].min(y),
+            span[2].max(x + 1.0),
+            span[3].max(y + 1.0),
+        ];
+    }
+    if span[0] > span[2] {
+        return Ok(());
+    }
+    let mut alpha = crate::layer_effects::Alpha::new(rect, values);
+    // Inner effects clip to the layer, unless that would apply its fill
+    // opacity, the layer is clipped itself (clipping does not nest), or
+    // its effects follow a shape rather than its pixels; then they carry
+    // that alpha.
+    let clip_inside = !layer.clipped && record.fill == 255 && source.is_none();
+    for effect in &effects {
+        check(cancel)?;
+        *budget = budget
+            .checked_add(w * (rect[3] - rect[1]))
+            .filter(|b| *b <= crate::document::MAX_PAYLOAD)
+            .ok_or("PSD layer payload exceeds memory budget")?;
+        let mut coverage = crate::layer_effects::coverage(effect, &mut alpha, cancel)?;
+        let mut place = effect.place();
+        if place == Place::Below {
+            effect.under(&mut coverage, &alpha.values, &visible);
+        }
+        let mut out = Layer::raster(
+            format!("{}'s {}", record.layer.name, effect.name()),
+            width,
+            height,
+        );
+        out.visible = record.layer.visible;
+        out.blend = effect.blend;
+        out.clipped = record.layer.clipped;
+        out.opacity = effect.opacity * record.opacity;
+        if place == Place::Inside {
+            for (c, a) in coverage.iter_mut().zip(&alpha.values) {
+                *c *= if clip_inside {
+                    f32::from(u8::from(*a > 0.0))
+                } else {
+                    *a
+                };
+            }
+            if clip_inside {
+                out.clipped = true;
+                out.opacity = effect.opacity;
+            } else if !record.layer.clipped {
+                place = Place::Above;
+            }
+        }
+        let pixels = crate::layer_effects::paint(effect, rect, &coverage, span, [width, height]);
+        out.pixels.writer().write_region(width, rect, &pixels);
+        match place {
+            Place::Below => record.below.push(out),
+            Place::Inside => record.inside.push(out),
+            Place::Above => record.above.push(out),
+        }
+    }
+    Ok(())
 }
 
 /// A shape layer: its fill clipped by the path, with any stroke on top.
+/// Returns the fill's coverage, which is what the layer's effects follow.
 #[allow(clippy::too_many_arguments)]
 fn draw_shape(
     layer: &mut Layer,
@@ -248,7 +394,7 @@ fn draw_shape(
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
-) -> Result<(), String> {
+) -> Result<Vec<f32>, String> {
     // A fill layer without a path covers the whole canvas.
     let fill = match vector {
         Some(vector) => {
@@ -295,7 +441,7 @@ fn draw_shape(
                 .copy_from_slice(&[rgb[0], rgb[1], rgb[2], a]);
         }
     }
-    Ok(())
+    Ok(fill)
 }
 /// A vector mask on an ordinary layer or folder becomes its layer mask,
 /// multiplied into any raster mask it already has.
@@ -370,6 +516,7 @@ fn layers(
     width: usize,
     height: usize,
     mode: ColorMode,
+    global_angle: f64,
     cancel: &impl Fn() -> bool,
 ) -> Result<(Document, Order, Vec<String>), String> {
     // After the layer records come the global layer mask (how masks are shown
@@ -456,6 +603,9 @@ fn layers(
         let mut vector = None;
         let mut stroke = None;
         let mut filled = true;
+        // Effects in the newest form present: lmfx, then lfx2, then lfxs.
+        let mut effects: [Option<crate::layer_effects::Effects>; 3] = Default::default();
+        let mut legacy_effects = false;
         while extra.0.len() >= 12 {
             if extra.take(4)? != b"8BIM" {
                 return Err("Unsupported PSD additional-info signature".into());
@@ -533,6 +683,16 @@ fn layers(
                 b"TySh" | b"tySh" => rendered = Some("text"),
                 b"PlLd" | b"SoLd" | b"SoLE" | b"plLd" => rendered = Some("smart object"),
                 b"iOpa" => fill = value.u8()?,
+                b"lmfx" | b"lfx2" | b"lfxs" => {
+                    let slot = [&b"lmfx"[..], b"lfx2", b"lfxs"]
+                        .iter()
+                        .position(|k| *k == key)
+                        .unwrap();
+                    effects[slot] = Some(crate::layer_effects::parse(value.0, global_angle)?);
+                }
+                // The pre-CS effects block, which Photoshop still writes next
+                // to the descriptor form.
+                b"lrFX" => legacy_effects = true,
                 b"infx" | b"knko" if value.u8()? == 0 => {}
                 b"lyid" | b"lclr" | b"lnsr" | b"shmd" | b"fxrp" | b"lyvr" => {}
                 _ => {
@@ -546,6 +706,11 @@ fn layers(
         if extra.0.iter().any(|b| *b != 0) {
             return Err("Truncated PSD additional info".into());
         }
+        let effects = effects.into_iter().flatten().next();
+        if legacy_effects && effects.is_none() {
+            return Err("Legacy PSD layer effects need the saved composite".into());
+        }
+        let mut effects = effects.unwrap_or_default();
         // Bit 4 (with bit 3 saying it is meaningful) marks pixel data that does
         // not affect the document: normal for group records, unknown elsewhere.
         // A disabled vector mask does not apply.
@@ -576,6 +741,24 @@ fn layers(
                 return Err("PSD fill opacity on this blend mode needs the saved composite".into());
             }
             layer.opacity *= f32::from(fill) / 255.0;
+        }
+        if group != 0 && !effects.list.is_empty() {
+            effects.skipped.push("effects on folders".into());
+            effects.list.clear();
+        }
+        if !effects.skipped.is_empty() {
+            notes.push(format!(
+                "“{}” uses layer effects Dudel cannot draw yet ({}); they were left out.",
+                layer.name,
+                effects.skipped.join(", ")
+            ));
+        }
+        if !effects.approximated.is_empty() {
+            notes.push(format!(
+                "“{}”: layer effects were drawn without some settings ({}).",
+                layer.name,
+                effects.approximated.join(", ")
+            ));
         }
         if let Some(kind) = rendered {
             notes.push(format!(
@@ -610,6 +793,13 @@ fn layers(
             vector,
             stroke,
             filled,
+            effects,
+            opacity: f32::from(opacity) / 255.0,
+            fill,
+            source: None,
+            below: Vec::new(),
+            inside: Vec::new(),
+            above: Vec::new(),
         });
     }
     let mut decoded_budget = 0usize;
@@ -650,7 +840,7 @@ fn layers(
                 }
                 Fill::Gradient(g) => Box::new(g.painter(layer_box, [width, height])),
             };
-            draw_shape(
+            let fill = draw_shape(
                 &mut record.layer,
                 &paint,
                 record.vector.as_ref(),
@@ -660,6 +850,9 @@ fn layers(
                 height,
                 cancel,
             )?;
+            if !record.effects.list.is_empty() {
+                record.source = Some(fill);
+            }
         } else if record.group == 0 && w * h != 0 {
             if !(0..mode.channels() as i16).all(|id| planes.contains_key(&id)) {
                 return Err("PSD layer is missing color pixels".into());
@@ -722,6 +915,15 @@ fn layers(
         if let (None, Some(vector)) = (&record.solid, &record.vector) {
             apply_vector_mask(&mut record.layer, vector, width, height, cancel)?;
         }
+        if !record.effects.list.is_empty() {
+            effect_layers(record, width, height, &mut decoded_budget, cancel)?;
+        }
+    }
+    if records
+        .iter()
+        .any(|r| !r.below.is_empty() || !r.inside.is_empty() || !r.above.is_empty())
+    {
+        notes.push("Layer effects became separate layers named after their layer, like Photoshop's Create Layers; they no longer follow edits to that layer.".into());
     }
     // Dudel's stack runs bottom to top with each folder above its contents.
     // Photoshop writes records that way; other writers list them top first.
@@ -741,12 +943,32 @@ fn layers(
     let depths =
         nesting(records.iter().map(|r| r.group)).ok_or("PSD group nesting exceeds limits")?;
     let mut result = Vec::new();
-    for (mut record, depth) in records.into_iter().zip(depths) {
-        if let Some(depth) = depth {
-            record.layer.depth = depth;
-            result.push(record.layer);
+    // Effects drawn over a layer wait until the layers clipped to it end.
+    let mut pending: Vec<Layer> = Vec::new();
+    let mut pending_depth = 0;
+    for (record, depth) in records.into_iter().zip(depths) {
+        let Some(depth) = depth else {
+            continue;
+        };
+        if depth < pending_depth || (depth == pending_depth && !record.layer.clipped) {
+            result.append(&mut pending);
+        }
+        let mut layers = record.below;
+        layers.push(record.layer);
+        layers.extend(record.inside);
+        for layer in &mut layers {
+            layer.depth = depth;
+        }
+        result.extend(layers);
+        if !record.above.is_empty() {
+            pending.extend(record.above.into_iter().map(|mut layer| {
+                layer.depth = depth;
+                layer
+            }));
+            pending_depth = depth;
         }
     }
+    result.append(&mut pending);
     if result.len() > MAX_ENTRIES || result.iter().filter(|l| !l.folder).count() > MAX_RASTER_LAYERS
     {
         return Err("PSD layer hierarchy exceeds limits or is incomplete".into());
@@ -950,6 +1172,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let mut resources = reader.section()?;
     let mut has_composite = true;
     let mut profile = false;
+    // Photoshop's default light angle, for files without one.
+    let mut global_angle = 120.0;
     while !resources.0.is_empty() {
         if resources.take(4)? != b"8BIM" {
             return Err("Invalid PSD resource signature".into());
@@ -970,6 +1194,9 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             has_composite = version.u8()? != 0;
         } else if id == 1039 {
             profile = !data.0.is_empty();
+        } else if id == 1037 && data.0.len() >= 4 {
+            let mut angle = data;
+            global_angle = f64::from(angle.u32()? as i32);
         }
     }
     let layer_data = reader.section()?;
@@ -992,7 +1219,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     if background_only {
         notes.push("This file holds only a background image; it was imported as one layer.".into());
     } else if layered && depth == 8 && !layer_data.0.is_empty() {
-        match layers(layer_data.0, width, height, mode, cancel) {
+        match layers(layer_data.0, width, height, mode, global_angle, cancel) {
             Ok((mut document, order, layer_notes)) => {
                 notes.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
@@ -1029,7 +1256,13 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         let reason = notes
             .iter()
             .find_map(|n| n.split_once("unavailable: ").map(|(_, why)| why.to_owned()))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                if depth == 16 {
+                    "16-bit layers are not imported yet".into()
+                } else {
+                    "no editable layers were read".into()
+                }
+            });
         return Err(format!(
             "The layers could not be imported ({reason}) and the file has no saved flattened image to fall back to. Save it with Maximize Compatibility enabled."
         ));
@@ -1073,6 +1306,7 @@ mod tests {
         /// Transparency Shapes Layer flag, when written.
         shapes: Option<u8>,
         flags: u8,
+        clipping: u8,
         /// Extra additional-info blocks (key, value).
         keys: &'static [(&'static [u8; 4], &'static [u8])],
     }
@@ -1111,7 +1345,7 @@ mod tests {
             }
             records.extend(b"8BIM");
             records.extend(spec.blend);
-            records.extend([255, 0, spec.flags, 0]);
+            records.extend([255, spec.clipping, spec.flags, 0]);
             let mut extra = Vec::new();
             if spec.mask {
                 let mut m = Vec::new();
@@ -1174,6 +1408,7 @@ mod tests {
             blend: *b"norm",
             shapes: None,
             flags: 0,
+            clipping: 0,
             keys: &[],
         }
     }
@@ -1187,6 +1422,7 @@ mod tests {
             blend: *b"norm",
             shapes: None,
             flags: 0,
+            clipping: 0,
             keys: &[],
         }
     }
@@ -1504,6 +1740,138 @@ mod tests {
         }]);
         assert!(parse(&dodge, &|| false).is_err());
         assert_eq!(BlendMode::Normal, imported.document.layers[0].blend);
+    }
+    #[test]
+    fn layer_effects_become_layers_around_their_layer() {
+        use crate::psd_vector::{Descriptor, Value};
+        fn object(class: &str, items: Vec<(&str, Value)>) -> Value {
+            Value::Object(Descriptor {
+                class: class.into(),
+                items: items.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+            })
+        }
+        let unit = |unit: &str, v: f64| Value::Unit(unit.into(), v);
+        let enumerated = |v: &str| Value::Enum("x".into(), v.into());
+        let green = || {
+            object(
+                "RGBC",
+                vec![
+                    ("Rd  ", Value::Number(0.0)),
+                    ("Grn ", Value::Number(255.0)),
+                    ("Bl  ", Value::Number(0.0)),
+                ],
+            )
+        };
+        let stroke = |style: &str| {
+            object(
+                "FrFX",
+                vec![
+                    ("enab", Value::Bool(true)),
+                    ("Styl", enumerated(style)),
+                    ("PntT", enumerated("SClr")),
+                    ("Md  ", enumerated("Nrml")),
+                    ("Opct", unit("#Prc", 100.0)),
+                    ("Sz  ", unit("#Pxl", 1.0)),
+                    ("Clr ", green()),
+                ],
+            )
+        };
+        let effects = |master: bool| {
+            let settings = Descriptor {
+                class: "null".into(),
+                items: vec![
+                    ("masterFXSwitch".into(), Value::Bool(master)),
+                    (
+                        "DrSh".into(),
+                        object(
+                            "DrSh",
+                            vec![
+                                ("enab", Value::Bool(true)),
+                                ("Md  ", enumerated("Mltp")),
+                                ("Clr ", green()),
+                                ("Opct", unit("#Prc", 50.0)),
+                                ("Dstn", unit("#Pxl", 0.0)),
+                                ("blur", unit("#Pxl", 0.0)),
+                            ],
+                        ),
+                    ),
+                    (
+                        "SoFi".into(),
+                        object(
+                            "SoFi",
+                            vec![
+                                ("enab", Value::Bool(true)),
+                                ("Md  ", enumerated("Nrml")),
+                                ("Clr ", green()),
+                            ],
+                        ),
+                    ),
+                    (
+                        "frameFXMulti".into(),
+                        Value::List(vec![stroke("CtrF"), stroke("InsF")]),
+                    ),
+                    (
+                        "ebbl".into(),
+                        object("ebbl", vec![("enab", Value::Bool(true))]),
+                    ),
+                ],
+            };
+            let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
+            data.extend(crate::psd_vector::encode(&settings));
+            &*Box::leak(data.into_boxed_slice())
+        };
+        let file = |master: bool| {
+            let keys: &'static [(&'static [u8; 4], &'static [u8])] = Box::leak(
+                vec![(b"lfx2", effects(master)), (b"lrFX", &[0u8, 0][..])].into_boxed_slice(),
+            );
+            layer_file(&[
+                Spec {
+                    keys,
+                    ..raster("Base", 0, [255, 0, 0, 255], false)
+                },
+                Spec {
+                    clipping: 1,
+                    ..raster("Clipped", 0, [0, 0, 255, 255], false)
+                },
+            ])
+        };
+        let imported = parse(&file(true), &|| false).unwrap();
+        let stack: Vec<_> = imported
+            .document
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.clipped, l.opacity))
+            .collect();
+        // Shadow under the layer, overlay and inside stroke clipped to it,
+        // the centered stroke over the layers clipped to it.
+        assert_eq!(
+            stack,
+            [
+                ("Base's Drop Shadow", false, 0.5),
+                ("Base", false, 1.0),
+                ("Base's Color Overlay", true, 1.0),
+                ("Base's Stroke", true, 1.0),
+                ("Clipped", true, 1.0),
+                ("Base's Stroke", false, 1.0),
+            ]
+        );
+        let overlay = &imported.document.layers[2];
+        assert_eq!(overlay.pixels.rgba(0), [0, 255, 0, 255]);
+        assert_eq!(overlay.pixels.rgba(1), [0, 0, 0, 0]);
+        assert_eq!(
+            imported.document.layers[0].blend,
+            crate::blend::BlendMode::Multiply
+        );
+        assert!(
+            imported
+                .notes
+                .iter()
+                .any(|n| n.contains("bevel and emboss"))
+        );
+        assert!(imported.notes.iter().any(|n| n.contains("Create Layers")));
+        // With the effects switched off the layer imports alone.
+        let off = parse(&file(false), &|| false).unwrap();
+        assert_eq!(off.document.layers.len(), 2);
     }
     #[test]
     fn white_matte_is_removed_only_from_matted_images() {

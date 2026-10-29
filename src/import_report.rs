@@ -30,6 +30,8 @@ pub(crate) fn verify(
         masks: usize,
         notes: Vec<String>,
         rasters: Vec<crate::clip_raster::Statistics>,
+        /// Bottom to top: depth, name, and blend/opacity/clipping/visibility.
+        stack: Vec<String>,
         /// Dudel's rendering of the import against the PSD's saved composite.
         #[serde(skip_serializing_if = "Option::is_none")]
         saved_composite: Option<Difference>,
@@ -40,13 +42,41 @@ pub(crate) fn verify(
     let doc = imported.document;
     let rendered = doc.composite_transparent();
     // Files saved without a flattened image have nothing to compare against.
+    // With DUDEL_VERIFY_IMAGES set, both images are saved beside the report.
+    let save = |image: &[u8], suffix: &str| -> Result<(), String> {
+        let Some(report) = output.filter(|_| std::env::var_os("DUDEL_VERIFY_IMAGES").is_some())
+        else {
+            return Ok(());
+        };
+        let mut name = report.as_os_str().to_owned();
+        name.push(suffix);
+        image::save_buffer(
+            std::path::Path::new(&name),
+            image,
+            doc.width as u32,
+            doc.height as u32,
+            image::ColorType::Rgba8,
+        )
+        .map_err(|e| e.to_string())
+    };
+    save(&rendered, ".rendered.png")?;
+    for (i, layer) in doc.layers.iter().enumerate().filter(|(_, l)| !l.folder) {
+        let pixels: Vec<u8> = (0..doc.width * doc.height)
+            .flat_map(|p| layer.pixels.rgba(p))
+            .collect();
+        save(&pixels, &format!(".layer{i}.png"))?;
+    }
     let saved_composite = if psd {
-        crate::psd_import::saved_composite(path).ok().map(|saved| {
-            let saved: Vec<u8> = (0..doc.width * doc.height)
-                .flat_map(|i| saved.document.layers[0].pixels.rgba(i))
-                .collect();
-            difference(&rendered, &saved)
-        })
+        match crate::psd_import::saved_composite(path) {
+            Ok(saved) => {
+                let saved: Vec<u8> = (0..doc.width * doc.height)
+                    .flat_map(|i| saved.document.layers[0].pixels.rgba(i))
+                    .collect();
+                save(&saved, ".saved.png")?;
+                Some(difference(&rendered, &saved))
+            }
+            Err(_) => None,
+        }
     } else {
         None
     };
@@ -73,6 +103,22 @@ pub(crate) fn verify(
             .iter()
             .filter(|l| !l.folder)
             .map(|l| crate::clip_raster::statistics(&l.pixels))
+            .collect(),
+        stack: doc
+            .layers
+            .iter()
+            .map(|l| {
+                format!(
+                    "{}{}{} {} {:.0}%{}{}",
+                    "  ".repeat(l.depth.into()),
+                    if l.folder { "folder " } else { "" },
+                    l.name,
+                    l.blend.name(),
+                    l.opacity * 100.0,
+                    if l.clipped { " clipped" } else { "" },
+                    if l.visible { "" } else { " hidden" },
+                )
+            })
             .collect(),
         saved_composite,
         reference,

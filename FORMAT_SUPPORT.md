@@ -88,9 +88,22 @@ Gradient fill layers and gradient-filled shapes are drawn too (linear, radial, a
 reflected and diamond; angle, scale, offset, reverse, align with layer; color and
 opacity stops with midpoints). Stops blend linearly, where Photoshop smooths them, so
 gradients can differ by up to about 16 levels. Noise gradients, stops using the
-editor's foreground/background colors, pattern fills, dashed strokes, effects,
+editor's foreground/background colors, pattern fills, dashed strokes,
 adjustment layers, mask feather/density and other unsupported descriptors use the saved composite with an
 explicit Import details report. They are not silently approximated as editable layers.
+
+Layer effects (layer styles) become separate layers, as Photoshop's Layer > Layer
+Style > Create Layers does: drop shadows and outer glows under their layer, color and
+gradient overlays, inner shadows, inner glows and inside strokes clipped to it, and
+strokes (outside, inside or centred; color or gradient fill) where Photoshop draws
+them. Each is named after its layer ("Layer's Drop Shadow") and no longer follows
+edits to that layer. Several effects of one kind, the light angle (global or own),
+knockout and fill opacity are respected; shape and fill layers' effects follow the
+shape's outline. Shadows and glows use a Gaussian blur fitted to Photoshop's output
+(Photoshop does not document its blur), within about 5 levels on average in the test
+files. Bevel and emboss, satin, pattern overlays and pattern strokes, noise
+gradients, and effects on folders are skipped and named in Import details; contours
+other than linear and effect noise are drawn without and noted.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.
 
@@ -109,8 +122,8 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 36 of 75 import with layers and 5 are background-only; psd-tools,
-which concentrates on edge features: 28 of 279 with layers. Layered imports match the
+distributed). ag-psd: 51 of 75 import with layers and 6 are background-only; psd-tools,
+which concentrates on edge features: 138 of 279 with layers. Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are
@@ -138,7 +151,9 @@ the same editable import path without opening the editor;
 `--verify-clip-preview INPUT [NEW_REPORT.json]` validates the explicit preview path.
 Reports include dimensions, layer counts, notes and per-layer pixel hashes.
 For PSD input the report also compares Dudel's rendering of the import with the
-file's saved composite (`saved_composite`: exact, differing and mean difference).
+file's saved composite (`saved_composite`: exact, differing and mean difference)
+and lists the imported stack (`stack`). With `DUDEL_VERIFY_IMAGES` set, the
+rendering, the saved image and each layer are also written as PNGs next to the report.
 A PSD converted from a 2000 × 2000 CSP sample with two folders and Subtract
 layers imported with all 15 entries; 89% of pixels matched exactly, with a mean
 channel difference of 1.2, and the differences lie along anti-aliased line art.

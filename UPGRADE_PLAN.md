@@ -173,10 +173,7 @@ PSD (`src/psd_import.rs`, new):
       folders fixed in the compositor. psd-tools: 31 -> 106/279 layered; ag-psd 42/75.
 - [x] 2026-10-29: gradient fill layers and gradient shapes (`Gradient` in
       psd_vector.rs; geometry follows psd-tools). psd-tools 106 -> 114 layered.
-- [ ] Layer effects (owner asked for a real fix): plan agreed in chat - shared
-      effect renderers (drop shadow, stroke, color/gradient overlay, outer glow
-      first), used at import to turn each effect into its own layer like
-      Photoshop's Create Layers, then as native editable layer styles.
+- [ ] Layer effects: see goal 7.
 - [ ] Known vector differences: miter joins drawn round; stroke AA approximate;
       Photoshop strokes under intersect/subtract path ops differ (psd-tools
       path-operations/* files); color burn / hard mix / vivid light layer
@@ -209,6 +206,81 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
 - [ ] Settings: search, reset-to-default per page
 - [ ] Screenshot pass at 100% / 150% / 200% scale before and after
 
+### 7. Layer effects (owner goal, 2026-10-29)
+
+**Goal:** PSD files with layer effects (Photoshop "layer styles") open with
+their layers and look like they do in Photoshop, and Dudel later gets its own
+editable layer effects built on the same code.
+
+Why: effects are the most common reason a public test PSD still falls back to
+the flattened image (~45 of ~360 files). Measured use in those files (layers
+with the effect enabled / files): stroke 74/23, color overlay 71/9, drop
+shadow 38/8, gradient overlay 16/9, bevel & emboss 10/6, pattern overlay 10/5,
+outer glow 4/4, inner glow 3/3, inner shadow 2/2, satin 2/2. Scanner:
+`fx_scan.py` (agent scratchpad; parses `lfx2`/`lfxs`/`lmfx` descriptors).
+
+Decisions (agreed in chat):
+
+- One set of effect renderers (`src/layer_effects.rs`), shared by import now
+  and native effects later. Built on two primitives: a signed distance field
+  from layer alpha (strokes, spread/choke) and a Gaussian-like blur (shadows,
+  glows).
+- Stage A turns each effect into its own layer, like Photoshop's Layer > Layer
+  Style > Create Layers: shadows and outer glows below the layer, overlays and
+  inner effects clipped above it, named "Layer's Drop Shadow" and so on.
+  Picture matches, everything stays editable; the effect no longer follows
+  edits to the art (Import details says so).
+- An effect we cannot draw yet is skipped and named in Import details instead
+  of flattening the whole file (same policy as CSP skipped layers).
+- Photoshop's blur is undocumented: fit its size-to-blur relation against the
+  saved images in the test files and record the result here.
+
+Stage A - import effects as layers:
+
+- [x] Parse `lfx2`/`lfxs`/`lmfx` (master switch, `*Multi` lists, first drawn
+      on top); ignore legacy `lrFX` when a newer block exists; global light
+      angle from image resource 1037 (default 120). `Scl ` is NOT applied: a
+      208% file draws its 1 px strokes at 1 px
+- [x] Distance field (feature transform: Photoshop counts any coverage as
+      inside and puts a partly covered pixel's edge at depth alpha) and blur
+      (three box passes, sigma = 0.4 x size, fitted) with tests
+- [x] Stroke: outside goes under the layer and fills what the layer leaves
+      uncovered (exactly red*a + green*(1-a) in Photoshop's image); inside is
+      clipped to the layer; centre goes on top. Color and gradient fill
+- [x] Color overlay, gradient overlay. Fixed in passing: gradients at 90° span
+      the box height (the reach formula used angle mod 90, so 90° used width)
+- [x] Drop shadow (angle, distance, spread, size), outer glow (color, range:
+      falloff / range, capped). Knockout = the same "adds up under the layer"
+      rule, so it only matters where fill opacity makes the layer see-through
+- [x] Inner shadow, inner glow (edge/centre, range)
+- [x] Clipped layers (effects stay in the clip group, inner ones carry the
+      alpha), fill opacity, masks; shape/fill layers' effects follow the
+      path's fill, not the shape stroke or gradient transparency
+- [ ] Effects on folders (computed from the folder's composite); skipped and
+      noted for now (ag-psd group-drop-shadows)
+- [x] Corpus 2026-10-29: ag-psd 42 -> 51/75 layered, psd-tools 114 -> 138/279;
+      no file that imported before got worse; owner's Frieren and Live2D files
+      unchanged. Per-effect mean error in ag-psd effects: drop shadow 4.8,
+      outer glow 5.0, inner glow 2.9, inner shadow 2.0, gradient overlay 10.9
+      (gradient smoothing); psd-tools stroke files mostly exact
+- [x] Docs: FORMAT_SUPPORT.md, RELEASE_NOTES.md
+- [ ] Shape strokes (`vstk`) under an effect stroke: Photoshop shows no trace
+      of the shape stroke's outer half (double-stroke-effects); not modelled
+
+Later in stage A (rarer): pattern overlay and pattern strokes (need the file's
+pattern resources), bevel & emboss, satin, non-linear contours, noise, glow
+gradients, "layer mask hides effects".
+
+Stage B - native layer effects:
+
+- [ ] Data model: an ordered effect list per layer, saved in the project
+      format (new version, old files unchanged)
+- [ ] Compositor draws effects live from the same renderers, cached per layer
+      and invalidated by edits, so painting stays fast
+- [ ] Layer panel UI: add/remove/reorder/toggle, settings popups, undo
+- [ ] PSD import keeps effects as effects (stage A layers become an option)
+- [ ] PSD export writes them back (once PSD export exists)
+
 ## Before committing this batch
 
 - [x] Local gates pass (fmt, Clippy, 927 tests, public-tree check) - 2026-10-28,
@@ -220,6 +292,13 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       like `main.rs` made per-feature commits unbuildable). Not pushed.
 
 ## Last session
+
+- 2026-10-29 (Claude, layer effects stage A): `src/layer_effects.rs`, importer
+  placement in `effect_layers` (psd_import.rs). Tools in the agent scratchpad:
+  `fx_scan.py`/`fx_list.py` (which files use which effects), `fx_score.py`
+  (corpus totals), `fx_region.py` (error only where each effect layer draws),
+  `fx.sh` (stack, notes and side-by-side PNGs; needs `DUDEL_VERIFY_IMAGES`).
+  Gates pass (961 tests). Committed locally, not pushed.
 
 - 2026-10-28 (Claude, limits/blends/PSD): raised layer limits with matching
   memory budgets, added four blend modes incl. pass-through folders, PSD layer

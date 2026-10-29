@@ -67,6 +67,7 @@ mod indexed_tile;
 mod input;
 mod jobs;
 mod lasso_paint;
+mod layer_effects;
 mod layer_guides;
 mod layer_import;
 mod layer_mask;

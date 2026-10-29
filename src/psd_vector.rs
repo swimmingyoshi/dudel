@@ -355,7 +355,9 @@ impl Gradient {
             [0.0, 0.0, document[0] as f64, document[1] as f64]
         };
         let (w, h) = ((right - left).max(1.0), (bottom - top).max(1.0));
-        let ratio = self.angle.rem_euclid(90.0);
+        // The ramp spans the box's width at 0° and its height at 90°.
+        let turn = self.angle.rem_euclid(180.0);
+        let ratio = if turn <= 90.0 { turn } else { 180.0 - turn };
         let reach = self.scale * ((90.0 - ratio) / 90.0 * w + ratio / 90.0 * h);
         let center = [
             left + w / 2.0 + self.offset[0] * w,
@@ -858,6 +860,71 @@ impl VectorMask {
         }
         Ok(plane)
     }
+}
+
+/// A descriptor as bytes (without a version word), for building test files.
+#[cfg(test)]
+pub(crate) fn encode(descriptor: &Descriptor) -> Vec<u8> {
+    fn key(out: &mut Vec<u8>, k: &str) {
+        out.extend((if k.len() == 4 { 0 } else { k.len() as u32 }).to_be_bytes());
+        out.extend(k.as_bytes());
+    }
+    fn body(out: &mut Vec<u8>, d: &Descriptor) {
+        out.extend(0u32.to_be_bytes());
+        key(out, &d.class);
+        out.extend((d.items.len() as u32).to_be_bytes());
+        for (k, v) in &d.items {
+            key(out, k);
+            value(out, v);
+        }
+    }
+    fn value(out: &mut Vec<u8>, v: &Value) {
+        match v {
+            Value::Number(n) => {
+                out.extend(b"doub");
+                out.extend(n.to_be_bytes());
+            }
+            Value::Unit(unit, n) => {
+                out.extend(b"UntF");
+                out.extend(unit.as_bytes());
+                out.extend(n.to_be_bytes());
+            }
+            Value::Text(text) => {
+                out.extend(b"TEXT");
+                let units: Vec<u16> = text.encode_utf16().collect();
+                out.extend((units.len() as u32).to_be_bytes());
+                units.iter().for_each(|u| out.extend(u.to_be_bytes()));
+            }
+            Value::Enum(kind, item) => {
+                out.extend(b"enum");
+                key(out, kind);
+                key(out, item);
+            }
+            Value::Integer(n) => {
+                out.extend(b"long");
+                out.extend((*n as i32).to_be_bytes());
+            }
+            Value::Bool(b) => out.extend([b'b', b'o', b'o', b'l', u8::from(*b)]),
+            Value::Object(d) => {
+                out.extend(b"Objc");
+                body(out, d);
+            }
+            Value::List(items) => {
+                out.extend(b"VlLs");
+                out.extend((items.len() as u32).to_be_bytes());
+                items.iter().for_each(|item| value(out, item));
+            }
+            Value::Class(class) => {
+                out.extend(b"type");
+                out.extend(0u32.to_be_bytes());
+                key(out, class);
+            }
+            Value::Raw => unimplemented!(),
+        }
+    }
+    let mut out = Vec::new();
+    body(&mut out, descriptor);
+    out
 }
 
 #[cfg(test)]
