@@ -1443,6 +1443,10 @@ fn prepare_document_mode(
     let mut kept: Vec<(&Entry, Option<i64>)> = Vec::new();
     let mut ancestors: Vec<&Entry> = Vec::new();
     let mut skipped_folder: Option<u8> = None;
+    // A clipped sibling depends on the nearest preceding unclipped sibling.
+    // Removing that base must not reattach the clipping chain to an unrelated
+    // surviving layer. Each folder has an independent clipping stack.
+    let mut missing_clip_bases = Vec::new();
     for entry in &report.root_child_next_order {
         if skipped_folder.is_some_and(|depth| entry.depth > depth) {
             continue;
@@ -1455,9 +1459,17 @@ fn prepare_document_mode(
         let known = layer.layer_type == 1
             || layer.layer_type == 1584
             || (matches!(layer.layer_type, 0 | 256) && layer.is_folder());
+        let depth = entry.depth as usize;
+        missing_clip_bases.resize(depth + 1, false);
+        if layer.clip != 1 {
+            missing_clip_bases[depth] = !known || report.layer_issues.contains_key(&entry.id);
+        }
         let reasons = match report.layer_issues.get(&entry.id) {
             Some(reasons) => skip_reason(reasons),
             None if !known => "unsupported layer type".into(),
+            None if layer.clip == 1 && missing_clip_bases[depth] => {
+                "its clipping base was skipped".into()
+            }
             None => {
                 if layer.is_folder() {
                     ancestors.push(entry);
@@ -2109,6 +2121,81 @@ pub(crate) mod tests {
             std::fs::write(&path, worker_fixture_with_sql(mutation)).unwrap();
             let doc = prepare_document(&path, &|| false).unwrap();
             doc.validate().unwrap();
+        }
+    }
+    #[test]
+    fn skipped_clipping_bases_do_not_reattach_dependents_or_cross_folder_boundaries() {
+        let folder = |id, next, child, clipped| {
+            format!(
+                "INSERT INTO Layer (MainId,LayerType,LayerFolder,LayerVisibility,LayerOpacity,LayerComposite,LayerClip,LayerNextIndex,LayerFirstChildIndex,LayerRenderMipmap,LayerOffsetX,LayerOffsetY,LayerRenderOffscrOffsetX,LayerRenderOffscrOffsetY,LayerName,LayerLock,LayerMasking,LayerLayerMaskMipmap,LayerUsePaletteColor) VALUES ({id},0,1,1,256,0,{clipped},{next},{child},0,0,0,0,0,'{id}',0,32,0,0);"
+            )
+        };
+        let flat = format!(
+            "{}{} UPDATE Layer SET LayerFirstChildIndex=100 WHERE MainId=20; UPDATE Layer SET LayerNextIndex=110,LayerClip=1 WHERE MainId=40; UPDATE Layer SET LayerLock=2 WHERE MainId=30;",
+            folder(100, 30, 0, 0),
+            folder(110, 0, 0, 0)
+        );
+        let cases = [
+            // An unsupported base removes its clipped chain, even with an
+            // earlier surviving base. The next unclipped sibling resets it.
+            (flat.clone(), vec!["100", "110"], true),
+            // An unsupported clipped member does not remove its valid base
+            // or the later members of the same chain.
+            (
+                format!("{flat} UPDATE Layer SET LayerClip=1 WHERE MainId=30;"),
+                vec!["100", "40", "110"],
+                false,
+            ),
+            // A missing base inside a retained folder does not affect the
+            // folder's own clipping chain in its parent.
+            (
+                format!(
+                    "{}{} UPDATE Layer SET LayerFirstChildIndex=100 WHERE MainId=20; UPDATE Layer SET LayerLock=2 WHERE MainId=30; UPDATE Layer SET LayerClip=1 WHERE MainId=40;",
+                    folder(100, 110, 30, 0),
+                    folder(110, 0, 0, 1)
+                ),
+                vec!["100", "110"],
+                true,
+            ),
+            // Skipped base folders and dependent clipped folders both omit
+            // their descendants. Neither descendant can become a new base.
+            (
+                format!(
+                    "{}{}{} UPDATE Layer SET LayerFirstChildIndex=100 WHERE MainId=20; UPDATE Layer SET LayerNextIndex=0 WHERE MainId=30; UPDATE Layer SET LayerLock=2 WHERE MainId=100;",
+                    folder(100, 110, 30, 0),
+                    folder(110, 120, 40, 1),
+                    folder(120, 0, 0, 0)
+                ),
+                vec!["120"],
+                true,
+            ),
+        ];
+        for (mutation, expected, missing_base_note) in cases {
+            let source = worker_fixture_with_sql(&format!(
+                "UPDATE Layer SET LayerName=CAST(MainId AS TEXT); {mutation}"
+            ));
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("clipped.clip");
+            std::fs::write(&path, &source).unwrap();
+            let imported = import_document(&path, &|| false).unwrap();
+            assert_eq!(
+                imported
+                    .document
+                    .layers
+                    .iter()
+                    .map(|layer| layer.name.as_str())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                imported
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("its clipping base was skipped")),
+                missing_base_note
+            );
+            imported.document.validate().unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), source);
         }
     }
     #[test]

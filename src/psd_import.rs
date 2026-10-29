@@ -139,17 +139,43 @@ fn decode(
         return Err("Trailing PSD channel data".into());
     }
     if compression == 3 {
-        if depth != 8 {
-            return Err("16-bit PSD ZIP prediction is not supported".into());
-        }
         for row in out.chunks_mut(stride.max(1)) {
             check(cancel)?;
-            for x in 1..row.len() {
-                row[x] = row[x].wrapping_add(row[x - 1]);
+            if depth == 16 {
+                // Prediction is on big-endian samples, not individual bytes.
+                let mut previous = 0u16;
+                for sample in row.chunks_exact_mut(2) {
+                    previous = previous.wrapping_add(u16::from_be_bytes([sample[0], sample[1]]));
+                    sample.copy_from_slice(&previous.to_be_bytes());
+                }
+            } else {
+                for x in 1..row.len() {
+                    row[x] = row[x].wrapping_add(row[x - 1]);
+                }
             }
         }
     }
     Ok(out)
+}
+
+#[derive(Clone, Copy)]
+enum ColorMode {
+    Gray,
+    Rgb,
+}
+impl ColorMode {
+    fn channels(self) -> usize {
+        match self {
+            Self::Gray => 1,
+            Self::Rgb => 3,
+        }
+    }
+    fn rgb_channels(self) -> [usize; 3] {
+        match self {
+            Self::Gray => [0, 0, 0],
+            Self::Rgb => [0, 1, 2],
+        }
+    }
 }
 
 fn blend(key: &[u8]) -> Result<crate::blend::BlendMode, String> {
@@ -288,6 +314,7 @@ fn layers(
     data: &[u8],
     width: usize,
     height: usize,
+    mode: ColorMode,
     cancel: &impl Fn() -> bool,
 ) -> Result<(Document, Order, Vec<String>), String> {
     // After the layer records come the global layer mask (how masks are shown
@@ -313,7 +340,9 @@ fn layers(
         for _ in 0..count {
             let id = info.u16()? as i16;
             let len = info.u32()? as usize;
-            if ![-2, -1, 0, 1, 2].contains(&id) || channels.iter().any(|(other, _)| *other == id) {
+            if !(-2..mode.channels() as i16).contains(&id)
+                || channels.iter().any(|(other, _)| *other == id)
+            {
                 return Err("Unsupported or duplicate PSD layer channel".into());
             }
             channels.push((id, len));
@@ -494,7 +523,7 @@ fn layers(
         let mut planes = std::collections::BTreeMap::new();
         for &(id, bytes) in &record.channels {
             let data = info.take(bytes)?;
-            if record.group != 0 {
+            if record.group != 0 && id != -2 {
                 continue;
             }
             let [cw, ch] = if id == -2 {
@@ -516,8 +545,8 @@ fn layers(
                 writer.write_region(width, [0, y, width, y + 1], &row);
             }
         } else if record.group == 0 && w * h != 0 {
-            if !(0..=2).all(|id| planes.contains_key(&id)) {
-                return Err("PSD layer is missing RGB pixels".into());
+            if !(0..mode.channels() as i16).all(|id| planes.contains_key(&id)) {
+                return Err("PSD layer is missing color pixels".into());
             }
             let mut writer = record.layer.pixels.writer();
             for y in 0..h {
@@ -532,12 +561,8 @@ fn layers(
                         continue;
                     }
                     let i = y * w + x;
-                    let rgba = [
-                        planes[&0][i],
-                        planes[&1][i],
-                        planes[&2][i],
-                        planes.get(&-1).map_or(255, |a| a[i]),
-                    ];
+                    let [red, green, blue] = mode.rgb_channels().map(|id| planes[&(id as i16)][i]);
+                    let rgba = [red, green, blue, planes.get(&-1).map_or(255, |a| a[i])];
                     if rgba != [0; 4] {
                         writer
                             .rgba_mut(dy as usize * width + dx as usize)
@@ -547,9 +572,6 @@ fn layers(
             }
         }
         if let Some((rect, default, flags)) = record.mask {
-            if record.group != 0 {
-                return Err("PSD group masks need the saved composite".into());
-            }
             let plane = planes.get(&-2).ok_or("PSD mask metadata has no pixels")?;
             let [mw, mh] = geometry(rect)?;
             let invert = |v: u8| if flags & 4 != 0 { 255 - v } else { v };
@@ -648,6 +670,7 @@ fn saved_image(
     height: usize,
     channels: usize,
     depth: u16,
+    mode: ColorMode,
     has_alpha: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
@@ -666,12 +689,13 @@ fn saved_image(
         if i % width == 0 {
             check(cancel)?;
         }
+        let [red, green, blue] = mode.rgb_channels().map(|c| value(c, i));
         pixel.copy_from_slice(&[
-            value(0, i),
-            value(1, i),
-            value(2, i),
-            if has_alpha && channels >= 4 {
-                value(3, i)
+            red,
+            green,
+            blue,
+            if has_alpha && channels > mode.channels() {
+                value(mode.channels(), i)
             } else {
                 255
             },
@@ -737,6 +761,44 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
 fn parse(data: &[u8], cancel: &impl Fn() -> bool) -> Result<Imported, String> {
     parse_mode(data, cancel, true)
 }
+/// High-depth Photoshop files put their layer list in Lr16, leaving the
+/// ordinary list empty. Its signed count still controls merged transparency.
+fn layer_count(data: &[u8], depth: u16) -> Result<i16, String> {
+    if data.is_empty() {
+        return Ok(0);
+    }
+    let mut reader = Reader(data);
+    let mut primary = reader.section()?;
+    let count = if primary.0.is_empty() {
+        0
+    } else {
+        primary.u16()? as i16
+    };
+    if depth != 16 || reader.0.is_empty() {
+        return Ok(count);
+    }
+    // Some writers omit the global mask field entirely.
+    if !reader.0.starts_with(b"8BIM") && !reader.0.starts_with(b"8B64") {
+        reader.section()?; // Global layer mask (display metadata).
+    }
+    while !reader.0.is_empty() {
+        if reader.0.len() < 12 && reader.0.iter().all(|b| *b == 0) {
+            break;
+        }
+        let signature = reader.take(4)?;
+        if signature != b"8BIM" && signature != b"8B64" {
+            return Err("Invalid PSD global additional-info signature".into());
+        }
+        let key = reader.take(4)?;
+        let mut value = reader.section()?;
+        let padding = (4 - value.0.len() % 4) % 4;
+        reader.take(padding)?;
+        if key == b"Lr16" {
+            return value.u16().map(|v| v as i16);
+        }
+    }
+    Ok(count)
+}
 fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<Imported, String> {
     check(cancel)?;
     let mut reader = Reader(data);
@@ -747,16 +809,23 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let height = reader.u32()? as usize;
     let width = reader.u32()? as usize;
     let depth = reader.u16()?;
-    let mode = reader.u16()?;
+    let mode = match reader.u16()? {
+        1 => ColorMode::Gray,
+        3 => ColorMode::Rgb,
+        other => {
+            return Err(format!(
+                "Unsupported PSD color mode {other}; RGB and grayscale are supported"
+            ));
+        }
+    };
     if width == 0
         || height == 0
         || width > 4096
         || height > 4096
-        || !(3..=56).contains(&channels)
+        || !(mode.channels()..=56).contains(&channels)
         || ![8, 16].contains(&depth)
-        || mode != 3
     {
-        return Err("PSD import supports RGB 8/16-bit canvases up to 4096 × 4096".into());
+        return Err("PSD import supports RGB/grayscale 8/16-bit canvases up to 4096 × 4096 with valid channel counts".into());
     }
     reader.section()?;
     let mut resources = reader.section()?;
@@ -787,26 +856,24 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let layer_data = reader.section()?;
     // A negative layer count marks the first extra channel as the merged
     // image's transparency.
-    let has_alpha = if layer_data.0.len() >= 6 {
-        let mut r = Reader(layer_data.0);
-        let info = r.u32()?;
-        info >= 2 && (r.u16()? as i16) < 0
-    } else {
-        false
-    };
+    let count = layer_count(layer_data.0, depth)?;
+    let has_alpha = count < 0;
     let mut notes = Vec::new();
+    if matches!(mode, ColorMode::Gray) {
+        notes.push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
+    }
     if profile {
         notes.push(
-            "The embedded color profile was not converted; Dudel uses the stored RGB values."
+            "The embedded color profile was not converted; Dudel uses the stored channel values."
                 .into(),
         );
     }
     // An empty layer list means the document is just its background image.
-    let background_only = Reader(layer_data.0).u32().is_ok_and(|length| length == 0);
+    let background_only = count == 0;
     if background_only {
         notes.push("This file holds only a background image; it was imported as one layer.".into());
     } else if layered && depth == 8 && !layer_data.0.is_empty() {
-        match layers(layer_data.0, width, height, cancel) {
+        match layers(layer_data.0, width, height, mode, cancel) {
             Ok((mut document, order, layer_notes)) => {
                 notes.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
@@ -817,7 +884,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
                         has_composite
                             && document.layers.len() > 1
                             && saved_image(
-                                reader.0, width, height, channels, depth, has_alpha, cancel,
+                                reader.0, width, height, channels, depth, mode, has_alpha, cancel,
                             )
                             .is_ok_and(|saved| reversed_matches_better(&document, &saved))
                     }
@@ -848,7 +915,9 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             "The layers could not be imported ({reason}) and the file has no saved flattened image to fall back to. Save it with Maximize Compatibility enabled."
         ));
     }
-    let pixels = saved_image(reader.0, width, height, channels, depth, has_alpha, cancel)?;
+    let pixels = saved_image(
+        reader.0, width, height, channels, depth, mode, has_alpha, cancel,
+    )?;
     if depth == 16 {
         notes.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
     }
@@ -889,6 +958,9 @@ mod tests {
         keys: &'static [(&'static [u8; 4], &'static [u8])],
     }
     fn layer_file(specs: &[Spec]) -> Vec<u8> {
+        layer_file_mode(specs, ColorMode::Rgb)
+    }
+    fn layer_file_mode(specs: &[Spec], mode: ColorMode) -> Vec<u8> {
         let mut records = Vec::new();
         let mut planes = Vec::new();
         for spec in specs {
@@ -896,10 +968,13 @@ mod tests {
             for value in [0, spec.left, size, spec.left + size] {
                 records.extend(value.to_be_bytes());
             }
-            let channels: &[(i16, u8)] = match (spec.section, spec.mask) {
-                (Some(_), _) => &[],
-                (None, false) => &[(0, 0), (1, 1), (2, 2), (-1, 3)],
-                (None, true) => &[(0, 0), (1, 1), (2, 2), (-1, 3), (-2, 4)],
+            let channels: &[(i16, u8)] = match (spec.section, spec.mask, mode) {
+                (Some(_), false, _) => &[],
+                (Some(_), true, _) => &[(-2, 4)],
+                (None, false, ColorMode::Rgb) => &[(0, 0), (1, 1), (2, 2), (-1, 3)],
+                (None, true, ColorMode::Rgb) => &[(0, 0), (1, 1), (2, 2), (-1, 3), (-2, 4)],
+                (None, false, ColorMode::Gray) => &[(0, 0), (-1, 3)],
+                (None, true, ColorMode::Gray) => &[(0, 0), (-1, 3), (-2, 4)],
             };
             records.extend((channels.len() as u16).to_be_bytes());
             for &(id, index) in channels {
@@ -962,6 +1037,10 @@ mod tests {
         let mut layers = section(&info);
         layers.extend(0u32.to_be_bytes());
         let mut file = fixture(&[]);
+        if matches!(mode, ColorMode::Gray) {
+            file[12..14].copy_from_slice(&2u16.to_be_bytes());
+            file[24..26].copy_from_slice(&1u16.to_be_bytes());
+        }
         file.truncate(34);
         file.extend(section(&layers));
         file
@@ -1012,6 +1091,169 @@ mod tests {
         assert_eq!(mask.at(0, 0), 255);
         assert_eq!(mask.at(1, 0), 75);
         assert!(imported.notes.iter().any(|n| n.contains("editable")));
+    }
+    #[test]
+    fn grayscale_layers_keep_alpha_offsets_masks_and_groups() {
+        let file = layer_file_mode(
+            &[
+                group("End", 3),
+                raster("Depth", 1, [43, 0, 0, 128], true),
+                group("Folder", 1),
+            ],
+            ColorMode::Gray,
+        );
+        let imported = parse(&file, &|| false).unwrap();
+        let layer = &imported.document.layers[0];
+        assert_eq!(layer.pixels.rgba(0), [0; 4]);
+        assert_eq!(layer.pixels.rgba(1), [43, 43, 43, 128]);
+        assert_eq!(layer.mask.as_ref().unwrap().coverage.at(1, 0), 75);
+        assert_eq!(layer.depth, 1);
+        assert!(imported.document.layers[1].folder);
+        assert!(imported.notes.iter().any(|n| n.contains("grayscale")));
+        // A grayscale file must not accept RGB layer channel IDs as gray pixels.
+        let mut invalid = layer_file(&[raster("Invalid", 0, [9; 4], false)]);
+        invalid[24..26].copy_from_slice(&1u16.to_be_bytes());
+        assert!(parse(&invalid, &|| false).is_err());
+    }
+    #[test]
+    fn folder_masks_preserve_children_and_mask_coverage() {
+        for blend in [*b"norm", *b"pass"] {
+            let file = layer_file(&[
+                group("End", 3),
+                raster("Ink", 0, [20, 30, 40, 255], false),
+                Spec {
+                    mask: true,
+                    blend,
+                    ..group("Masked folder", 1)
+                },
+            ]);
+            let imported = parse(&file, &|| false).unwrap();
+            assert_eq!(imported.document.layers.len(), 2);
+            let folder = &imported.document.layers[1];
+            assert!(folder.folder);
+            let mask = folder.mask.as_ref().unwrap();
+            assert!(mask.enabled);
+            assert_eq!(mask.coverage.at(0, 0), 75);
+            assert_eq!(mask.coverage.at(1, 0), 255);
+            assert_eq!(imported.document.composite_display_pixel(0, true)[3], 75);
+            assert_eq!(
+                imported.document.layers[0].pixels.rgba(0),
+                [20, 30, 40, 255]
+            );
+            assert!(!imported.notes.iter().any(|n| n.contains("flattened")));
+        }
+    }
+    #[test]
+    fn grayscale_composite_distinguishes_transparency_from_extra_channels() {
+        let mut file = fixture(&[0, 0, 17, 64, 128, 255]);
+        file[12..14].copy_from_slice(&2u16.to_be_bytes());
+        file[24..26].copy_from_slice(&1u16.to_be_bytes());
+        let imported = parse(&file, &|| false).unwrap();
+        assert_eq!(
+            imported.document.layers[0].pixels.rgba(0),
+            [17, 17, 17, 255]
+        );
+        // Negative layer count marks the extra channel as merged transparency.
+        let mut layered = layer_file_mode(
+            &[raster("Gray", 0, [17, 0, 0, 128], false)],
+            ColorMode::Gray,
+        );
+        layered.extend([0, 0, 17, 64, 128, 255]);
+        let composite = parse_mode(&layered, &|| false, false).unwrap();
+        assert_eq!(
+            composite.document.layers[0].pixels.rgba(0),
+            [17, 17, 17, 128]
+        );
+        assert_eq!(
+            composite.document.layers[0].pixels.rgba(1),
+            [64, 64, 64, 255]
+        );
+        for channels in [0u16, 57] {
+            file[12..14].copy_from_slice(&channels.to_be_bytes());
+            assert!(parse(&file, &|| false).is_err());
+        }
+    }
+    #[test]
+    fn sixteen_bit_prediction_resets_each_row_and_channel() {
+        use std::io::Write;
+        // Independent deltas include carry, wraparound and different row starts.
+        let deltas = [0x12ffu16, 0x0102, 0xfffe, 3, 0x8000, 0x8001, 0x0100, 0xff00];
+        let expected = [0x12ffu16, 0x1401, 0xfffe, 1, 0x8000, 1, 0x0100, 0];
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder
+            .write_all(
+                &deltas
+                    .into_iter()
+                    .flat_map(u16::to_be_bytes)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        let mut data = vec![0, 3];
+        data.extend(encoder.finish().unwrap());
+        assert_eq!(
+            decode(&data, 2, 2, 2, 16, &|| false).unwrap(),
+            expected
+                .into_iter()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<_>>()
+        );
+        assert!(decode(&data[..data.len() - 2], 2, 2, 2, 16, &|| false).is_err());
+        assert!(decode(&data, 2, 2, 2, 16, &|| true).is_err());
+        // Decode a one-channel document through the real import path as well.
+        let mut file = fixture(&data);
+        file[12..14].copy_from_slice(&1u16.to_be_bytes());
+        file[14..18].copy_from_slice(&4u32.to_be_bytes());
+        file[22..24].copy_from_slice(&16u16.to_be_bytes());
+        file[24..26].copy_from_slice(&1u16.to_be_bytes());
+        let imported = parse(&file, &|| false).unwrap();
+        for (i, sample) in expected.into_iter().enumerate() {
+            let gray = ((u32::from(sample) + 128) / 257) as u8;
+            assert_eq!(
+                imported.document.layers[0].pixels.rgba(i),
+                [gray, gray, gray, 255]
+            );
+        }
+    }
+    #[test]
+    fn sixteen_bit_alternate_layer_count_controls_composite_alpha() {
+        for mask_field in [true, false] {
+            let mut info = section(&[]);
+            if mask_field {
+                info.extend(section(&[]));
+            }
+            // An odd-sized unrelated block tests document-level four-byte alignment.
+            info.extend(b"8BIMtest");
+            info.extend(section(&[1]));
+            info.extend([0; 3]);
+            info.extend(b"8BIMLr16");
+            info.extend(section(&(-1i16).to_be_bytes()));
+            info.extend([0; 2]);
+            let mut file = fixture(&[]);
+            file[12..14].copy_from_slice(&2u16.to_be_bytes());
+            file[22..24].copy_from_slice(&16u16.to_be_bytes());
+            file[24..26].copy_from_slice(&1u16.to_be_bytes());
+            file.truncate(34);
+            file.extend(section(&info));
+            file.extend([0, 0]);
+            for sample in [0x1111u16, 0x4040, 0x8080, 0xffff] {
+                file.extend(sample.to_be_bytes());
+            }
+            let imported = parse(&file, &|| false).unwrap();
+            assert_eq!(
+                imported.document.layers[0].pixels.rgba(0),
+                [17, 17, 17, 128]
+            );
+            assert_eq!(
+                imported.document.layers[0].pixels.rgba(1),
+                [64, 64, 64, 255]
+            );
+            assert!(
+                !imported
+                    .notes
+                    .iter()
+                    .any(|n| n.contains("only a background"))
+            );
+        }
     }
     #[test]
     fn pass_through_dissolve_and_glow_dodges_import_as_editable_modes() {
