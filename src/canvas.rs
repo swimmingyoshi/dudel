@@ -1241,6 +1241,49 @@ impl Dudel {
         }
     }
 
+    /// While the mask view is on and brushes target a mask: the mask in
+    /// grays (white reveals, black conceals), as a white layer carrying the
+    /// mask over a black one, so mask edits redraw only the tiles they touch.
+    pub(crate) fn mask_view_document(&mut self) -> Option<crate::document::Document> {
+        if !self.mask_view {
+            return None;
+        }
+        let crate::paint_target::Target::Mask(id) = self.input_stroke_target() else {
+            return None;
+        };
+        let mask = self
+            .doc
+            .layers
+            .iter()
+            .find_map(|l| l.mask.as_ref().filter(|m| m.id == id))?
+            .clone();
+        let size = [self.doc.width, self.doc.height];
+        let (black, white) = match &self.mask_view_layers {
+            Some((cached, black, white)) if *cached == size => (black.clone(), white.clone()),
+            _ => {
+                let black = crate::pixels::Pixels::solid(size[0], size[1], [0, 0, 0, 255]);
+                let white = crate::pixels::Pixels::solid(size[0], size[1], [255; 4]);
+                self.mask_view_layers = Some((size, black.clone(), white.clone()));
+                (black, white)
+            }
+        };
+        let mut view = self.doc.clone();
+        let mut below = crate::document::Layer::raster("Mask view".into(), size[0], size[1]);
+        below.pixels = black;
+        let mut above = crate::document::Layer::raster("Mask".into(), size[0], size[1]);
+        above.pixels = white;
+        above.mask = Some(crate::layer_mask::LayerMask {
+            enabled: true,
+            ..mask
+        });
+        // Fixed identities keep the display caches from seeing new layers.
+        below.id = self.mask_view_ids.0;
+        above.id = self.mask_view_ids.1;
+        view.layers = vec![below, above];
+        view.active = 1;
+        view.version = 2;
+        Some(view)
+    }
     fn upload_canvas(&mut self, ctx: &egui::Context) {
         self.prepare_reference_layers(ctx);
         let options = self.texture_options();
@@ -1248,7 +1291,8 @@ impl Dudel {
             .set_viewport(self.canvas_area, self.view(self.canvas_area));
         self.preview.note_damage(self.dirty, &self.dirty_region);
         let scene = self.reference_layers.display_document(&self.doc);
-        let base = scene.as_ref().unwrap_or(&self.doc);
+        let mask_view = self.mask_view_document();
+        let base = mask_view.as_ref().or(scene.as_ref()).unwrap_or(&self.doc);
         // Layer effects are drawn as extra layers; while painting, moving or
         // transforming, the last drawing stands in until the gesture ends.
         let gesture = self.stroking || self.move_drag.is_some() || self.affine_preview.is_some();
@@ -1270,7 +1314,10 @@ impl Dudel {
         let damage = self.dirty_region.take();
         // Redrawn effects can change anywhere they reach; a full update
         // still recomposites only tiles whose layers changed.
-        let full = self.dirty || drew;
+        // Switching between the mask view and the artwork replaces everything.
+        let switched = mask_view.is_some() != self.mask_view_shown;
+        self.mask_view_shown = mask_view.is_some();
+        let full = self.dirty || drew || switched;
         self.texture.update_damage(
             ctx,
             expanded.as_ref().unwrap_or(base),

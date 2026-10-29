@@ -200,6 +200,21 @@ impl Dudel {
             }
             ui.menu_button("Mask actions", |ui| {
                 if let Some(mask) = mask {
+                    let mut viewing = self.mask_view && !self.input_stroke_target().is_raster();
+                    if ui
+                        .checkbox(&mut viewing, "Show mask on canvas")
+                        .on_hover_text(
+                            "White reveals, black conceals · also Alt+click the mask thumbnail",
+                        )
+                        .changed()
+                    {
+                        if viewing {
+                            self.focus_current_mask(true);
+                        }
+                        self.mask_view = viewing;
+                        self.dirty = true;
+                    }
+                    ui.separator();
                     let mut enabled = mask.enabled;
                     let mut linked = mask.linked;
                     ui.add_enabled_ui(!properties.locked, |ui| {

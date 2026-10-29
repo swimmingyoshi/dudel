@@ -15,13 +15,21 @@ fn layer_effects_window_adds_toggles_and_undoes_effects() {
     let mut w = Workspace::sized([1280., 800.]);
     w.app.inspector_override = Some(true);
     w.settle();
-    w.click(w.text("fx"));
+    w.app.effects_window_open = true;
     w.settle();
-    assert!(w.app.effects_window_open);
+    let height = |w: &Workspace| {
+        w.ctx
+            .memory(|m| m.area_rect(egui::Id::new("Layer Effects")))
+            .unwrap()
+            .height()
+    };
+    let empty = height(&w);
     w.click(w.text("Add effect"));
     w.settle();
     w.click(w.text("Drop Shadow"));
     w.settle();
+    // The window grows to show the new effect's settings.
+    assert!(height(&w) > empty + 100.0, "{} -> {}", empty, height(&w));
     let active = w.app.doc.active;
     assert_eq!(w.app.doc.layers[active].effects.len(), 1);
     assert!(w.app.effects_edit.is_none(), "a click commits at once");
@@ -37,6 +45,39 @@ fn layer_effects_window_adds_toggles_and_undoes_effects() {
     finish_jobs(&mut w.app);
     assert!(w.app.doc.layers[active].effects.is_empty());
     w.settle();
+}
+
+#[test]
+fn mask_view_shows_the_targeted_mask_in_grays() {
+    let mut app = Dudel {
+        doc: crate::document::Document::new(3, 1),
+        ..Default::default()
+    };
+    app.doc.version = 2;
+    let mut coverage = crate::layer_mask::Mask::new(3, 1, 255).unwrap();
+    coverage.writer().set(1, 0, 0);
+    coverage.writer().set(2, 0, 128);
+    let mask = crate::layer_mask::LayerMask {
+        id: crate::document::LayerId::new(),
+        enabled: true,
+        linked: true,
+        coverage,
+    };
+    let id = mask.id;
+    app.doc.layers[0].mask = Some(mask);
+    assert!(app.mask_view_document().is_none());
+    app.select_paint_target(0, Some(id));
+    assert!(app.mask_view_document().is_none(), "view is off");
+    app.mask_view = true;
+    let view = app.mask_view_document().unwrap();
+    let pixels = view.composite_transparent();
+    assert_eq!(
+        pixels,
+        vec![255, 255, 255, 255, 0, 0, 0, 255, 128, 128, 128, 255]
+    );
+    // Targeting the artwork again shows the artwork.
+    app.select_paint_target(0, None);
+    assert!(app.mask_view_document().is_none());
 }
 
 #[test]

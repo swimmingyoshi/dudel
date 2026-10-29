@@ -304,6 +304,14 @@ Stage B - native layer effects:
       0.26 s, stroke 0.30 s, outer glow 0.27 s, bevel 0.44 s (was 1.1-1.5 s);
       cached 0.01 ms. Parallel row bands on the shared pool, transposes for
       column passes, distance only on the needed side of the edge
+- [x] Owner feedback 2026-10-29: fx moved into the layer action row (sparkle
+      icon); Layer Effects window sizes to its contents (scrolls past 75% of
+      the screen); layer rows show a sparkle badge (crossed out when all are
+      off; click opens the window), ordered locks, effects, symmetry, guides.
+      Masks: accent outline on the targeted thumbnail, Mask actions > Show
+      mask on canvas / Alt+click the mask thumbnail shows the mask in grays
+      (black layer under a white layer carrying the mask, so only touched
+      tiles redraw). `--capture-layer-effects` screenshots all of it
 - [ ] Draw effects in the background (show the previous drawing until ready)
       so huge layers never pause after a stroke; or redraw only the region a
       stroke touched plus the effect's reach

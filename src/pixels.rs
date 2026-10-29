@@ -753,6 +753,24 @@ impl Pixels {
             cache: OnceLock::new(),
         }))
     }
+    /// Every pixel `rgba`, all tiles sharing one allocation.
+    pub(crate) fn solid(width: usize, height: usize, rgba: [u8; 4]) -> Self {
+        if width == 0 || height == 0 {
+            return Self::default();
+        }
+        let columns = width.div_ceil(SIDE);
+        let tile = Arc::new(rgba.repeat(SIDE * SIDE));
+        Self(Arc::new(Storage {
+            flat: None,
+            tiles: Some(Tiles {
+                width,
+                height,
+                columns,
+                blocks: vec![Some(tile); columns * height.div_ceil(SIDE)],
+            }),
+            cache: OnceLock::new(),
+        }))
+    }
     pub fn len(&self) -> usize {
         self.0.flat.as_ref().map_or_else(
             || {

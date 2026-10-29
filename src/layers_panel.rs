@@ -18,6 +18,10 @@ enum RowAction {
     },
     Select(usize),
     PaintTarget(usize, Option<crate::document::LayerId>),
+    /// Target the mask and toggle showing it on the canvas (Alt+click).
+    ViewMask(usize, crate::document::LayerId),
+    /// Select the layer and open its effects.
+    Effects(usize),
     ToggleVisible(usize),
     ToggleCollapsed(usize),
     Rename(usize),
@@ -329,8 +333,8 @@ impl Dudel {
                 && !self.doc.layers[active - 1].folder
                 && self.doc.layers[active - 1].depth == layer.depth
         };
-        // Nine actions share this row, including the three right-aligned locks.
-        let action_size = ((ui.available_width() - 16.0) / 9.0).clamp(20.0, 30.0);
+        // Ten actions share this row, including the three right-aligned locks.
+        let action_size = ((ui.available_width() - 18.0) / 10.0).clamp(20.0, 30.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if icons::button(ui, Icon::Plus, action_size, false, self.doc.has_room(1, 1))
@@ -400,6 +404,18 @@ impl Dudel {
             .clicked()
             {
                 self.add_reference_layer();
+            }
+            if icons::button(
+                ui,
+                Icon::Effects,
+                action_size,
+                self.effects_window_open,
+                target_ready && !folder,
+            )
+            .on_hover_text("Layer effects: shadows, glows, strokes, overlays, bevels")
+            .clicked()
+            {
+                self.effects_window_open = !self.effects_window_open;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -695,6 +711,17 @@ impl Dudel {
             RowAction::PaintTarget(index, mask) => {
                 self.select_paint_target(index, mask);
             }
+            RowAction::ViewMask(index, mask) => {
+                if self.select_paint_target(index, Some(mask)) {
+                    self.mask_view = !self.mask_view;
+                    self.dirty = true;
+                }
+            }
+            RowAction::Effects(index) => {
+                if self.select_paint_target(index, None) {
+                    self.effects_window_open = true;
+                }
+            }
         }
     }
 
@@ -717,13 +744,6 @@ impl Dudel {
             let blend = blend_selector(ui, properties.blend, properties.folder);
             if blend != properties.blend {
                 self.set_canvas_property(target, crate::document_edits::Property::Blend(blend));
-            }
-            if ui
-                .selectable_label(self.effects_window_open, "fx")
-                .on_hover_text("Layer effects: shadows, glows, strokes, overlays, bevels")
-                .clicked()
-            {
-                self.effects_window_open = !self.effects_window_open;
             }
             let mut percent = (properties.opacity * 100.0).round();
             let slider = if compact {
@@ -920,14 +940,19 @@ impl Dudel {
             painter.rect_stroke(
                 thumb,
                 2.0,
-                Stroke::new(
-                    1.0_f32,
-                    if selected && self.input_stroke_target().is_raster() {
-                        Color32::WHITE
-                    } else {
-                        Color32::from_gray(70)
-                    },
-                ),
+                if selected && self.input_stroke_target().is_raster() && layer.mask.is_some() {
+                    // With a mask beside it, show clearly which one brushes paint.
+                    Stroke::new(2.5_f32, visuals.selection.stroke.color)
+                } else {
+                    Stroke::new(
+                        1.0_f32,
+                        if selected && self.input_stroke_target().is_raster() {
+                            Color32::WHITE
+                        } else {
+                            Color32::from_gray(70)
+                        },
+                    )
+                },
                 StrokeKind::Outside,
             );
         }
@@ -966,14 +991,11 @@ impl Dudel {
             painter.rect_stroke(
                 thumb,
                 2.0,
-                Stroke::new(
-                    if focused { 2.0_f32 } else { 1.0_f32 },
-                    if focused {
-                        Color32::WHITE
-                    } else {
-                        Color32::from_gray(70)
-                    },
-                ),
+                if focused {
+                    Stroke::new(2.5_f32, visuals.selection.stroke.color)
+                } else {
+                    Stroke::new(1.0_f32, Color32::from_gray(70))
+                },
                 StrokeKind::Outside,
             );
             if !mask.enabled {
@@ -992,10 +1014,16 @@ impl Dudel {
                     response.id.with(("mask target", mask.id)),
                     Sense::click(),
                 )
-                .on_hover_text("Edit mask: black conceals, white reveals")
+                .on_hover_text(
+                    "Edit mask: black conceals, white reveals · Alt+click to show it on the canvas",
+                )
                 .clicked()
             {
-                *action = Some(RowAction::PaintTarget(index, Some(mask.id)));
+                *action = Some(if ui.input(|i| i.modifiers.alt) {
+                    RowAction::ViewMask(index, mask.id)
+                } else {
+                    RowAction::PaintTarget(index, Some(mask.id))
+                });
             }
             text_left = thumb.right() + 8.0;
         }
@@ -1005,8 +1033,10 @@ impl Dudel {
         let symmetry_badge = own_symmetry.is_some() || self.symmetry.active();
         let guides_badge =
             (0..self.rulers.len()).any(|ruler| self.ruler_owner(ruler) == Some(layer.id));
+        let effects_badge = !layer.effects.is_empty();
         let badges = (layer.locked as usize + layer.alpha_locked as usize) as f32 * 20.0
-            + (symmetry_badge as usize + guides_badge as usize) as f32 * 24.0;
+            + (symmetry_badge as usize + guides_badge as usize + effects_badge as usize) as f32
+                * 24.0;
         let text_width = (rect.right() - text_left - 8.0 - badges).max(0.0);
         let name_top = if layer.folder {
             rect.top() + 3.0
@@ -1043,9 +1073,6 @@ impl Dudel {
         }
         let layer = &self.doc.layers[index];
         let mut summary = format!("{} · {:.0}%", layer.blend.name(), layer.opacity * 100.0);
-        if layer.has_effects() {
-            summary.push_str(" · fx");
-        }
         if let Some(adjustment) = &layer.adjustment {
             summary = format!("{} · {summary}", adjustment.name());
         }
@@ -1093,6 +1120,49 @@ impl Dudel {
             );
             icons::paint(&painter, r, Icon::AlphaLock, weak);
             badge_x -= 20.0;
+        }
+        // Badges, right to left: locks, effects, symmetry, guides.
+        let mut effects_response = None;
+        if effects_badge {
+            let r = egui::Rect::from_center_size(
+                pos2(badge_x - 10.0, rect.center().y),
+                vec2(22.0, 26.0),
+            );
+            let on = layer.has_effects();
+            icons::paint(
+                &painter,
+                r.shrink(3.0),
+                Icon::Effects,
+                if on { text } else { weak },
+            );
+            if !on {
+                painter.line_segment(
+                    [
+                        r.left_top() + vec2(3.0, 3.0),
+                        r.right_bottom() - vec2(3.0, 3.0),
+                    ],
+                    Stroke::new(1.5_f32, weak),
+                );
+            }
+            let names: Vec<&str> = layer
+                .effects
+                .iter()
+                .rev()
+                .map(|e| e.effect.name())
+                .collect();
+            effects_response = Some(
+                ui.interact(
+                    r,
+                    egui::Id::new(("layer effects", layer.id)),
+                    Sense::click(),
+                )
+                .on_hover_text(format!(
+                    "Effects{}: {} · click to edit",
+                    if on { "" } else { " (all off)" },
+                    names.join(", ")
+                )),
+            );
+            badge_x -= 24.0;
         }
         let mut symmetry_response = None;
         let mut guides_response = None;
@@ -1220,8 +1290,12 @@ impl Dudel {
             }
         }
 
+        if effects_response.as_ref().is_some_and(|r| r.clicked()) {
+            *action = Some(RowAction::Effects(index));
+        }
         let badge_clicked = symmetry_response.as_ref().is_some_and(|r| r.clicked())
-            || guides_response.as_ref().is_some_and(|r| r.clicked());
+            || guides_response.as_ref().is_some_and(|r| r.clicked())
+            || effects_response.as_ref().is_some_and(|r| r.clicked());
         if response.double_clicked() && action.is_none() && !badge_clicked {
             *action = Some(RowAction::Rename(index));
         } else if response.clicked() && action.is_none() && !badge_clicked {

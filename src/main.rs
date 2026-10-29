@@ -271,6 +271,11 @@ struct Dudel {
     opacity_preview_modified: Option<(u64, bool)>,
     effects_edit: Option<effects_panel::Edit>,
     effects_window_open: bool,
+    /// Show the targeted layer mask on the canvas instead of the artwork.
+    mask_view: bool,
+    mask_view_layers: Option<([usize; 2], pixels::Pixels, pixels::Pixels)>,
+    mask_view_ids: (document::LayerId, document::LayerId),
+    mask_view_shown: bool,
     tool_shift: tool_shift::ToolShift,
     shortcuts_window: bool,
     about_window: bool,
@@ -501,6 +506,10 @@ impl Default for Dudel {
             opacity_preview_modified: None,
             effects_edit: None,
             effects_window_open: false,
+            mask_view: false,
+            mask_view_layers: None,
+            mask_view_ids: (document::LayerId::new(), document::LayerId::new()),
+            mask_view_shown: false,
             tool_shift: Default::default(),
             shortcuts_window: false,
             about_window: false,
@@ -1665,7 +1674,9 @@ fn main() -> eframe::Result {
     let capture_mask_transform = mode.as_deref() == Some("--capture-layer-mask-transform");
     let capture_mask_target_transform = mode.as_deref() == Some("--capture-mask-target-transform");
     let capture_mask_feedback = mode.as_deref() == Some("--capture-mask-coverage");
+    let capture_layer_effects = mode.as_deref() == Some("--capture-layer-effects");
     let capture_layer_mask = mode.as_deref() == Some("--capture-layer-mask")
+        || capture_layer_effects
         || capture_mask_transform
         || capture_mask_target_transform
         || capture_mask_feedback
@@ -2064,6 +2075,19 @@ fn main() -> eframe::Result {
                         coverage: layer_mask::Mask::from_coverage(width, height, &bytes, None)
                             .expect("capture mask geometry"),
                     });
+                }
+                if capture_layer_effects {
+                    // A masked layer with effects, their window open and the
+                    // mask shown on the canvas.
+                    let mask = app.doc.layers[0].mask.as_ref().unwrap().id;
+                    app.doc.layers[0].effects = ["Drop Shadow", "Stroke"]
+                        .into_iter()
+                        .filter_map(layer_effects::Effect::preset)
+                        .map(layer_effects::LayerEffect::new)
+                        .collect();
+                    app.mask_focus = Some((app.doc.layers[0].id, mask));
+                    app.mask_view = true;
+                    app.effects_window_open = true;
                 }
                 if capture_mask_feedback {
                     let id = app.doc.layers[0].mask.as_ref().unwrap().id;

@@ -30,6 +30,7 @@ pub enum Icon {
     NewFolder,
     ChevronRight,
     ChevronDown,
+    ChevronUp,
     ZoomIn,
     ZoomOut,
     RotateLeft,
@@ -42,6 +43,8 @@ pub enum Icon {
     Pointer,
     Image,
     Transparency,
+    /// Layer effects: a sparkle.
+    Effects,
 }
 
 pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
@@ -184,6 +187,19 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 polyline(&[p(0.32, 0.50), p(0.66, 0.50)]);
             }
         }
+        Icon::Effects => {
+            let star = |cx: f32, cy: f32, r: f32| -> Vec<Pos2> {
+                (0..8)
+                    .map(|i| {
+                        let a = i as f32 * std::f32::consts::TAU / 8.0;
+                        let d = if i % 2 == 0 { r } else { r * 0.3 };
+                        p(cx + d * a.sin(), cy - d * a.cos())
+                    })
+                    .collect()
+            };
+            closed(&star(0.42, 0.58, 0.34));
+            closed(&star(0.8, 0.2, 0.15));
+        }
         Icon::Transparency => {
             // Checkerboard: two filled and two outlined squares.
             closed(&[p(0.18, 0.18), p(0.82, 0.18), p(0.82, 0.82), p(0.18, 0.82)]);
@@ -315,6 +331,9 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
         }
         Icon::ChevronDown => {
             polyline(&[p(0.22, 0.38), p(0.5, 0.66), p(0.78, 0.38)]);
+        }
+        Icon::ChevronUp => {
+            polyline(&[p(0.22, 0.62), p(0.5, 0.34), p(0.78, 0.62)]);
         }
         Icon::ZoomIn | Icon::ZoomOut => {
             painter.circle_stroke(p(0.42, 0.42), side * 0.25, line);

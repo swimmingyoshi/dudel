@@ -22,12 +22,18 @@ impl Dudel {
             return;
         }
         let mut open = true;
+        // Sized to its contents, so added effects show their settings; long
+        // lists scroll.
         egui::Window::new("Layer Effects")
             .open(&mut open)
-            .resizable(true)
-            .default_width(300.0)
+            .resizable(false)
+            .min_width(300.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.effects_ui(ui));
+                ui.set_min_width(300.0);
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() * 0.75).max(200.0))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| self.effects_ui(ui));
             });
         self.effects_window_open = open;
         // A click or typed value counts as soon as the pointer is up.
@@ -37,6 +43,8 @@ impl Dudel {
     }
 
     fn effects_ui(&mut self, ui: &mut egui::Ui) {
+        // Room for each slider's value and label inside the window.
+        ui.spacing_mut().slider_width = 130.0;
         let Some(target) = self.input_target() else {
             ui.label("No layer selected.");
             return;
@@ -83,17 +91,22 @@ impl Dudel {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut entry.enabled, entry.effect.name());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .small_button("✕")
+                    use crate::icons::{Icon, button};
+                    if button(ui, Icon::Trash, 22.0, false, true)
                         .on_hover_text("Remove effect")
                         .clicked()
                     {
                         remove = Some(index);
                     }
-                    if index > 0 && ui.small_button("⏷").on_hover_text("Move down").clicked() {
+                    if button(ui, Icon::ChevronDown, 22.0, false, index > 0)
+                        .on_hover_text("Move down")
+                        .clicked()
+                    {
                         swap = Some(index - 1);
                     }
-                    if index + 1 < count && ui.small_button("⏶").on_hover_text("Move up").clicked()
+                    if button(ui, Icon::ChevronUp, 22.0, false, index + 1 < count)
+                        .on_hover_text("Move up")
+                        .clicked()
                     {
                         swap = Some(index);
                     }
