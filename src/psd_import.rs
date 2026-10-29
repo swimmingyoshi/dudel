@@ -978,7 +978,7 @@ fn layers(
                     .get(&-2)
                     .map(|plane| (info.rect, info.default, info.flags, plane)),
             });
-        if record.mask.is_some() && user_mask.is_none() && planes.get(&-2).is_none() {
+        if record.mask.is_some() && user_mask.is_none() && !planes.contains_key(&-2) {
             return Err("PSD mask metadata has no pixels".into());
         }
         if let Some((rect, default, flags, plane)) = user_mask {
