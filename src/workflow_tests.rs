@@ -918,10 +918,10 @@ fn blend_modes_step_with_wheel_and_arrows_and_the_full_list_fits_without_scrolli
     };
     // Wheel down moves down the list one mode per notch.
     wheel(&mut w, -1.0);
-    assert_eq!(w.app.doc.layers[active].blend, BlendMode::Darken);
+    assert_eq!(w.app.doc.layers[active].blend, BlendMode::Dissolve);
     // Arrow keys step while the box is hovered; up returns.
     w.key(egui::Key::ArrowDown, Default::default());
-    assert_eq!(w.app.doc.layers[active].blend, BlendMode::Multiply);
+    assert_eq!(w.app.doc.layers[active].blend, BlendMode::Darken);
     w.key(egui::Key::ArrowUp, Default::default());
     w.key(egui::Key::ArrowUp, Default::default());
     assert_eq!(w.app.doc.layers[active].blend, BlendMode::Normal);

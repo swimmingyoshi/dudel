@@ -60,7 +60,7 @@ pub(crate) const BLEND_WHEEL_STEP: f32 = 30.0;
 /// the window height before scrolling. Over the closed box the mouse wheel
 /// steps through modes; Up/Down step while it is hovered, focused or open, so
 /// each mode can be judged on the canvas in turn.
-fn blend_selector(ui: &mut egui::Ui, current: BlendMode) -> BlendMode {
+fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool) -> BlendMode {
     let mut blend = current;
     let response = ui
         .add(
@@ -86,7 +86,8 @@ fn blend_selector(ui: &mut egui::Ui, current: BlendMode) -> BlendMode {
                 .max_height(room.max(120.0))
                 .min_scrolled_height(room.max(120.0))
                 .show(ui, |ui| {
-                    for (index, group) in BlendMode::GROUPS.iter().enumerate() {
+                    let pass = folder.then_some(&[BlendMode::PassThrough][..]);
+                    for (index, group) in pass.into_iter().chain(BlendMode::GROUPS).enumerate() {
                         if index > 0 {
                             ui.separator();
                         }
@@ -130,7 +131,7 @@ fn blend_selector(ui: &mut egui::Ui, current: BlendMode) -> BlendMode {
         step += i32::from(down) - i32::from(up);
     }
     if step != 0 {
-        blend = blend.stepped(step);
+        blend = blend.stepped(step, folder);
     }
     blend
 }
@@ -713,7 +714,7 @@ impl Dudel {
             let Some(properties) = self.input_properties() else {
                 return;
             };
-            let blend = blend_selector(ui, properties.blend);
+            let blend = blend_selector(ui, properties.blend, properties.folder);
             if blend != properties.blend {
                 self.set_canvas_property(target, crate::document_edits::Property::Blend(blend));
             }

@@ -146,7 +146,12 @@ fn decode_inner(
             let bottom = (top + SIDE).min(doc.height);
             let length = (right - left) * (bottom - top) * 4;
             payload_used += length;
-            if masked && payload_used > 512 * 1024 * 1024 {
+            let budget = if masked {
+                crate::document::MAX_MASKED_PAYLOAD
+            } else {
+                crate::document::MAX_PAYLOAD
+            };
+            if payload_used > budget {
                 return Err("Document payload exceeds budget".into());
             }
             let mut bytes = vec![0; length];
@@ -162,7 +167,7 @@ fn decode_inner(
         mask.coverage = crate::layer_mask::Mask::decode(
             &mut gzip,
             [doc.width, doc.height],
-            512 * 1024 * 1024 - payload_used,
+            crate::document::MAX_MASKED_PAYLOAD - payload_used,
             None,
         )?;
         payload_used += mask.coverage.payload_bytes();

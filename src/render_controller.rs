@@ -2166,7 +2166,12 @@ mod tests {
             ..Default::default()
         };
         app.render_queue.undo().unwrap();
-        for _ in 1..crate::document::MAX_RASTER_LAYERS {
+        // Fill most of the document directly; queue the last layers so the
+        // limit is reached through projected (not yet applied) creations.
+        while app.doc.layers.len() < crate::document::MAX_RASTER_LAYERS - 3 {
+            app.doc.add_layer();
+        }
+        for _ in 0..3 {
             app.new_layer();
         }
         let last = app.input_target().unwrap();

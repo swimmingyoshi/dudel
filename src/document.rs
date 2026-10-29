@@ -168,9 +168,18 @@ pub const MAX_SIDE: usize = 4096;
 /// Largest canvas area: a full 4096 x 4096 (16.7 MP), enough for 4K UHD artwork.
 /// Raster/mask payload still shares the 512 MiB document budget.
 pub const MAX_PIXELS: usize = MAX_SIDE * MAX_SIDE;
-pub const MAX_RASTER_LAYERS: usize = 32;
-pub const MAX_ENTRIES: usize = 64;
-pub const MAX_DEPTH: u8 = 6;
+/// Raster layers per document. Large illustration and VTuber rig files from
+/// CSP, Photoshop (8,000 layer cap) and Affinity rarely exceed a few hundred.
+pub const MAX_RASTER_LAYERS: usize = 1000;
+/// Layers plus folders.
+pub const MAX_ENTRIES: usize = 2000;
+/// Stored raster pixels per document. Equal to the most the former 32-layer
+/// cap allowed (32 full 4096 x 4096 layers), so more layers never let a file
+/// demand more memory than before. Mask-aware documents keep 512 MiB.
+pub const MAX_PAYLOAD: usize = 2 << 30;
+pub const MAX_MASKED_PAYLOAD: usize = 512 * 1024 * 1024;
+/// Folder nesting, matching Photoshop's ten levels.
+pub const MAX_DEPTH: u8 = 10;
 
 pub(crate) fn validate_folder_depths(
     entries: impl IntoIterator<Item = (bool, u8)>,
@@ -291,6 +300,17 @@ fn commit(out: &mut [f32; 4], group: [f32; 4], mode: crate::blend::BlendMode) {
     } else {
         [0.0; 3]
     };
+    if let Some(base) = mode.glow_base() {
+        // Glow: blend the alpha-weighted source at full strength over the
+        // backdrop, rather than fading the blended result by alpha.
+        let weighted = source.map(|c| c * a);
+        let blended = base.pixel(backdrop, weighted);
+        for c in 0..3 {
+            out[c] = blended[c] * backdrop_alpha + weighted[c] * (1.0 - backdrop_alpha);
+        }
+        out[3] = a + backdrop_alpha * (1.0 - a);
+        return;
+    }
     let blended = mode.pixel(backdrop, source);
     for c in 0..3 {
         out[c] = out[c] * (1.0 - a)
@@ -311,6 +331,13 @@ impl Level {
             // Clipping edits group color while retaining the base alpha.
             let alpha = self.group[3];
             let base = [0, 1, 2].map(|c| self.group[c] / alpha);
+            if let Some(glow) = blend.glow_base() {
+                let blended = glow.pixel(base, color.map(|c| c * a));
+                for (group, value) in self.group.iter_mut().zip(blended) {
+                    *group = value * alpha;
+                }
+                return;
+            }
             let blended = blend.pixel(base, color);
             for c in 0..3 {
                 self.group[c] = ((1.0 - a) * base[c] + a * blended[c]) * alpha;
@@ -321,6 +348,59 @@ impl Level {
         commit(&mut self.out, self.group, self.mode);
         self.out
     }
+    /// A pass-through folder's contents start from everything below them.
+    fn passing_through(parent: &Level) -> Level {
+        Level {
+            out: parent.finish(),
+            ..EMPTY_LEVEL
+        }
+    }
+}
+/// For each layer, bit `k` is set when the folder that owns nesting level
+/// `k` above it is Pass through. Empty when the document has none, which
+/// keeps ordinary compositing on its original path.
+pub(crate) fn pass_plan(layers: &[Layer]) -> Vec<u16> {
+    if !layers
+        .iter()
+        .any(|l| l.folder && l.blend == crate::blend::BlendMode::PassThrough)
+    {
+        return Vec::new();
+    }
+    // Folders follow their contents, so walk down from the top: a folder at
+    // depth d owns level d + 1 for the entries below it until the next
+    // entry at depth d or less.
+    let mut owner = [false; MAX_DEPTH as usize + 1];
+    let mut plan = vec![0u16; layers.len()];
+    for (i, layer) in layers.iter().enumerate().rev() {
+        plan[i] = (1..=layer.depth as usize)
+            .filter(|k| owner[k - 1])
+            .fold(0, |bits, k| bits | 1 << k);
+        if layer.folder {
+            owner[layer.depth as usize] = layer.blend == crate::blend::BlendMode::PassThrough;
+        }
+    }
+    plan
+}
+/// Open nesting levels up to `depth` for the layer at `global` index.
+fn open_levels(levels: &mut [Level], top: &mut usize, depth: usize, plan: &[u16], global: usize) {
+    while *top < depth {
+        *top += 1;
+        levels[*top] = if plan.get(global).is_some_and(|bits| bits & 1 << *top != 0) {
+            Level::passing_through(&levels[*top - 1])
+        } else {
+            EMPTY_LEVEL
+        };
+    }
+}
+/// Dissolve's per-pixel threshold: a fixed hash of the pixel index.
+fn dissolve(index: usize, a: f32) -> f32 {
+    let mut h = index as u64 ^ 0x9e37_79b9_7f4a_7c15;
+    h = (h ^ (h >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    h = (h ^ (h >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    h ^= h >> 31;
+    let threshold = (h >> 40) as f32 / (1u64 << 24) as f32;
+    // A hidden pixel keeps the signed zero of `a`, matching skipped empty layers.
+    if a > threshold { 1.0 } else { a * 0.0 }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -391,20 +471,24 @@ impl Document {
 
     pub fn validate(&self) -> Result<(), String> {
         self.validate_metadata()?;
-        if self.version == 2
-            && self
-                .layers
-                .iter()
-                .map(|l| {
-                    l.pixels.payload_bound()
-                        + l.mask.as_ref().map_or(0, |m| m.coverage.payload_bytes())
-                })
-                .sum::<usize>()
-                > 512 * 1024 * 1024
+        let budget = if self.version == 2 {
+            MAX_MASKED_PAYLOAD
+        } else {
+            MAX_PAYLOAD
+        };
+        if self
+            .layers
+            .iter()
+            .map(|l| {
+                l.pixels.payload_bound() + l.mask.as_ref().map_or(0, |m| m.coverage.payload_bytes())
+            })
+            .sum::<usize>()
+            > budget
         {
-            return Err(
-                "Raster and mask coverage exceed the 512 MiB document payload budget".into(),
-            );
+            return Err(format!(
+                "Raster and mask coverage exceed the {} MiB document payload budget",
+                budget >> 20
+            ));
         }
         if self
             .layers
@@ -555,9 +639,9 @@ impl Document {
     /// Composite one pixel. Folders are isolated groups: their contents are
     /// combined first, then blended into the parent level with the folder
     /// visibility, opacity and blend mode. `levels` is caller-owned scratch.
-    fn composite_pixel(&self, index: usize, levels: &mut [Level]) -> [f32; 4] {
+    fn composite_pixel(&self, index: usize, levels: &mut [Level], plan: &[u16]) -> [f32; 4] {
         levels[0] = EMPTY_LEVEL;
-        self.composite_layers(index, levels, 0, &self.layers);
+        self.composite_layers(index, levels, 0, &self.layers, 0, plan);
         levels[0].finish()
     }
     /// `composite_pixel` for a pixel where `empty[i]` marks raster layers that
@@ -569,35 +653,62 @@ impl Document {
         index: usize,
         levels: &mut [Level],
         empty: &[bool],
+        plan: &[u16],
     ) -> [f32; 4] {
         levels[0] = EMPTY_LEVEL;
         let mut top = 0;
-        for (layer, &empty) in self.layers.iter().zip(empty) {
+        for (global, (layer, &empty)) in self.layers.iter().zip(empty).enumerate() {
             if empty {
                 let depth = layer.depth as usize;
-                while top < depth {
-                    top += 1;
-                    levels[top] = EMPTY_LEVEL;
-                }
+                open_levels(levels, &mut top, depth, plan, global);
                 levels[depth].add([0.0; 3], 0.0, layer.clipped, layer.blend);
             } else {
-                top = self.composite_layers(index, levels, top, std::slice::from_ref(layer));
+                top = self.composite_layers(
+                    index,
+                    levels,
+                    top,
+                    std::slice::from_ref(layer),
+                    global,
+                    plan,
+                );
             }
         }
         levels[0].finish()
     }
+    /// Composite `layers`, which start at index `start` of the document's
+    /// layers, onto the open levels. `plan` is `pass_plan` for the document.
     fn composite_layers(
         &self,
         index: usize,
         levels: &mut [Level],
         mut top: usize,
         layers: &[Layer],
+        start: usize,
+        plan: &[u16],
     ) -> usize {
-        for layer in layers {
+        for (offset, layer) in layers.iter().enumerate() {
             let depth = layer.depth as usize;
-            while top < depth {
-                top += 1;
-                levels[top] = EMPTY_LEVEL;
+            open_levels(levels, &mut top, depth, plan, start + offset);
+            if layer.folder && layer.blend == crate::blend::BlendMode::PassThrough {
+                // The contents were composited onto everything below; fade
+                // that result in by the folder's visibility, opacity and mask.
+                let below = levels[depth].finish();
+                let content = if top > depth {
+                    top -= 1;
+                    levels[top + 1].finish()
+                } else {
+                    below
+                };
+                let t = if layer.visible {
+                    layer.opacity * layer.mask_coverage(index, self.width)
+                } else {
+                    0.0
+                };
+                levels[depth] = Level {
+                    out: std::array::from_fn(|c| below[c] + (content[c] - below[c]) * t),
+                    ..EMPTY_LEVEL
+                };
+                continue;
             }
             if layer.folder {
                 let content = if top > depth {
@@ -622,11 +733,14 @@ impl Document {
                     || layer.pixels.rgba(index),
                     |r| r.pixel(index % self.width, index / self.width),
                 );
-                let a = if layer.visible {
+                let mut a = if layer.visible {
                     layer.pixel_alpha(pixel[3]) * layer.mask_coverage(index, self.width)
                 } else {
                     0.0
                 };
+                if layer.blend == crate::blend::BlendMode::Dissolve {
+                    a = dissolve(index, a);
+                }
                 levels[depth].add(
                     [pixel[0] as f32, pixel[1] as f32, pixel[2] as f32],
                     a,
@@ -638,51 +752,61 @@ impl Document {
         top
     }
     pub(crate) fn prefix_state(&self, index: usize) -> CompositeState {
+        self.prefix_state_planned(index, &pass_plan(&self.layers))
+    }
+    fn prefix_state_planned(&self, index: usize, plan: &[u16]) -> CompositeState {
         let mut state = CompositeState {
             levels: [EMPTY_LEVEL; MAX_DEPTH as usize + 1],
             top: 0,
         };
-        state.top = self.composite_layers(index, &mut state.levels, 0, &self.layers[..self.active]);
+        state.top = self.composite_layers(
+            index,
+            &mut state.levels,
+            0,
+            &self.layers[..self.active],
+            0,
+            plan,
+        );
         state
     }
     pub(crate) fn prefix_states(&self, rect: [usize; 4]) -> Vec<CompositeState> {
         // Keep empty bases: they terminate previous clipping groups. Only merge
         // consecutive empty rasters at the same depth; folders always execute.
-        let mut plan: Vec<(&Layer, bool)> = Vec::with_capacity(self.active);
-        for layer in &self.layers[..self.active] {
+        let pass = pass_plan(&self.layers);
+        let mut plan: Vec<(usize, &Layer, bool)> = Vec::with_capacity(self.active);
+        for (global, layer) in self.layers[..self.active].iter().enumerate() {
             let empty = !layer.folder
                 && (!layer.visible || layer.opacity == 0.0 || !layer.has_display_payload(rect));
             if empty
-                && let Some((previous, previous_empty)) = plan.last_mut()
+                && let Some((previous_global, previous, previous_empty)) = plan.last_mut()
                 && *previous_empty
                 && previous.depth == layer.depth
+                && pass.get(*previous_global) == pass.get(global)
             {
                 if !layer.clipped {
                     *previous = layer;
+                    *previous_global = global;
                 }
                 continue;
             }
-            plan.push((layer, empty));
+            plan.push((global, layer, empty));
         }
         let mut states = Vec::with_capacity((rect[2] - rect[0]) * (rect[3] - rect[1]));
         for y in rect[1]..rect[3] {
             for x in rect[0]..rect[2] {
                 let index = y * self.width + x;
                 if plan.len() == self.active {
-                    states.push(self.prefix_state(index));
+                    states.push(self.prefix_state_planned(index, &pass));
                     continue;
                 }
                 let mut state = CompositeState {
                     levels: [EMPTY_LEVEL; MAX_DEPTH as usize + 1],
                     top: 0,
                 };
-                for &(layer, empty) in &plan {
+                for &(global, layer, empty) in &plan {
                     if empty {
                         let depth = layer.depth as usize;
-                        while state.top < depth {
-                            state.top += 1;
-                            state.levels[state.top] = EMPTY_LEVEL;
-                        }
+                        open_levels(&mut state.levels, &mut state.top, depth, &pass, global);
                         let alpha = if layer.visible {
                             0.0 * layer.opacity
                         } else {
@@ -695,6 +819,8 @@ impl Document {
                             &mut state.levels,
                             state.top,
                             std::slice::from_ref(layer),
+                            global,
+                            &pass,
                         );
                     }
                 }
@@ -703,17 +829,22 @@ impl Document {
         }
         states
     }
+    /// Finish a pixel from its prefix state. `plan` is `pass_plan` for this
+    /// document, computed once per region by the caller.
     pub(crate) fn composite_from_prefix(
         &self,
         index: usize,
         mut state: CompositeState,
         transparent: bool,
+        plan: &[u16],
     ) -> [u8; 4] {
         self.composite_layers(
             index,
             &mut state.levels,
             state.top,
             &self.layers[self.active..],
+            self.active,
+            plan,
         );
         output_pixel(state.levels[0].finish(), transparent)
     }
@@ -789,6 +920,7 @@ impl Document {
             })
             .collect();
         let sparse = empty.iter().any(|block| block.iter().any(|skip| *skip));
+        let pass = pass_plan(&self.layers);
         let rows = |chunk: &mut [u8], first_row: usize| {
             let mut levels = [EMPTY_LEVEL; MAX_DEPTH as usize + 1];
             for (offset, pixel) in chunk.chunks_exact_mut(4).enumerate() {
@@ -800,9 +932,9 @@ impl Document {
                 let value = if sparse {
                     let block =
                         (y / BLOCK - first_row_block) * block_columns + x / BLOCK - first_column;
-                    self.composite_pixel_sparse(index, &mut levels, &empty[block])
+                    self.composite_pixel_sparse(index, &mut levels, &empty[block], &pass)
                 } else {
-                    self.composite_pixel(index, &mut levels)
+                    self.composite_pixel(index, &mut levels, &pass)
                 };
                 for c in 0..3 {
                     pixel[c] = if transparent {
@@ -858,7 +990,11 @@ impl Document {
     /// One composited pixel: opaque on white paper, or straight RGBA when
     /// `transparent` (as the display shows it over a checkerboard).
     pub(crate) fn composite_display_pixel(&self, index: usize, transparent: bool) -> [u8; 4] {
-        let value = self.composite_pixel(index, &mut [EMPTY_LEVEL; MAX_DEPTH as usize + 1]);
+        let value = self.composite_pixel(
+            index,
+            &mut [EMPTY_LEVEL; MAX_DEPTH as usize + 1],
+            &pass_plan(&self.layers),
+        );
         output_pixel(value, transparent)
     }
     /// Display region composite; `transparent` keeps alpha instead of paper.
@@ -891,6 +1027,7 @@ impl Document {
         let value = self.composite_pixel(
             y * self.width + x,
             &mut [EMPTY_LEVEL; MAX_DEPTH as usize + 1],
+            &pass_plan(&self.layers),
         );
         Some([0, 1, 2].map(|c| (value[c] + 255.0 * (1.0 - value[3])).round() as u8))
     }
@@ -2170,9 +2307,16 @@ mod tests {
         doc.layers.push(Layer::new_folder("Outer".into()));
         doc.add_layer();
         doc.validate().unwrap();
-        for mode in crate::blend::BlendMode::ALL {
+        let modes = crate::blend::BlendMode::ALL
+            .into_iter()
+            .flat_map(|mode| [(mode, false), (mode, true)]);
+        for (mode, pass_folders) in modes {
             for layer in &mut doc.layers {
-                layer.blend = mode;
+                layer.blend = if layer.folder && pass_folders {
+                    crate::blend::BlendMode::PassThrough
+                } else {
+                    mode
+                };
             }
             for active in 0..doc.layers.len() {
                 doc.active = active;
@@ -2197,7 +2341,7 @@ mod tests {
                             );
                         }
                         assert_eq!(
-                            doc.composite_from_prefix(index, state, false),
+                            doc.composite_from_prefix(index, state, false, &pass_plan(&doc.layers)),
                             doc.composite_rgba_pixel(index)
                         );
                     }
@@ -3073,8 +3217,11 @@ mod tests {
                     let row_width = rect[2] - rect[0];
                     let index =
                         (rect[1] + offset / row_width) * width + rect[0] + offset % row_width;
-                    let value =
-                        doc.composite_pixel(index, &mut [EMPTY_LEVEL; MAX_DEPTH as usize + 1]);
+                    let value = doc.composite_pixel(
+                        index,
+                        &mut [EMPTY_LEVEL; MAX_DEPTH as usize + 1],
+                        &pass_plan(&doc.layers),
+                    );
                     let rgb = [0, 1, 2].map(|channel| {
                         if transparent {
                             if value[3] > 0.0 {
@@ -3141,6 +3288,81 @@ mod tests {
         assert_eq!(doc.layers[1].pixels[7], 255); // outside-base marks remain nondestructive
     }
     #[test]
+    fn pass_through_glow_and_dissolve_follow_their_definitions() {
+        use crate::blend::BlendMode;
+        let pixel = |doc: &Document| doc.composite_transparent()[..4].to_vec();
+        let near = |actual: Vec<u8>, expected: &[f32]| {
+            assert!(
+                actual
+                    .iter()
+                    .zip(expected.iter().copied())
+                    .all(|(a, e)| (f32::from(*a) - e).abs() <= 1.0),
+                "{actual:?} vs {expected:?}"
+            );
+        };
+        // Gray backdrop, then a Multiply layer inside a folder.
+        let mut doc = Document::new(1, 1);
+        doc.layers[0].pixels = vec![128, 128, 128, 255].into();
+        doc.add_layer();
+        doc.layers[1].pixels = vec![100, 100, 100, 255].into();
+        doc.layers[1].blend = BlendMode::Multiply;
+        let flat = pixel(&doc);
+        doc.layers[1].depth = 1;
+        doc.layers.push(Layer::new_folder("Folder".into()));
+        doc.validate().unwrap();
+        // Isolated: Multiply over nothing is the plain color.
+        near(pixel(&doc), &[100.0, 100.0, 100.0, 255.0]);
+        doc.layers[2].blend = BlendMode::PassThrough;
+        assert_eq!(pixel(&doc), flat);
+        near(flat.clone(), &[50.2, 50.2, 50.2, 255.0]);
+        doc.layers[2].opacity = 0.5;
+        near(pixel(&doc), &[89.1, 89.1, 89.1, 255.0]);
+        doc.layers[2].visible = false;
+        assert_eq!(pixel(&doc), vec![128, 128, 128, 255]);
+
+        // Glow modes are brighter than their plain forms at partial alpha.
+        let over_gray = |mode| {
+            let mut doc = Document::new(1, 1);
+            doc.layers[0].pixels = vec![128, 128, 128, 255].into();
+            doc.add_layer();
+            doc.layers[1].pixels = vec![200, 200, 200, 128].into();
+            doc.layers[1].blend = mode;
+            pixel(&doc)[0]
+        };
+        let a = 128.0 / 255.0;
+        near(vec![over_gray(BlendMode::AddGlow)], &[128.0 + 200.0 * a]);
+        near(
+            vec![over_gray(BlendMode::LinearDodge)],
+            &[(1.0 - a) * 128.0 + a * 255.0],
+        );
+        near(
+            vec![over_gray(BlendMode::GlowDodge)],
+            &[128.0 * 255.0 / (255.0 - 200.0 * a)],
+        );
+        near(
+            vec![over_gray(BlendMode::ColorDodge)],
+            &[(1.0 - a) * 128.0 + a * 255.0],
+        );
+        // Over nothing, glow keeps the layer's own color and alpha.
+        let mut alone = Document::new(1, 1);
+        alone.layers[0].pixels = vec![200, 200, 200, 128].into();
+        alone.layers[0].blend = BlendMode::AddGlow;
+        near(pixel(&alone), &[200.0, 200.0, 200.0, 128.0]);
+
+        // Dissolve shows a share of pixels matching alpha, each fully opaque.
+        let mut doc = Document::new(64, 64);
+        doc.layers[0].pixels = [10, 20, 30, 128].repeat(64 * 64).into();
+        doc.layers[0].blend = BlendMode::Dissolve;
+        let out = doc.composite_transparent();
+        let shown = out.chunks_exact(4).filter(|p| p[3] == 255).count();
+        assert!(
+            out.chunks_exact(4)
+                .all(|p| p[3] == 0 || p == [10, 20, 30, 255])
+        );
+        assert!((1800..2300).contains(&shown), "{shown}");
+        assert_eq!(doc.composite_transparent(), out, "dissolve is stable");
+    }
+    #[test]
     fn blend_modes_handle_opaque_and_transparent_backdrops() {
         use crate::blend::BlendMode;
         let mut doc = Document::new(1, 1);
@@ -3164,7 +3386,12 @@ mod tests {
     }
     #[test]
     fn every_blend_mode_preserves_transparent_source_color_and_project_metadata() {
-        for mode in crate::blend::BlendMode::ALL {
+        // Dissolve exists to make each pixel fully shown or hidden; see
+        // pass_through_glow_and_dissolve_follow_their_definitions.
+        let modes = crate::blend::BlendMode::ALL
+            .into_iter()
+            .filter(|mode| *mode != crate::blend::BlendMode::Dissolve);
+        for mode in modes {
             let mut doc = Document::new(1, 1);
             doc.add_layer();
             doc.layers[1].blend = mode;

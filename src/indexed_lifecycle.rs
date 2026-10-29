@@ -373,6 +373,6 @@ mod tests {
         assert!(report.edit.changed > 0);
         assert!(report.compaction.after_bytes < report.compaction.before_bytes);
         assert!(fixture([4096, 4097], 1, Content::Sparse).is_err());
-        assert!(fixture([1, 1], 33, Content::Sparse).is_err());
+        assert!(fixture([1, 1], MAX_RASTER_LAYERS + 1, Content::Sparse).is_err());
     }
 }

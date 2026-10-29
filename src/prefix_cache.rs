@@ -173,12 +173,13 @@ impl PrefixCache {
                     }
                 };
                 entry.used = self.clock;
+                let pass = crate::document::pass_plan(&doc.layers);
                 for y in top.max(bounds[1])..bottom.min(bounds[3]) {
                     for x in left.max(bounds[0])..right.min(bounds[2]) {
                         let state =
                             entry.states[(y - bounds[1]) * (bounds[2] - bounds[0]) + x - bounds[0]];
                         let pixel =
-                            doc.composite_from_prefix(y * doc.width + x, state, transparent);
+                            doc.composite_from_prefix(y * doc.width + x, state, transparent, &pass);
                         let offset = ((y - top) * (right - left) + x - left) * 4;
                         out[offset..offset + 4].copy_from_slice(&pixel);
                     }
@@ -252,6 +253,7 @@ pub(crate) fn benchmark_plan(path: &std::path::Path) -> Result<(), String> {
                                 offset / side * 96 + offset % side,
                                 state,
                                 false,
+                                &crate::document::pass_plan(&doc.layers),
                             );
                             if rgba != expected[offset * 4..offset * 4 + 4] {
                                 return Err("Prefix-plan benchmark pixels mismatch".into());

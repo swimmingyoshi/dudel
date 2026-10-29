@@ -27,6 +27,7 @@ pub struct Properties {
     pub locked: bool,
     pub alpha_locked: bool,
     pub mask: Option<MaskProperties>,
+    pub folder: bool,
 }
 impl Properties {
     pub fn from_layer(layer: &crate::document::Layer) -> Self {
@@ -38,6 +39,7 @@ impl Properties {
             locked: layer.locked,
             alpha_locked: layer.alpha_locked,
             mask: layer.mask.as_ref().map(MaskProperties::from_mask),
+            folder: layer.folder,
         }
     }
 }
@@ -195,6 +197,7 @@ impl PendingLayers {
                 locked: entry.locked,
                 alpha_locked: entry.alpha_locked,
                 mask: entry.mask,
+                folder: entry.folder,
             })
     }
     pub fn with_property(

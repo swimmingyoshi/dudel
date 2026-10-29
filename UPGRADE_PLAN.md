@@ -122,13 +122,23 @@ CSP (`src/clip_*.rs`):
       **29 layered imports** (was 9), 30/30 previews, sources unchanged. Renders
       of animation, Gray and skipped-layer samples checked by eye against CSP
       previews (anim/rabbit/cauldron confirmed the keyframe path).
-- [ ] goblincatgirl: more than 32 raster layers. Raise Dudel's layer limit, or
-      offer to import the first 32 and list the rest (owner decision)
-- [ ] Skipped across the corpus: 4 vector layers, 1 text layer, 4 "unsupported
-      type or blend mode" (glow / pass-through blends, Purplelady and rude).
-      Next: rasterize vector layers from their render cache if CSP stores one
-      (rude's line art is a vector layer, so it imports without line art);
-      approximate glow blends; then layer masks and palette colors
+- [x] Layer limits raised (owner, 2026-10-28): 1,000 raster layers, 2,000
+      entries, depth 10 (Photoshop's), with a 2 GiB stored-pixel budget equal to
+      the old worst case so files cannot demand more memory than before.
+      Metadata cap 16 MiB, project open cap 4 GiB, PSD input cap 2 GB.
+      goblincatgirl now imports. **Corpus: 30 / 30 layered.**
+- [x] Blend modes added: Dissolve, Color dodge (glow), Add (glow), Pass through
+      (folders only; contents composite onto the backdrop, faded back by folder
+      opacity/mask/visibility). CSP 10/12/30 and PSD pass/diss/tsly-off map to
+      them; Purplelady and rude Glow layers checked against CSP previews.
+- [ ] **Vector layers:** CSP does NOT store their rendered pixels (the render
+      mipmap's external chunks are absent in all 5 corpus files); it redraws
+      from `VectorObjectList` on open. Owner wants vector layers eventually and
+      pixels for now, so the next step is a CSP vector stroke reader + renderer
+      (points, pressure, width, color, brush). 7 vector layers and 1 text layer
+      are skipped across the corpus (rude's line art is one).
+- [ ] Glow alpha over partly transparent backdrops is our reading of the
+      definition (verified by eye on opaque art only)
 - [ ] Pixel comparison against CSP previews at full size (most previews are
       smaller than the canvas, so only by-eye checks so far)
 
@@ -144,7 +154,13 @@ PSD (`src/psd_import.rs`, new):
 - [x] `--verify-import` on a PSD now compares Dudel's render with the saved
       composite. A CSP-converted PSD (2 folders, Subtract layers): 15 entries
       editable, 89% exact pixels, mean diff 1.2, differences on anti-aliased edges.
-- [ ] Test against real PSDs saved by Photoshop and Krita (only converter output so far)
+- [x] Layer order detected per file (2026-10-28): grouped files by marker
+      nesting, flat files by sampling the saved image both ways. Owner's
+      Frieren VTuber PSD (146 layers, 4096 x 2249, written top first) imports
+      editable and matches its saved image to within one level everywhere.
+- [ ] Test against PSDs saved by Photoshop itself and by Krita
+- [ ] Performance: adding a layer costs ~2 ms at 100 layers, ~28 ms at 500,
+      ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
 - [ ] PSB, CMYK/grayscale, 16-bit layered, pass-through groups, adjustment layers
 - [ ] PSD export (none yet)
 
@@ -173,6 +189,11 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       like `main.rs` made per-feature commits unbuildable). Not pushed.
 
 ## Last session
+
+- 2026-10-28 (Claude, limits/blends/PSD): raised layer limits with matching
+  memory budgets, added four blend modes incl. pass-through folders, PSD layer
+  order detection (Frieren model), CSP corpus 30/30. Vector render-cache
+  approach ruled out (CSP does not save it). Committed locally, not pushed.
 
 - 2026-10-28 (Claude, CSP): skip-and-report for unsupported layers, saved
   animation frame from track keyframes, Gray layers, larger decode budgets.

@@ -7,7 +7,10 @@ use crate::{
 };
 use std::{io::Read, path::Path};
 
+/// Largest single decoded channel image.
 const LIMIT: usize = 512 * 1024 * 1024;
+/// PSD v1 files end at 2 GB; larger documents use PSB.
+const MAX_FILE: usize = 2 << 30;
 struct Reader<'a>(&'a [u8]);
 impl<'a> Reader<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
@@ -153,6 +156,8 @@ fn blend(key: &[u8]) -> Result<crate::blend::BlendMode, String> {
     use crate::blend::BlendMode::*;
     Ok(match key {
         b"norm" => Normal,
+        b"diss" => Dissolve,
+        b"pass" => PassThrough,
         b"mul " => Multiply,
         b"scrn" => Screen,
         b"over" => Overlay,
@@ -246,12 +251,45 @@ fn solid_color(mut r: Reader<'_>) -> Result<[u8; 3], String> {
     }
     Ok(color.map(Option::unwrap))
 }
+/// Which way a file lists its layer records.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Order {
+    /// Photoshop's order: bottom layer first, a group's end divider below
+    /// its contents.
+    BottomFirst,
+    /// Some other writers list the top layer first.
+    TopFirst,
+    /// No groups: either order nests, so the saved image has to decide.
+    Undetermined,
+}
+/// Depth of each record read bottom first, or None if the group markers do
+/// not nest that way. Dividers (type 3) get no entry of their own.
+fn nesting(groups: impl Iterator<Item = u32>) -> Option<Vec<Option<u8>>> {
+    let mut depth = 0u8;
+    let mut depths = Vec::new();
+    for group in groups {
+        match group {
+            3 => {
+                depth += 1;
+                if depth > crate::document::MAX_DEPTH {
+                    return None;
+                }
+                depths.push(None);
+                continue;
+            }
+            1 | 2 => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+        depths.push(Some(depth));
+    }
+    (depth == 0).then_some(depths)
+}
 fn layers(
     data: &[u8],
     width: usize,
     height: usize,
     cancel: &impl Fn() -> bool,
-) -> Result<Document, String> {
+) -> Result<(Document, Order), String> {
     let mut outer = Reader(data);
     let mut info = outer.section()?;
     if !outer.0.is_empty() && (!outer.section()?.0.is_empty() || outer.0.iter().any(|b| *b != 0)) {
@@ -330,6 +368,7 @@ fn layers(
         layer.blend = mode;
         let mut group = 0;
         let mut solid = None;
+        let mut shapes = true;
         while extra.0.len() >= 12 {
             if extra.take(4)? != b"8BIM" {
                 return Err("Unsupported PSD additional-info signature".into());
@@ -371,7 +410,9 @@ fn layers(
                 }
                 // Transparency shapes only change layer effects, fill opacity
                 // and Blend If, which all take the composite path.
-                b"tsly" if value.u8()? <= 1 => {}
+                b"tsly" if value.0.first().is_some_and(|v| *v <= 1) => {
+                    shapes = value.u8()? == 1;
+                }
                 b"clbl" if value.u8()? == 1 => {}
                 b"infx" | b"knko" if value.u8()? == 0 => {}
                 b"lyid" | b"lclr" | b"lnsr" | b"shmd" | b"fxrp" | b"lyvr" => {}
@@ -385,6 +426,16 @@ fn layers(
         }
         if extra.0.iter().any(|b| *b != 0) {
             return Err("Truncated PSD additional info".into());
+        }
+        // With Transparency Shapes off, Photoshop's dodge modes blend the
+        // alpha-weighted color at full strength: CSP's glow modes.
+        if !shapes {
+            use crate::blend::BlendMode::*;
+            layer.blend = match layer.blend {
+                LinearDodge => AddGlow,
+                ColorDodge => GlowDodge,
+                other => other,
+            };
         }
         if group == 1 || group == 2 {
             layer.folder = true;
@@ -418,7 +469,7 @@ fn layers(
             };
             decoded_budget = decoded_budget
                 .checked_add(cw * ch)
-                .filter(|b| *b <= LIMIT)
+                .filter(|b| *b <= crate::document::MAX_PAYLOAD)
                 .ok_or("PSD layer payload exceeds memory budget")?;
             planes.insert(id, decode(data, cw, ch, 1, 8, cancel)?);
         }
@@ -496,32 +547,31 @@ fn layers(
             });
         }
     }
-    // Records run bottom to top, like Dudel's stack: a group's end divider
-    // comes first, then its contents, then the folder record above them.
-    let mut depth = 0u8;
-    let mut result = Vec::new();
-    for mut record in records {
-        match record.group {
-            3 => {
-                depth += 1;
-                if depth > crate::document::MAX_DEPTH {
-                    return Err("PSD group nesting exceeds limits".into());
-                }
-                continue;
-            }
-            1 | 2 => {
-                depth = depth
-                    .checked_sub(1)
-                    .ok_or("PSD group without an end divider")?
-            }
-            _ => {}
-        }
-        record.layer.depth = depth;
-        result.push(record.layer);
+    // Dudel's stack runs bottom to top with each folder above its contents.
+    // Photoshop writes records that way; other writers list them top first.
+    // Group markers only nest correctly in the file's own direction.
+    let order = if records.iter().all(|r| r.group == 0) {
+        Order::Undetermined
+    } else if nesting(records.iter().map(|r| r.group)).is_some() {
+        Order::BottomFirst
+    } else if nesting(records.iter().rev().map(|r| r.group)).is_some() {
+        Order::TopFirst
+    } else {
+        return Err("PSD groups do not nest in either layer order".into());
+    };
+    if order == Order::TopFirst {
+        records.reverse();
     }
-    if depth != 0
-        || result.len() > MAX_ENTRIES
-        || result.iter().filter(|l| !l.folder).count() > MAX_RASTER_LAYERS
+    let depths =
+        nesting(records.iter().map(|r| r.group)).ok_or("PSD group nesting exceeds limits")?;
+    let mut result = Vec::new();
+    for (mut record, depth) in records.into_iter().zip(depths) {
+        if let Some(depth) = depth {
+            record.layer.depth = depth;
+            result.push(record.layer);
+        }
+    }
+    if result.len() > MAX_ENTRIES || result.iter().filter(|l| !l.folder).count() > MAX_RASTER_LAYERS
     {
         return Err("PSD layer hierarchy exceeds limits or is incomplete".into());
     }
@@ -534,7 +584,65 @@ fn layers(
         1
     };
     doc.validate()?;
-    Ok(doc)
+    Ok((doc, order))
+}
+/// Whether reversing a flat stack matches the saved image better, judged on
+/// a grid of sample pixels.
+fn reversed_matches_better(doc: &Document, saved: &[u8]) -> bool {
+    let step = (doc.width * doc.height / 16384).max(1);
+    let mut reversed = doc.clone();
+    reversed.layers.reverse();
+    let error = |doc: &Document| -> u64 {
+        (0..doc.width * doc.height)
+            .step_by(step)
+            .map(|i| {
+                let rendered = doc.composite_display_pixel(i, true);
+                (0..4)
+                    .map(|c| u64::from(rendered[c].abs_diff(saved[i * 4 + c])))
+                    .sum::<u64>()
+            })
+            .sum()
+    };
+    error(&reversed) < error(doc)
+}
+/// The flattened image a PSD stores after its layers, as straight RGBA.
+#[allow(clippy::too_many_arguments)]
+fn saved_image(
+    data: &[u8],
+    width: usize,
+    height: usize,
+    channels: usize,
+    depth: u16,
+    has_alpha: bool,
+    cancel: &impl Fn() -> bool,
+) -> Result<Vec<u8>, String> {
+    let raw = decode(data, width, height, channels, depth, cancel)?;
+    let samples = width * height;
+    let value = |c: usize, i: usize| {
+        let at = (c * samples + i) * usize::from(depth / 8);
+        if depth == 8 {
+            raw[at]
+        } else {
+            ((u16::from_be_bytes([raw[at], raw[at + 1]]) as u32 + 128) / 257) as u8
+        }
+    };
+    let mut pixels = vec![0; samples * 4];
+    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        if i % width == 0 {
+            check(cancel)?;
+        }
+        pixel.copy_from_slice(&[
+            value(0, i),
+            value(1, i),
+            value(2, i),
+            if has_alpha && channels >= 4 {
+                value(3, i)
+            } else {
+                255
+            },
+        ]);
+    }
+    Ok(pixels)
 }
 
 pub(crate) fn import(path: &Path, cancel: &impl Fn() -> bool) -> Result<Imported, String> {
@@ -546,14 +654,14 @@ pub(crate) fn saved_composite(path: &Path) -> Result<Imported, String> {
 }
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    if file.metadata().map_err(|e| e.to_string())?.len() > LIMIT as u64 {
-        return Err("PSD exceeds 512 MiB input limit".into());
+    if file.metadata().map_err(|e| e.to_string())?.len() > MAX_FILE as u64 {
+        return Err("PSD exceeds 2 GB PSD limit".into());
     }
     let mut bytes = Vec::new();
-    file.take(LIMIT as u64 + 1)
+    file.take(MAX_FILE as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
-    if bytes.len() > LIMIT {
+    if bytes.len() > MAX_FILE {
         return Err("PSD exceeds input limit".into());
     }
     Ok(bytes)
@@ -609,6 +717,15 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         }
     }
     let layer_data = reader.section()?;
+    // A negative layer count marks the first extra channel as the merged
+    // image's transparency.
+    let has_alpha = if layer_data.0.len() >= 6 {
+        let mut r = Reader(layer_data.0);
+        let info = r.u32()?;
+        info >= 2 && (r.u16()? as i16) < 0
+    } else {
+        false
+    };
     let mut notes = Vec::new();
     if profile {
         notes.push(
@@ -618,8 +735,27 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     }
     if layered && depth == 8 && !layer_data.0.is_empty() {
         match layers(layer_data.0, width, height, cancel) {
-            Ok(document) => {
+            Ok((mut document, order)) => {
                 notes.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
+                let flipped = match order {
+                    Order::BottomFirst => false,
+                    Order::TopFirst => true,
+                    Order::Undetermined => {
+                        has_composite
+                            && document.layers.len() > 1
+                            && saved_image(
+                                reader.0, width, height, channels, depth, has_alpha, cancel,
+                            )
+                            .is_ok_and(|saved| reversed_matches_better(&document, &saved))
+                    }
+                };
+                if order == Order::Undetermined && flipped {
+                    document.layers.reverse();
+                    document.active = document.layers.len() - 1;
+                }
+                if flipped {
+                    notes.push("This file lists its layers top first, unlike Photoshop. Dudel read them in that order to match the file's saved image.".into());
+                }
                 return Ok(Imported { document, notes });
             }
             Err(error) => {
@@ -633,39 +769,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     if !has_composite {
         return Err("PSD needs a saved compatibility composite for unsupported layer features. Save it with Maximize Compatibility enabled.".into());
     }
-    let has_alpha = if layer_data.0.len() >= 6 {
-        let mut r = Reader(layer_data.0);
-        let info = r.u32()?;
-        info >= 2 && (r.u16()? as i16) < 0
-    } else {
-        false
-    };
-    let raw = decode(reader.0, width, height, channels, depth, cancel)?;
-    let samples = width * height;
-    let value = |c: usize, i: usize| {
-        let at = (c * samples + i) * usize::from(depth / 8);
-        if depth == 8 {
-            raw[at]
-        } else {
-            ((u16::from_be_bytes([raw[at], raw[at + 1]]) as u32 + 128) / 257) as u8
-        }
-    };
-    let mut pixels = vec![0; samples * 4];
-    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
-        if i % width == 0 {
-            check(cancel)?;
-        }
-        pixel.copy_from_slice(&[
-            value(0, i),
-            value(1, i),
-            value(2, i),
-            if has_alpha && channels >= 4 {
-                value(3, i)
-            } else {
-                255
-            },
-        ]);
-    }
+    let pixels = saved_image(reader.0, width, height, channels, depth, has_alpha, cancel)?;
     if depth == 16 {
         notes.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
     }
@@ -698,6 +802,9 @@ mod tests {
         color: [u8; 4],
         mask: bool,
         section: Option<u32>,
+        blend: [u8; 4],
+        /// Transparency Shapes Layer flag, when written.
+        shapes: Option<u8>,
     }
     fn layer_file(specs: &[Spec]) -> Vec<u8> {
         let mut records = Vec::new();
@@ -726,7 +833,8 @@ mod tests {
                     },
                 ]);
             }
-            records.extend(b"8BIMnorm");
+            records.extend(b"8BIM");
+            records.extend(spec.blend);
             records.extend([255, 0, 0, 0]);
             let mut extra = Vec::new();
             if spec.mask {
@@ -744,8 +852,17 @@ mod tests {
             extra.extend(spec.name.as_bytes());
             extra.extend(vec![0; (4 - (spec.name.len() + 1) % 4) % 4]);
             if let Some(kind) = spec.section {
+                let mut value = kind.to_be_bytes().to_vec();
+                if kind != 3 {
+                    value.extend(b"8BIM");
+                    value.extend(spec.blend);
+                }
                 extra.extend(b"8BIMlsct");
-                extra.extend(section(&kind.to_be_bytes()));
+                extra.extend(section(&value));
+            }
+            if let Some(flag) = spec.shapes {
+                extra.extend(b"8BIMtsly");
+                extra.extend(section(&[flag, 0, 0, 0]));
             }
             records.extend(section(&extra));
         }
@@ -769,6 +886,8 @@ mod tests {
             color,
             mask,
             section: None,
+            blend: *b"norm",
+            shapes: None,
         }
     }
     fn group(name: &'static str, kind: u32) -> Spec {
@@ -778,6 +897,8 @@ mod tests {
             color: [0; 4],
             mask: false,
             section: Some(kind),
+            blend: *b"norm",
+            shapes: None,
         }
     }
     #[test]
@@ -800,6 +921,95 @@ mod tests {
         assert_eq!(mask.at(0, 0), 255);
         assert_eq!(mask.at(1, 0), 75);
         assert!(imported.notes.iter().any(|n| n.contains("editable")));
+    }
+    #[test]
+    fn pass_through_dissolve_and_glow_dodges_import_as_editable_modes() {
+        use crate::blend::BlendMode;
+        let file = layer_file(&[
+            raster("Paper", 0, [250, 250, 250, 255], false),
+            group("</Layer set>", 3),
+            Spec {
+                blend: *b"lddg",
+                shapes: Some(0),
+                ..raster("Glow", 0, [200, 100, 0, 128], false)
+            },
+            Spec {
+                blend: *b"div ",
+                shapes: Some(1),
+                ..raster("Dodge", 0, [9, 9, 9, 255], false)
+            },
+            Spec {
+                blend: *b"diss",
+                ..raster("Grain", 0, [1, 2, 3, 255], false)
+            },
+            Spec {
+                blend: *b"pass",
+                ..group("Lights", 1)
+            },
+        ]);
+        let imported = parse(&file, &|| false).unwrap();
+        assert!(imported.notes.iter().any(|n| n.contains("editable")));
+        let blends: Vec<_> = imported.document.layers.iter().map(|l| l.blend).collect();
+        assert_eq!(
+            blends,
+            [
+                BlendMode::Normal,
+                BlendMode::AddGlow,
+                BlendMode::ColorDodge,
+                BlendMode::Dissolve,
+                BlendMode::PassThrough,
+            ]
+        );
+    }
+    #[test]
+    fn top_first_files_are_read_in_their_own_order() {
+        // Grouped: the folder record before its contents marks top-first.
+        let file = layer_file(&[
+            group("Folder", 1),
+            raster("Ink", 0, [0, 0, 0, 255], false),
+            group("</Layer set>", 3),
+            raster("Paper", 0, [250, 250, 250, 255], false),
+        ]);
+        let imported = parse(&file, &|| false).unwrap();
+        let stack: Vec<_> = imported
+            .document
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.depth))
+            .collect();
+        assert_eq!(stack, [("Paper", 0), ("Ink", 1), ("Folder", 0)]);
+        assert!(imported.notes.iter().any(|n| n.contains("top first")));
+        // Flat: the saved image decides. Records list "Top" first, and
+        // only a blue saved image means Top really is on top.
+        for (saved, top_first) in [([0u8, 0, 255], true), ([255, 0, 0], false)] {
+            let mut file = layer_file(&[
+                raster("Top", 0, [0, 0, 255, 255], false),
+                raster("Base", 0, [255, 0, 0, 255], false),
+            ]);
+            // Raw composite, 2 x 1 pixels, planar R, G, B.
+            file.extend([0, 0]);
+            for value in saved {
+                file.extend([value, 0]);
+            }
+            let imported = parse(&file, &|| false).unwrap();
+            let names: Vec<_> = imported
+                .document
+                .layers
+                .iter()
+                .map(|l| l.name.as_str())
+                .collect();
+            let expected = if top_first {
+                ["Base", "Top"]
+            } else {
+                ["Top", "Base"]
+            };
+            assert_eq!(names, expected);
+            assert_eq!(
+                imported.notes.iter().any(|n| n.contains("top first")),
+                top_first
+            );
+            assert_eq!(imported.document.active, 1);
+        }
     }
     #[test]
     fn groups_nest_with_the_divider_below_their_contents() {

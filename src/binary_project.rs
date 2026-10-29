@@ -4,7 +4,8 @@ use serde::Serialize;
 use std::io::{Read, Write};
 
 pub const MAGIC: &[u8] = b"DUDL\x03\r\n";
-const METADATA_LIMIT: usize = 1024 * 1024;
+/// Room for every entry's metadata with its longest (4096-byte) name.
+const METADATA_LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Serialize)]
 struct Metadata<'a> {
     version: u32,
@@ -85,7 +86,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
     };
     let data = serde_json::to_vec(&metadata).map_err(|e| e.to_string())?;
     if data.len() > METADATA_LIMIT {
-        return Err("Project metadata exceeds 1 MiB".into());
+        return Err("Project metadata exceeds 16 MiB".into());
     }
     Ok(data)
 }
@@ -123,6 +124,11 @@ pub fn decode(reader: impl Read) -> Result<Document, String> {
     }
     if doc.version != 1 || doc.layers.iter().any(|l| l.mask.is_some()) {
         return Err("Unsupported legacy layer-mask document".into());
+    }
+    // Legacy layers are stored full size; bound them before allocating.
+    let rasters = doc.layers.iter().filter(|layer| !layer.folder).count();
+    if rasters.saturating_mul(doc.width * doc.height * 4) > crate::document::MAX_PAYLOAD {
+        return Err("Legacy project payload exceeds the document budget".into());
     }
     for layer in doc.layers.iter_mut().filter(|layer| !layer.folder) {
         layer.pixels = crate::pixels::Pixels::read_rgba(&mut gzip, doc.width, doc.height)

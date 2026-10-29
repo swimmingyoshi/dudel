@@ -22,6 +22,14 @@ the package has been uploaded to a public store.
   saved-preview import. PSD RGB import supports bounded editable subsets and a
   reported saved-composite fallback.
 
+- Documents hold up to 1,000 raster layers, 2,000 entries and ten folder levels
+  (was 32 / 64 / six), with a 2 GiB stored-pixel budget. Such projects need this
+  version to open.
+- New blend modes: Dissolve, Color dodge (glow), Add (glow), and Pass through for
+  folders. CSP and PSD imports map them.
+- PSD import reads each file's own layer order. Some writers list layers top
+  first; groups decide it, and flat files are checked against the saved image.
+
 See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
 changes require rebuilt release artifacts and do not extend the historical
 release approval to universal CSP/PSD compatibility or a complete plugin platform.

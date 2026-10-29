@@ -166,7 +166,9 @@ pub fn load_project(path: &Path) -> Result<Document, String> {
     let v4 = prefix.starts_with(crate::tile_project::MAGIC);
     let v3 = prefix.starts_with(crate::binary_project::MAGIC);
     if v5 || v4 || v3 {
-        if size > 550 * 1024 * 1024 {
+        // Decoding is bounded by the document payload budget; this only stops
+        // reading files no Dudel save could have produced.
+        if size > 4 << 30 {
             return Err("Binary project exceeds file limit".into());
         }
         reader.consume(crate::tile_project::MAGIC.len());

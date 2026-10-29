@@ -136,8 +136,10 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
 ## Current limits
 
 - Canvases are 1-4096 pixels per side, up to 4096 x 4096. Documents hold up to
-  32 raster layers, 64 layer/folder entries and folder depth six, sharing a
-  512 MiB raster-and-mask budget.
+  1,000 raster layers, 2,000 layer/folder entries and folder depth ten, with
+  2 GiB of stored pixels (512 MiB including masks in mask-aware projects).
+  Projects using more than 32 layers or the newer blend modes need this
+  version or later.
 - Native saves use project format v4, or v5 when layer masks are used; newer
   files need a compatible Dudel. Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP

@@ -1275,8 +1275,8 @@ pub(crate) fn prepare_document(
     prepare_document_mode(input, cancelled, true).map(|(doc, _)| doc)
 }
 
-/// Native equivalents of the standard CSP blend identifiers. Glow and
-/// pass-through modes remain unsupported because their alpha semantics differ.
+/// Native equivalents of the CSP blend identifiers, as listed by the
+/// independent clip_to_psd reader (10 Glow dodge, 12 Add (glow), 30 Through).
 fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
     use crate::blend::BlendMode::*;
     Some(match value {
@@ -1290,7 +1290,9 @@ fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
         7 => Lighten,
         8 => Screen,
         9 => ColorDodge,
+        10 => GlowDodge,
         11 => LinearDodge,
+        12 => AddGlow,
         13 => LighterColor,
         14 => Overlay,
         15 => SoftLight,
@@ -1305,6 +1307,7 @@ fn clip_blend(value: i64) -> Option<crate::blend::BlendMode> {
         24 => Saturation,
         25 => Color,
         26 => Luminosity,
+        30 => PassThrough,
         36 => Divide,
         _ => return None,
     })
@@ -1654,7 +1657,9 @@ fn skip_reason(issues: &[String]) -> String {
     let mut reasons = BTreeSet::new();
     for issue in issues {
         reasons.insert(match () {
-            _ if issue.contains("Vector") => "vector layer",
+            _ if issue.contains("Vector") => {
+                "vector layer (CSP redraws vectors when it opens a file and does not save their pixels; Dudel cannot draw CSP vectors yet)"
+            }
             _ if issue.contains("TextLayer") => "text layer",
             _ if issue.contains("Balloon") => "speech balloon",
             _ if issue.contains("FilterLayer") => "correction layer",

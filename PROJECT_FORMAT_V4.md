@@ -3,7 +3,7 @@
 The default project and recovery writer uses v4. Document schema version remains
 1. v1 JSON, v2 gzip JSON and v3 dense binary projects remain readable and are
 converted on the next save. Old applications do not understand the v4 header.
-Canvas/layer limits remain unchanged until rendering and tool gates are complete.
+Layer limits were raised to 1,000 raster layers and 2,000 entries with a 2 GiB pixel budget; canvas limits are unchanged.
 
 ## Layout
 
@@ -59,7 +59,7 @@ thumbnail provider in `shell/thumbnails`.
 Projects use the existing same-directory staged write, file sync and atomic
 replacement. Failure leaves the prior destination intact. This does not certify
 power-loss durability or directory-sync behavior. The project file cap remains
-550 MiB, 32 raster layers and 16,777,216 pixels per layer (4,194,304 before 2026-10-22); all existing folder,
+4 GiB, 1,000 raster layers (32 before the layer-limit change), a 2 GiB stored-pixel budget and 16,777,216 pixels per layer (4,194,304 before 2026-10-22); all existing folder,
 selection, dimension and metadata bounds still apply.
 
 Recovery wrapper `DRCV\x01\r\n` retains its existing path length/JSON fields,

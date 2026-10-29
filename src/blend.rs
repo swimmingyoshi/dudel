@@ -31,13 +31,25 @@ pub enum BlendMode {
     Saturation,
     Color,
     Luminosity,
+    /// Normal, but each pixel is fully shown or hidden at random in proportion
+    /// to its alpha (Photoshop's Dissolve).
+    Dissolve,
+    /// Color dodge with the source weighted by its alpha and applied at full
+    /// strength, so soft edges glow (CSP's Color Dodge (Glow)).
+    GlowDodge,
+    /// Add with the source weighted by its alpha and applied at full strength
+    /// (CSP's Add (Glow)).
+    AddGlow,
+    /// Folders only: contents blend straight into the layers below instead of
+    /// being combined first (Photoshop's group default, CSP's Through).
+    PassThrough,
 }
 
 impl BlendMode {
     /// Menu order, in groups: normal, darken, lighten, contrast, comparative
     /// and component modes.
     pub const GROUPS: [&'static [Self]; 6] = [
-        &[Self::Normal],
+        &[Self::Normal, Self::Dissolve],
         &[
             Self::Darken,
             Self::Multiply,
@@ -50,7 +62,9 @@ impl BlendMode {
             Self::Lighten,
             Self::Screen,
             Self::ColorDodge,
+            Self::GlowDodge,
             Self::LinearDodge,
+            Self::AddGlow,
             Self::LighterColor,
         ],
         &[
@@ -65,8 +79,11 @@ impl BlendMode {
         &[Self::Difference, Self::Exclusion, Self::Divide],
         &[Self::Hue, Self::Saturation, Self::Color, Self::Luminosity],
     ];
-    pub const ALL: [Self; 26] = [
+    /// Every mode a raster layer can use, in menu order. Folders may also use
+    /// `PassThrough`.
+    pub const ALL: [Self; 29] = [
         Self::Normal,
+        Self::Dissolve,
         Self::Darken,
         Self::Multiply,
         Self::ColorBurn,
@@ -76,7 +93,9 @@ impl BlendMode {
         Self::Lighten,
         Self::Screen,
         Self::ColorDodge,
+        Self::GlowDodge,
         Self::LinearDodge,
+        Self::AddGlow,
         Self::LighterColor,
         Self::Overlay,
         Self::SoftLight,
@@ -121,12 +140,32 @@ impl BlendMode {
             Self::Saturation => "Saturation",
             Self::Color => "Color",
             Self::Luminosity => "Luminosity",
+            Self::Dissolve => "Dissolve",
+            Self::GlowDodge => "Color dodge (glow)",
+            Self::AddGlow => "Add (glow)",
+            Self::PassThrough => "Pass through",
         }
     }
+    /// The separable mode a glow mode applies to its alpha-weighted source.
+    pub fn glow_base(self) -> Option<Self> {
+        match self {
+            Self::GlowDodge => Some(Self::ColorDodge),
+            Self::AddGlow => Some(Self::LinearDodge),
+            _ => None,
+        }
+    }
+    /// Menu order for this kind of entry: folders also offer Pass through.
+    pub fn choices(folder: bool) -> impl Iterator<Item = Self> {
+        folder
+            .then_some(Self::PassThrough)
+            .into_iter()
+            .chain(Self::ALL)
+    }
     /// The next (`step` > 0) or previous mode in menu order, stopping at the ends.
-    pub fn stepped(self, step: i32) -> Self {
-        let index = Self::ALL.iter().position(|mode| *mode == self).unwrap_or(0) as i32;
-        Self::ALL[(index + step).clamp(0, Self::ALL.len() as i32 - 1) as usize]
+    pub fn stepped(self, step: i32, folder: bool) -> Self {
+        let modes: Vec<Self> = Self::choices(folder).collect();
+        let index = modes.iter().position(|mode| *mode == self).unwrap_or(0) as i32;
+        modes[(index + step).clamp(0, modes.len() as i32 - 1) as usize]
     }
     /// Blend straight 0-255 colors: `source` over `backdrop`.
     pub fn pixel(self, backdrop: [f32; 3], source: [f32; 3]) -> [f32; 3] {
@@ -162,12 +201,16 @@ impl BlendMode {
     pub fn channel(self, backdrop: f32, source: f32) -> f32 {
         match self {
             Self::Normal
+            | Self::Dissolve
+            | Self::PassThrough
             | Self::DarkerColor
             | Self::LighterColor
             | Self::Hue
             | Self::Saturation
             | Self::Color
             | Self::Luminosity => source,
+            Self::GlowDodge => Self::ColorDodge.channel(backdrop, source),
+            Self::AddGlow => Self::LinearDodge.channel(backdrop, source),
             Self::Multiply => backdrop * source / 255.0,
             Self::Screen => 255.0 - (255.0 - backdrop) * (255.0 - source) / 255.0,
             Self::Darken => backdrop.min(source),
@@ -375,9 +418,17 @@ mod tests {
         let grouped: Vec<_> = BlendMode::GROUPS.iter().flat_map(|g| g.iter()).collect();
         assert_eq!(grouped.len(), BlendMode::ALL.len());
         assert!(grouped.iter().zip(&BlendMode::ALL).all(|(a, b)| **a == *b));
-        assert_eq!(BlendMode::Normal.stepped(-1), BlendMode::Normal);
-        assert_eq!(BlendMode::Normal.stepped(1), BlendMode::Darken);
-        assert_eq!(BlendMode::Luminosity.stepped(1), BlendMode::Luminosity);
-        assert_eq!(BlendMode::Screen.stepped(-1), BlendMode::Lighten);
+        assert_eq!(BlendMode::Normal.stepped(-1, false), BlendMode::Normal);
+        assert_eq!(BlendMode::Normal.stepped(1, false), BlendMode::Dissolve);
+        assert_eq!(
+            BlendMode::Luminosity.stepped(1, false),
+            BlendMode::Luminosity
+        );
+        assert_eq!(BlendMode::Screen.stepped(-1, false), BlendMode::Lighten);
+        // Only folders offer Pass through, first in their list.
+        assert!(!BlendMode::ALL.contains(&BlendMode::PassThrough));
+        assert_eq!(BlendMode::Normal.stepped(-1, true), BlendMode::PassThrough);
+        assert_eq!(BlendMode::PassThrough.stepped(1, true), BlendMode::Normal);
+        assert_eq!(BlendMode::PassThrough.stepped(0, false), BlendMode::Normal);
     }
 }

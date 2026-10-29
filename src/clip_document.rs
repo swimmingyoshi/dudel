@@ -270,8 +270,11 @@ mod tests {
             )
             .is_err()
         );
-        let mut entries: Vec<_> = (1..=32).map(|id| entry(id, 0, Content::Raster)).collect();
-        entries.push(entry(33, 0, Content::Paper([255; 3])));
+        let limit = MAX_RASTER_LAYERS as i64;
+        let mut entries: Vec<_> = (1..=limit)
+            .map(|id| entry(id, 0, Content::Raster))
+            .collect();
+        entries.push(entry(limit + 1, 0, Content::Paper([255; 3])));
         assert!(assemble([1, 1], entries, 1, &[], &|| false, &mut decode).is_err());
         assert_eq!(calls.get(), 0);
     }

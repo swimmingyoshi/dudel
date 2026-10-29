@@ -17,8 +17,10 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
 a mask-aware Dudel build; do not assume an older executable can read a newer file.
 The supported document envelope is 1-4096 pixels per side, at most 16,777,216 pixels
-in total (a full 4096 x 4096), 32 raster layers, 64 total layer/folder entries and folder
-depth six. Mask-aware projects have a combined 512 MiB raster-and-layer-mask payload budget.
+in total (a full 4096 x 4096), 1,000 raster layers, 2,000 total layer/folder entries and
+folder depth ten (Photoshop's nesting limit). Stored pixels are capped at 2 GiB, the most
+the former 32-layer limit allowed; mask-aware projects keep a combined 512 MiB raster-and-
+layer-mask payload budget. Builds before this change open at most 32 raster layers.
 These limits also apply to PNG, CSP and PSD document imports. Builds before
 2026-10-22 accept at most 4,194,304 pixels and cannot open larger native projects.
 
@@ -38,10 +40,11 @@ and PSD source files, including renamed files recognized by their signatures.
 | Timelines | The frame the file was saved on; other frames and keyframed layer changes are not imported |
 | Animation folders | Every cel kept as a layer; only the cel shown on the saved frame is visible |
 | Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
-| Vector, text, balloon, material, correction and effect layers; masks, palette colors, monochrome, glow/pass-through blends | That layer (or folder and its contents) is skipped and named in Import details |
+| Glow dodge, Add (glow), Through (pass-through folders) | Native Color dodge (glow), Add (glow) and Pass through |
+| Vector, text, balloon, material, correction and effect layers; masks, palette colors, monochrome | That layer (or folder and its contents) is skipped and named in Import details. CSP does not save vector layers' pixels, so they need a vector renderer |
 | Layer color settings | Pixels keep their stored colors; noted in Import details |
 | Profiles, proofing and color adjustments | Layered conversion rejected |
-| Unknown channel layouts, damaged references or more than 32 raster layers | Layered conversion rejected |
+| Unknown channel layouts, damaged references or more than 1,000 raster layers | Layered conversion rejected |
 
 A skipped layer never has its stored pixels misread as ordinary raster art; it
 is left out and listed by name. If CSP's selected layer was skipped, the first
@@ -70,17 +73,26 @@ export PNG from CSP and keep the original `.clip` for editing.
 
 Open/drop `.psd` or use File > Import > Photoshop document. The bounded reader
 implements PSD v1 RGB, raw/PackBits/ZIP, and 8-bit ZIP prediction. Supported 8-bit
-raster layers retain offsets, alpha, opacity, visibility, clipping, common blends,
-locks, ordinary isolated groups, and simple raster masks. Plain RGB solid fills
-become raster layers. Pass-through groups, complex masks, effects, smart objects,
-text and other unsupported descriptors use the saved composite with an explicit
-Import details report. They are not silently approximated as editable layers.
+raster layers retain offsets, alpha, opacity, visibility, clipping, blends (including
+Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glow
+forms), locks, isolated and pass-through groups, and simple raster masks. Plain RGB
+solid fills become raster layers. Complex masks, effects, smart objects, text and
+other unsupported descriptors use the saved composite with an explicit Import details
+report. They are not silently approximated as editable layers.
+
+Writers disagree on layer order: Photoshop lists the bottom layer first, others the
+top. Group markers only nest one way, so grouped files decide it themselves. For flat
+files Dudel renders a sample grid both ways and keeps the order matching the file's
+saved image, saying so in Import details when it reads a file top first. A 146-layer
+4096 x 2249 rig PSD written top first imported with every pixel within one level of
+its saved image.
 
 16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the
 PSD layer-count marker. Embedded profiles are reported but not converted.
 PSB, non-RGB modes, 32-bit channels and 16-bit ZIP prediction are unsupported.
-Files are capped at 512 MiB and decoded layer payload is bounded. A PSD without
+Files are capped at 2 GB (the PSD limit) and decoded layer payload shares the 2 GiB
+document budget. A PSD without
 a usable compatibility composite cannot fall back when layer conversion fails;
 save it with Maximize Compatibility enabled in the source editor.
 
