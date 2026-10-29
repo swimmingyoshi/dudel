@@ -26,6 +26,8 @@ pub enum Property {
     Collapsed(bool),
     /// The layer's whole effect list.
     Effects(Vec<crate::layer_effects::LayerEffect>),
+    /// What an adjustment layer does (it stays an adjustment layer).
+    Adjustment(crate::adjustment::Adjustment),
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Edit {
@@ -70,6 +72,11 @@ pub enum Edit {
     },
     NewLayer,
     NewLayerWithId(crate::document::LayerId),
+    /// A new adjustment layer above the target, with this identity.
+    NewAdjustment {
+        id: crate::document::LayerId,
+        settings: crate::adjustment::Settings,
+    },
     NewFolder,
     FolderTarget {
         target: crate::document::LayerId,
@@ -264,6 +271,13 @@ impl Edit {
                 ..
             } if !value.is_finite() || !(0.0..=1.0).contains(value) => {
                 Err("Opacity must be finite and between zero and one".into())
+            }
+            Self::Property {
+                property: Property::Adjustment(adjustment),
+                ..
+            } => adjustment.validate(),
+            Self::NewAdjustment { settings, .. } => {
+                crate::adjustment::Adjustment::try_from(settings.clone()).map(|_| ())
             }
             Self::Property {
                 property: Property::Effects(effects),
@@ -488,6 +502,24 @@ impl Edit {
                 }
                 doc.insert_layer_above()?;
                 doc.layers[doc.active].id = *id;
+            }
+            Self::NewAdjustment { id, settings } => {
+                if doc.layers.iter().any(|layer| layer.id == *id) {
+                    return Err("Layer identity is already present".into());
+                }
+                let adjustment = crate::adjustment::Adjustment::try_from(settings.clone())?;
+                // "Curves 2" for the second Curves layer.
+                let kind = adjustment.name();
+                let count = doc
+                    .layers
+                    .iter()
+                    .filter(|l| l.adjustment.as_ref().is_some_and(|a| a.name() == kind))
+                    .count();
+                doc.insert_layer_above()?;
+                let layer = &mut doc.layers[doc.active];
+                layer.id = *id;
+                layer.name = format!("{kind} {}", count + 1);
+                layer.adjustment = Some(adjustment);
             }
             Self::NewFolder => doc.add_folder()?,
             Self::FolderTarget {
@@ -802,6 +834,14 @@ fn apply_property(layer: &mut Layer, property: &Property) -> Result<bool, String
                 return Err("Effects apply only to layers, not folders".into());
             }
             set!(effects, effects.clone())
+        }
+        Property::Adjustment(adjustment) => {
+            if layer.adjustment.is_none() {
+                return Err("Only adjustment layers have adjustment settings".into());
+            }
+            let changed = layer.adjustment.as_ref() != Some(adjustment);
+            layer.adjustment = Some(adjustment.clone());
+            changed
         }
     })
 }

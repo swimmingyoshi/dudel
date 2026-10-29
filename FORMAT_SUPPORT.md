@@ -122,8 +122,10 @@ exposure and gradient maps match within a few levels, brightness/contrast within
 about 13, and hue/saturation within a few levels except where several hue ranges
 change saturation together. Color balance, selective color, channel mixer, black &
 white, photo filter, vibrance and color lookup layers are left out and named in
-Import details. Their settings cannot be edited in Dudel yet; visibility, opacity,
-blend, clipping and masks can.
+Import details. Imported adjustment layers are ordinary Dudel adjustment layers:
+their settings open in the Adjustment window (hue/saturation color ranges and
+gradient-map middle stops are kept but only the master settings and end colors
+are editable).
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.
 

@@ -1231,6 +1231,7 @@ impl Workspace {
                 .canvas_after_tool_change(ctx, packets, previous_tool);
             self.app.brush_studio_ui(ctx);
             self.app.effects_window(ctx);
+            self.app.adjustment_window(ctx);
             self.app.unsaved_dialog(ctx);
         });
     }

@@ -170,6 +170,13 @@ row and the mask shown on the canvas:
 target/release/dudel.exe --capture-layer-effects artifacts/layer-effects.png 1280 800 1
 ```
 
+Adjustment layers have one too: a curves layer over the artwork with the
+Adjustment window and its curve editor open:
+
+```powershell
+target/release/dudel.exe --capture-adjustment-layer artifacts/adjustment-layer.png 1280 800 1
+```
+
 PSD import checks: `--verify-import FILE.psd NEW_REPORT.json` reports the layer
 stack and the difference from the file's saved composite; with
 `DUDEL_VERIFY_IMAGES` set it also writes the rendering, the saved image and every

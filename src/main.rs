@@ -4,6 +4,7 @@
 )]
 
 mod adjustment;
+mod adjustment_panel;
 mod adjustments;
 mod affine;
 mod affine_benchmark;
@@ -270,6 +271,10 @@ struct Dudel {
     opacity_edit: Option<layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
     effects_edit: Option<effects_panel::Edit>,
+    adjustment_edit: Option<adjustment_panel::Edit>,
+    /// Adjustment settings last sent through the busy render queue.
+    adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
+    adjustment_window_open: bool,
     /// The effects list last sent through the busy render queue, which the
     /// window builds on until the queue has published it.
     effects_sent: Option<(document::LayerId, Vec<layer_effects::LayerEffect>)>,
@@ -510,6 +515,9 @@ impl Default for Dudel {
             opacity_edit: None,
             opacity_preview_modified: None,
             effects_edit: None,
+            adjustment_edit: None,
+            adjustment_sent: None,
+            adjustment_window_open: false,
             effects_sent: None,
             effects_window_open: false,
             mask_view: false,
@@ -1126,6 +1134,7 @@ impl eframe::App for Dudel {
             && !self.render_queue.busy()
             && self.opacity_edit.is_none()
             && self.effects_edit.is_none()
+            && self.adjustment_edit.is_none()
             && packets.is_empty()
             && self.adjustment.is_none()
             && self.history.cool_idle(&self.doc)
@@ -1137,6 +1146,7 @@ impl eframe::App for Dudel {
         self.display_settings_ui(ctx);
         self.storage_window(ctx);
         self.effects_window(ctx);
+        self.adjustment_window(ctx);
         self.drop_overlay(ctx);
         self.note_preview_pointer(ctx);
         self.preview_window(ctx);
@@ -1682,8 +1692,10 @@ fn main() -> eframe::Result {
     let capture_mask_target_transform = mode.as_deref() == Some("--capture-mask-target-transform");
     let capture_mask_feedback = mode.as_deref() == Some("--capture-mask-coverage");
     let capture_layer_effects = mode.as_deref() == Some("--capture-layer-effects");
+    let capture_adjustment_layer = mode.as_deref() == Some("--capture-adjustment-layer");
     let capture_layer_mask = mode.as_deref() == Some("--capture-layer-mask")
         || capture_layer_effects
+        || capture_adjustment_layer
         || capture_mask_transform
         || capture_mask_target_transform
         || capture_mask_feedback
@@ -2095,6 +2107,19 @@ fn main() -> eframe::Result {
                     app.mask_focus = Some((app.doc.layers[0].id, mask));
                     app.mask_view = true;
                     app.effects_window_open = true;
+                }
+                if capture_adjustment_layer {
+                    // A curves layer over the artwork with its window open.
+                    let (width, height) = (app.doc.width, app.doc.height);
+                    let mut layer =
+                        crate::document::Layer::raster("Curves 1".into(), width, height);
+                    layer.adjustment =
+                        Some(adjustment::Adjustment::new(adjustment::Settings::Curves {
+                            channels: vec![(0, vec![[0, 0], [70, 40], [190, 225], [255, 255]])],
+                        }));
+                    app.doc.layers.push(layer);
+                    app.doc.active = app.doc.layers.len() - 1;
+                    app.adjustment_window_open = true;
                 }
                 if capture_mask_feedback {
                     let id = app.doc.layers[0].mask.as_ref().unwrap().id;

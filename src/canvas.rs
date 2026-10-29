@@ -175,6 +175,7 @@ impl Dudel {
         self.finish_painted_stroke();
         self.finish_opacity_edit();
         self.finish_effects_edit();
+        self.finish_adjustment_edit();
         self.selection_drag = None;
         self.finish_move_drag();
         self.finish_affine_preview();

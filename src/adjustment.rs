@@ -69,6 +69,51 @@ pub(crate) enum Settings {
 fn srgb_gamma() -> f32 {
     2.2
 }
+/// The kinds offered when adding an adjustment layer, with neutral settings.
+pub(crate) fn presets() -> [Settings; 9] {
+    let identity = LevelsChannel {
+        input: [0.0, 255.0],
+        output: [0.0, 255.0],
+        gamma: 1.0,
+    };
+    [
+        Settings::Levels {
+            channels: vec![Some(identity), None, None, None],
+        },
+        Settings::Curves {
+            channels: vec![(0, vec![[0, 0], [255, 255]])],
+        },
+        Settings::BrightnessContrast {
+            brightness: 0.0,
+            contrast: 0.0,
+            legacy: false,
+        },
+        Settings::Exposure {
+            exposure: 0.0,
+            offset: 0.0,
+            gamma: 1.0,
+            encoding: 2.2,
+        },
+        Settings::HueSaturation {
+            colorize: None,
+            master: [0.0; 3],
+            ranges: Vec::new(),
+        },
+        Settings::GradientMap {
+            stops: vec![(0.0, [0.0; 3], 0.5), (1.0, [255.0; 3], 0.5)],
+            reverse: false,
+        },
+        Settings::Invert,
+        Settings::Posterize { levels: 4 },
+        Settings::Threshold { level: 128 },
+    ]
+}
+/// A curve through `points` ([input, output] in 0..=255), sampled at every
+/// input level, as the curves editor draws it.
+pub(crate) fn sample_curve(points: &[[u8; 2]]) -> [f32; 256] {
+    let spline = Spline::new(points);
+    std::array::from_fn(|i| spline.at(i as f32 / 255.0) * 255.0)
+}
 /// Settings plus the lookup tables drawn from them, built once.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(try_from = "Settings", into = "Settings")]
@@ -143,8 +188,16 @@ impl Adjustment {
     pub(crate) fn key(&self) -> usize {
         self.0.key
     }
+    pub(crate) fn settings(&self) -> &Settings {
+        &self.0.settings
+    }
     pub(crate) fn name(&self) -> &'static str {
-        match self.0.settings {
+        self.0.settings.name()
+    }
+}
+impl Settings {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
             Settings::Invert => "Invert",
             Settings::Posterize { .. } => "Posterize",
             Settings::Threshold { .. } => "Threshold",
@@ -156,6 +209,8 @@ impl Adjustment {
             Settings::GradientMap { .. } => "Gradient Map",
         }
     }
+}
+impl Adjustment {
     /// The adjusted straight color, channels in 0..=255.
     pub(crate) fn apply(&self, c: [f32; 3]) -> [f32; 3] {
         if let Some(tables) = &self.0.tables {

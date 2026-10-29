@@ -149,6 +149,8 @@ project_session! {
     opacity_edit: Option<crate::layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
     effects_edit: Option<crate::effects_panel::Edit>,
+    adjustment_edit: Option<crate::adjustment_panel::Edit>,
+    adjustment_sent: Option<(crate::document::LayerId, crate::adjustment::Settings)>,
     effects_sent: Option<(crate::document::LayerId, Vec<crate::layer_effects::LayerEffect>)>,
     effects_shown: Vec<u64>,
     mask_view_shown: bool,
@@ -530,6 +532,7 @@ impl Dudel {
         self.finish_layer_rename(true);
         self.finish_opacity_edit();
         self.finish_effects_edit();
+        self.finish_adjustment_edit();
         self.track_guide_changes();
         if let Some(reason) = self.tab_switch_blocker() {
             self.status = format!("Changing projects after {reason} finishes");

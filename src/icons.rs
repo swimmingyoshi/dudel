@@ -45,6 +45,8 @@ pub enum Icon {
     Transparency,
     /// Layer effects: a sparkle.
     Effects,
+    /// Adjustment layers: a half-filled circle.
+    Adjustment,
 }
 
 pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
@@ -186,6 +188,16 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 closed(&shape);
                 polyline(&[p(0.32, 0.50), p(0.66, 0.50)]);
             }
+        }
+        Icon::Adjustment => {
+            painter.circle_stroke(p(0.5, 0.5), side * 0.36, line);
+            let half: Vec<Pos2> = (0..=16)
+                .map(|i| {
+                    let a = std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 16.0;
+                    p(0.5 + 0.36 * a.cos(), 0.5 + 0.36 * a.sin())
+                })
+                .collect();
+            filled(half);
         }
         Icon::Effects => {
             let star = |cx: f32, cy: f32, r: f32| -> Vec<Pos2> {

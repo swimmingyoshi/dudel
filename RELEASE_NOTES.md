@@ -33,10 +33,11 @@ the package has been uploaded to a public store.
   shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
   and emboss. They follow the layer's pixels, save with the project, and appear in
   exports. Older Dudel builds open such projects without the effects.
-- Adjustment layers: PSD invert, posterize, threshold, levels, curves,
-  brightness/contrast, exposure, hue/saturation and gradient map layers import
-  as live adjustment layers that recolor what lies below them (settings are not
-  editable in Dudel yet).
+- Adjustment layers: levels, curves, brightness/contrast, exposure,
+  hue/saturation, gradient map, invert, posterize and threshold, from the
+  half-circle button in the layer toolbar or from PSD files. They recolor what
+  lies below them (or their clipping base), with a curves editor and sliders in
+  the Adjustment window.
 - PSD layer effects stay editable on ordinary layers, and become separate layers
   (like Photoshop's Create Layers) on shape and fill layers and folders:
   strokes, color and gradient overlays, drop and inner shadows, outer and inner

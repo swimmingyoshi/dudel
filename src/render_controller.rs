@@ -474,6 +474,36 @@ impl Dudel {
             self.logical_layer = Some(id);
         }
     }
+    /// A new adjustment layer above the selected entry, selected afterwards.
+    pub(crate) fn create_adjustment_layer(&mut self, settings: crate::adjustment::Settings) {
+        self.finish_layer_rename(true);
+        self.close_input_gestures();
+        let Some(active) = self.input_target() else {
+            self.status = "Selected layer no longer exists".into();
+            return;
+        };
+        let id = crate::document::LayerId::new();
+        let edit = crate::document_edits::Edit::NewAdjustment { id, settings };
+        if !self.render_queue.busy() {
+            self.dispatch_document_edit(edit, "New adjustment layer", "No layer created");
+            return;
+        }
+        let context = self
+            .pending_layers
+            .clone()
+            .unwrap_or_else(|| crate::pending_layers::PendingLayers::from_document(&self.doc));
+        let projected = match context.with_new_layer(active, id) {
+            Ok(projected) => projected,
+            Err(error) => {
+                self.status = error;
+                return;
+            }
+        };
+        if self.dispatch_document_edit(edit, "New adjustment layer", "No layer created") {
+            self.pending_layers = Some(projected);
+            self.logical_layer = Some(id);
+        }
+    }
     pub(crate) fn reorder_canvas_layer(&mut self, from: usize, gap: usize, depth: u8) {
         self.finish_layer_rename(true);
         self.close_input_gestures();

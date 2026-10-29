@@ -22,6 +22,8 @@ enum RowAction {
     ViewMask(usize, crate::document::LayerId),
     /// Select the layer and open its effects.
     Effects(usize),
+    /// Select an adjustment layer and open its settings.
+    Adjustment(usize),
     ToggleVisible(usize),
     ToggleCollapsed(usize),
     Rename(usize),
@@ -340,8 +342,8 @@ impl Dudel {
                 && !self.doc.layers[active - 1].folder
                 && self.doc.layers[active - 1].depth == layer.depth
         };
-        // Ten actions share this row, including the three right-aligned locks.
-        let action_size = ((ui.available_width() - 18.0) / 10.0).clamp(20.0, 30.0);
+        // Eleven actions share this row, including the three right-aligned locks.
+        let action_size = ((ui.available_width() - 20.0) / 11.0).clamp(20.0, 30.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if icons::button(ui, Icon::Plus, action_size, false, self.doc.has_room(1, 1))
@@ -424,6 +426,23 @@ impl Dudel {
             {
                 self.effects_window_open = !self.effects_window_open;
             }
+            let adjust = icons::button(
+                ui,
+                Icon::Adjustment,
+                action_size,
+                false,
+                self.doc.has_room(1, 1),
+            )
+            .on_hover_text("New adjustment layer: levels, curves, hue/saturation and more");
+            egui::Popup::menu(&adjust).show(|ui| {
+                for settings in crate::adjustment::presets() {
+                    if ui.button(settings.name()).clicked() {
+                        self.create_adjustment_layer(settings);
+                        self.adjustment_window_open = true;
+                        ui.close();
+                    }
+                }
+            });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 let Some(target) = self.input_target() else {
@@ -729,6 +748,11 @@ impl Dudel {
                     self.effects_window_open = true;
                 }
             }
+            RowAction::Adjustment(index) => {
+                if self.select_paint_target(index, None) {
+                    self.adjustment_window_open = true;
+                }
+            }
         }
     }
 
@@ -932,7 +956,16 @@ impl Dudel {
         } else {
             let thumb =
                 egui::Rect::from_min_size(pos2(x, rect.top() + 5.0), vec2(thumb_side, thumb_side));
-            if let Some(texture) = self.layer_thumbnails.get(index) {
+            if layer.adjustment.is_some() {
+                // Adjustment layers have no pixels: show what they are.
+                painter.rect_filled(thumb, 2.0, visuals.extreme_bg_color);
+                icons::paint(
+                    &painter,
+                    thumb.shrink(thumb_side * 0.18),
+                    Icon::Adjustment,
+                    text,
+                );
+            } else if let Some(texture) = self.layer_thumbnails.get(index) {
                 painter.image(
                     texture.id(),
                     thumb,
@@ -974,10 +1007,18 @@ impl Dudel {
                     response.id.with("artwork target"),
                     Sense::click(),
                 )
-                .on_hover_text("Edit layer artwork")
+                .on_hover_text(if layer.adjustment.is_some() {
+                    "Adjustment settings"
+                } else {
+                    "Edit layer artwork"
+                })
                 .clicked()
         {
-            *action = Some(RowAction::PaintTarget(index, None));
+            *action = Some(if layer.adjustment.is_some() {
+                RowAction::Adjustment(index)
+            } else {
+                RowAction::PaintTarget(index, None)
+            });
         }
         let mut text_left = x + thumb_side + 10.0;
         if masks_visible && let Some(mask) = &layer.mask {

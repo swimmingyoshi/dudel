@@ -349,8 +349,18 @@ Stage B - native layer effects:
       (phfl), vibrance (vibA), color lookup (clrL)
 - [ ] Hue/saturation: combine range saturations like Photoshop (psd-tools
       uses a measured 21x21 table); brightness/contrast within ~13 levels
-- [ ] UI: create adjustment layers and edit their settings (levels/curves
-      editors); today only visibility, opacity, blend, clipping, mask
+- [x] UI (2026-10-29): half-circle toolbar button lists the nine kinds and
+      creates "Curves 1"-style layers above the selection (`Edit::NewAdjustment`,
+      works with a busy render queue); the row thumbnail shows the adjustment
+      icon and opens the Adjustment window (`src/adjustment_panel.rs`):
+      channel picker, levels sliders, curves editor (click adds, drag moves,
+      double-click removes), brightness/contrast, exposure, hue/saturation
+      (master, colorize; PSD ranges kept, can be cleared), gradient map end
+      colors and reverse, posterize, threshold. Edits as one undo step per
+      gesture (`Property::Adjustment`), queued like effects when busy.
+      `--capture-adjustment-layer` screenshots it
+- [ ] Adjustment UI follow-ups: hue/saturation range editing, gradient map
+      stop editing, a Layer menu entry, histogram in levels
 - [ ] Remaining PSD fallbacks by count: CMYK (15), unsupported mask flags
       (14), canvases over 4096 (10), knockout `knko` (9), no layers left
       after dropping unsupported adjustments (7), artboards (6)
