@@ -21,7 +21,9 @@ It retains dimensions, active layer, selection and layer names/properties/folder
 structure. A layer may carry `effects`, its layer effects bottom to top (each
 `{enabled, effect}`; settings are range-checked on load, at most 32 per layer, raster
 layers only). Builds that predate effects ignore the field and open the artwork
-without them. It must validate before tile data is allocated. An optional `guides`
+without them. A raster layer may instead be an adjustment layer: `adjustment` holds
+its settings (one of the documented kinds, range-checked on load); its pixels are
+unused. Older builds ignore the field and show it as an empty layer. It must validate before tile data is allocated. An optional `guides`
 object holds drawing guides: shared symmetry (mode, copies, center, rotation),
 per-layer symmetry as `[stack index, symmetry]` pairs, grid, guide lines, guide
 lock and ruler visibility. Files without it open with default guides, and readers

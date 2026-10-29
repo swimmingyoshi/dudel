@@ -227,6 +227,9 @@ fn unchanged(tile: &Tile, doc: &Document) -> bool {
 /// below it.
 fn subtree_has_payload(doc: &Document, index: usize, rect: [usize; 4]) -> bool {
     let layer = &doc.layers[index];
+    if layer.adjustment.is_some() {
+        return true;
+    }
     if !layer.folder {
         return layer.display_reference.as_ref().map_or_else(
             || layer.pixels.region_has_coverage(doc.width, rect),

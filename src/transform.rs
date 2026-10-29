@@ -353,6 +353,11 @@ impl Document {
         if !self.layers[upper].visible || !self.layers[lower].visible {
             return Err("Show both layers before merging".into());
         }
+        if self.layers[lower].adjustment.is_some() {
+            return Err(
+                "The layer below is an adjustment layer; it has no pixels to merge into".into(),
+            );
+        }
         if self.layers[lower].locked || self.layers[lower].alpha_locked {
             return Err("Unlock the layer below (pixels and transparency) to merge".into());
         }

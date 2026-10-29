@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod adjustment;
 mod adjustments;
 mod affine;
 mod affine_benchmark;

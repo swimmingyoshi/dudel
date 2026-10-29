@@ -1046,6 +1046,9 @@ impl Dudel {
         if layer.has_effects() {
             summary.push_str(" · fx");
         }
+        if let Some(adjustment) = &layer.adjustment {
+            summary = format!("{} · {summary}", adjustment.name());
+        }
         if layer.folder {
             let items = self.doc.layers[self.doc.block(index)]
                 .iter()

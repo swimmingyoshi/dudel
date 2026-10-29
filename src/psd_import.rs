@@ -246,6 +246,8 @@ struct Record {
     below: Vec<Layer>,
     inside: Vec<Layer>,
     above: Vec<Layer>,
+    /// Left out of the import (named in the notes).
+    dropped: bool,
 }
 
 /// Draw a layer's effects as layers (Photoshop's Create Layers), from its
@@ -435,6 +437,7 @@ fn layers(
     }
     let mut records = Vec::new();
     let mut notes = Vec::new();
+    let gray = matches!(mode, ColorMode::Gray);
     for _ in 0..count {
         check(cancel)?;
         let rect = info.rect()?;
@@ -505,6 +508,9 @@ fn layers(
         let mut shapes = true;
         let mut fill = 255u8;
         let mut rendered = None;
+        let mut adjustment = None;
+        let mut legacy_brightness = None;
+        let mut unsupported = None;
         let mut vector = None;
         let mut stroke = None;
         let mut filled = true;
@@ -600,12 +606,24 @@ fn layers(
                 b"lrFX" => legacy_effects = true,
                 b"infx" | b"knko" if value.u8()? == 0 => {}
                 b"lyid" | b"lclr" | b"lnsr" | b"shmd" | b"fxrp" | b"lyvr" => {}
-                _ => {
-                    return Err(format!(
-                        "PSD layer feature {} needs the saved composite",
-                        String::from_utf8_lossy(key)
+                // Brightness/contrast from CS3 on; `brit` holds legacy values.
+                b"CgEd" => {
+                    adjustment = Some(crate::adjustment::brightness_contrast_descriptor(
+                        &crate::psd_vector::versioned(value.0)?,
                     ));
                 }
+                _ => match crate::adjustment::from_psd(key, value.0, gray) {
+                    Ok(Some(settings)) if key == b"brit" => legacy_brightness = Some(settings),
+                    Ok(Some(settings)) => adjustment = Some(settings),
+                    Err(error) if error.starts_with("Damaged") => return Err(error),
+                    Err(kind) => unsupported = Some(kind),
+                    Ok(None) => {
+                        return Err(format!(
+                            "PSD layer feature {} needs the saved composite",
+                            String::from_utf8_lossy(key)
+                        ));
+                    }
+                },
             }
         }
         if extra.0.iter().any(|b| *b != 0) {
@@ -626,7 +644,23 @@ fn layers(
             return Err("PSD shape stroke without a shape needs the saved composite".into());
         }
         // Shape layers are drawn from their path and fill, not their pixels.
-        if flags & 24 == 24 && group == 0 && solid.is_none() {
+        let adjustment = adjustment.or(legacy_brightness);
+        let dropped = unsupported.is_some() || (adjustment.is_some() && group != 0);
+        if let Some(kind) = &unsupported {
+            notes.push(format!(
+                "“{}” is a {kind} adjustment layer, which Dudel cannot apply yet; it was left out.",
+                layer.name
+            ));
+        }
+        if let Some(settings) = adjustment {
+            layer.adjustment = Some(crate::adjustment::Adjustment::new(settings));
+        }
+        if flags & 24 == 24
+            && group == 0
+            && solid.is_none()
+            && layer.adjustment.is_none()
+            && !dropped
+        {
             return Err("PSD layer pixels are marked irrelevant to its appearance".into());
         }
         if fill != 255 {
@@ -704,6 +738,7 @@ fn layers(
             below: Vec::new(),
             inside: Vec::new(),
             above: Vec::new(),
+            dropped,
         });
     }
     let mut decoded_budget = 0usize;
@@ -867,6 +902,9 @@ fn layers(
             starts.push(result.len());
             continue;
         };
+        if record.dropped {
+            continue;
+        }
         if depth < pending_depth || (depth == pending_depth && !record.layer.clipped) {
             result.append(&mut pending);
         }
@@ -916,6 +954,9 @@ fn layers(
         }
     }
     result.append(&mut pending);
+    if result.is_empty() {
+        return Err("No layer Dudel can import remains".into());
+    }
     if result.len() > MAX_ENTRIES || result.iter().filter(|l| !l.folder).count() > MAX_RASTER_LAYERS
     {
         return Err("PSD layer hierarchy exceeds limits or is incomplete".into());

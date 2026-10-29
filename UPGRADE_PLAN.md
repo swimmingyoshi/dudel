@@ -313,6 +313,34 @@ Stage B - native layer effects:
 - [ ] Manual check in the app with pen (owner)
 - [ ] PSD export writes them back (once PSD export exists)
 
+### 8. PSD adjustment layers (owner, 2026-10-29)
+
+- [x] Native adjustment layers (`src/adjustment.rs`, `Layer.adjustment`): the
+      compositor recolors the backdrop (or the clip group when clipped) by
+      opacity x mask; layers clipped to an adjustment act through its mask
+      (`Level::adjust_base`). Count as present in every empty-layer shortcut;
+      settings feed the tile/prefix display key. Saved in metadata; history
+      compares them; painting and merging into them refused; merge down bakes
+      them into the layer below
+- [x] PSD: nvrt, post, thrs, levl, curv (+`Crv ` extra), brit/CgEd (legacy
+      and current), expA (gray docs use gamma 1.75), hue2 (master, colorize,
+      ranges with HSV range lightness), grdm (v1 and v3). Curve shapes follow
+      psd-tools' measurements (MIT, credited in the module doc)
+- [x] Fixed: a pass-through folder whose own coverage is zero (only
+      adjustments inside) dropped its color change (commit skipped alpha 0)
+- [x] Corpus: psd-tools 138 -> 181/279 layered, ag-psd 51 -> 53/75, no file
+      worse; owner files unchanged
+- [ ] Unsupported (left out with a note): color balance (blnc), selective
+      color (selc), channel mixer (mixr), black & white (blwh), photo filter
+      (phfl), vibrance (vibA), color lookup (clrL)
+- [ ] Hue/saturation: combine range saturations like Photoshop (psd-tools
+      uses a measured 21x21 table); brightness/contrast within ~13 levels
+- [ ] UI: create adjustment layers and edit their settings (levels/curves
+      editors); today only visibility, opacity, blend, clipping, mask
+- [ ] Remaining PSD fallbacks by count: CMYK (15), unsupported mask flags
+      (14), canvases over 4096 (10), knockout `knko` (9), no layers left
+      after dropping unsupported adjustments (7), artboards (6)
+
 ## Before committing this batch
 
 - [x] Local gates pass (fmt, Clippy, 927 tests, public-tree check) - 2026-10-28,
@@ -324,6 +352,9 @@ Stage B - native layer effects:
       like `main.rs` made per-feature commits unbuildable). Not pushed.
 
 ## Last session
+
+- 2026-10-29 (Claude, adjustment layers): goal 8. Gates pass (973 tests).
+  Committed locally, not pushed.
 
 - 2026-10-29 (Claude, layer effects stage B): native editable effects (see goal
   7 stage B). Corpus numbers unchanged by the switch from baked to native.

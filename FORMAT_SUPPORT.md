@@ -111,6 +111,19 @@ files; bevels are approximate (about 3 to 18 levels). Satin, stroke emboss, patt
 overlays and pattern strokes, and noise gradients are skipped and named in Import
 details; contours other than linear, bevel textures and effect noise are drawn
 without and noted.
+Adjustment layers import as Dudel adjustment layers, which recolor everything below them
+(or only their clipping base when clipped; inside a pass-through folder they reach
+below it, inside an isolated folder only its contents), faded by their opacity and
+mask: invert, posterize, threshold, levels, curves, brightness/contrast (current and
+legacy), exposure, hue/saturation (including colorize and hue ranges) and gradient
+maps. The curve shapes follow Photoshop as measured by the MIT-licensed psd-tools
+project; in its adjustment test files invert, threshold, posterize, curves, levels,
+exposure and gradient maps match within a few levels, brightness/contrast within
+about 13, and hue/saturation within a few levels except where several hue ranges
+change saturation together. Color balance, selective color, channel mixer, black &
+white, photo filter, vibrance and color lookup layers are left out and named in
+Import details. Their settings cannot be edited in Dudel yet; visibility, opacity,
+blend, clipping and masks can.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.
 
@@ -129,8 +142,8 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 51 of 75 import with layers and 6 are background-only; psd-tools,
-which concentrates on edge features: 138 of 279 with layers. Layered imports match the
+distributed). ag-psd: 53 of 75 import with layers and 6 are background-only; psd-tools,
+which concentrates on edge features: 181 of 279 with layers. Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are

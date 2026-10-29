@@ -163,6 +163,10 @@ pub struct Layer {
     pub effects: Vec<crate::layer_effects::LayerEffect>,
     #[serde(skip)]
     pub(crate) effect_cache: crate::layer_effects::Cache,
+    /// An adjustment layer recolors what lies below it instead of adding
+    /// pixels; its own pixels are unused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjustment: Option<crate::adjustment::Adjustment>,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -229,6 +233,7 @@ impl Default for Layer {
             mask: None,
             effects: Vec::new(),
             effect_cache: Default::default(),
+            adjustment: None,
             pixels: Default::default(),
             display_reference: None,
         }
@@ -243,12 +248,19 @@ impl Layer {
         self.display_reference.as_ref().map_or(0, |r| r.key)
     }
     pub(crate) fn display_region_key(&self, rect: [usize; 4]) -> usize {
+        if let Some(adjustment) = &self.adjustment {
+            return adjustment.key();
+        }
         self.display_reference
             .as_ref()
             .filter(|r| r.intersects(rect))
             .map_or(0, |_| self.display_key())
     }
     pub(crate) fn has_display_payload(&self, rect: [usize; 4]) -> bool {
+        // An adjustment acts wherever there is something below it.
+        if self.adjustment.is_some() {
+            return true;
+        }
         self.display_reference.as_ref().map_or_else(
             || self.pixels.region_has_payload(rect),
             |r| r.intersects(rect),
@@ -293,6 +305,9 @@ struct Level {
     /// modes never change alpha, so this holds even for a pass-through level
     /// whose `out` also contains everything below it.
     coverage: f32,
+    /// After an unclipped adjustment layer, layers clipped to it act through
+    /// its mask and opacity (this strength) on everything below.
+    adjust_base: Option<f32>,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct CompositeState {
@@ -304,6 +319,7 @@ const EMPTY_LEVEL: Level = Level {
     group: [0.0; 4],
     mode: crate::blend::BlendMode::Normal,
     coverage: 0.0,
+    adjust_base: None,
 };
 
 fn commit(out: &mut [f32; 4], group: [f32; 4], mode: crate::blend::BlendMode) {
@@ -341,7 +357,18 @@ fn commit(out: &mut [f32; 4], group: [f32; 4], mode: crate::blend::BlendMode) {
 impl Level {
     /// Add one straight-color source with effective alpha `a`.
     fn add(&mut self, color: [f32; 3], a: f32, clipped: bool, blend: crate::blend::BlendMode) {
+        if clipped && let Some(strength) = self.adjust_base {
+            let a = a * strength;
+            commit(
+                &mut self.out,
+                [color[0] * a, color[1] * a, color[2] * a, a],
+                blend,
+            );
+            self.coverage = a + self.coverage * (1.0 - a);
+            return;
+        }
         if !clipped {
+            self.adjust_base = None;
             commit(&mut self.out, self.group, self.mode);
             self.coverage = self.contents_alpha();
             self.group = [color[0] * a, color[1] * a, color[2] * a, a];
@@ -361,6 +388,43 @@ impl Level {
             for c in 0..3 {
                 self.group[c] = ((1.0 - a) * base[c] + a * blended[c]) * alpha;
             }
+        }
+    }
+    /// An adjustment layer: recolor the open clipping group when clipped,
+    /// else everything composited so far, faded in by `t`.
+    fn adjust(
+        &mut self,
+        adjustment: &crate::adjustment::Adjustment,
+        t: f32,
+        clipped: bool,
+        blend: crate::blend::BlendMode,
+    ) {
+        let t = match (clipped, self.adjust_base) {
+            (true, Some(strength)) => t * strength,
+            (true, None) => t,
+            (false, _) => {
+                // Like any unclipped layer, it ends the open clipping group.
+                commit(&mut self.out, self.group, self.mode);
+                self.coverage = self.contents_alpha();
+                self.group = [0.0; 4];
+                self.mode = crate::blend::BlendMode::Normal;
+                self.adjust_base = Some(t);
+                t
+            }
+        };
+        let target = if clipped && self.adjust_base.is_none() {
+            &mut self.group
+        } else {
+            &mut self.out
+        };
+        let alpha = target[3];
+        if t <= 0.0 || alpha <= 0.0 {
+            return;
+        }
+        let color: [f32; 3] = std::array::from_fn(|c| target[c] / alpha);
+        let adjusted = blend.pixel(color, adjustment.apply(color));
+        for c in 0..3 {
+            target[c] = (color[c] + (adjusted[c] - color[c]) * t) * alpha;
         }
     }
     fn finish(mut self) -> [f32; 4] {
@@ -580,6 +644,12 @@ impl Document {
             for effect in &layer.effects {
                 effect.validate()?;
             }
+            if let Some(adjustment) = &layer.adjustment {
+                if layer.folder {
+                    return Err("Folders cannot be adjustment layers".into());
+                }
+                adjustment.validate()?;
+            }
             if layer.name.len() > 4096
                 || (layer.folder && layer.csp_byte_opacity)
                 || !layer.opacity.is_finite()
@@ -662,6 +732,8 @@ impl Document {
             Some("A folder is selected — select a layer inside it to draw")
         } else if layer.locked {
             Some("Layer is locked — unlock it to draw")
+        } else if layer.adjustment.is_some() {
+            Some("An adjustment layer has no pixels — paint on its mask or another layer")
         } else if !self.shown(index) {
             Some("Layer is hidden — show it (and its folder) to draw")
         } else {
@@ -744,16 +816,37 @@ impl Document {
                 // folder clip to its contents. Normal compositing of this
                 // group reproduces below + (content - below) * t exactly.
                 let alpha = coverage * t;
-                let mut group: [f32; 4] = std::array::from_fn(|c| {
-                    below[c] + (content[c] - below[c]) * t - below[c] * (1.0 - alpha)
-                });
-                group[3] = alpha;
-                levels[depth] = Level {
-                    out: below,
-                    group,
-                    mode: crate::blend::BlendMode::Normal,
-                    coverage: parent.contents_alpha(),
+                let faded: [f32; 4] =
+                    std::array::from_fn(|c| below[c] + (content[c] - below[c]) * t);
+                levels[depth] = if alpha > 0.0 {
+                    let mut group: [f32; 4] =
+                        std::array::from_fn(|c| faded[c] - below[c] * (1.0 - alpha));
+                    group[3] = alpha;
+                    Level {
+                        out: below,
+                        group,
+                        mode: crate::blend::BlendMode::Normal,
+                        coverage: parent.contents_alpha(),
+                        adjust_base: None,
+                    }
+                } else {
+                    // Nothing of its own to clip to (say, only adjustment
+                    // layers): keep the recolored result as the backdrop.
+                    Level {
+                        out: faded,
+                        coverage: parent.contents_alpha(),
+                        ..EMPTY_LEVEL
+                    }
                 };
+                continue;
+            }
+            if let Some(adjustment) = &layer.adjustment {
+                let t = if layer.visible {
+                    layer.opacity * layer.mask_coverage(index, self.width)
+                } else {
+                    0.0
+                };
+                levels[depth].adjust(adjustment, t, layer.clipped, layer.blend);
                 continue;
             }
             if layer.folder {
@@ -1852,6 +1945,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.folder != b.folder
             || a.depth != b.depth
             || a.effects != b.effects
+            || a.adjustment != b.adjustment
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
         {
             return None;
