@@ -37,8 +37,8 @@ pub(crate) fn assemble(
     let [width, height] = canvas;
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
+        || width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
         || width * height > crate::document::MAX_PIXELS
         || entries.is_empty()
         || entries.len() > MAX_ENTRIES

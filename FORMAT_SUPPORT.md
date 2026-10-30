@@ -16,11 +16,11 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
 a mask-aware Dudel build; do not assume an older executable can read a newer file.
-The supported document envelope is 1-4096 pixels per side, at most 16,777,216 pixels
-in total (a full 4096 x 4096), 1,000 raster layers, 2,000 total layer/folder entries and
-folder depth ten (Photoshop's nesting limit). Stored pixels are capped at 2 GiB, the most
-the former 32-layer limit allowed; mask-aware projects keep a combined 512 MiB raster-and-
-layer-mask payload budget. Builds before this change open at most 32 raster layers.
+The supported document envelope is 1-16,384 pixels per side, at most 100,000,000 pixels
+in total (Clip Studio Paint's 10,000 x 10,000), 1,000 raster layers, 2,000 total layer/folder
+entries and folder depth ten (Photoshop's nesting limit). Stored pixels (painted tiles only)
+are capped at 2 GiB, raster and layer masks combined; builds before 2026-10-29 accept at
+most 4096 x 4096 and 512 MiB in mask-aware projects. Builds before this change open at most 32 raster layers.
 These limits also apply to PNG, CSP and PSD document imports. Builds before
 2026-10-22 accept at most 4,194,304 pixels and cannot open larger native projects.
 

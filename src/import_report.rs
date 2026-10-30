@@ -37,8 +37,10 @@ impl ImportReport {
             lines.push("Other details:".into());
             lines.extend(self.details.iter().cloned());
         }
-        lines.join("
-")
+        lines.join(
+            "
+",
+        )
     }
 }
 
@@ -286,9 +288,12 @@ mod tests {
         assert!(loss.open);
         assert!(ImportReport::default().is_empty());
         let both = ImportReport::new(vec!["Skipped “Ink”.".into()], vec!["Frame 1.".into()]);
-        assert_eq!(both.text(), "Skipped “Ink”.
+        assert_eq!(
+            both.text(),
+            "Skipped “Ink”.
 
 Other details:
-Frame 1.");
+Frame 1."
+        );
     }
 }

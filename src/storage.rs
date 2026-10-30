@@ -226,9 +226,10 @@ pub fn import_png(path: &Path) -> Result<Document, String> {
     let mut reader = image::ImageReader::open(path).map_err(|e| e.to_string())?;
     reader.set_format(image::ImageFormat::Png);
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(4096);
-    limits.max_image_height = Some(4096);
-    limits.max_alloc = Some(64 * 1024 * 1024);
+    limits.max_image_width = Some(crate::document::MAX_SIDE as u32);
+    limits.max_image_height = Some(crate::document::MAX_SIDE as u32);
+    // 16-bit RGBA decodes at 8 bytes per pixel before conversion.
+    limits.max_alloc = Some(crate::document::MAX_PIXELS as u64 * 8 + (64 << 20));
     reader.limits(limits);
     let decoder = reader.into_decoder().map_err(|e| e.to_string())?;
     let (width, height) = decoder.dimensions();

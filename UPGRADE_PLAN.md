@@ -373,9 +373,10 @@ Stage B - native layer effects:
 - [x] Masks (2026-10-29): user and vector mask density and feather, and the
       separate "real" user mask (channel -3) when a vector mask exists; PSD
       notes grouped by kind with layer names. psd-tools 181 -> 193/279
-- [ ] Remaining PSD fallbacks by count: CMYK (15), canvases over 4096 (10),
-      knockout `knko` (9), artboards (6), unsupported mask flags (3),
-      stroke widths (3)
+- [ ] Remaining PSD fallbacks by count: CMYK (15), 32-bit channels (10;
+      earlier notes called these canvases over 4096), knockout `knko` (9),
+      artboards (6), unsupported mask flags (3), stroke widths (3); `.psb`
+      (large document format) is not read at all
 
 ## Before pushing (next candidate)
 
@@ -433,6 +434,13 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   CSP tapers low-pressure ends more). Open: CSP's size curves
   (`SizeEffector` with BrushEffectorGraphData), screentone layers (LayerType
   2), CSP layer masks, canvases over 4096 px (frame.clip, Girl_horns.clip).
+
+- 2026-10-29 (Claude, canvas limit): 16,384 px per side, 100 MP area
+  (`document::MAX_SIDE`, `MAX_PIXELS`, `SIZE_LIMIT`); every importer and the
+  editor use the constants. Mask-aware payload budget raised to 2 GiB.
+  `DUDEL_CAPTURE_SIDE=10000 --capture-large-canvas` checked fit and detail
+  views. frame.clip and Girl_horns.clip (3000 x 4200) import and match their
+  previews; ag-psd gradient-overlay (3508 x 4960) imports layered.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

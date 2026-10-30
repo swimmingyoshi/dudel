@@ -1340,12 +1340,21 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     };
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
         || !(mode.channels()..=56).contains(&channels)
         || ![8, 16].contains(&depth)
     {
-        return Err("PSD import supports RGB/grayscale 8/16-bit canvases up to 4096 × 4096 with valid channel counts".into());
+        return Err(
+            "PSD import supports RGB/grayscale 8/16-bit canvases with valid channel counts".into(),
+        );
+    }
+    if width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
+        || width * height > crate::document::MAX_PIXELS
+    {
+        return Err(format!(
+            "This canvas is {width} × {height} px; Dudel canvases go {}",
+            crate::document::SIZE_LIMIT
+        ));
     }
     reader.section()?;
     let mut resources = reader.section()?;

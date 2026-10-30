@@ -360,7 +360,7 @@ fn indexed_writes_reject_masks_before_creating_or_modifying_a_destination() {
 fn combined_document_payload_budget_includes_masks_without_raising_supported_limits() {
     let mut doc = Document::new(2048, 2048);
     let shared: crate::pixels::Pixels = [1, 2, 3, 255].repeat(2048 * 2048).into();
-    for index in 0..32 {
+    for index in 0..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
         if index != 0 {
             doc.add_layer();
         }

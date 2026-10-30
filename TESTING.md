@@ -104,6 +104,7 @@ cargo test --locked --release benchmark_viewport_residency -- --ignored --test-t
 target/release/dudel.exe --benchmark-moving-display artifacts/moving-display.json
 target/release/dudel.exe --capture-large-canvas artifacts/large-fit.png 1280 800 1
 target/release/dudel.exe --capture-large-canvas-detail artifacts/large-detail.png 1280 800 1
+# Set DUDEL_CAPTURE_SIDE (for example 10000) to capture a larger square canvas.
 ```
 
 The viewport probe writes `artifacts/viewport-residency.json`. It checks atomic

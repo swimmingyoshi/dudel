@@ -49,6 +49,10 @@ the package has been uploaded to a public store.
   settings that are switched off. Vector layers are drawn from their strokes
   as raster layers instead of being skipped; Layers-panel color labels no
   longer skip layers.
+- Canvases up to 16,384 px per side and 100 megapixels (10,000 x 10,000), up from
+  4096 x 4096, for new canvases, resizing and CSP/PSD/PNG imports. Mask-aware
+  projects share the full 2 GiB pixel budget. Import details text can be selected
+  and copied, or copied whole with Copy all.
 - Import details opens by itself only when a CSP or PSD import left something
   out; other notes (timeline frame, animation cels, drawing aids) are behind the
   Import details button in the status bar.

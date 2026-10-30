@@ -399,7 +399,7 @@ mod tests {
 
         let mut doc = masked(2048, 2048, 0);
         let original = doc.layers[0].clone();
-        for _ in 1..32 {
+        for _ in 1..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
             let mut copy = original.clone();
             copy.id = LayerId::new();
             copy.mask = None;

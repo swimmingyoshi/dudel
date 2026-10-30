@@ -476,7 +476,7 @@ fn over_budget_mask_geometry_fails_before_replacing_the_document() {
     let mut doc = Document::new(2048, 2048);
     doc.version = 2;
     let pixels: crate::pixels::Pixels = [1, 2, 3, 255].repeat(2048 * 2048).into();
-    for i in 0..32 {
+    for i in 0..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
         if i != 0 {
             doc.add_layer();
         }

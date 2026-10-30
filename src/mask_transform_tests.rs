@@ -278,7 +278,7 @@ fn mask_target_payload_overflow_rejects_private_integer_and_affine_results() {
     let (mut doc, id) = fixture(2048, 2048);
     doc.layers[0].mask.as_mut().unwrap().coverage = Mask::new(2048, 2048, 0).unwrap();
     let pixels = doc.layers[0].pixels.clone();
-    for _ in 1..32 {
+    for _ in 1..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
         doc.add_layer();
         doc.layers.last_mut().unwrap().pixels = pixels.clone();
     }

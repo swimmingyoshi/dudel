@@ -1641,7 +1641,7 @@ mod tests {
         let before = invalid.clone();
         assert!(apply(&mut invalid, matrix, Sampling::Nearest, None).is_err());
         assert!(crate::document::same_snapshot(&invalid, &before));
-        let mut oversized = Document::new(4096, 4097);
+        let mut oversized = Document::new(10001, 10000);
         let before = oversized.clone();
         assert!(apply(&mut oversized, matrix, Sampling::Nearest, None).is_err());
         assert!(crate::document::same_snapshot(&oversized, &before));

@@ -951,8 +951,8 @@ mod tests {
             }
         }
         assert!(Mask::new(0, 1, 255).is_err());
-        assert!(Mask::new(4097, 1, 255).is_err());
-        assert!(Mask::new(4096, 4097, 255).is_err());
+        assert!(Mask::new(16385, 1, 255).is_err());
+        assert!(Mask::new(10001, 10000, 255).is_err());
         assert!(Mask::from_coverage(2, 2, &[0; 3], None).is_err());
     }
     #[test]

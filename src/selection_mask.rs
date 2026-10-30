@@ -80,8 +80,8 @@ pub(crate) fn pixels(width: usize, height: usize) -> Result<usize, String> {
         .ok_or("Selection dimensions overflow")?;
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
+        || width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
         || count > crate::document::MAX_PIXELS
     {
         return Err("Unsupported selection dimensions".into());
@@ -523,7 +523,8 @@ mod tests {
         builder.set(32, 31, 255);
         assert!(builder.finish(Some(&AtomicBool::new(true))).is_err());
         assert!(Builder::new(0, 67).is_err());
-        assert!(Builder::new(4096, 4097).is_err());
+        assert!(Builder::new(10001, 10000).is_err());
+        assert!(Builder::new(16385, 1).is_err());
         assert!(Builder::new(4096, 4096).is_ok());
     }
     use super::*;

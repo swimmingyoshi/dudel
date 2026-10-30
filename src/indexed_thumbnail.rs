@@ -9,8 +9,8 @@ pub(crate) struct Thumbnail {
 pub(crate) fn size([width, height]: [usize; 2]) -> Result<[u16; 2], String> {
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
+        || width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
         || width * height > crate::document::MAX_PIXELS
     {
         return Err("Unsupported indexed thumbnail source geometry".into());
@@ -127,7 +127,7 @@ mod tests {
         ] {
             assert_eq!(size(canvas).unwrap(), expected);
         }
-        for canvas in [[0, 1], [1, 0], [4097, 1], [4096, 4097]] {
+        for canvas in [[0, 1], [1, 0], [16385, 1], [10001, 10000]] {
             assert!(size(canvas).is_err());
         }
         let doc = Document::new(7, 13);

@@ -247,8 +247,8 @@ fn raster_byte_len(width: usize, height: usize) -> Result<usize, String> {
         .ok_or("Clipboard dimensions overflow")?;
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
+        || width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
         || pixels > crate::document::MAX_PIXELS
     {
         return Err("Clipboard image exceeds supported dimensions or has invalid RGBA data".into());
@@ -1439,7 +1439,7 @@ mod tests {
     }
     #[test]
     fn copy_rejects_unsupported_canvas_and_captures_maximum_canvas_selection() {
-        let mut doc = Document::new(4096, 4097);
+        let mut doc = Document::new(10001, 10000);
         let original = doc.clone();
         assert!(copy_transaction(&doc, true, |_| panic!("Oversized raster reached sink")).is_err());
         assert!(crate::document::same_snapshot(&doc, &original));

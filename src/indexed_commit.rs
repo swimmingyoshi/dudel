@@ -586,8 +586,8 @@ impl Journal {
                         let [width, height] = canvas;
                         if width == 0
                             || height == 0
-                            || width > 4096
-                            || height > 4096
+                            || width > crate::document::MAX_SIDE
+                            || height > crate::document::MAX_SIDE
                             || width
                                 .checked_mul(height)
                                 .is_none_or(|n| n > crate::document::MAX_PIXELS)

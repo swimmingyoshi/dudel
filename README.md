@@ -138,9 +138,11 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
 
 ## Current limits
 
-- Canvases are 1-4096 pixels per side, up to 4096 x 4096. Documents hold up to
-  1,000 raster layers, 2,000 layer/folder entries and folder depth ten, with
-  2 GiB of stored pixels (512 MiB including masks in mask-aware projects).
+- Canvases are up to 16,384 pixels per side and 100 megapixels in total (for
+  example 10,000 x 10,000, Clip Studio Paint's limit, or a 800 x 16,384 strip).
+  Documents hold up to 1,000 raster layers, 2,000 layer/folder entries and
+  folder depth ten, with 2 GiB of stored pixels including masks (only painted
+  tiles count).
   Projects using more than 32 layers or the newer blend modes need this
   version or later.
 - Native saves use project format v4, v5 when layer masks are used, or v6 when

@@ -169,9 +169,9 @@ impl crate::Dudel {
             ui.label(format!("Current: {} × {} px", self.doc.width, self.doc.height));
             ui.horizontal(|ui| {
                 ui.label("Width");
-                ui.add(egui::DragValue::new(&mut settings.width).range(1..=4096).suffix(" px"));
+                ui.add(egui::DragValue::new(&mut settings.width).range(1..=crate::document::MAX_SIDE).suffix(" px"));
                 ui.label("Height");
-                ui.add(egui::DragValue::new(&mut settings.height).range(1..=4096).suffix(" px"));
+                ui.add(egui::DragValue::new(&mut settings.height).range(1..=crate::document::MAX_SIDE).suffix(" px"));
             });
             ui.label("Anchor existing artwork");
             ui.horizontal(|ui| {
@@ -257,13 +257,13 @@ fn anchor_button(
 pub(crate) fn validate_size(width: usize, height: usize) -> Result<(), String> {
     if width == 0
         || height == 0
-        || width > 4096
-        || height > 4096
+        || width > crate::document::MAX_SIDE
+        || height > crate::document::MAX_SIDE
         || width
             .checked_mul(height)
             .is_none_or(|n| n > crate::document::MAX_PIXELS)
     {
-        return Err("Canvas must be 1–4096 pixels per side (up to 4096 × 4096)".into());
+        return Err(format!("Canvas must be {}", crate::document::SIZE_LIMIT));
     }
     Ok(())
 }
@@ -599,7 +599,7 @@ mod tests {
         )
         .unwrap();
         assert!(small.layers[0].pixels.nonzero_tiles(257, 259).is_empty());
-        for [width, height] in [[0, 1], [4097, 1], [4096, 4097], [usize::MAX, 1]] {
+        for [width, height] in [[0, 1], [16385, 1], [10001, 10000], [usize::MAX, 1]] {
             assert!(
                 resize(
                     &doc,

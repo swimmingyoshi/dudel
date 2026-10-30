@@ -173,21 +173,25 @@ pub struct Layer {
     pub(crate) display_reference: Option<std::sync::Arc<crate::reference_stack::Scene>>,
 }
 
-/// Largest canvas side. GPU textures and tiles are validated at this size.
-pub const MAX_SIDE: usize = 4096;
-/// Largest canvas area: a full 4096 x 4096 (16.7 MP), enough for 4K UHD artwork.
-/// Raster/mask payload still shares the 512 MiB document budget.
-pub const MAX_PIXELS: usize = MAX_SIDE * MAX_SIDE;
+/// Largest canvas side. The display draws 256-pixel tiles, so no GPU texture
+/// approaches this size; long strips (webtoons) can use the full side.
+pub const MAX_SIDE: usize = 16384;
+/// Largest canvas area: 100 megapixels, Clip Studio Paint's 10,000 x 10,000.
+/// Raster/mask payload still shares the document budgets.
+pub const MAX_PIXELS: usize = 100_000_000;
+/// The limits above, for messages.
+pub const SIZE_LIMIT: &str = "up to 16,384 px per side and 100 megapixels in total";
 /// Raster layers per document. Large illustration and VTuber rig files from
 /// CSP, Photoshop (8,000 layer cap) and Affinity rarely exceed a few hundred.
 pub const MAX_RASTER_LAYERS: usize = 1000;
 /// Layers plus folders.
 pub const MAX_ENTRIES: usize = 2000;
-/// Stored raster pixels per document. Equal to the most the former 32-layer
-/// cap allowed (32 full 4096 x 4096 layers), so more layers never let a file
-/// demand more memory than before. Mask-aware documents keep 512 MiB.
+/// Stored raster pixels per document (only painted tiles count): the most the
+/// former 32-layer cap allowed (32 full 4096 x 4096 layers). Mask-aware
+/// documents share the same budget between raster and mask payload; at
+/// 512 MiB a single painted 100-megapixel layer would nearly fill it.
 pub const MAX_PAYLOAD: usize = 2 << 30;
-pub const MAX_MASKED_PAYLOAD: usize = 512 * 1024 * 1024;
+pub const MAX_MASKED_PAYLOAD: usize = MAX_PAYLOAD;
 /// Effects per layer (Photoshop allows ten of each kind).
 pub const MAX_EFFECTS: usize = 32;
 /// Folder nesting, matching Photoshop's ten levels.

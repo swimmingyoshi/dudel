@@ -322,7 +322,7 @@ fn over_limit_mask_or_raster_contacts_roll_back_before_a_queued_snapshot() {
     for raster in [false, true] {
         let mut doc = source(2048, 2048, 255);
         let pixels: crate::pixels::Pixels = [17, 83, 201, 255].repeat(2048 * 2048).into();
-        for i in 0..32 {
+        for i in 0..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
             if i != 0 {
                 doc.add_layer();
             }

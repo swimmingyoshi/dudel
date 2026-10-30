@@ -1077,13 +1077,14 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
     if canvas.width.is_finite()
         && canvas.height.is_finite()
         && (canvas.width > crate::document::MAX_SIDE as f64
-            || canvas.height > crate::document::MAX_SIDE as f64)
+            || canvas.height > crate::document::MAX_SIDE as f64
+            || canvas.width * canvas.height > crate::document::MAX_PIXELS as f64)
     {
         return Err(format!(
-            "This canvas is {} × {} px; Dudel canvases are limited to {} px per side",
+            "This canvas is {} × {} px; Dudel canvases go {}",
             canvas.width,
             canvas.height,
-            crate::document::MAX_SIDE
+            crate::document::SIZE_LIMIT
         ));
     }
     if canvas.id <= 0
@@ -1093,8 +1094,8 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         || !canvas.height.is_finite()
         || canvas.width.fract() != 0.
         || canvas.height.fract() != 0.
-        || !(1. ..=4096.).contains(&canvas.width)
-        || !(1. ..=4096.).contains(&canvas.height)
+        || !(1. ..=crate::document::MAX_SIDE as f64).contains(&canvas.width)
+        || !(1. ..=crate::document::MAX_SIDE as f64).contains(&canvas.height)
         || canvas.width * canvas.height > crate::document::MAX_PIXELS as f64
     {
         return Err("Clip canvas exceeds Dudel dimensions or pixel limit".into());
@@ -2914,8 +2915,8 @@ pub(crate) mod tests {
             "UPDATE ExternalChunk SET Offset=81",
             "UPDATE ExternalChunk SET ExternalID=123",
             "INSERT INTO ExternalChunk SELECT * FROM ExternalChunk",
-            "UPDATE Canvas SET CanvasWidth=4097",
-            "UPDATE Canvas SET CanvasWidth=4097,CanvasHeight=4096",
+            "UPDATE Canvas SET CanvasWidth=16385",
+            "UPDATE Canvas SET CanvasWidth=10001,CanvasHeight=10000",
             "UPDATE Canvas SET CanvasWidth=32.5",
             "UPDATE Canvas SET CanvasUnit=1,CanvasWidth=2,CanvasHeight=3",
             "UPDATE Canvas SET CanvasResolution=0",
@@ -3140,9 +3141,9 @@ pub(crate) mod tests {
         db.execute_batch("UPDATE Canvas SET CanvasWidth=0.325")
             .unwrap();
         assert!(check(&db).is_err());
-        db.execute_batch("UPDATE Canvas SET CanvasWidth=50,CanvasHeight=0.48")
+        db.execute_batch("UPDATE Canvas SET CanvasWidth=200,CanvasHeight=0.48")
             .unwrap();
-        assert!(check(&db).unwrap_err().contains("4096 px per side"));
+        assert!(check(&db).unwrap_err().contains("16,384 px per side"));
     }
 
     #[test]

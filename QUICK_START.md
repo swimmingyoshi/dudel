@@ -12,9 +12,9 @@ from the [official download page](https://learn.microsoft.com/cpp/windows/latest
 1. Choose **File > New canvas** (`Ctrl+N`). Choose **Sketch**, **Square**, or **4K**,
    or enter custom width and height. **Swap W/H** changes orientation. The form
    shows pixel count and memory per fully painted layer. Then choose
-   **Create canvas**. Each side can be 1-4096 pixels, up to a full 4096 x 4096 canvas, which is enough
-   for 4K artwork such as 3840 x 2160. Very large canvases with many fully painted
-   layers can reach the 512 MiB artwork budget; Dudel reports that clearly. The new canvas
+   **Create canvas**. Each side can be up to 16,384 pixels and the canvas up to 100 megapixels
+   (10,000 x 10,000, or a tall 800 x 16,384 strip). Very large canvases with many fully painted
+   layers can reach the 2 GiB artwork budget; Dudel reports that clearly. The new canvas
    opens in its own tab (see [Tabs](#tabs-preview-window-and-folders)); at the tab
    limit it replaces the current project after Save, Discard or Cancel.
 2. The tool rail has four paint tools: **Pencil**, **Pen**, **Brush** and

@@ -1837,14 +1837,27 @@ fn main() -> eframe::Result {
                 cc.egui_ctx.set_zoom_factor(scale);
                 let mut app = Dudel::for_capture(path);
                 if capture_large {
-                    app.doc = document::Document::new(4096, 4096);
-                    app.doc.layers[0].pixels = (0..4096 * 4096)
+                    // DUDEL_CAPTURE_SIDE checks larger canvases (default 4096).
+                    let side = std::env::var("DUDEL_CAPTURE_SIDE")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|side| {
+                            side * side <= document::MAX_PIXELS && *side <= document::MAX_SIDE
+                        })
+                        .unwrap_or(4096);
+                    app.doc = document::Document::new(side, side);
+                    app.doc.layers[0].pixels = (0..side * side)
                         .flat_map(|i| {
-                            let (x, y) = (i % 4096, i / 4096);
+                            let (x, y) = (i % side, i / side);
                             if x % 128 < 3 || y % 128 < 3 {
                                 [30, 40, 50, 255]
                             } else {
-                                [40 + (x / 20) as u8, 40 + (y / 20) as u8, 180, 255]
+                                [
+                                    40 + (x / 20 % 200) as u8,
+                                    40 + (y / 20 % 200) as u8,
+                                    180,
+                                    255,
+                                ]
                             }
                         })
                         .collect::<Vec<_>>()

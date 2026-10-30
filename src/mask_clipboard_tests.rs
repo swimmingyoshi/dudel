@@ -457,7 +457,7 @@ fn empty_stale_locked_invalid_and_over_budget_clipboard_work_preserves_source() 
     assert!(crate::mask_clipboard::paste(&doc, &raster(9, 9, 255, 255), target, mask).is_err());
     let mut doc = source(2048, 2048, 0);
     let layer = doc.layers[0].clone();
-    for _ in 1..32 {
+    for _ in 1..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
         let mut copy = layer.clone();
         copy.id = LayerId::new();
         copy.mask = None;

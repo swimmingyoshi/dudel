@@ -476,7 +476,7 @@ fn canceled_worker_preserves_redo_and_over_budget_fill_or_clear_is_atomic() {
 
     let mut doc = fixture(2048, 2048, 0);
     let source = doc.layers[0].clone();
-    for _ in 1..32 {
+    for _ in 1..crate::document::MAX_MASKED_PAYLOAD / (2048 * 2048 * 4) {
         let mut copy = source.clone();
         copy.id = LayerId::new();
         copy.mask = None;

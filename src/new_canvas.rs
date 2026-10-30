@@ -27,17 +27,17 @@ impl Form {
         let parse = |value: &str| {
             let value = value.trim();
             if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
-                return Err("Enter a whole number from 1 to 4096 for each dimension.");
+                return Err("Enter a whole number from 1 to 16384 for each dimension.");
             }
             value
                 .parse::<usize>()
                 .ok()
-                .filter(|n| (1..=4096).contains(n))
-                .ok_or("Each dimension must be from 1 to 4096 pixels.")
+                .filter(|n| (1..=crate::document::MAX_SIDE).contains(n))
+                .ok_or("Each dimension must be from 1 to 16384 pixels.")
         };
         let (width, height) = (parse(&self.width)?, parse(&self.height)?);
         if width * height > crate::document::MAX_PIXELS {
-            return Err("Use no more than 4096 × 4096 pixels in total.");
+            return Err("Use no more than 100 megapixels in total (for example 10000 × 10000).");
         }
         Ok([width, height])
     }
@@ -135,7 +135,7 @@ impl Dudel {
                         ui.small(format!("{:.1} MP · {:.0} MiB per fully painted layer", width as f64 * height as f64 / 1_000_000.0, (width * height * 4) as f64 / (1024.0 * 1024.0)))
                             .on_hover_text("Empty areas use sparse storage. Undo, masks, display textures and timelapse use additional memory.");
                     }
-                    ui.small("Maximum 4096 × 4096 px.");
+                    ui.small("Up to 16,384 px per side and 100 megapixels in total.");
                     ui.add_space(4.0);
                     changed_option |= ui.checkbox(&mut self.timelapse.prefs.record_new, "Record a timelapse")
                         .on_hover_text("Saves a frame as the artwork changes, for speed-paint playback and GIF export in View > Timelapse. Frames go to the Timelapses folder (View > Settings > Storage & folders).")
@@ -205,7 +205,7 @@ mod tests {
             "-1",
             "1.5",
             "+32",
-            "4097",
+            "16385",
             "1e3",
             "184467440737095516160",
             "\u{0661}",
@@ -219,15 +219,20 @@ mod tests {
         }
         assert!(
             Form {
-                width: "4096".into(),
-                height: "4097".into(),
+                width: "10001".into(),
+                height: "10000".into(),
                 ..Default::default()
             }
             .dimensions()
             .is_err()
         );
-        // 4K artwork fits: 4096 x 4096 and 3840 x 2160.
-        for (width, height) in [("4096", "4096"), ("3840", "2160")] {
+        // 4K artwork, CSP's 10000 x 10000 and a long webtoon strip fit.
+        for (width, height) in [
+            ("4096", "4096"),
+            ("3840", "2160"),
+            ("10000", "10000"),
+            ("800", "16384"),
+        ] {
             let form = Form {
                 width: width.into(),
                 height: height.into(),

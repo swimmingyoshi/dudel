@@ -2136,8 +2136,8 @@ fn new_canvas_cancel_and_invalid_dimensions_preserve_the_document_at_small_sizes
         for (width, height) in [
             ("", "8"),
             ("0", "8"),
-            ("4097", "8"),
-            ("4096", "4097"),
+            ("16385", "8"),
+            ("10001", "10000"),
             ("9999999999999999", "8"),
             ("12.5", "8"),
         ] {

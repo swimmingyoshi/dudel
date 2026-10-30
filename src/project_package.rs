@@ -426,7 +426,8 @@ fn read_png<R: Read + Seek>(
     dimensions: Option<(usize, usize)>,
 ) -> Result<image::DynamicImage, String> {
     use image::ImageDecoder;
-    let Some(mut reader) = open_entry(archive, name, 64 << 20)? else {
+    // A full 100-megapixel layer of noise compresses to at most about 400 MiB.
+    let Some(mut reader) = open_entry(archive, name, 512 << 20)? else {
         return Err(format!("Package is missing {name}"));
     };
     let mut bytes = Vec::new();
@@ -439,8 +440,8 @@ fn read_png<R: Read + Seek>(
     // Validate the header before allocating decoded pixels.
     if w == 0
         || h == 0
-        || w > 4096
-        || h > 4096
+        || w as usize > crate::document::MAX_SIDE
+        || h as usize > crate::document::MAX_SIDE
         || dimensions.is_some_and(|size| size != (w as usize, h as usize))
     {
         return Err(format!("Unsupported image dimensions for {name}"));
