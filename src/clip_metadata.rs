@@ -304,7 +304,10 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             ))
         },
     )?;
-    for (id, name, lock, masking, mask, palette) in properties {
+    // The palette color (`LayerUsePaletteColor`) is the label shown in CSP's
+    // Layer palette and does not change the picture; the layer color that
+    // does is `DrawColor*`.
+    for (id, name, lock, masking, mask, _palette) in properties {
         let study_folder_masking = study
             && id != report.canvas.root
             && masking == 32
@@ -320,15 +323,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         report.locks.insert(id, lock);
         if (lock != 0 && (!study || lock & !17 != 0))
             || mask != 0
-            || palette != 0
             || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
         {
-            layer_issue(
-                report,
-                study,
-                id,
-                "unsupported lock/mask/palette metadata".into(),
-            );
+            layer_issue(report, study, id, "unsupported lock/mask metadata".into());
         }
         report.document_properties.insert(id, name);
     }
@@ -1939,7 +1936,7 @@ fn skip_reason(issues: &[String]) -> String {
             _ if issue.contains("LayerEffect") => "layer effect",
             _ if issue.contains("image material") => "image layer Dudel cannot place",
             _ if issue.contains("Material") => "material layer",
-            _ if issue.contains("lock/mask/palette") => "layer mask or palette colors",
+            _ if issue.contains("lock/mask") => "layer mask or lock",
             _ if issue.contains("monochrome") => "monochrome fill",
             _ if issue.contains("type/folder/visibility/blend") => {
                 "unsupported layer type or blend mode"
@@ -2840,6 +2837,12 @@ pub(crate) mod tests {
         document_features(&db, &mut report).unwrap();
         assert!(report.import_issues.is_empty());
         assert_eq!(report.document_properties[&30], "Paint private name");
+        // A Layer palette color label does not change the picture.
+        db.execute_batch("UPDATE Layer SET LayerUsePaletteColor=1 WHERE MainId=30")
+            .unwrap();
+        let mut labeled = check(&db).unwrap();
+        document_features(&db, &mut labeled).unwrap();
+        assert!(labeled.import_issues.is_empty());
         assert!(
             !serde_json::to_string(&report)
                 .unwrap()
@@ -2848,7 +2851,6 @@ pub(crate) mod tests {
         for mutation in [
             "UPDATE Layer SET LayerLayerMaskMipmap=1 WHERE MainId=30",
             "UPDATE Layer SET LayerLock=1 WHERE MainId=30",
-            "UPDATE Layer SET LayerUsePaletteColor=1 WHERE MainId=30",
             "ALTER TABLE Layer ADD COLUMN FilterLayerV132 BLOB; UPDATE Layer SET FilterLayerV132=x'01' WHERE MainId=30",
             "CREATE TABLE Track (MainId INTEGER); INSERT INTO Track VALUES (1)",
             "ALTER TABLE Canvas ADD COLUMN CanvasDstProfile BLOB; UPDATE Canvas SET CanvasDstProfile=x'01'",
@@ -2900,7 +2902,11 @@ pub(crate) mod tests {
         .unwrap();
         let mut report = check(&db).unwrap();
         document_features(&db, &mut report).unwrap();
-        assert!(report.import_issues.is_empty(), "{:?}", report.import_issues);
+        assert!(
+            report.import_issues.is_empty(),
+            "{:?}",
+            report.import_issues
+        );
         for on in [
             "UPDATE Canvas SET CanvasDoSimulateColor=1",
             "UPDATE Canvas SET CanvasUseColorAdjustment=1",
@@ -2918,7 +2924,8 @@ pub(crate) mod tests {
         .unwrap();
         let report = check(&db).unwrap();
         assert_eq!([report.canvas.width, report.canvas.height], [32.0, 48.0]);
-        db.execute_batch("UPDATE Canvas SET CanvasWidth=0.325").unwrap();
+        db.execute_batch("UPDATE Canvas SET CanvasWidth=0.325")
+            .unwrap();
         assert!(check(&db).is_err());
         db.execute_batch("UPDATE Canvas SET CanvasWidth=50,CanvasHeight=0.48")
             .unwrap();

@@ -45,7 +45,8 @@ and PSD source files, including renamed files recognized by their signatures.
 | Animation folders | Every cel kept as a layer; only the cel shown on the saved frame is visible |
 | Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
 | Glow dodge, Add (glow), Through (pass-through folders) | Native Color dodge (glow), Add (glow) and Pass through |
-| Vector, text, balloon, material, correction and effect layers; masks, palette colors, monochrome | That layer (or folder and its contents) is skipped and named in Import details. CSP does not save vector layers' pixels, so they need a vector renderer |
+| Layer palette color labels | Ignored (a Layers-panel label; it does not change the picture) |
+| Vector, text, balloon, material, correction and effect layers; masks, monochrome | That layer (or folder and its contents) is skipped and named in Import details. CSP does not save vector layers' pixels, so they need a vector renderer |
 | Layer color settings | Pixels keep their stored colors; noted in Import details |
 | Profiles, proofing and color adjustments | Layered conversion rejected |
 | Unknown channel layouts, damaged references or more than 1,000 raster layers | Layered conversion rejected |
