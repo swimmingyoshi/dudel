@@ -295,7 +295,7 @@ impl BlendMode {
 }
 
 // Non-separable helpers on 0-1 colors, as in the W3C blending specification.
-fn lum(c: [f32; 3]) -> f32 {
+pub(crate) fn lum(c: [f32; 3]) -> f32 {
     0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
 }
 fn clip_color(c: [f32; 3]) -> [f32; 3] {
@@ -311,7 +311,7 @@ fn clip_color(c: [f32; 3]) -> [f32; 3] {
     }
     c
 }
-fn set_lum(c: [f32; 3], l: f32) -> [f32; 3] {
+pub(crate) fn set_lum(c: [f32; 3], l: f32) -> [f32; 3] {
     let d = l - lum(c);
     clip_color(c.map(|v| v + d))
 }

@@ -93,8 +93,9 @@ stroke ends), can be switched off, reordered or removed, and save with the proje
 Merge down bakes them into the merged pixels.
 
 **Adjustment layers:** the half-circle button in the layer action row adds levels,
-curves, brightness/contrast, exposure, hue/saturation, gradient map, invert,
-posterize or threshold above the selected layer. It recolors everything below it
+curves, brightness/contrast, exposure, hue/saturation, vibrance, color balance, black &
+white, photo filter, channel mixer, selective color, gradient map, invert, posterize or
+threshold above the selected layer. It recolors everything below it
 (or, clipped, only its base); its opacity and mask fade it. Click its thumbnail to
 open the Adjustment window: in Curves, click the graph to add a point, drag to move
 it and double-click to remove it.

@@ -88,9 +88,10 @@ Gradient fill layers and gradient-filled shapes are drawn too (linear, radial, a
 reflected and diamond; angle, scale, offset, reverse, align with layer; color and
 opacity stops with midpoints). Stops blend linearly, where Photoshop smooths them, so
 gradients can differ by up to about 16 levels. Noise gradients, stops using the
-editor's foreground/background colors, pattern fills, dashed strokes,
-adjustment layers, mask feather/density and other unsupported descriptors use the saved composite with an
-explicit Import details report. They are not silently approximated as editable layers.
+editor's foreground/background colors, pattern fills, dashed strokes and other
+unsupported descriptors use the saved composite with an explicit Import details report.
+Layer and vector masks keep their density and feather (a Gaussian blur of the feather
+radius); when a layer has both, the user mask Photoshop stores separately is used. They are not silently approximated as editable layers.
 
 Layer effects (layer styles) on ordinary layers import as Dudel layer effects, so they
 stay editable (fx in the layer properties). Where Dudel has no equivalent (shape and
@@ -120,9 +121,12 @@ maps. The curve shapes follow Photoshop as measured by the MIT-licensed psd-tool
 project; in its adjustment test files invert, threshold, posterize, curves, levels,
 exposure and gradient maps match within a few levels, brightness/contrast within
 about 13, and hue/saturation within a few levels except where several hue ranges
-change saturation together. Color balance, selective color, channel mixer, black &
-white, photo filter, vibrance and color lookup layers are left out and named in
-Import details. Imported adjustment layers are ordinary Dudel adjustment layers:
+change saturation together. Color balance, vibrance, black & white, photo filter
+(RGB, Lab or XYZ colors), channel mixer and selective color import too, but no
+reference implementation measures them, so they are Dudel's own approximations: the
+psd-tools single-layer files and the ag-psd adjustment stack match, while strong
+settings can differ from Photoshop. Color lookup (3D LUT) layers, and the color-only
+kinds on grayscale documents, are left out and named in Import details. Imported adjustment layers are ordinary Dudel adjustment layers:
 their settings open in the Adjustment window (hue/saturation color ranges and
 gradient-map middle stops are kept but only the master settings and end colors
 are editable).
@@ -144,8 +148,8 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 53 of 75 import with layers and 6 are background-only; psd-tools,
-which concentrates on edge features: 181 of 279 with layers. Layered imports match the
+distributed). ag-psd: 59 import with layers and 6 are background-only; psd-tools,
+which concentrates on edge features: 199 of 279 with layers. Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are

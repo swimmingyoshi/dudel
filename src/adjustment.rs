@@ -8,6 +8,10 @@
 //! brightness and contrast curves, and hue/saturation in HSL.
 //! Copyright (c) 2019 Kota Yamaguchi; see `LICENSE-psd-tools` for the
 //! permission notice, which ships with source and binary packages.
+//!
+//! Color balance, vibrance, black & white, photo filter, channel mixer and
+//! selective color are Dudel's own approximations of Photoshop's results:
+//! no reference implementation measures them.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -64,13 +68,49 @@ pub(crate) enum Settings {
         stops: Vec<(f32, [f32; 3], f32)>,
         reverse: bool,
     },
+    /// Cyan–red, magenta–green and yellow–blue shifts (-100..=100) for the
+    /// shadows, midtones and highlights.
+    ColorBalance {
+        tones: [[f32; 3]; 3],
+        preserve_luminosity: bool,
+    },
+    /// Both in -100..=100; vibrance changes muted colors most.
+    Vibrance {
+        vibrance: f32,
+        saturation: f32,
+    },
+    /// Gray from how much reds, yellows, greens, cyans, blues and magentas
+    /// count (percent, -200..=300), optionally tinted with a color.
+    BlackWhite {
+        weights: [f32; 6],
+        tint: Option<[f32; 3]>,
+    },
+    /// A colored lens over the image: color 0..=255, density 0..=100.
+    PhotoFilter {
+        color: [f32; 3],
+        density: f32,
+        preserve_luminosity: bool,
+    },
+    /// Each output channel (red, green, blue) as percentages of the input
+    /// red, green and blue plus a constant, all -200..=200. Monochrome uses
+    /// the first row for all three.
+    ChannelMixer {
+        rows: [[f32; 4]; 3],
+        monochrome: bool,
+    },
+    /// Cyan, magenta, yellow and black changes (-100..=100) for reds,
+    /// yellows, greens, cyans, blues, magentas, whites, neutrals and blacks.
+    SelectiveColor {
+        colors: [[f32; 4]; 9],
+        absolute: bool,
+    },
 }
 
 fn srgb_gamma() -> f32 {
     2.2
 }
 /// The kinds offered when adding an adjustment layer, with neutral settings.
-pub(crate) fn presets() -> [Settings; 9] {
+pub(crate) fn presets() -> [Settings; 15] {
     let identity = LevelsChannel {
         input: [0.0, 255.0],
         output: [0.0, 255.0],
@@ -103,11 +143,42 @@ pub(crate) fn presets() -> [Settings; 9] {
             stops: vec![(0.0, [0.0; 3], 0.5), (1.0, [255.0; 3], 0.5)],
             reverse: false,
         },
+        Settings::Vibrance {
+            vibrance: 0.0,
+            saturation: 0.0,
+        },
+        Settings::ColorBalance {
+            tones: [[0.0; 3]; 3],
+            preserve_luminosity: true,
+        },
+        Settings::BlackWhite {
+            weights: BLACK_WHITE_DEFAULT,
+            tint: None,
+        },
+        Settings::PhotoFilter {
+            color: [236.0, 138.0, 0.0],
+            density: 25.0,
+            preserve_luminosity: true,
+        },
+        Settings::ChannelMixer {
+            rows: [
+                [100.0, 0.0, 0.0, 0.0],
+                [0.0, 100.0, 0.0, 0.0],
+                [0.0, 0.0, 100.0, 0.0],
+            ],
+            monochrome: false,
+        },
+        Settings::SelectiveColor {
+            colors: [[0.0; 4]; 9],
+            absolute: false,
+        },
         Settings::Invert,
         Settings::Posterize { levels: 4 },
         Settings::Threshold { level: 128 },
     ]
 }
+/// Photoshop's default black & white weights.
+pub(crate) const BLACK_WHITE_DEFAULT: [f32; 6] = [40.0, 60.0, 40.0, 60.0, 20.0, 80.0];
 /// A curve through `points` ([input, output] in 0..=255), sampled at every
 /// input level, as the curves editor draws it.
 pub(crate) fn sample_curve(points: &[[u8; 2]]) -> [f32; 256] {
@@ -207,6 +278,12 @@ impl Settings {
             Settings::Exposure { .. } => "Exposure",
             Settings::HueSaturation { .. } => "Hue/Saturation",
             Settings::GradientMap { .. } => "Gradient Map",
+            Settings::ColorBalance { .. } => "Color Balance",
+            Settings::Vibrance { .. } => "Vibrance",
+            Settings::BlackWhite { .. } => "Black & White",
+            Settings::PhotoFilter { .. } => "Photo Filter",
+            Settings::ChannelMixer { .. } => "Channel Mixer",
+            Settings::SelectiveColor { .. } => "Selective Color",
         }
     }
 }
@@ -241,6 +318,50 @@ impl Adjustment {
                 master,
                 ranges,
             } => hue_saturation(c, *colorize, *master, ranges),
+            Settings::ColorBalance {
+                tones,
+                preserve_luminosity,
+            } => color_balance(c, tones, *preserve_luminosity),
+            Settings::Vibrance {
+                vibrance,
+                saturation,
+            } => {
+                let [h, s, l] = to_hsl(c.map(|v| v / 255.0));
+                // Muted colors gain (or lose) the most; grays stay gray.
+                let s = saturate(s, vibrance / 100.0 * (1.0 - s));
+                let s = saturate(s, saturation / 100.0);
+                from_hsl([h, s, l]).map(|v| (v * 255.0).clamp(0.0, 255.0))
+            }
+            Settings::BlackWhite { weights, tint } => black_white(c, weights, *tint),
+            Settings::PhotoFilter {
+                color,
+                density,
+                preserve_luminosity,
+            } => {
+                let rgb = c.map(|v| v / 255.0);
+                let d = density / 100.0;
+                // Multiply by the filter color, faded by density.
+                let filtered: [f32; 3] =
+                    std::array::from_fn(|i| rgb[i] * (1.0 - d + d * color[i] / 255.0));
+                let out = if *preserve_luminosity {
+                    crate::blend::set_lum(filtered, crate::blend::lum(rgb))
+                } else {
+                    filtered
+                };
+                out.map(|v| (v * 255.0).clamp(0.0, 255.0))
+            }
+            Settings::ChannelMixer { rows, monochrome } => {
+                let mix = |row: &[f32; 4]| {
+                    ((row[0] * c[0] + row[1] * c[1] + row[2] * c[2]) / 100.0 + row[3] * 2.55)
+                        .clamp(0.0, 255.0)
+                };
+                if *monochrome {
+                    [mix(&rows[0]); 3]
+                } else {
+                    [mix(&rows[0]), mix(&rows[1]), mix(&rows[2])]
+                }
+            }
+            Settings::SelectiveColor { colors, absolute } => selective_color(c, colors, *absolute),
             _ => c,
         }
     }
@@ -311,6 +432,29 @@ impl Settings {
                     && ranges.len() <= 6
                     && ranges.iter().all(|(r, v)| finite(r) && hsl(v))
             }
+            Settings::ColorBalance { tones, .. } => {
+                tones.iter().flatten().all(|v| (-100.0..=100.0).contains(v))
+            }
+            Settings::Vibrance {
+                vibrance,
+                saturation,
+            } => [vibrance, saturation]
+                .iter()
+                .all(|v| (-100.0..=100.0).contains(*v)),
+            Settings::BlackWhite { weights, tint } => {
+                weights.iter().all(|v| (-200.0..=300.0).contains(v))
+                    && tint.iter().flatten().all(|v| (0.0..=255.0).contains(v))
+            }
+            Settings::PhotoFilter { color, density, .. } => {
+                color.iter().all(|v| (0.0..=255.0).contains(v)) && (0.0..=100.0).contains(density)
+            }
+            Settings::ChannelMixer { rows, .. } => {
+                rows.iter().flatten().all(|v| (-200.0..=200.0).contains(v))
+            }
+            Settings::SelectiveColor { colors, .. } => colors
+                .iter()
+                .flatten()
+                .all(|v| (-100.0..=100.0).contains(v)),
             Settings::GradientMap { stops, .. } => {
                 let mut last = 0.0;
                 !stops.is_empty()
@@ -539,6 +683,109 @@ fn brightness_contrast(brightness: f32, contrast: f32) -> impl Fn(usize, f32) ->
     }
 }
 
+/// Saturation `s` (0..=1) changed by `by` (-1..=1), as hue/saturation does.
+fn saturate(s: f32, by: f32) -> f32 {
+    if by > 0.0 {
+        s / (1.0 - by + 0.01)
+    } else {
+        s * (1.0 + by)
+    }
+    .clamp(0.0, 1.0)
+}
+
+/// Each tone's shifts weighted by how far the pixel's lightness lies in the
+/// shadows, midtones or highlights; the three weights always sum to 1.
+fn color_balance(c: [f32; 3], tones: &[[f32; 3]; 3], preserve_luminosity: bool) -> [f32; 3] {
+    let rgb = c.map(|v| v / 255.0);
+    let [_, _, l] = to_hsl(rgb);
+    let shadows = ((1.0 / 3.0 - l) / 0.25 + 0.5).clamp(0.0, 1.0);
+    let highlights = ((l - 2.0 / 3.0) / 0.25 + 0.5).clamp(0.0, 1.0);
+    let weights = [shadows, 1.0 - shadows - highlights, highlights];
+    let mut out = rgb;
+    for (tone, weight) in tones.iter().zip(weights) {
+        for (v, shift) in out.iter_mut().zip(tone) {
+            *v += shift / 100.0 * weight * 0.7;
+        }
+    }
+    let out = out.map(|v| v.clamp(0.0, 1.0));
+    let out = if preserve_luminosity {
+        crate::blend::set_lum(out, crate::blend::lum(rgb))
+    } else {
+        out
+    };
+    out.map(|v| (v * 255.0).clamp(0.0, 255.0))
+}
+
+/// Gray as the darkest channel plus the step to the middle one weighted by
+/// the two-channel color (yellow, cyan or magenta) and the step to the
+/// brightest weighted by its primary, so grays keep their value.
+fn black_white(c: [f32; 3], weights: &[f32; 6], tint: Option<[f32; 3]>) -> [f32; 3] {
+    let [r, g, b] = c.map(|v| v / 255.0);
+    const RED: usize = 0;
+    const YELLOW: usize = 1;
+    const GREEN: usize = 2;
+    const CYAN: usize = 3;
+    const BLUE: usize = 4;
+    const MAGENTA: usize = 5;
+    let (max, mid, min, primary, secondary) = if r >= g && g >= b {
+        (r, g, b, RED, YELLOW)
+    } else if r >= b && b >= g {
+        (r, b, g, RED, MAGENTA)
+    } else if g >= r && r >= b {
+        (g, r, b, GREEN, YELLOW)
+    } else if g >= b && b >= r {
+        (g, b, r, GREEN, CYAN)
+    } else if b >= r && r >= g {
+        (b, r, g, BLUE, MAGENTA)
+    } else {
+        (b, g, r, BLUE, CYAN)
+    };
+    let gray =
+        (min + (mid - min) * weights[secondary] / 100.0 + (max - mid) * weights[primary] / 100.0)
+            .clamp(0.0, 1.0);
+    let out = match tint {
+        // The tint's hue and saturation at the gray's luminosity.
+        Some(tint) => crate::blend::set_lum(tint.map(|v| v / 255.0), gray),
+        None => [gray; 3],
+    };
+    out.map(|v| (v * 255.0).clamp(0.0, 255.0))
+}
+
+/// Each color group's ink changes, weighted by how strongly the pixel
+/// belongs to the group. Ink is 1 - channel (cyan from red and so on);
+/// relative changes scale the ink already there, absolute ones add to it.
+fn selective_color(c: [f32; 3], colors: &[[f32; 4]; 9], absolute: bool) -> [f32; 3] {
+    let rgb = c.map(|v| v / 255.0);
+    let [r, g, b] = rgb;
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let weights = [
+        r - g.max(b),
+        r.min(g) - b,
+        g - r.max(b),
+        g.min(b) - r,
+        b - r.max(g),
+        r.min(b) - g,
+        (min - 0.5) * 2.0,
+        1.0 - ((max - 0.5).abs() + (min - 0.5).abs()),
+        (0.5 - max) * 2.0,
+    ];
+    let black = 1.0 - max;
+    let mut out = rgb;
+    for (change, weight) in colors.iter().zip(weights) {
+        if weight <= 0.0 {
+            continue;
+        }
+        let k = change[3] / 100.0;
+        for i in 0..3 {
+            let ink = 1.0 - rgb[i];
+            let p = change[i] / 100.0;
+            let delta = if absolute { p + k } else { ink * p + black * k };
+            out[i] -= ((ink + delta).clamp(0.0, 1.0) - ink) * weight;
+        }
+    }
+    out.map(|v| (v * 255.0).clamp(0.0, 255.0))
+}
+
 fn hue_saturation(
     c: [f32; 3],
     colorize: Option<[f32; 3]>,
@@ -551,14 +798,6 @@ fn hue_saturation(
         } else {
             v.map(|x| x * (1.0 + l))
         }
-    };
-    let saturate = |s: f32, by: f32| {
-        if by > 0.0 {
-            s / (1.0 - by + 0.01)
-        } else {
-            s * (1.0 + by)
-        }
-        .clamp(0.0, 1.0)
     };
     let rgb = c.map(|v| v / 255.0);
     if let Some([hue, saturation, lightness]) = colorize {
@@ -778,16 +1017,166 @@ pub(crate) fn from_psd(key: &[u8], data: &[u8], gray: bool) -> Result<Option<Set
                 ranges: ranges.into_iter().map(|(r, c)| (r, clamp(c))).collect(),
             }
         }
-        b"blnc" => return Err("color balance".into()),
-        b"vibA" => return Err("vibrance".into()),
-        b"mixr" => return Err("channel mixer".into()),
-        b"selc" => return Err("selective color".into()),
+        // Photoshop offers these only for color documents.
+        b"blnc" | b"vibA" | b"mixr" | b"selc" | b"phfl" | b"blwh" if gray => {
+            return Err("color adjustments on grayscale".into());
+        }
+        b"blnc" => {
+            let mut tones = [[0.0; 3]; 3];
+            for v in tones.iter_mut().flatten() {
+                *v = f32::from(r.i16().ok_or_else(damaged)?).clamp(-100.0, 100.0);
+            }
+            Settings::ColorBalance {
+                tones,
+                preserve_luminosity: r.u8().ok_or_else(damaged)? != 0,
+            }
+        }
+        b"vibA" => {
+            let d = crate::psd_vector::versioned(data).map_err(|_| damaged())?;
+            let value = |key| d.number(key).unwrap_or(0.0).clamp(-100.0, 100.0) as f32;
+            Settings::Vibrance {
+                vibrance: value("vibrance"),
+                saturation: value("Strt"),
+            }
+        }
+        b"blwh" => {
+            let d = crate::psd_vector::versioned(data).map_err(|_| damaged())?;
+            let keys = ["Rd  ", "Yllw", "Grn ", "Cyn ", "Bl  ", "Mgnt"];
+            let weights = std::array::from_fn(|i| {
+                d.number(keys[i])
+                    .map_or(BLACK_WHITE_DEFAULT[i], |v| v.clamp(-200.0, 300.0) as f32)
+            });
+            let tint = match d.object("tintColor") {
+                Some(color) if d.flag("useTint") == Some(true) => {
+                    Some(descriptor_rgb(color).ok_or("black & white with a non-RGB tint")?)
+                }
+                _ => None,
+            };
+            Settings::BlackWhite { weights, tint }
+        }
+        b"phfl" => {
+            let version = r.u16().ok_or_else(damaged)?;
+            let color = match version {
+                // XYZ against D50 with 32768 as 1, as ag-psd (MIT) found.
+                3 => {
+                    let mut xyz = [0.0; 3];
+                    for v in &mut xyz {
+                        *v = (r.u32().ok_or_else(damaged)? as i32 as f32 / 32768.0).clamp(0.0, 2.0);
+                    }
+                    xyz_d50_to_srgb(xyz)
+                }
+                2 => {
+                    let space = r.u16().ok_or_else(damaged)?;
+                    let mut v = [0; 4];
+                    for v in &mut v {
+                        *v = r.u16().ok_or_else(damaged)?;
+                    }
+                    psd_color(space, [v[0], v[1], v[2]])
+                        .ok_or("photo filter with an unsupported color")?
+                }
+                _ => return Err("photo filter version".into()),
+            };
+            let density = (r.u32().ok_or_else(damaged)?).min(100) as f32;
+            Settings::PhotoFilter {
+                color,
+                density,
+                preserve_luminosity: r.u8().ok_or_else(damaged)? != 0,
+            }
+        }
+        b"mixr" => {
+            r.u16().ok_or_else(damaged)?;
+            let monochrome = r.u16().ok_or_else(damaged)? != 0;
+            let mut rows = [[0.0; 4]; 3];
+            // Rows hold red, green, blue, black (unused in RGB) and the
+            // constant; monochrome files may stop after the first.
+            for (i, row) in rows.iter_mut().enumerate() {
+                let values: Option<Vec<i16>> = (0..5).map(|_| r.i16()).collect();
+                let values = match values {
+                    Some(values) => values,
+                    None if monochrome && i > 0 => vec![0; 5],
+                    None => return Err(damaged()),
+                };
+                *row = [values[0], values[1], values[2], values[4]]
+                    .map(|v| f32::from(v).clamp(-200.0, 200.0));
+            }
+            Settings::ChannelMixer { rows, monochrome }
+        }
+        b"selc" => {
+            r.u16().ok_or_else(damaged)?;
+            let absolute = r.u16().ok_or_else(damaged)? != 0;
+            // The first record is unused.
+            r.take(8).ok_or_else(damaged)?;
+            let mut colors = [[0.0; 4]; 9];
+            for v in colors.iter_mut().flatten() {
+                *v = f32::from(r.i16().ok_or_else(damaged)?).clamp(-100.0, 100.0);
+            }
+            Settings::SelectiveColor { colors, absolute }
+        }
         b"grdm" => gradient_map(data).ok_or_else(damaged)??,
-        b"phfl" => return Err("photo filter".into()),
-        b"blwh" => return Err("black & white".into()),
         b"clrL" => return Err("color lookup".into()),
         _ => return Ok(None),
     }))
+}
+/// A Photoshop color record (space, then components) as sRGB 0..=255:
+/// RGB, Lab or grayscale.
+fn psd_color(space: u16, [a, b, c]: [u16; 3]) -> Option<[f32; 3]> {
+    match space {
+        0 => Some([a, b, c].map(|v| f32::from(v) / 257.0)),
+        // L in 0..=10000, a and b in hundredths.
+        7 => Some(lab_d50_to_srgb([
+            f32::from(a) / 100.0,
+            f32::from(b as i16) / 100.0,
+            f32::from(c as i16) / 100.0,
+        ])),
+        8 => Some([255.0 * (1.0 - f32::from(a.min(10000)) / 10000.0); 3]),
+        _ => None,
+    }
+}
+/// `Rd  `, `Grn `, `Bl  ` of an RGB color descriptor.
+fn descriptor_rgb(color: &crate::psd_vector::Descriptor) -> Option<[f32; 3]> {
+    if color.class != "RGBC" {
+        return None;
+    }
+    let v = |key| color.number(key).map(|v| v.clamp(0.0, 255.0) as f32);
+    Some([v("Rd  ")?, v("Grn ")?, v("Bl  ")?])
+}
+fn lab_d50_to_srgb([l, a, b]: [f32; 3]) -> [f32; 3] {
+    let fy = (l + 16.0) / 116.0;
+    let f = |t: f32| {
+        if t > 6.0 / 29.0 {
+            t * t * t
+        } else {
+            3.0 * (6.0f32 / 29.0).powi(2) * (t - 4.0 / 29.0)
+        }
+    };
+    xyz_d50_to_srgb([
+        0.9642 * f(fy + a / 500.0),
+        f(fy),
+        0.8249 * f(fy - b / 200.0),
+    ])
+}
+/// D50 XYZ (white Y 1) through the Bradford adaptation to sRGB 0..=255.
+fn xyz_d50_to_srgb([x, y, z]: [f32; 3]) -> [f32; 3] {
+    let d65 = [
+        0.955_576_6 * x - 0.023_039_3 * y + 0.063_163_6 * z,
+        -0.028_289_5 * x + 1.009_941_6 * y + 0.021_007_7 * z,
+        0.012_298_2 * x - 0.020_483 * y + 1.329_909_8 * z,
+    ];
+    let [x, y, z] = d65;
+    let linear = [
+        3.240_454_2 * x - 1.537_138_5 * y - 0.498_531_4 * z,
+        -0.969_266 * x + 1.876_010_8 * y + 0.041_556 * z,
+        0.055_643_4 * x - 0.204_025_9 * y + 1.057_225_2 * z,
+    ];
+    linear.map(|v| {
+        let v = v.clamp(0.0, 1.0);
+        let encoded = if v <= 0.003_130_8 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        (encoded * 255.0).clamp(0.0, 255.0)
+    })
 }
 /// `grdm`: version (3 adds an interpolation method), reverse and dither
 /// flags, a name, color stops, then transparency stops (unused by a map).
@@ -1180,6 +1569,232 @@ mod tests {
         assert!(bad.validate_metadata().is_err());
     }
 
+    fn close(a: [f32; 3], b: [f32; 3]) -> bool {
+        a.iter().zip(&b).all(|(a, b)| (a - b).abs() < 1.0)
+    }
+
+    #[test]
+    fn color_adjustments_keep_neutral_settings_and_map_colors() {
+        let colors = [[30.0, 120.0, 220.0], [200.0, 60.0, 90.0], [128.0; 3]];
+        for (settings, neutral) in presets().into_iter().zip([true; 15]) {
+            if matches!(
+                settings,
+                Settings::BlackWhite { .. }
+                    | Settings::PhotoFilter { .. }
+                    | Settings::Invert
+                    | Settings::Posterize { .. }
+                    | Settings::Threshold { .. }
+                    | Settings::GradientMap { .. }
+            ) {
+                continue;
+            }
+            for c in colors {
+                let out = apply(settings.clone(), c);
+                assert_eq!(close(out, c), neutral, "{} {c:?} {out:?}", settings.name());
+            }
+        }
+        // Black & white: grays keep their value; primaries and mixes take
+        // their weight.
+        let bw = |c| {
+            apply(
+                Settings::BlackWhite {
+                    weights: BLACK_WHITE_DEFAULT,
+                    tint: None,
+                },
+                c,
+            )
+        };
+        assert!(close(bw([77.0; 3]), [77.0; 3]));
+        assert!(close(bw([255.0, 0.0, 0.0]), [102.0; 3]));
+        assert!(close(bw([255.0, 255.0, 0.0]), [153.0; 3]));
+        let tinted = apply(
+            Settings::BlackWhite {
+                weights: BLACK_WHITE_DEFAULT,
+                tint: Some([225.0, 211.0, 179.0]),
+            },
+            [128.0; 3],
+        );
+        assert!(tinted[0] > tinted[2]);
+        assert!((crate::blend::lum(tinted.map(|v| v / 255.0)) * 255.0 - 128.0).abs() < 1.0);
+        // Channel mixer: monochrome from green only.
+        let mono = Settings::ChannelMixer {
+            rows: [[0.0, 100.0, 0.0, 0.0], [0.0; 4], [0.0; 4]],
+            monochrome: true,
+        };
+        assert_eq!(apply(mono, [10.0, 90.0, 200.0]), [90.0; 3]);
+        // Photo filter: a warm filter warms gray but keeps its luminosity.
+        let warm = apply(
+            Settings::PhotoFilter {
+                color: [236.0, 138.0, 0.0],
+                density: 25.0,
+                preserve_luminosity: true,
+            },
+            [128.0; 3],
+        );
+        assert!(warm[0] > warm[1] && warm[1] > warm[2]);
+        assert!((crate::blend::lum(warm.map(|v| v / 255.0)) * 255.0 - 128.0).abs() < 1.0);
+        // Color balance: red in the midtones reddens gray, not black.
+        let mut tones = [[0.0; 3]; 3];
+        tones[1][0] = 100.0;
+        let balance = Settings::ColorBalance {
+            tones,
+            preserve_luminosity: false,
+        };
+        assert!(apply(balance.clone(), [128.0; 3])[0] > 200.0);
+        assert_eq!(apply(balance, [0.0; 3]), [0.0; 3]);
+        // Selective color: absolute cyan in reds empties red's red, leaves
+        // blue alone.
+        let mut colors = [[0.0; 4]; 9];
+        colors[0][0] = 100.0;
+        let selective = |absolute, c| apply(Settings::SelectiveColor { colors, absolute }, c);
+        assert_eq!(selective(true, [255.0, 0.0, 0.0]), [0.0, 0.0, 0.0]);
+        assert_eq!(selective(true, [0.0, 0.0, 255.0]), [0.0, 0.0, 255.0]);
+        // Relative changes need ink already there: pure red has no cyan.
+        assert_eq!(selective(false, [255.0, 0.0, 0.0]), [255.0, 0.0, 0.0]);
+        // Vibrance lifts a muted color more than a vivid one.
+        let vibrance = |c: [f32; 3]| {
+            let out = apply(
+                Settings::Vibrance {
+                    vibrance: 80.0,
+                    saturation: 0.0,
+                },
+                c,
+            );
+            to_hsl(out.map(|v| v / 255.0))[1] - to_hsl(c.map(|v| v / 255.0))[1]
+        };
+        assert!(vibrance([140.0, 120.0, 110.0]) > vibrance([250.0, 20.0, 10.0]));
+    }
+
+    #[test]
+    fn color_adjustment_blocks_parse() {
+        use crate::psd_vector::{Descriptor, Value, encode};
+        let versioned = |d: &Descriptor| {
+            let mut data = 16u32.to_be_bytes().to_vec();
+            data.extend(encode(d));
+            data
+        };
+        // Color balance: shadows, midtones, highlights, preserve luminosity.
+        let mut blnc = Vec::new();
+        for v in [-4i16, 2, -5, 10, 4, -9, 1, -9, -3] {
+            blnc.extend(v.to_be_bytes());
+        }
+        blnc.extend([1, 0, 0, 0]);
+        assert_eq!(
+            from_psd(b"blnc", &blnc, false).unwrap(),
+            Some(Settings::ColorBalance {
+                tones: [[-4.0, 2.0, -5.0], [10.0, 4.0, -9.0], [1.0, -9.0, -3.0]],
+                preserve_luminosity: true,
+            })
+        );
+        assert!(from_psd(b"blnc", &blnc[..10], false).is_err());
+        assert!(from_psd(b"blnc", &blnc, true).is_err());
+        // Photoshop's warming filter (85), saved as Lab.
+        let phfl = [
+            0x00, 0x02, 0x00, 0x07, 0x1a, 0x32, 0x0c, 0x80, 0x2e, 0xe0, 0, 0, 0, 0, 0, 0x19, 1, 0,
+            0, 0,
+        ];
+        let Some(Settings::PhotoFilter {
+            color,
+            density,
+            preserve_luminosity,
+        }) = from_psd(b"phfl", &phfl, false).unwrap()
+        else {
+            panic!()
+        };
+        assert!(close(color, [236.0, 138.0, 0.0]), "{color:?}");
+        assert_eq!((density, preserve_luminosity), (25.0, true));
+        // The same color as D50 XYZ (version 3).
+        let mut xyz = vec![0, 3];
+        for v in [0.4576f32, 0.3671, 0.0] {
+            xyz.extend(((v * 32768.0) as u32).to_be_bytes());
+        }
+        xyz.extend([0, 0, 0, 25, 1]);
+        let Some(Settings::PhotoFilter { color, .. }) = from_psd(b"phfl", &xyz, false).unwrap()
+        else {
+            panic!()
+        };
+        assert!(
+            close(color.map(|v| v / 3.0), [236.0 / 3.0, 46.0, 0.0]),
+            "{color:?}"
+        );
+        // Channel mixer, monochrome from green.
+        let mut mixr = vec![0, 1, 0, 1];
+        for v in [0i16, 100, 0, 0, 0] {
+            mixr.extend(v.to_be_bytes());
+        }
+        assert_eq!(
+            from_psd(b"mixr", &mixr, false).unwrap(),
+            Some(Settings::ChannelMixer {
+                rows: [[0.0, 100.0, 0.0, 0.0], [0.0; 4], [0.0; 4]],
+                monochrome: true,
+            })
+        );
+        assert!(from_psd(b"mixr", &mixr[..6], false).is_err());
+        // Selective color, absolute, reds changed.
+        let mut selc = vec![0, 1, 0, 1];
+        selc.extend([0; 8]);
+        for v in [15i16, -14, 33, 6] {
+            selc.extend(v.to_be_bytes());
+        }
+        selc.extend([0; 64]);
+        let Some(Settings::SelectiveColor { colors, absolute }) =
+            from_psd(b"selc", &selc, false).unwrap()
+        else {
+            panic!()
+        };
+        assert!(absolute);
+        assert_eq!(colors[0], [15.0, -14.0, 33.0, 6.0]);
+        assert!(from_psd(b"selc", &selc[..40], false).is_err());
+        // Descriptor-based: vibrance and black & white.
+        let vib = Descriptor {
+            class: "null".into(),
+            items: vec![
+                ("vibrance".into(), Value::Integer(21)),
+                ("Strt".into(), Value::Integer(-4)),
+            ],
+        };
+        assert_eq!(
+            from_psd(b"vibA", &versioned(&vib), false).unwrap(),
+            Some(Settings::Vibrance {
+                vibrance: 21.0,
+                saturation: -4.0,
+            })
+        );
+        let tint = Descriptor {
+            class: "RGBC".into(),
+            items: vec![
+                ("Rd  ".into(), Value::Number(55.6)),
+                ("Grn ".into(), Value::Number(156.9)),
+                ("Bl  ".into(), Value::Number(215.0)),
+            ],
+        };
+        let bw = Descriptor {
+            class: "null".into(),
+            items: vec![
+                ("Rd  ".into(), Value::Integer(-40)),
+                ("Yllw".into(), Value::Integer(235)),
+                ("useTint".into(), Value::Bool(true)),
+                ("tintColor".into(), Value::Object(tint)),
+            ],
+        };
+        let Some(Settings::BlackWhite { weights, tint }) =
+            from_psd(b"blwh", &versioned(&bw), false).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(weights[..3], [-40.0, 235.0, 40.0]);
+        assert!(close(tint.unwrap(), [55.6, 156.9, 215.0]));
+        assert!(from_psd(b"blwh", &[0, 0, 0, 16], false).is_err());
+        // Damaged projects cannot smuggle out-of-range values.
+        assert!(
+            Adjustment::try_from(Settings::ChannelMixer {
+                rows: [[f32::NAN; 4]; 3],
+                monochrome: false,
+            })
+            .is_err()
+        );
+    }
+
     #[test]
     fn psd_blocks_parse_and_damage_is_rejected() {
         let mut levl = vec![0, 2];
@@ -1216,7 +1831,7 @@ mod tests {
             from_psd(b"expA", &exposure, false),
             Ok(Some(Settings::Exposure { .. }))
         ));
-        assert!(from_psd(b"blnc", &[], false).is_err());
+        assert!(from_psd(b"clrL", &[], false).is_err());
         // Gradient map v3: method, empty name, two RGB stops.
         let mut grdm = vec![0, 3, 1, 0];
         grdm.extend(b"Perc");

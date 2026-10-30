@@ -1644,7 +1644,7 @@ mod tests {
     fn dropped_adjustments_do_not_decode_irrelevant_channel_payloads() {
         let mut file = layer_file(&[
             Spec {
-                keys: &[(b"blnc", &[])],
+                keys: &[(b"clrL", &[])],
                 ..raster("Unsupported adjustment", 0, [91, 92, 93, 255], false)
             },
             raster("Keep", 1, [10, 20, 30, 255], false),

@@ -344,9 +344,18 @@ Stage B - native layer effects:
       adjustments inside) dropped its color change (commit skipped alpha 0)
 - [x] Corpus: psd-tools 138 -> 181/279 layered, ag-psd 51 -> 53/75, no file
       worse; owner files unchanged
-- [ ] Unsupported (left out with a note): color balance (blnc), selective
-      color (selc), channel mixer (mixr), black & white (blwh), photo filter
-      (phfl), vibrance (vibA), color lookup (clrL)
+- [x] More kinds (2026-10-29): color balance (blnc, tonal weights by HSL
+      lightness), vibrance (vibA), black & white (blwh, per-hue-sector weights,
+      tint at the gray's luminosity), photo filter (phfl v2 RGB/Lab/gray and v3
+      D50 XYZ; multiply by density), channel mixer (mixr), selective color
+      (selc, relative/absolute ink changes by color-group weight). No reference
+      implementation measures these, so they are approximations; psd-tools'
+      six single-layer files and ag-psd's adjustment stack match the saved
+      image. All in the Adjustment window and the toolbar list (15 kinds).
+      Color-only kinds on grayscale documents are left out with a note
+- [x] Corpus: psd-tools 193 -> 199/279 layered, ag-psd 54 -> 59, no file
+      worse (fill_adjustments still differs: color lookup, pattern overlay)
+- [ ] Left out with a note: color lookup (clrL, embedded 3D LUT)
 - [ ] Hue/saturation: combine range saturations like Photoshop (psd-tools
       uses a measured 21x21 table); brightness/contrast within ~13 levels
 - [x] UI (2026-10-29): half-circle toolbar button lists the nine kinds and
@@ -361,9 +370,12 @@ Stage B - native layer effects:
       `--capture-adjustment-layer` screenshots it
 - [ ] Adjustment UI follow-ups: hue/saturation range editing, gradient map
       stop editing, a Layer menu entry, histogram in levels
-- [ ] Remaining PSD fallbacks by count: CMYK (15), unsupported mask flags
-      (14), canvases over 4096 (10), knockout `knko` (9), no layers left
-      after dropping unsupported adjustments (7), artboards (6)
+- [x] Masks (2026-10-29): user and vector mask density and feather, and the
+      separate "real" user mask (channel -3) when a vector mask exists; PSD
+      notes grouped by kind with layer names. psd-tools 181 -> 193/279
+- [ ] Remaining PSD fallbacks by count: CMYK (15), canvases over 4096 (10),
+      knockout `knko` (9), artboards (6), unsupported mask flags (3),
+      stroke widths (3)
 
 ## Before pushing (next candidate)
 
@@ -401,6 +413,12 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-29 (Claude, PSD masks + adjustment kinds): mask density/feather and
+  grouped notes (5fdb500); six more adjustment kinds with PSD parsing and
+  Adjustment window controls; blend-box wheel no longer scrolls the effects
+  window. Gates pass (992 tests). Committed locally, not pushed. Full Verify
+  and the owner's pen pass still open.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

@@ -157,16 +157,36 @@ const IDENTITY: LevelsChannel = LevelsChannel {
 
 /// Which channel a levels or curves editor shows, remembered per window.
 fn channel_picker(ui: &mut egui::Ui) -> usize {
-    let id = ui.id().with("adjustment channel");
-    let mut channel = ui.data(|d| d.get_temp::<usize>(id)).unwrap_or(0);
-    ui.horizontal(|ui| {
-        ui.label("Channel");
-        for (index, name) in CHANNELS.iter().enumerate() {
-            ui.selectable_value(&mut channel, index, *name);
+    picker(ui, "Channel", &CHANNELS)
+}
+
+/// One of `names`, remembered per window under `label`.
+fn picker(ui: &mut egui::Ui, label: &str, names: &[&str]) -> usize {
+    let id = ui.id().with(("adjustment picker", label));
+    let mut index = ui
+        .data(|d| d.get_temp::<usize>(id))
+        .unwrap_or(0)
+        .min(names.len() - 1);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(label);
+        for (i, name) in names.iter().enumerate() {
+            ui.selectable_value(&mut index, i, *name);
         }
     });
-    ui.data_mut(|d| d.insert_temp(id, channel));
-    channel
+    ui.data_mut(|d| d.insert_temp(id, index));
+    index
+}
+
+fn color_button(ui: &mut egui::Ui, label: &str, color: &mut [f32; 3]) {
+    let before = color.map(|v| v.round().clamp(0.0, 255.0) as u8);
+    let mut rgb = before;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        egui::color_picker::color_edit_button_srgb(ui, &mut rgb);
+    });
+    if rgb != before {
+        *color = rgb.map(f32::from);
+    }
 }
 
 fn slider(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
@@ -305,6 +325,80 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
                     stops.len() - 2
                 ));
             }
+        }
+        Settings::ColorBalance {
+            tones,
+            preserve_luminosity,
+        } => {
+            let tone = picker(ui, "Tone", &["Shadows", "Midtones", "Highlights"]);
+            let shifts = &mut tones[tone];
+            slider(ui, "Cyan – Red", &mut shifts[0], -100.0..=100.0);
+            slider(ui, "Magenta – Green", &mut shifts[1], -100.0..=100.0);
+            slider(ui, "Yellow – Blue", &mut shifts[2], -100.0..=100.0);
+            ui.checkbox(preserve_luminosity, "Preserve luminosity");
+        }
+        Settings::Vibrance {
+            vibrance,
+            saturation,
+        } => {
+            slider(ui, "Vibrance", vibrance, -100.0..=100.0);
+            slider(ui, "Saturation", saturation, -100.0..=100.0);
+        }
+        Settings::BlackWhite { weights, tint } => {
+            let names = ["Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas"];
+            for (weight, name) in weights.iter_mut().zip(names) {
+                slider(ui, name, weight, -200.0..=300.0);
+            }
+            let mut on = tint.is_some();
+            if ui.checkbox(&mut on, "Tint").changed() {
+                *tint = on.then_some([225.0, 211.0, 179.0]);
+            }
+            if let Some(tint) = tint {
+                color_button(ui, "Tint color", tint);
+            }
+            if ui.small_button("Reset weights").clicked() {
+                *weights = crate::adjustment::BLACK_WHITE_DEFAULT;
+            }
+        }
+        Settings::PhotoFilter {
+            color,
+            density,
+            preserve_luminosity,
+        } => {
+            color_button(ui, "Filter color", color);
+            slider(ui, "Density", density, 0.0..=100.0);
+            ui.checkbox(preserve_luminosity, "Preserve luminosity");
+        }
+        Settings::ChannelMixer { rows, monochrome } => {
+            ui.checkbox(monochrome, "Monochrome");
+            let row = if *monochrome {
+                0
+            } else {
+                picker(ui, "Output", &["Red", "Green", "Blue"])
+            };
+            let values = &mut rows[row];
+            slider(ui, "Red", &mut values[0], -200.0..=200.0);
+            slider(ui, "Green", &mut values[1], -200.0..=200.0);
+            slider(ui, "Blue", &mut values[2], -200.0..=200.0);
+            slider(ui, "Constant", &mut values[3], -200.0..=200.0);
+        }
+        Settings::SelectiveColor { colors, absolute } => {
+            let group = picker(
+                ui,
+                "Colors",
+                &[
+                    "Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas", "Whites",
+                    "Neutrals", "Blacks",
+                ],
+            );
+            let inks = &mut colors[group];
+            for (ink, name) in inks.iter_mut().zip(["Cyan", "Magenta", "Yellow", "Black"]) {
+                slider(ui, name, ink, -100.0..=100.0);
+            }
+            ui.horizontal(|ui| {
+                ui.selectable_value(absolute, false, "Relative");
+                ui.selectable_value(absolute, true, "Absolute");
+            });
         }
     }
 }

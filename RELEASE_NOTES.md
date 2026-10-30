@@ -34,7 +34,8 @@ the package has been uploaded to a public store.
   and emboss. They follow the layer's pixels, save with the project, and appear in
   exports. Older Dudel builds open such projects without the effects.
 - Adjustment layers: levels, curves, brightness/contrast, exposure,
-  hue/saturation, gradient map, invert, posterize and threshold, from the
+  hue/saturation, vibrance, color balance, black & white, photo filter, channel
+  mixer, selective color, gradient map, invert, posterize and threshold, from the
   half-circle button in the layer toolbar or from PSD files. They recolor what
   lies below them (or their clipping base), with a curves editor and sliders in
   the Adjustment window.
