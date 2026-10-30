@@ -889,6 +889,7 @@ dependencies = [
  "flate2",
  "gif",
  "image",
+ "moxcms",
  "raw-window-handle",
  "rfd",
  "rhai",

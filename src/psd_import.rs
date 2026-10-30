@@ -193,19 +193,88 @@ fn decode(
 enum ColorMode {
     Gray,
     Rgb,
+    /// Cyan, magenta, yellow, black, stored inverted (255 is no ink).
+    Cmyk,
 }
 impl ColorMode {
     fn channels(self) -> usize {
         match self {
             Self::Gray => 1,
             Self::Rgb => 3,
+            Self::Cmyk => 4,
         }
     }
-    fn rgb_channels(self) -> [usize; 3] {
-        match self {
-            Self::Gray => [0, 0, 0],
-            Self::Rgb => [0, 1, 2],
+}
+
+/// Turns a document's channel samples into RGB: gray and RGB as stored,
+/// CMYK through the file's color profile when it has one (as Photoshop
+/// displays it), otherwise by the plain ink formula.
+struct Colors {
+    mode: ColorMode,
+    cmyk: Option<std::sync::Arc<moxcms::Transform8BitExecutor>>,
+}
+impl Colors {
+    fn new(mode: ColorMode, icc: Option<&[u8]>) -> Self {
+        let cmyk = icc
+            .filter(|_| matches!(mode, ColorMode::Cmyk))
+            .and_then(|icc| moxcms::ColorProfile::new_from_slice(icc).ok())
+            .filter(|profile| profile.color_space == moxcms::DataColorSpace::Cmyk)
+            .and_then(|profile| {
+                profile
+                    .create_transform_8bit(
+                        moxcms::Layout::Rgba,
+                        &moxcms::ColorProfile::new_srgb(),
+                        moxcms::Layout::Rgba,
+                        moxcms::TransformOptions::default(),
+                    )
+                    .ok()
+            });
+        Self { mode, cmyk }
+    }
+    /// RGB of `count` pixels whose channel `c` holds `sample(c, i)`.
+    fn rgb(
+        &self,
+        count: usize,
+        sample: impl Fn(usize, usize) -> u8,
+        cancel: &impl Fn() -> bool,
+    ) -> Result<Vec<[u8; 3]>, String> {
+        let mut out = Vec::with_capacity(count);
+        match self.mode {
+            ColorMode::Gray => out.extend((0..count).map(|i| [sample(0, i); 3])),
+            ColorMode::Rgb => out.extend((0..count).map(|i| [0, 1, 2].map(|c| sample(c, i)))),
+            ColorMode::Cmyk => {
+                const CHUNK: usize = 1 << 16;
+                let mut ink = vec![0u8; CHUNK * 4];
+                let mut converted = vec![0u8; CHUNK * 4];
+                for start in (0..count).step_by(CHUNK) {
+                    check(cancel)?;
+                    let n = CHUNK.min(count - start);
+                    for (i, pixel) in ink[..n * 4].chunks_exact_mut(4).enumerate() {
+                        for (c, value) in pixel.iter_mut().enumerate() {
+                            *value = 255 - sample(c, start + i);
+                        }
+                    }
+                    match &self.cmyk {
+                        Some(transform) => {
+                            transform
+                                .transform(&ink[..n * 4], &mut converted[..n * 4])
+                                .map_err(|e| format!("CMYK color conversion: {e}"))?;
+                            out.extend(
+                                converted[..n * 4]
+                                    .chunks_exact(4)
+                                    .map(|p| [p[0], p[1], p[2]]),
+                            );
+                        }
+                        None => out.extend(ink[..n * 4].chunks_exact(4).map(|p| {
+                            let paper = |v: u8| u16::from(255 - v);
+                            let k = paper(p[3]);
+                            [0, 1, 2].map(|c| ((paper(p[c]) * k + 127) / 255) as u8)
+                        })),
+                    }
+                }
+            }
         }
+        Ok(out)
     }
 }
 
@@ -537,11 +606,12 @@ fn layers(
     data: &[u8],
     width: usize,
     height: usize,
-    mode: ColorMode,
+    colors: &Colors,
     global_angle: f64,
     big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<(Document, Order, Messages), String> {
+    let mode = colors.mode;
     // After the layer records come the global layer mask (how masks are shown
     // in the editor, not pixels) and document-wide blocks such as patterns,
     // text engine data and linked files. Those only matter to layers that use
@@ -805,6 +875,12 @@ fn layers(
         }
         // Shape layers are drawn from their path and fill, not their pixels.
         let adjustment = adjustment.or(legacy_brightness);
+        // CMYK adjustments name CMYK channels (curves channel 1 is cyan) and
+        // usually define the picture; Dudel's adjustments act on RGB.
+        if matches!(colors.mode, ColorMode::Cmyk) && (adjustment.is_some() || unsupported.is_some())
+        {
+            return Err("Adjustment layers in CMYK files need the saved composite".into());
+        }
         let dropped = unsupported.is_some() || (adjustment.is_some() && group != 0);
         if let Some(kind) = &unsupported {
             grouped.add(
@@ -977,6 +1053,7 @@ fn layers(
             if !(0..mode.channels() as i16).all(|id| planes.contains_key(&id)) {
                 return Err("PSD layer is missing color pixels".into());
             }
+            let rgb = colors.rgb(w * h, |c, i| planes[&(c as i16)][i], cancel)?;
             let mut writer = record.layer.pixels.writer();
             for y in 0..h {
                 check(cancel)?;
@@ -990,7 +1067,7 @@ fn layers(
                         continue;
                     }
                     let i = y * w + x;
-                    let [red, green, blue] = mode.rgb_channels().map(|id| planes[&(id as i16)][i]);
+                    let [red, green, blue] = rgb[i];
                     let rgba = [red, green, blue, planes.get(&-1).map_or(255, |a| a[i])];
                     if rgba != [0; 4] {
                         writer
@@ -1222,11 +1299,12 @@ fn saved_image(
     height: usize,
     channels: usize,
     depth: u16,
-    mode: ColorMode,
+    colors: &Colors,
     has_alpha: bool,
     big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
+    let mode = colors.mode;
     let raw = decode(data, width, height, channels, depth, big, cancel)?;
     let samples = width * height;
     let value = |c: usize, i: usize| {
@@ -1237,12 +1315,13 @@ fn saved_image(
             ((u16::from_be_bytes([raw[at], raw[at + 1]]) as u32 + 128) / 257) as u8
         }
     };
+    let rgb = colors.rgb(samples, value, cancel)?;
     let mut pixels = vec![0; samples * 4];
     for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
         if i % width == 0 {
             check(cancel)?;
         }
-        let [red, green, blue] = mode.rgb_channels().map(|c| value(c, i));
+        let [red, green, blue] = rgb[i];
         pixel.copy_from_slice(&[
             red,
             green,
@@ -1375,6 +1454,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let mode = match reader.u16()? {
         1 => ColorMode::Gray,
         3 => ColorMode::Rgb,
+        4 => ColorMode::Cmyk,
         other => {
             return Err(format!(
                 "Unsupported PSD color mode {other}; RGB and grayscale are supported"
@@ -1402,7 +1482,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     reader.section()?;
     let mut resources = reader.section()?;
     let mut has_composite = true;
-    let mut profile = false;
+    let mut profile: Option<&[u8]> = None;
     // Photoshop's default light angle, for files without one.
     let mut global_angle = 120.0;
     while !resources.0.is_empty() {
@@ -1424,7 +1504,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             version.u32()?;
             has_composite = version.u8()? != 0;
         } else if id == 1039 {
-            profile = !data.0.is_empty();
+            profile = Some(data.0).filter(|icc| !icc.is_empty());
         } else if id == 1037 && data.0.len() >= 4 {
             let mut angle = data;
             global_angle = f64::from(angle.u32()? as i32);
@@ -1440,7 +1520,21 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         details
             .push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
     }
-    if profile {
+    let colors = Colors::new(mode, profile);
+    if matches!(mode, ColorMode::Cmyk) {
+        if colors.cmyk.is_some() {
+            details.push(
+                "Converted CMYK to RGB through the file's color profile, as Photoshop displays it."
+                    .into(),
+            );
+        } else {
+            notes.push(
+                "CMYK converted to RGB without a usable color profile, so colors are approximate."
+                    .into(),
+            );
+        }
+        notes.push("This CMYK file is edited in RGB: blend modes and adjustments now act on RGB colors, so overlapping layers can differ slightly from Photoshop.".into());
+    } else if profile.is_some() {
         notes.push(
             "The embedded color profile was not converted; Dudel uses the stored channel values."
                 .into(),
@@ -1452,7 +1546,15 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         details
             .push("This file holds only a background image; it was imported as one layer.".into());
     } else if layered && depth == 8 && !layer_data.0.is_empty() {
-        match layers(layer_data.0, width, height, mode, global_angle, big, cancel) {
+        match layers(
+            layer_data.0,
+            width,
+            height,
+            &colors,
+            global_angle,
+            big,
+            cancel,
+        ) {
             Ok((mut document, order, (layer_notes, layer_details))) => {
                 details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
@@ -1464,7 +1566,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
                         has_composite
                             && document.layers.len() > 1
                             && saved_image(
-                                reader.0, width, height, channels, depth, mode, has_alpha, big,
+                                reader.0, width, height, channels, depth, &colors, has_alpha, big,
                                 cancel,
                             )
                             .is_ok_and(|saved| reversed_matches_better(&document, &saved))
@@ -1507,7 +1609,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         ));
     }
     let pixels = saved_image(
-        reader.0, width, height, channels, depth, mode, has_alpha, big, cancel,
+        reader.0, width, height, channels, depth, &colors, has_alpha, big, cancel,
     )?;
     if depth == 16 {
         details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
@@ -1571,6 +1673,11 @@ mod tests {
                 (None, true, ColorMode::Rgb) => &[(0, 0), (1, 1), (2, 2), (-1, 3), (-2, 4)],
                 (None, false, ColorMode::Gray) => &[(0, 0), (-1, 3)],
                 (None, true, ColorMode::Gray) => &[(0, 0), (-1, 3), (-2, 4)],
+                // K (index 5) is stored as 255: no black ink.
+                (None, false, ColorMode::Cmyk) => &[(0, 0), (1, 1), (2, 2), (3, 5), (-1, 3)],
+                (None, true, ColorMode::Cmyk) => {
+                    &[(0, 0), (1, 1), (2, 2), (3, 5), (-1, 3), (-2, 4)]
+                }
             };
             records.extend((channels.len() as u16).to_be_bytes());
             for &(id, index) in channels {
@@ -1579,10 +1686,10 @@ mod tests {
                 planes.extend([
                     0,
                     0,
-                    if index == 4 {
-                        75
-                    } else {
-                        spec.color[index as usize]
+                    match index {
+                        4 => 75,
+                        5 => 255,
+                        _ => spec.color[index as usize],
                     },
                 ]);
             }
@@ -1636,6 +1743,10 @@ mod tests {
         if matches!(mode, ColorMode::Gray) {
             file[12..14].copy_from_slice(&2u16.to_be_bytes());
             file[24..26].copy_from_slice(&1u16.to_be_bytes());
+        }
+        if matches!(mode, ColorMode::Cmyk) {
+            file[12..14].copy_from_slice(&5u16.to_be_bytes());
+            file[24..26].copy_from_slice(&4u16.to_be_bytes());
         }
         file.truncate(34);
         file.extend(section(&layers));
@@ -2314,6 +2425,38 @@ mod tests {
                 .any(|n| n.contains("only a background image"))
         );
         assert!(!imported.notes.iter().any(|n| n.contains("unavailable")));
+    }
+    #[test]
+    fn cmyk_layers_convert_to_rgb_with_a_note() {
+        // Stored CMYK is inverted: 0 is full ink. Full cyan, no other ink.
+        let file = layer_file_mode(
+            &[raster("Cyan", 0, [0, 255, 255, 200], false)],
+            ColorMode::Cmyk,
+        );
+        let imported = parse(&file, &|| false).unwrap();
+        assert_eq!(
+            imported.document.layers[0].pixels.rgba(0),
+            [0, 255, 255, 200]
+        );
+        assert!(
+            imported
+                .notes
+                .iter()
+                .any(|n| n.contains("without a usable color profile"))
+        );
+        assert!(imported.notes.iter().any(|n| n.contains("edited in RGB")));
+        // A gray K darkens every channel.
+        let colors = Colors::new(ColorMode::Cmyk, None);
+        let rgb = colors
+            .rgb(1, |c, _| [255, 255, 255, 128][c], &|| false)
+            .unwrap();
+        assert_eq!(rgb, vec![[128; 3]]);
+        // A profile that is not CMYK is not used for CMYK samples.
+        assert!(
+            Colors::new(ColorMode::Cmyk, Some(b"not a profile"))
+                .cmyk
+                .is_none()
+        );
     }
     #[test]
     fn psb_files_read_wide_lengths_and_rle_row_counts() {

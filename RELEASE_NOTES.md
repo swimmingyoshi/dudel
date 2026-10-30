@@ -50,7 +50,8 @@ the package has been uploaded to a public store.
   as raster layers instead of being skipped; Layers-panel color labels no
   longer skip layers. Screentone layers import as even shading with their
   CSP mask as an editable layer mask.
-- Photoshop large documents (`.psb`) open like `.psd` files.
+- Photoshop large documents (`.psb`) open like `.psd` files, and CMYK files open with
+  their colors converted through the file's color profile.
 - Canvases up to 16,384 px per side and 100 megapixels (10,000 x 10,000), up from
   4096 x 4096, for new canvases, resizing and CSP/PSD/PNG imports. Mask-aware
   projects share the full 2 GiB pixel budget. Import details text can be selected

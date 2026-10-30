@@ -450,6 +450,15 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   text layers and CardBase's hidden LayerMasking=1 layer. Open: CSP masks on
   ordinary layers (no sample yet), screentone dots, text layers, `.psb`.
 
+- 2026-10-29 (Claude, import round 3): `.psb` (psd-tools 199 -> 223, ag-psd
+  60 -> 68 layered); vector edges follow the brush anti-alias level (all CSP
+  vector files under 1 level off their previews); CMYK PSD/PSB through the
+  embedded profile with moxcms (psd-tools 225, ag-psd 69; CMYK adjustments
+  use the composite). Screentone dots not done: the only sample (2d.clip) is
+  72 dpi with ~1 px tone cells, where flat shading is equivalent; the stored
+  tone fields (72.0, 60.0, density) need a print-resolution sample to map
+  lines/angle.
+
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
   Corpora and pen testing not rerun.

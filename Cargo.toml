@@ -28,6 +28,8 @@ flate2 = "1"
 directories = "6"
 wasmi = "2"
 rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "hooks", "limits"] }
+# Already built for `image`; converts CMYK Photoshop files through their profile.
+moxcms = "=0.8.1"
 zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

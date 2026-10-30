@@ -161,18 +161,22 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 68 of 89 files (PSD and PSB) import with layers and 6 are
-background-only; psd-tools, which concentrates on edge features: 223 of 316 with layers. Layered imports match the
+distributed). ag-psd: 69 of 89 files (PSD and PSB) import with layers and 6 are
+background-only; psd-tools, which concentrates on edge features: 225 of 316 with layers. Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are
-unsupported color modes (CMYK, Lab, indexed, bitmap, 32-bit).
+unsupported color modes (Lab, indexed, bitmap, 32-bit).
 
 16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the
 PSD layer-count marker. Embedded profiles are reported but not converted.
-PSB files read the same way as PSD. CMYK, Lab, indexed and bitmap modes, and 32-bit
-channels are unsupported. Files are capped at 2 GB (the PSD limit; larger PSB files are refused) and decoded layer payload shares the 2 GiB
+PSB files read the same way as PSD. CMYK files (8 and 16 bit) open in RGB: colors go
+through the file's embedded CMYK profile as Photoshop displays them (within about 2 levels
+of Photoshop's own preview on the test files), or through the plain ink formula with a note
+when there is none. Layers then blend in RGB, so soft overlapping edges can differ a little;
+CMYK files with adjustment layers use the saved composite. Lab, indexed and bitmap modes,
+and 32-bit channels are unsupported. Files are capped at 2 GB (the PSD limit; larger PSB files are refused) and decoded layer payload shares the 2 GiB
 document budget. A PSD without
 a usable compatibility composite cannot fall back when layer conversion fails;
 save it with Maximize Compatibility enabled in the source editor.
