@@ -1065,7 +1065,7 @@ mod tests {
                 recovery_for_callback.is_file(),
                 "snapshot must precede parking"
             );
-            app.request_replace(crate::document_actions::Action::New(8, 8));
+            app.request_replace(crate::document_actions::Action::New(8, 8, 300.0));
         });
         assert_eq!(app.tabs.len(), 1);
         assert!(app.tab_open_pending());

@@ -75,21 +75,24 @@ fn write_png_with_hook(
     cancel: &AtomicBool,
     before_publish: impl FnOnce(),
 ) -> Result<(), String> {
-    use image::ImageEncoder;
     doc.validate()?;
     destination(path)?;
     let check = || crate::fill::check_cancel(Some(cancel));
     let rgba = doc.composite_bounds_checked([0, 0, doc.width, doc.height], transparent, check)?;
     crate::storage::atomic_stream(path, |file| {
         check()?;
-        image::codecs::png::PngEncoder::new(file)
-            .write_image(
-                &rgba,
-                doc.width as u32,
-                doc.height as u32,
-                image::ExtendedColorType::Rgba8,
-            )
-            .map_err(|e| e.to_string())?;
+        let mut encoder = png::Encoder::new(file, doc.width as u32, doc.height as u32);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let ppm = (doc.dpi / 0.0254).round() as u32;
+        encoder.set_pixel_dims(Some(png::PixelDimensions {
+            xppu: ppm,
+            yppu: ppm,
+            unit: png::Unit::Meter,
+        }));
+        let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+        writer.write_image_data(&rgba).map_err(|e| e.to_string())?;
+        writer.finish().map_err(|e| e.to_string())?;
         // PNG encoding itself is not interruptible; cancel before publication.
         before_publish();
         check()?;
@@ -234,6 +237,33 @@ impl Dudel {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn png_export_keeps_resolution_and_exact_pixels_on_reimport() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dpi.png");
+        let mut doc = crate::document::Document::new(3, 2);
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(0)
+            .copy_from_slice(&[23, 74, 156, 255]);
+        for dpi in [1.0, 72.0, 300.0, 600.5, 12000.0] {
+            doc.dpi = dpi;
+            super::write_png(
+                &doc,
+                &path,
+                true,
+                &std::sync::atomic::AtomicBool::new(false),
+            )
+            .unwrap();
+            let loaded = crate::storage::import_png(&path).unwrap();
+            assert!((loaded.dpi - dpi).abs() < 0.013, "{dpi}: {}", loaded.dpi);
+            assert_eq!(
+                loaded.layers[0].pixels.as_slice(),
+                doc.layers[0].pixels.as_slice()
+            );
+        }
+    }
     use super::*;
 
     fn queued_taper() -> (Dudel, Document) {
@@ -326,7 +356,7 @@ mod tests {
         assert!(!app.modified && !app.history.can_undo());
         assert_eq!(app.revision, before_revision);
         assert_eq!(app.path, before_path);
-        app.apply_action(crate::document_actions::Action::New(9, 3));
+        app.apply_action(crate::document_actions::Action::New(9, 3, 300.0));
         finish_export(&mut app);
         assert_eq!(image::open(path).unwrap().into_rgba8().dimensions(), (7, 5));
         assert_eq!((app.doc.width, app.doc.height), (9, 3));

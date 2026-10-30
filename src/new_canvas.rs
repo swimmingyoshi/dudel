@@ -8,6 +8,7 @@ pub(crate) fn opening_shortcut(event: &egui::Event) -> bool {
 pub(crate) struct Form {
     pub width: String,
     pub height: String,
+    pub dpi: String,
     pub feedback: Option<String>,
     focus_width: bool,
 }
@@ -17,12 +18,22 @@ impl Default for Form {
         Self {
             width: "2048".into(),
             height: "2048".into(),
+            dpi: "300".into(),
             feedback: None,
             focus_width: true,
         }
     }
 }
 impl Form {
+    pub(crate) fn resolution(&self) -> Result<f64, String> {
+        let dpi = self
+            .dpi
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| "Enter a resolution from 1 to 12,000 DPI".to_owned())?;
+        crate::document::validate_dpi(dpi)?;
+        Ok(dpi)
+    }
     pub(crate) fn dimensions(&self) -> Result<[usize; 2], &'static str> {
         let parse = |value: &str| {
             let value = value.trim();
@@ -77,7 +88,8 @@ impl Dudel {
                             ("A4 · 300 dpi", 2480, 3508),
                             ("4K", 3840, 2160),
                         ] {
-                            let selected = self.new_canvas_form.dimensions() == Ok([width, height]);
+                            let selected = self.new_canvas_form.dimensions() == Ok([width, height])
+                                && (!label.starts_with("A4") || self.new_canvas_form.resolution() == Ok(300.0));
                             if ui.selectable_label(selected, label)
                                 .on_hover_text(format!("{width} × {height} px"))
                                 .clicked()
@@ -85,6 +97,7 @@ impl Dudel {
                                 changed_option = true;
                                 self.new_canvas_form.width = width.to_string();
                                 self.new_canvas_form.height = height.to_string();
+                                if label.starts_with("A4") { self.new_canvas_form.dpi = "300".into(); }
                                 self.new_canvas_form.feedback = None;
                             }
                         }
@@ -120,7 +133,15 @@ impl Dudel {
                             }
                         });
                     }
+                    ui.horizontal(|ui| {
+                        ui.add_sized([88.0,32.0], egui::Label::new("DPI"));
+                        ui.add(egui::TextEdit::singleline(&mut self.new_canvas_form.dpi).char_limit(16).desired_width(120.0));
+                    });
+                    if let Err(error) = self.new_canvas_form.resolution() { ui.colored_label(ui.visuals().error_fg_color, error); }
                     if let Ok([width, height]) = self.new_canvas_form.dimensions() {
+                        if let Ok(dpi) = self.new_canvas_form.resolution() {
+                            ui.small(format!("Print size: {:.2} \u{00d7} {:.2} cm", width as f64 / dpi * 2.54, height as f64 / dpi * 2.54));
+                        }
                         let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 148.0), egui::Sense::hover());
                         let scale = ((area.width() - 84.0) / width as f32).min(106.0 / height as f32);
                         let canvas = egui::Rect::from_center_size(area.center() - egui::vec2(0.0, 8.0), egui::vec2(width as f32, height as f32) * scale);
@@ -151,7 +172,7 @@ impl Dudel {
             ui.horizontal(|ui| {
                 create = ui
                     .add_enabled(
-                        dimensions.is_ok() && !self.tab_open_pending(),
+                        dimensions.is_ok() && self.new_canvas_form.resolution().is_ok() && !self.tab_open_pending(),
                         egui::Button::new("Create canvas"),
                     )
                     .clicked();
@@ -167,6 +188,7 @@ impl Dudel {
         if (create || (enter && !changed_option))
             && !self.tab_open_pending()
             && let Ok([width, height]) = self.new_canvas_form.dimensions()
+            && let Ok(dpi) = self.new_canvas_form.resolution()
         {
             ctx.input_mut(|i| {
                 i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
@@ -175,7 +197,7 @@ impl Dudel {
             self.open_in_tab(move |app| {
                 app.new_canvas_form.focus_width = true;
                 app.new_canvas_form.feedback = None;
-                app.request_replace(Action::New(width, height));
+                app.request_replace(Action::New(width, height, dpi));
             });
         }
     }
@@ -184,6 +206,28 @@ impl Dudel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resolution_accepts_print_dpi_and_rejects_invalid_values() {
+        assert_eq!(Form::default().resolution(), Ok(300.0));
+        for value in ["0", "-1", "NaN", "inf", "12001", ""] {
+            assert!(
+                Form {
+                    dpi: value.into(),
+                    ..Default::default()
+                }
+                .resolution()
+                .is_err()
+            );
+        }
+        assert_eq!(
+            Form {
+                dpi: " 600.5 ".into(),
+                ..Default::default()
+            }
+            .resolution(),
+            Ok(600.5)
+        );
+    }
     #[test]
     fn dimensions_accept_supported_bounds_and_reject_invalid_input_without_overflow() {
         for (width, height) in [

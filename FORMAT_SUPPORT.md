@@ -6,7 +6,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | Format | Open/import | Save/export | What is retained |
 | --- | --- | --- | --- |
 | Dudel `.dudel` | Yes, including supported older native readers | Yes | Editable layers, folders, masks and document state supported by this build |
-| PNG | Image import | Flattened opaque or transparent export | Pixels; no editable layer hierarchy |
+| PNG | Image import | Flattened opaque or transparent export | Pixels and print resolution; no editable layer hierarchy |
 | Clip Studio Paint `.clip` | Editable raster subset; optional saved-preview fallback | No | Raster and Gray layers, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
@@ -23,6 +23,24 @@ are capped at 2 GiB, raster and layer masks combined; builds before 2026-10-29 a
 most 4096 x 4096 and 512 MiB in mask-aware projects. Builds before this change open at most 32 raster layers.
 These limits also apply to PNG, CSP and PSD document imports. Builds before
 2026-10-22 accept at most 4,194,304 pixels and cannot open larger native projects.
+
+## Print resolution
+
+Projects store a resolution from 1 to 12,000 DPI. New canvases default to 300 DPI;
+older native files without this metadata open at 72 DPI. Changing DPI in
+**Canvas > Canvas size** changes print size without resampling pixels and supports undo.
+Native saves, recovery, indexed saves and project package manifests preserve DPI.
+PNG exports write physical pixel density (rounded to whole pixels per metre),
+which PNG document import reads back. Dropping an image as a layer keeps the
+receiving project's DPI.
+
+Layered CSP imports retain CanvasResolution. Reduced saved-preview imports adjust
+DPI proportionally to preserve physical width where the source geometry is readable.
+Photoshop PSD/PSB imports read the [ResolutionInfo image resource](https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/),
+for both layered and flattened imports. Dudel uses one DPI value for both axes;
+Photoshop files with unequal horizontal/vertical values use the horizontal value
+and get an import note. PNG imports likewise use horizontal density. Missing or
+invalid image resolution metadata uses 72 DPI.
 
 ## Clip Studio Paint import
 

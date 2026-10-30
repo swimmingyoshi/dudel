@@ -153,6 +153,7 @@ pub(crate) fn assemble(
         version: 1,
         width,
         height,
+        dpi: crate::document::default_dpi(),
         layers,
         active: active_index.unwrap(),
         selection: None,

@@ -544,7 +544,7 @@ mod tests {
             revision: app.revision,
             cancel: cancel.clone(),
         });
-        app.pending_action = Some(crate::document_actions::Action::New(2, 2));
+        app.pending_action = Some(crate::document_actions::Action::New(2, 2, 300.0));
         let ctx = egui::Context::default();
         click_cancel_save(&mut app, &ctx);
         assert!(cancel.load(Ordering::Relaxed));
@@ -591,7 +591,7 @@ mod tests {
             revision: app.revision,
             cancel,
         });
-        app.pending_action = Some(crate::document_actions::Action::New(2, 2));
+        app.pending_action = Some(crate::document_actions::Action::New(2, 2, 300.0));
         observed
             .recv_timeout(std::time::Duration::from_secs(10))
             .unwrap();
@@ -710,7 +710,7 @@ mod tests {
             revision: app.revision,
             cancel: Arc::new(AtomicBool::new(false)),
         });
-        app.pending_action = Some(crate::document_actions::Action::New(2, 2));
+        app.pending_action = Some(crate::document_actions::Action::New(2, 2, 300.0));
         finish_background(&mut app);
         assert!(app.modified && recovery.exists());
         assert_eq!(app.path, Some(path));
@@ -839,7 +839,7 @@ mod tests {
             ..Default::default()
         };
         app.start_save_snapshot(indexed, app.doc.clone());
-        app.apply_action(crate::document_actions::Action::New(17, 19));
+        app.apply_action(crate::document_actions::Action::New(17, 19, 300.0));
         app.modified = true;
         finish_background(&mut app);
         assert!(app.path.is_none() && app.modified && app.indexed_session.is_none());
@@ -1074,7 +1074,7 @@ mod tests {
             ..Default::default()
         };
         let revision = app.revision;
-        app.pending_action = Some(crate::document_actions::Action::New(16, 16));
+        app.pending_action = Some(crate::document_actions::Action::New(16, 16, 300.0));
         assert!(app.begin_canvas_stroke(crate::stroke_buffer::Settings {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
@@ -1202,7 +1202,7 @@ mod tests {
         assert!(!app.close_ready);
         assert!(app.modified);
         assert!(app.pending_action.is_none());
-        app.pending_action = Some(Action::New(3, 2));
+        app.pending_action = Some(Action::New(3, 2, 300.0));
         app.commit_save("saved.dudel".into(), app.revision, Ok(()));
         assert_eq!((app.doc.width, app.doc.height), (3, 2));
         assert!(!app.modified);

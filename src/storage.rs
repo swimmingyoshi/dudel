@@ -245,6 +245,26 @@ pub fn import_png(path: &Path) -> Result<Document, String> {
         .map_err(|e| e.to_string())?
         .into_rgba8();
     let mut doc = Document::new(width as usize, height as usize);
+    doc.dpi = crate::document::default_dpi();
+    // Read pHYs through the bounded PNG header decoder, without a second
+    // pixel decode. Unitless aspect ratios do not specify a print resolution.
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let metadata = png::Decoder::new_with_limits(
+        std::io::BufReader::new(file),
+        png::Limits { bytes: 1 << 20 },
+    );
+    if let Ok(reader) = metadata.read_info()
+        && let Some(dims) = reader.info().pixel_dims
+        && dims.unit == png::Unit::Meter
+    {
+        let dpi = f64::from(dims.xppu) * 0.0254;
+        // pHYs stores whole pixels/metre; allow its half-unit rounding at
+        // the supported endpoints (1 DPI encodes as 39 pixels/metre).
+        if (1.0 - 0.0127..=12000.0 + 0.0127).contains(&dpi) {
+            doc.dpi = dpi.clamp(1.0, 12000.0);
+        }
+    }
+
     doc.layers[0].pixels = crate::pixels::Pixels::read_rgba(
         &mut std::io::Cursor::new(image.into_raw()),
         doc.width,

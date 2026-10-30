@@ -327,7 +327,7 @@ mod tests {
         app.start_adjustment(Kind::BrightnessContrast);
         app.adjustment.as_mut().unwrap().settings = bright(80.0);
         wait(&mut app);
-        app.request_replace(crate::document_actions::Action::New(4, 4));
+        app.request_replace(crate::document_actions::Action::New(4, 4, 300.0));
         assert!(app.adjustment.is_none());
         assert!(crate::document::same_snapshot(&app.doc, &original));
         assert!(app.unsaved_action.is_some());

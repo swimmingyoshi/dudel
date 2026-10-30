@@ -65,6 +65,7 @@ pub(crate) fn verify(
     #[derive(serde::Serialize)]
     struct Report {
         canvas: [usize; 2],
+        dpi: f64,
         layers: usize,
         folders: usize,
         masks: usize,
@@ -135,6 +136,7 @@ pub(crate) fn verify(
     };
     let report = Report {
         canvas: [doc.width, doc.height],
+        dpi: doc.dpi,
         layers: doc.layers.len(),
         folders: doc.layers.iter().filter(|l| l.folder).count(),
         masks: doc.layers.iter().filter(|l| l.mask.is_some()).count(),

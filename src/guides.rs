@@ -893,7 +893,7 @@ mod tests {
         assert!(app.modified && !app.history.can_undo());
         let mut fresh = crate::Dudel::default();
         fresh.grid.visible = true;
-        assert!(!fresh.request_replace(crate::document_actions::Action::New(17, 19)));
+        assert!(!fresh.request_replace(crate::document_actions::Action::New(17, 19, 300.0)));
         assert!(
             fresh.unsaved_action.is_some(),
             "guide-only edits prompt before a canvas replacement even without a frame update"

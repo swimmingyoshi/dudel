@@ -51,6 +51,7 @@ fn all_canvas_anchors_map_every_mask_including_disabled_unlinked_and_folder_entr
         for ay in 0..3 {
             for ax in 0..3 {
                 let settings = crate::canvas_size::Settings {
+                    dpi: None,
                     width: w,
                     height: h,
                     anchor: [ax, ay],
@@ -109,6 +110,7 @@ fn quarter_turns_preserve_mask_flags_and_exact_coverage_and_cancel_atomically() 
         crate::canvas_size::resize(
             &doc,
             crate::canvas_size::Settings {
+                dpi: None,
                 width: 70,
                 height: 71,
                 anchor: [1, 1]
@@ -373,6 +375,7 @@ fn queued_canvas_geometry_moves_save_export_and_undo_keep_mask_state() {
     };
     let edits = [
         Edit::CanvasSize(crate::canvas_size::Settings {
+            dpi: None,
             width: 13,
             height: 11,
             anchor: [1, 1],

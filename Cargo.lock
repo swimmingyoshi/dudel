@@ -890,6 +890,7 @@ dependencies = [
  "gif",
  "image",
  "moxcms",
+ "png",
  "raw-window-handle",
  "rfd",
  "rhai",

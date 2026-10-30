@@ -1863,10 +1863,10 @@ mod tests {
             doc,
             ..Default::default()
         };
-        app.apply_action(crate::document_actions::Action::New(5, 3));
+        app.apply_action(crate::document_actions::Action::New(5, 3, 300.0));
         assert_eq!(app.fill_source, Source::Active);
         app.fill_source = Source::Visible;
-        app.apply_action(crate::document_actions::Action::New(5, 3));
+        app.apply_action(crate::document_actions::Action::New(5, 3, 300.0));
         assert_eq!(app.fill_source, Source::Visible);
     }
 

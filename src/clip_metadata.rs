@@ -1807,6 +1807,31 @@ pub(crate) fn import_preview(
         return Err("Import canceled".into());
     }
     let mut document = crate::document::Document::new(width as usize, height as usize);
+    document.dpi = crate::document::default_dpi();
+    // Preserve physical size when a preview is smaller than the canvas.
+    // This fallback must still open files whose layer graph is unsupported.
+    let geometry = db.query_row(
+        "SELECT CanvasWidth,CanvasResolution,CanvasUnit FROM Canvas LIMIT 1",
+        [],
+        |r| {
+            Ok((
+                r.get::<_, f64>(0)?,
+                r.get::<_, f64>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        },
+    );
+    if let Ok((source_width, resolution, unit)) = geometry {
+        let pixels = match unit {
+            0 => source_width,
+            3 => source_width * resolution,
+            _ => f64::NAN,
+        };
+        let dpi = resolution * f64::from(width) / pixels;
+        if pixels.is_finite() && pixels > 0.0 && crate::document::validate_dpi(dpi).is_ok() {
+            document.dpi = dpi;
+        }
+    }
     document.layers[0].name = "CSP saved preview (flattened)".into();
     document.layers[0].pixels = pixels.into_raw().into();
     document.validate()?;
@@ -2247,6 +2272,8 @@ fn prepare_document_mode(
                 cancelled,
             )
         })?;
+    doc.dpi = report.canvas.resolution;
+    crate::document::validate_dpi(doc.dpi)?;
     // Assembly stores children before their folder; map source identities using
     // the same postorder rather than names (which need not be unique).
     let mut order = Vec::new();
@@ -2651,6 +2678,48 @@ pub(crate) fn verify_document(input: &Path, output: Option<&Path>) -> Result<(),
 pub(crate) mod tests {
     use super::*;
     const ID: &str = "extrnlid0123456789ABCDEF0123456789ABCDEF";
+    #[test]
+    fn reduced_preview_dpi_preserves_physical_size() {
+        use image::ImageEncoder;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("preview.clip");
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[255; 16 * 24 * 4], 16, 24, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        let hex: String = png.iter().map(|b| format!("{b:02x}")).collect();
+        for (geometry, dpi) in [
+            ("CanvasWidth=32,CanvasHeight=48,CanvasResolution=600", 300.0),
+            (
+                "CanvasWidth=0.32,CanvasHeight=0.48,CanvasUnit=3,CanvasResolution=100",
+                50.0,
+            ),
+            ("CanvasWidth=32,CanvasHeight=48,CanvasResolution=0", 72.0),
+        ] {
+            let sql = format!(
+                "UPDATE Canvas SET {geometry}; CREATE TABLE CanvasPreview (ImageType INTEGER, ImageWidth INTEGER,ImageHeight INTEGER,ImageData BLOB); INSERT INTO CanvasPreview VALUES (1,16,24,x'{hex}');"
+            );
+            std::fs::write(&path, worker_fixture_with_sql(&sql)).unwrap();
+            let doc = import_preview(&path, &|| false).unwrap().document;
+            assert_eq!(doc.dpi, dpi);
+            assert_eq!([doc.width, doc.height], [16, 24]);
+        }
+    }
+    #[test]
+    fn imported_dpi_comes_from_canvas_without_resizing_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dpi.clip");
+        for dpi in [72.0, 300.0, 600.5, 1200.0] {
+            std::fs::write(
+                &path,
+                worker_fixture_with_sql(&format!("UPDATE Canvas SET CanvasResolution={dpi}")),
+            )
+            .unwrap();
+            let doc = import_document(&path, &|| false).unwrap().document;
+            assert_eq!(doc.dpi, dpi);
+            assert_eq!([doc.width, doc.height], [32, 48]);
+        }
+    }
     pub(crate) fn worker_fixture() -> Vec<u8> {
         worker_fixture_with_sql("")
     }

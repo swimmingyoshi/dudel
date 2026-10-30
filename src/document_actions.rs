@@ -6,7 +6,7 @@ use crate::{
 use std::path::PathBuf;
 
 pub enum Action {
-    New(usize, usize),
+    New(usize, usize, f64),
     Replace {
         document: Box<Document>,
         path: Option<PathBuf>,
@@ -137,8 +137,12 @@ impl Dudel {
         }
         let fresh_canvas = matches!(action, Action::New(..));
         let (document, path, modified, status) = match action {
-            Action::New(width, height) => (
-                Document::new(width, height),
+            Action::New(width, height, dpi) => (
+                {
+                    let mut doc = Document::new(width, height);
+                    doc.dpi = dpi;
+                    doc
+                },
                 None,
                 false,
                 "New canvas created",
@@ -217,18 +221,32 @@ impl Dudel {
 mod tests {
     use super::*;
     #[test]
+    fn deferred_new_canvas_keeps_its_submitted_dpi() {
+        let mut app = Dudel {
+            modified: true,
+            ..Default::default()
+        };
+        assert!(!app.request_replace(Action::New(12, 14, 600.5)));
+        app.new_canvas_form.dpi = "72".into();
+        app.answer_unsaved(UnsavedChoice::Discard);
+        assert_eq!(
+            (app.doc.width, app.doc.height, app.doc.dpi),
+            (12, 14, 600.5)
+        );
+    }
+    #[test]
     fn replacement_prompts_for_committed_name_drafts_and_settled_taper() {
         let mut app = Dudel {
             renaming: Some(0),
             rename_draft: "Unsaved name".into(),
             ..Default::default()
         };
-        assert!(!app.request_replace(Action::New(10, 10)));
+        assert!(!app.request_replace(Action::New(10, 10, 300.0)));
         assert!(app.unsaved_action.is_some());
         assert_eq!(app.doc.layers[0].name, "Unsaved name");
         let (mut stroke, expected) = crate::edit_order_tests::pending_taper();
         assert!(!stroke.modified);
-        assert!(!stroke.request_replace(Action::New(10, 10)));
+        assert!(!stroke.request_replace(Action::New(10, 10, 300.0)));
         assert!(stroke.unsaved_action.is_some());
         assert_eq!(stroke.doc.layers[0].pixels, expected.layers[0].pixels);
         assert!(!stroke.stroking);
@@ -236,7 +254,7 @@ mod tests {
     #[test]
     fn replaced_document_compacts_heap_once_after_thumbnail_settles() {
         let mut app = Dudel::default();
-        app.apply_action(Action::New(10, 10));
+        app.apply_action(Action::New(10, 10, 300.0));
         assert!(app.heap_compact_pending);
         app.thumbnail_revision = None;
         app.compact_heap_when_settled();

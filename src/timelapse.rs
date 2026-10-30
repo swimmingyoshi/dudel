@@ -1394,7 +1394,7 @@ mod tests {
         let _library = library(&mut app);
         app.timelapse.prefs.record_new = true;
         let ctx = egui::Context::default();
-        app.apply_action(crate::document_actions::Action::New(6, 5));
+        app.apply_action(crate::document_actions::Action::New(6, 5, 300.0));
         assert!(app.recording.recording());
         app.poll_timelapse(&ctx);
         assert!(
@@ -1415,7 +1415,7 @@ mod tests {
             Some(project.clone())
         );
         // Opening another canvas leaves it active; reopening the project continues it.
-        app.apply_action(crate::document_actions::Action::New(6, 5));
+        app.apply_action(crate::document_actions::Action::New(6, 5, 300.0));
         assert_ne!(app.recording.root.as_ref(), Some(&root));
         let document = app.doc.clone();
         app.apply_action(crate::document_actions::Action::Replace {

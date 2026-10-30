@@ -494,11 +494,25 @@ fn dissolve(index: usize, a: f32) -> f32 {
     if a > threshold { 1.0 } else { a * 0.0 }
 }
 
+pub(crate) fn default_dpi() -> f64 {
+    72.0
+}
+pub(crate) fn validate_dpi(dpi: f64) -> Result<(), String> {
+    if dpi.is_finite() && (1.0..=12000.0).contains(&dpi) {
+        Ok(())
+    } else {
+        Err("Resolution must be between 1 and 12,000 DPI".into())
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Document {
     pub version: u32,
     pub width: usize,
     pub height: usize,
+    /// Pixels per inch; changing this does not resample artwork.
+    #[serde(default = "default_dpi")]
+    pub dpi: f64,
     #[serde(skip, default = "crate::canvas_size::Frame::identity")]
     pub(crate) canvas_frame: std::sync::Arc<crate::canvas_size::Frame>,
     pub layers: Vec<Layer>,
@@ -550,6 +564,7 @@ impl Document {
             version: 1,
             width,
             height,
+            dpi: 300.0,
             canvas_frame: crate::canvas_size::Frame::identity(),
             layers: vec![Layer::raster("Layer 1".into(), width, height)],
             active: 0,
@@ -623,6 +638,7 @@ impl Document {
         self.layers.iter().any(Layer::has_effects)
     }
     pub fn validate_metadata(&self) -> Result<(), String> {
+        validate_dpi(self.dpi)?;
         if self.layers.iter().any(|l| l.display_reference.is_some()) {
             return Err("Reference display snapshots cannot be saved as artwork".into());
         }
@@ -1929,6 +1945,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
     if before.version != after.version
         || before.width != after.width
         || before.height != after.height
+        || before.dpi != after.dpi
         || before.canvas_frame != after.canvas_frame
         || before.layers.len() != after.layers.len()
     {

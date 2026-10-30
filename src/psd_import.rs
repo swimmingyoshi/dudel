@@ -1482,6 +1482,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     reader.section()?;
     let mut resources = reader.section()?;
     let mut has_composite = true;
+    let mut resolution = None;
     let mut profile: Option<&[u8]> = None;
     // Photoshop's default light angle, for files without one.
     let mut global_angle = 120.0;
@@ -1499,7 +1500,13 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         if data.0.len() % 2 != 0 {
             resources.take(1)?;
         }
-        if id == 1057 {
+        if id == 1005 && data.0.len() == 16 {
+            // Adobe ResolutionInfo: unsigned 16.16 pixels/inch; unit words
+            // select UI display units and do not change these values.
+            let x = u32::from_be_bytes(data.0[0..4].try_into().unwrap()) as f64 / 65536.0;
+            let y = u32::from_be_bytes(data.0[8..12].try_into().unwrap()) as f64 / 65536.0;
+            resolution = Some((x, y));
+        } else if id == 1057 {
             let mut version = data;
             version.u32()?;
             has_composite = version.u8()? != 0;
@@ -1516,6 +1523,24 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let count = layer_count(layer_data.0, depth, big)?;
     let has_alpha = count < 0;
     let (mut notes, mut details) = (Vec::new(), Vec::new());
+    let dpi = match resolution {
+        Some((x, y))
+            if crate::document::validate_dpi(x).is_ok()
+                && crate::document::validate_dpi(y).is_ok() =>
+        {
+            if (x - y).abs() > 0.001 {
+                notes.push(format!(
+                    "Source resolution is {x} \u{00d7} {y} DPI. Dudel uses {x} DPI for both axes."
+                ));
+            }
+            x
+        }
+        Some(_) => {
+            notes.push("Invalid source resolution; using 72 DPI.".into());
+            crate::document::default_dpi()
+        }
+        None => crate::document::default_dpi(),
+    };
     if matches!(mode, ColorMode::Gray) {
         details
             .push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
@@ -1556,6 +1581,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             cancel,
         ) {
             Ok((mut document, order, (layer_notes, layer_details))) => {
+                document.dpi = dpi;
                 details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
                 details.extend(layer_details);
@@ -1615,6 +1641,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
     }
     let mut document = Document::new(width, height);
+    document.dpi = dpi;
     document.layers[0].name = "PSD composite (flattened)".into();
     document.layers[0].pixels = pixels.into();
     document.validate()?;
@@ -1778,6 +1805,48 @@ mod tests {
             flags: 0,
             clipping: 0,
             keys: &[],
+        }
+    }
+    #[test]
+    fn dpi_resources_survive_layered_and_flattened_psd_and_psb_import() {
+        let layered = layer_file(&[raster("Ink", 0, [10, 20, 30, 255], false)]);
+        let flat = fixture(&[0, 0, 10, 20, 30, 40, 50, 60]);
+        let mut big = flat[..34].to_vec();
+        big[4..6].copy_from_slice(&2u16.to_be_bytes());
+        big.extend(0u64.to_be_bytes());
+        big.extend_from_slice(&flat[38..]);
+        for base in [layered, flat, big] {
+            assert_eq!(parse(&base, &|| false).unwrap().document.dpi, 72.0);
+            for (x, y, expected) in [
+                (600.5, 600.5, 600.5),
+                (300.0, 600.0, 300.0),
+                (0.0, 0.0, 72.0),
+            ] {
+                let mut info = Vec::new();
+                info.extend(((x * 65536.0) as u32).to_be_bytes());
+                info.extend([0, 2, 0, 2]); // display in pixels/cm; values remain pixels/inch
+                info.extend(((y * 65536.0) as u32).to_be_bytes());
+                info.extend([0, 2, 0, 2]);
+                let mut resource = b"8BIM".to_vec();
+                resource.extend(1005u16.to_be_bytes());
+                resource.extend([0, 0]);
+                resource.extend(section(&info));
+                let mut file = base.clone();
+                file.splice(30..34, section(&resource));
+                let imported = parse(&file, &|| false).unwrap();
+                assert_eq!(imported.document.dpi, expected);
+                if x != y {
+                    assert!(imported.notes.iter().any(|n| n.contains("both axes")));
+                }
+                if x == 0.0 {
+                    assert!(
+                        imported
+                            .notes
+                            .iter()
+                            .any(|n| n.contains("Invalid source resolution"))
+                    );
+                }
+            }
         }
     }
     #[test]

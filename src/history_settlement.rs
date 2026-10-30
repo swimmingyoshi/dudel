@@ -32,6 +32,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
     a.version == b.version
         && a.width == b.width
         && a.height == b.height
+        && a.dpi == b.dpi
         && a.canvas_frame == b.canvas_frame
         && a.active == b.active
         && a.selection == b.selection

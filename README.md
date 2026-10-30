@@ -86,7 +86,13 @@ established yet; see [tested systems](RELEASE_NOTES.md#tested-systems-and-prereq
 
 ## First steps
 
-**File > New canvas** opens presets (Sketch, Square, 4K and more). Then:
+**File > New canvas** opens presets (Sketch, Square, 4K and more), pixel dimensions
+and DPI (300 by default). **Canvas > Canvas size** changes DPI on an existing
+project and shows its print size. Changing DPI leaves pixel dimensions and artwork
+unchanged. Resolution is saved in projects and PNG exports; older projects without
+resolution metadata use 72 DPI.
+
+Then:
 
 | Action | Shortcut |
 |---|---|

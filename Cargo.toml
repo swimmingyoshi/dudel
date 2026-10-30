@@ -21,6 +21,7 @@ image = { version = "0.25", default-features = false, features = ["png", "gif", 
 # Timelapse GIFs encode only the pixels that changed between frames.
 gif = "0.14"
 color_quant = "1"
+png = "=0.18.1"
 rfd = "0.15"
 rhai = "1"
 tempfile = "3"

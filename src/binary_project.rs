@@ -11,6 +11,7 @@ struct Metadata<'a> {
     version: u32,
     width: usize,
     height: usize,
+    dpi: f64,
     active: usize,
     selection: Option<Selection>,
     layers: Vec<LayerMetadata<'a>>,
@@ -61,6 +62,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
         version: doc.version,
         width: doc.width,
         height: doc.height,
+        dpi: doc.dpi,
         active: doc.active,
         selection: doc.selection,
         layers: doc

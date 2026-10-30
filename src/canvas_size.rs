@@ -84,6 +84,9 @@ pub struct Settings {
     pub height: usize,
     /// 0 = left/top, 1 = center, 2 = right/bottom.
     pub anchor: [u8; 2],
+    /// None preserves the current resolution for existing scripted edits.
+    #[serde(default)]
+    pub dpi: Option<f64>,
 }
 
 impl crate::Dudel {
@@ -99,6 +102,7 @@ impl crate::Dudel {
         self.canvas_resize = Some(Settings {
             width: self.doc.width,
             height: self.doc.height,
+            dpi: Some(self.doc.dpi),
             anchor: [1, 1],
         });
     }
@@ -173,6 +177,13 @@ impl crate::Dudel {
                 ui.label("Height");
                 ui.add(egui::DragValue::new(&mut settings.height).range(1..=crate::document::MAX_SIDE).suffix(" px"));
             });
+            let dpi = settings.dpi.get_or_insert(self.doc.dpi);
+            ui.horizontal(|ui| {
+                ui.label("Resolution");
+                ui.add(egui::DragValue::new(dpi).range(1.0..=12000.0).speed(1.0).suffix(" DPI"));
+            });
+            ui.small(format!("Print size: {:.2} \u{00d7} {:.2} cm", settings.width as f64 / *dpi * 2.54, settings.height as f64 / *dpi * 2.54));
+            ui.small("Changing DPI changes print size; pixels stay the same.");
             ui.label("Anchor existing artwork");
             ui.horizontal(|ui| {
                 egui::Grid::new("canvas anchor").spacing(egui::vec2(4.0,4.0)).show(ui, |ui| {
@@ -200,7 +211,7 @@ impl crate::Dudel {
             let valid = settings.validate();
             if let Err(error) = &valid { ui.colored_label(ui.visuals().error_fg_color, error); }
             ui.horizontal(|ui| {
-                apply = ui.add_enabled(valid.is_ok() && [settings.width,settings.height] != [self.doc.width,self.doc.height], egui::Button::new("Apply")).clicked();
+                apply = ui.add_enabled(valid.is_ok() && ([settings.width,settings.height] != [self.doc.width,self.doc.height] || settings.dpi.is_some_and(|dpi| dpi != self.doc.dpi)), egui::Button::new("Apply")).clicked();
                 cancel = ui.button("Cancel").clicked();
             });
         });
@@ -270,6 +281,9 @@ pub(crate) fn validate_size(width: usize, height: usize) -> Result<(), String> {
 impl Settings {
     pub(crate) fn validate(&self) -> Result<(), String> {
         validate_size(self.width, self.height)?;
+        if let Some(dpi) = self.dpi {
+            crate::document::validate_dpi(dpi)?;
+        }
         if self.anchor.iter().any(|v| *v > 2) {
             return Err("Invalid canvas anchor".into());
         }
@@ -290,12 +304,17 @@ pub(crate) fn resize(
 ) -> Result<(Document, bool), String> {
     settings.validate()?;
     source.validate()?;
-    reframe(
+    let (mut doc, mut changed) = reframe(
         source,
         [settings.width, settings.height],
         settings.offset(source.width, source.height),
         cancel,
-    )
+    )?;
+    if let Some(dpi) = settings.dpi {
+        changed |= doc.dpi != dpi;
+        doc.dpi = dpi;
+    }
+    Ok((doc, changed))
 }
 pub(crate) fn crop(
     source: &Document,
@@ -416,6 +435,54 @@ mod tests {
     use super::*;
     use crate::{Dudel, document_edits::Edit, selection_mask::Mask};
 
+    #[test]
+    fn dpi_edit_preserves_pixels_and_survives_history_and_save() {
+        let mut app = crate::Dudel {
+            doc: source(7, 9),
+            ..Default::default()
+        };
+        let original = serde_json::to_value(&app.doc).unwrap();
+        app.dispatch_canvas_size(crate::document_edits::Edit::CanvasSize(Settings {
+            width: 7,
+            height: 9,
+            anchor: [1, 1],
+            dpi: Some(600.5),
+        }));
+        crate::workflow_tests::finish_jobs(&mut app);
+        assert_eq!(app.doc.dpi, 600.5);
+        assert!(app.modified);
+        let mut expected = original.clone();
+        expected["dpi"] = serde_json::json!(600.5);
+        assert_eq!(serde_json::to_value(&app.doc).unwrap(), expected);
+        app.undo();
+        assert_eq!(serde_json::to_value(&app.doc).unwrap(), original);
+        app.redo();
+        assert_eq!(serde_json::to_value(&app.doc).unwrap(), expected);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dpi.dudel");
+        crate::storage::save_project(&path, &app.doc).unwrap();
+        let loaded = crate::storage::load_project(&path).unwrap();
+        assert_eq!(serde_json::to_value(&loaded).unwrap(), expected);
+        let mut legacy = expected.clone();
+        legacy.as_object_mut().unwrap().remove("dpi");
+        let legacy: Document = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.dpi, 72.0);
+        for dpi in [0.0, -1.0, f64::NAN, f64::INFINITY, 12001.0] {
+            assert!(
+                resize(
+                    &app.doc,
+                    Settings {
+                        width: 7,
+                        height: 9,
+                        anchor: [1, 1],
+                        dpi: Some(dpi)
+                    },
+                    None
+                )
+                .is_err()
+            );
+        }
+    }
     fn source(width: usize, height: usize) -> Document {
         let mut doc = Document::new(width, height);
         doc.add_layer();
@@ -537,6 +604,7 @@ mod tests {
                             width,
                             height,
                             anchor: [anchor_x, anchor_y],
+                            dpi: None,
                         };
                         let (result, changed) = resize(&doc, settings, None).unwrap();
                         assert!(changed);
@@ -571,6 +639,7 @@ mod tests {
                 width: 1,
                 height: 1,
                 anchor: [0, 0],
+                dpi: None,
             },
             None,
         )
@@ -585,6 +654,7 @@ mod tests {
             width: 2048,
             height: 2048,
             anchor: [1, 1],
+            dpi: None,
         };
         let (unchanged, changed) = resize(&doc, same, None).unwrap();
         assert!(!changed && crate::document::same_snapshot(&doc, &unchanged));
@@ -594,6 +664,7 @@ mod tests {
                 width: 257,
                 height: 259,
                 anchor: [2, 2],
+                dpi: None,
             },
             None,
         )
@@ -606,7 +677,8 @@ mod tests {
                     Settings {
                         width,
                         height,
-                        anchor: [1, 1]
+                        anchor: [1, 1],
+                        dpi: None,
                     },
                     None
                 )
@@ -618,6 +690,7 @@ mod tests {
                 &doc,
                 Settings {
                     anchor: [3, 0],
+                    dpi: None,
                     ..same
                 },
                 None
@@ -652,7 +725,8 @@ mod tests {
                 Settings {
                     width: 3,
                     height: 3,
-                    anchor: [1, 1]
+                    anchor: [1, 1],
+                    dpi: None,
                 },
                 None
             )
@@ -684,6 +758,7 @@ mod tests {
             width: 11,
             height: 9,
             anchor: [1, 1],
+            dpi: None,
         }));
         crate::workflow_tests::finish_jobs(&mut app);
         assert_eq!(app.symmetry.center, Some([4.0, 4.0]));
@@ -736,6 +811,7 @@ mod tests {
             width: 9,
             height: 9,
             anchor: [2, 2],
+            dpi: None,
         }));
         let ticket = app.canvas_edit_ticket.unwrap();
         assert!(app.render_queue.cancel_edit(ticket));
@@ -781,6 +857,7 @@ mod tests {
             width: 41,
             height: 39,
             anchor: [1, 1],
+            dpi: None,
         };
         app.dispatch_canvas_size(Edit::CanvasSize(bounds));
         assert!(app.canvas_edit_ticket.is_some() && !app.stroking);
@@ -816,6 +893,7 @@ mod tests {
                 width: 12,
                 height: 12,
                 anchor: [0, 0],
+                dpi: None,
             },
             None,
         )

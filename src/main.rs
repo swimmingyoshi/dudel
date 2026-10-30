@@ -2062,7 +2062,7 @@ fn main() -> eframe::Result {
                     app.modified = false;
                     for (name, modified) in [("Background study", true), ("", false)] {
                         app.prepare_tab_for_open();
-                        app.apply_action(document_actions::Action::New(800, 600));
+                        app.apply_action(document_actions::Action::New(800, 600, 300.0));
                         if !name.is_empty() {
                             app.path = Some(PathBuf::from(format!("{name}.dudel")));
                             let w = app.doc.width;
@@ -2232,6 +2232,7 @@ fn main() -> eframe::Result {
                 if capture_canvas_size {
                     app.open_canvas_size();
                     app.canvas_resize = Some(canvas_size::Settings {
+                        dpi: None,
                         width: 1280,
                         height: 960,
                         anchor: [1, 1],

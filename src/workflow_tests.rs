@@ -2091,18 +2091,22 @@ fn new_canvas_keyboard_submission_uses_current_field_text_and_blocks_artwork_sho
     w.key(egui::Key::Tab, Default::default());
     w.key(egui::Key::A, egui::Modifiers::CTRL);
     w.frame(vec![egui::Event::Text("16".into())]);
+    w.key(egui::Key::Tab, Default::default());
+    w.key(egui::Key::A, egui::Modifiers::CTRL);
+    w.frame(vec![egui::Event::Text("600".into())]);
     assert_eq!(w.app.new_canvas_form.dimensions().unwrap(), [32, 16]);
     assert!(crate::document::same_snapshot(&w.app.doc, &old));
     assert!(w.app.tool == tool);
     w.key(egui::Key::Enter, Default::default());
     assert!(!w.app.new_canvas);
     assert_eq!([w.app.doc.width, w.app.doc.height], [32, 16]);
+    assert_eq!(w.app.doc.dpi, 600.0);
     assert!(w.app.path.is_none() && !w.app.modified && !w.app.history.can_undo());
     let created = w.app.doc.clone();
     w.app.open_new_canvas();
     w.settle();
-    // Width, height, the timelapse option and Create come before Cancel.
-    for _ in 0..4 {
+    // Width, height, DPI, the timelapse option and Create come before Cancel.
+    for _ in 0..5 {
         w.key(egui::Key::Tab, Default::default());
     }
     w.key(egui::Key::Enter, Default::default());
@@ -2275,7 +2279,7 @@ fn new_canvas_waits_for_an_existing_save_and_recovers_the_form_if_it_fails() {
         w.app.new_canvas
             && matches!(
                 w.app.pending_action,
-                Some(crate::document_actions::Action::New(12, 7))
+                Some(crate::document_actions::Action::New(12, 7, 300.0))
             )
     );
     finish_jobs(&mut w.app);
@@ -2629,7 +2633,7 @@ fn normal_mask_workflow_creates_paints_selects_duplicates_transforms_saves_reope
     .unwrap();
     assert!(
         ui.app
-            .request_replace(crate::document_actions::Action::New(3, 2))
+            .request_replace(crate::document_actions::Action::New(3, 2, 300.0))
     );
     ui.app.load_document(project.clone(), false);
     finish_jobs(&mut ui.app);
@@ -2639,7 +2643,7 @@ fn normal_mask_workflow_creates_paints_selects_duplicates_transforms_saves_reope
     assert!(ui.app.input_stroke_target().is_raster());
     assert!(
         ui.app
-            .request_replace(crate::document_actions::Action::New(3, 2))
+            .request_replace(crate::document_actions::Action::New(3, 2, 300.0))
     );
     ui.app.load_recovery(recovery);
     finish_jobs(&mut ui.app);
@@ -2749,7 +2753,7 @@ fn canvas_size_dialog_supports_cancel_and_applies_dimensions_from_keyboard() {
 fn selection_cropped_out_by_resize_can_be_deselected_from_the_menu() {
     let mut ui = Workspace::new();
     ui.app
-        .request_replace(crate::document_actions::Action::New(5, 5));
+        .request_replace(crate::document_actions::Action::New(5, 5, 300.0));
     ui.app.set_selection(Some(crate::selection::Selection {
         left: 3,
         top: 3,
@@ -2759,6 +2763,7 @@ fn selection_cropped_out_by_resize_can_be_deselected_from_the_menu() {
     ui.app
         .dispatch_canvas_size(crate::document_edits::Edit::CanvasSize(
             crate::canvas_size::Settings {
+                dpi: None,
                 width: 1,
                 height: 1,
                 anchor: [0, 0],
@@ -2889,7 +2894,7 @@ fn layered_illustration_selection_move_undo_save_reopen_and_export_preserve_artw
     let project = directory.path().join("Illustration.dudel");
     let png = directory.path().join("Illustration.png");
     let mut app = Dudel::default();
-    assert!(app.request_replace(crate::document_actions::Action::New(96, 80)));
+    assert!(app.request_replace(crate::document_actions::Action::New(96, 80, 300.0)));
     app.choose_brush(2);
     app.brush.size = 6.0;
     app.color = [75, 80, 110];
@@ -2986,7 +2991,7 @@ fn layered_illustration_selection_move_undo_save_reopen_and_export_preserve_artw
         &expected_png
     );
 
-    assert!(app.request_replace(crate::document_actions::Action::New(3, 2)));
+    assert!(app.request_replace(crate::document_actions::Action::New(3, 2, 300.0)));
     app.load_document(project.clone(), false);
     finish_jobs(&mut app);
     assert!(app.unsaved_action.is_none());

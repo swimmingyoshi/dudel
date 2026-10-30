@@ -104,6 +104,7 @@ pub struct Recorder {
 fn active_layer(doc: &Document) -> Document {
     let source = &doc.layers[doc.active];
     let mut copy = Document::new(doc.width, doc.height);
+    copy.dpi = doc.dpi;
     copy.layers[0].pixels = source.pixels.clone();
     copy.layers[0].name = source.name.clone();
     copy.layers[0].alpha_locked = source.alpha_locked;

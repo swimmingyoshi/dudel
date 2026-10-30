@@ -31,6 +31,8 @@ pub struct Manifest {
     pub name: String,
     pub width: usize,
     pub height: usize,
+    #[serde(default = "crate::document::default_dpi")]
+    pub dpi: f64,
     /// Stack order, bottom layer first; folders precede nothing and contain
     /// the deeper entries directly below them.
     pub layers: Vec<LayerEntry>,
@@ -300,6 +302,7 @@ pub(crate) fn write(
             name: name.into(),
             width: doc.width,
             height: doc.height,
+            dpi: doc.dpi,
             layers,
             references,
             reference_boards: doc.references.clone(),
@@ -460,7 +463,9 @@ fn rebuild<R: Read + Seek>(
         return Err("Unsupported layer count in package".into());
     }
     crate::reference_layers::validate(&manifest.reference_boards, false)?;
+    crate::document::validate_dpi(manifest.dpi)?;
     let mut doc = Document::new(width, height);
+    doc.dpi = manifest.dpi;
     let mut layers = Vec::new();
     for entry in &manifest.layers {
         check()?;
@@ -657,6 +662,7 @@ mod tests {
     use super::*;
     fn painted() -> Document {
         let mut doc = Document::new(40, 24);
+        doc.dpi = 600.0;
         doc.layers[0].name = "Paper: base".into();
         doc.layers[0]
             .pixels
@@ -705,6 +711,7 @@ mod tests {
         let opened = import(&package, &projects, &AtomicBool::new(false)).unwrap();
         assert_eq!(opened, projects.join("Study.dudel"));
         let restored = crate::storage::load_project(&opened).unwrap();
+        assert_eq!(restored.dpi, 600.0);
         assert_eq!(restored.layers.len(), 3);
         assert_eq!(restored.layers[1].opacity, 0.5);
         assert_eq!(
@@ -775,6 +782,7 @@ mod tests {
         out.finish().unwrap();
         let opened = import(&partial, dir.path(), &AtomicBool::new(false)).unwrap();
         let restored = crate::storage::load_project(&opened).unwrap();
+        assert_eq!(restored.dpi, 600.0);
         assert_eq!(restored.layers.len(), 3);
         assert!(restored.layers[2].folder && restored.layers[1].depth == 1);
         assert_eq!(restored.layers[1].pixels.rgba(10 * 40 + 10), [0, 0, 0, 255]);
