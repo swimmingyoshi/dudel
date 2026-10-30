@@ -37,9 +37,32 @@ impl<'a> Reader<'a> {
         let n = self.u32()? as usize;
         Ok(Reader(self.take(n)?))
     }
+    /// A length that is 8 bytes in PSB (large document) files.
+    fn length(&mut self, big: bool) -> Result<usize, String> {
+        if big {
+            let n = u64::from_be_bytes(self.take(8)?.try_into().unwrap());
+            usize::try_from(n).map_err(|_| "PSB length exceeds memory".to_string())
+        } else {
+            Ok(self.u32()? as usize)
+        }
+    }
+    fn section_wide(&mut self, big: bool) -> Result<Reader<'a>, String> {
+        let n = self.length(big)?;
+        Ok(Reader(self.take(n)?))
+    }
     fn rect(&mut self) -> Result<[i32; 4], String> {
         Ok([self.i32()?, self.i32()?, self.i32()?, self.i32()?])
     }
+}
+/// Tagged blocks whose length is 8 bytes in PSB files, as listed by the
+/// independent psd-tools reader (MIT).
+const PSB_WIDE_KEYS: [&[u8; 4]; 21] = [
+    b"LMsk", b"Lr16", b"Lr32", b"Layr", b"Mt16", b"Mt32", b"Mtrn", b"Alph", b"FMsk", b"lnk2",
+    b"lnk3", b"lnkE", b"FXid", b"FEid", b"FELS", b"PxSD", b"pths", b"extd", b"extn", b"cinf",
+    b"artd",
+];
+fn wide_key(big: bool, key: &[u8]) -> bool {
+    big && PSB_WIDE_KEYS.iter().any(|k| &k[..] == key)
 }
 fn check(cancel: &impl Fn() -> bool) -> Result<(), String> {
     if cancel() {
@@ -56,12 +79,14 @@ fn geometry([top, left, bottom, right]: [i32; 4]) -> Result<[usize; 2], String> 
     }
     Ok([w as usize, h as usize])
 }
+/// Channel samples, raw, RLE (row counts are 4 bytes in PSB) or ZIP.
 fn decode(
     data: &[u8],
     width: usize,
     height: usize,
     channels: usize,
     depth: u16,
+    big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
     check(cancel)?;
@@ -81,7 +106,13 @@ fn decode(
         0 => reader.take(size)?.to_vec(),
         1 => {
             let lengths: Vec<usize> = (0..rows)
-                .map(|_| reader.u16().map(usize::from))
+                .map(|_| {
+                    if big {
+                        reader.u32().map(|n| n as usize)
+                    } else {
+                        reader.u16().map(usize::from)
+                    }
+                })
                 .collect::<Result<_, _>>()?;
             let mut output = Vec::with_capacity(size);
             for length in lengths {
@@ -508,13 +539,14 @@ fn layers(
     height: usize,
     mode: ColorMode,
     global_angle: f64,
+    big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<(Document, Order, Messages), String> {
     // After the layer records come the global layer mask (how masks are shown
     // in the editor, not pixels) and document-wide blocks such as patterns,
     // text engine data and linked files. Those only matter to layers that use
     // them, and such layers carry their own markers, checked per layer.
-    let mut info = Reader(data).section()?;
+    let mut info = Reader(data).section_wide(big)?;
     let count = (info.u16()? as i16).unsigned_abs() as usize;
     if count == 0 || count > MAX_ENTRIES * 2 {
         return Err("PSD layer count exceeds limits or is empty".into());
@@ -535,7 +567,7 @@ fn layers(
         let mut channels = Vec::new();
         for _ in 0..count {
             let id = info.u16()? as i16;
-            let len = info.u32()? as usize;
+            let len = info.length(big)?;
             if !(-3..mode.channels() as i16).contains(&id)
                 || channels.iter().any(|(other, _)| *other == id)
             {
@@ -650,7 +682,7 @@ fn layers(
                 return Err("Unsupported PSD additional-info signature".into());
             }
             let key = extra.take(4)?;
-            let len = extra.u32()? as usize;
+            let len = extra.length(wide_key(big, key))?;
             let mut value = Reader(extra.take(len)?);
             if !len.is_multiple_of(2) {
                 extra.take(1)?;
@@ -906,7 +938,7 @@ fn layers(
                 .checked_add(cw * ch)
                 .filter(|b| *b <= crate::document::MAX_PAYLOAD)
                 .ok_or("PSD layer payload exceeds memory budget")?;
-            planes.insert(id, decode(data, cw, ch, 1, 8, cancel)?);
+            planes.insert(id, decode(data, cw, ch, 1, 8, big, cancel)?);
         }
         if let Some(fill) = &record.solid {
             // A gradient spans the shape's path, else the layer's own bounds.
@@ -1192,9 +1224,10 @@ fn saved_image(
     depth: u16,
     mode: ColorMode,
     has_alpha: bool,
+    big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
-    let raw = decode(data, width, height, channels, depth, cancel)?;
+    let raw = decode(data, width, height, channels, depth, big, cancel)?;
     let samples = width * height;
     let value = |c: usize, i: usize| {
         let at = (c * samples + i) * usize::from(depth / 8);
@@ -1283,12 +1316,12 @@ fn parse(data: &[u8], cancel: &impl Fn() -> bool) -> Result<Imported, String> {
 }
 /// High-depth Photoshop files put their layer list in Lr16, leaving the
 /// ordinary list empty. Its signed count still controls merged transparency.
-fn layer_count(data: &[u8], depth: u16) -> Result<i16, String> {
+fn layer_count(data: &[u8], depth: u16, big: bool) -> Result<i16, String> {
     if data.is_empty() {
         return Ok(0);
     }
     let mut reader = Reader(data);
-    let mut primary = reader.section()?;
+    let mut primary = reader.section_wide(big)?;
     let count = if primary.0.is_empty() {
         0
     } else {
@@ -1310,7 +1343,7 @@ fn layer_count(data: &[u8], depth: u16) -> Result<i16, String> {
             return Err("Invalid PSD global additional-info signature".into());
         }
         let key = reader.take(4)?;
-        let mut value = reader.section()?;
+        let mut value = reader.section_wide(wide_key(big, key))?;
         let padding = (4 - value.0.len() % 4) % 4;
         reader.take(padding)?;
         if key == b"Lr16" {
@@ -1322,8 +1355,18 @@ fn layer_count(data: &[u8], depth: u16) -> Result<i16, String> {
 fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<Imported, String> {
     check(cancel)?;
     let mut reader = Reader(data);
-    if reader.take(4)? != b"8BPS" || reader.u16()? != 1 || reader.take(6)? != [0; 6] {
-        return Err("Expected a Photoshop PSD v1 file (PSB is not supported)".into());
+    if reader.take(4)? != b"8BPS" {
+        return Err("Expected a Photoshop PSD or PSB file".into());
+    }
+    // Version 2 is PSB, the large document format: the same layout with some
+    // lengths widened to 8 bytes.
+    let big = match reader.u16()? {
+        1 => false,
+        2 => true,
+        _ => return Err("Unsupported Photoshop file version".into()),
+    };
+    if reader.take(6)? != [0; 6] {
+        return Err("Invalid Photoshop file header".into());
     }
     let channels = reader.u16()? as usize;
     let height = reader.u32()? as usize;
@@ -1387,10 +1430,10 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             global_angle = f64::from(angle.u32()? as i32);
         }
     }
-    let layer_data = reader.section()?;
+    let layer_data = reader.section_wide(big)?;
     // A negative layer count marks the first extra channel as the merged
     // image's transparency.
-    let count = layer_count(layer_data.0, depth)?;
+    let count = layer_count(layer_data.0, depth, big)?;
     let has_alpha = count < 0;
     let (mut notes, mut details) = (Vec::new(), Vec::new());
     if matches!(mode, ColorMode::Gray) {
@@ -1409,7 +1452,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         details
             .push("This file holds only a background image; it was imported as one layer.".into());
     } else if layered && depth == 8 && !layer_data.0.is_empty() {
-        match layers(layer_data.0, width, height, mode, global_angle, cancel) {
+        match layers(layer_data.0, width, height, mode, global_angle, big, cancel) {
             Ok((mut document, order, (layer_notes, layer_details))) => {
                 details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
@@ -1421,7 +1464,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
                         has_composite
                             && document.layers.len() > 1
                             && saved_image(
-                                reader.0, width, height, channels, depth, mode, has_alpha, cancel,
+                                reader.0, width, height, channels, depth, mode, has_alpha, big,
+                                cancel,
                             )
                             .is_ok_and(|saved| reversed_matches_better(&document, &saved))
                     }
@@ -1463,7 +1507,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         ));
     }
     let pixels = saved_image(
-        reader.0, width, height, channels, depth, mode, has_alpha, cancel,
+        reader.0, width, height, channels, depth, mode, has_alpha, big, cancel,
     )?;
     if depth == 16 {
         details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
@@ -1805,14 +1849,14 @@ mod tests {
         let mut data = vec![0, 3];
         data.extend(encoder.finish().unwrap());
         assert_eq!(
-            decode(&data, 2, 2, 2, 16, &|| false).unwrap(),
+            decode(&data, 2, 2, 2, 16, false, &|| false).unwrap(),
             expected
                 .into_iter()
                 .flat_map(u16::to_be_bytes)
                 .collect::<Vec<_>>()
         );
-        assert!(decode(&data[..data.len() - 2], 2, 2, 2, 16, &|| false).is_err());
-        assert!(decode(&data, 2, 2, 2, 16, &|| true).is_err());
+        assert!(decode(&data[..data.len() - 2], 2, 2, 2, 16, false, &|| false).is_err());
+        assert!(decode(&data, 2, 2, 2, 16, false, &|| true).is_err());
         // Decode a one-channel document through the real import path as well.
         let mut file = fixture(&data);
         file[12..14].copy_from_slice(&1u16.to_be_bytes());
@@ -2270,6 +2314,39 @@ mod tests {
                 .any(|n| n.contains("only a background image"))
         );
         assert!(!imported.notes.iter().any(|n| n.contains("unavailable")));
+    }
+    #[test]
+    fn psb_files_read_wide_lengths_and_rle_row_counts() {
+        let mut file = fixture(&[]);
+        file.truncate(34);
+        file[4..6].copy_from_slice(&2u16.to_be_bytes());
+        // Layer and mask section (8-byte length) holding an empty layer list
+        // (8-byte length).
+        file.extend(8u64.to_be_bytes());
+        file.extend(0u64.to_be_bytes());
+        // RLE composite: three channel rows of two literal samples, each row
+        // counted in 4 bytes.
+        file.extend(1u16.to_be_bytes());
+        for _ in 0..3 {
+            file.extend(3u32.to_be_bytes());
+        }
+        for row in [[10, 20], [30, 40], [50, 60]] {
+            file.extend([1, row[0], row[1]]);
+        }
+        let imported = parse(&file, &|| false).unwrap();
+        assert_eq!(
+            imported.document.layers[0].pixels.rgba(0),
+            [10, 30, 50, 255]
+        );
+        assert_eq!(
+            imported.document.layers[0].pixels.rgba(1),
+            [20, 40, 60, 255]
+        );
+        // Read as a PSD, the same bytes do not line up.
+        file[4..6].copy_from_slice(&1u16.to_be_bytes());
+        assert!(parse(&file, &|| false).is_err());
+        file[4..6].copy_from_slice(&3u16.to_be_bytes());
+        assert!(parse(&file, &|| false).is_err());
     }
     #[test]
     fn groups_nest_with_the_divider_below_their_contents() {

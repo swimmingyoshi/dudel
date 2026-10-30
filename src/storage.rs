@@ -88,7 +88,9 @@ fn save_project_controlled(
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("clip") || extension.eq_ignore_ascii_case("psd")
+            ["clip", "psd", "psb"]
+                .iter()
+                .any(|source| extension.eq_ignore_ascii_case(source))
         })
     {
         return Err("Choose a .dudel filename; Dudel cannot save over a CSP/PSD source".into());

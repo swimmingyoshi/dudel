@@ -122,7 +122,7 @@ pub(crate) enum Dropped {
 pub(crate) fn classify(path: PathBuf) -> Dropped {
     match extension(&path).as_deref() {
         _ if is_image(&path) => Dropped::Image(path),
-        Some("dudel" | "clip" | "psd" | "didx") => Dropped::Project(path),
+        Some("dudel" | "clip" | "psd" | "psb" | "didx") => Dropped::Project(path),
         Some("zip") => Dropped::Package(path),
         Some("dudelbrushes") => Dropped::Brushes(path),
         Some("dudelpalette") => Dropped::Palette(path),

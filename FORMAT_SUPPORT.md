@@ -83,7 +83,8 @@ export PNG from CSP and keep the original `.clip` for editing.
 
 ## Photoshop import
 
-Open/drop `.psd` or use File > Import > Photoshop document. The bounded reader
+Open/drop `.psd` or `.psb` (Photoshop's large document format) or use File > Import >
+Photoshop document. The bounded reader
 implements PSD v1 RGB and grayscale, raw/PackBits/ZIP, and ZIP prediction. Supported 8-bit
 raster layers retain offsets, alpha, opacity, visibility, clipping, blends (including
 Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glow
@@ -160,18 +161,18 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 59 import with layers and 6 are background-only; psd-tools,
-which concentrates on edge features: 199 of 279 with layers. Layered imports match the
+distributed). ag-psd: 68 of 89 files (PSD and PSB) import with layers and 6 are
+background-only; psd-tools, which concentrates on edge features: 223 of 316 with layers. Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are
-unsupported color modes (CMYK, Lab, indexed, bitmap, 32-bit) and PSB.
+unsupported color modes (CMYK, Lab, indexed, bitmap, 32-bit).
 
 16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the
 PSD layer-count marker. Embedded profiles are reported but not converted.
-PSB, CMYK, Lab, indexed and bitmap modes, and 32-bit channels are unsupported.
-Files are capped at 2 GB (the PSD limit) and decoded layer payload shares the 2 GiB
+PSB files read the same way as PSD. CMYK, Lab, indexed and bitmap modes, and 32-bit
+channels are unsupported. Files are capped at 2 GB (the PSD limit; larger PSB files are refused) and decoded layer payload shares the 2 GiB
 document budget. A PSD without
 a usable compatibility composite cannot fall back when layer conversion fails;
 save it with Maximize Compatibility enabled in the source editor.

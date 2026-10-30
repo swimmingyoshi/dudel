@@ -53,7 +53,7 @@ pub(crate) fn verify(
     let psd = path
         .extension()
         .and_then(|s| s.to_str())
-        .is_some_and(|s| s.eq_ignore_ascii_case("psd"));
+        .is_some_and(|s| s.eq_ignore_ascii_case("psd") || s.eq_ignore_ascii_case("psb"));
     let imported = if preview {
         crate::clip_metadata::import_preview(path, &|| false)?
     } else if psd {

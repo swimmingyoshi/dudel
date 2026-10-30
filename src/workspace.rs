@@ -421,7 +421,7 @@ impl Dudel {
                 if menu_item(ui, "CSP raster canvas…", "", true) {
                     self.import_clip();
                 }
-                if menu_item(ui, "Photoshop document (.psd)…", "", true) {
+                if menu_item(ui, "Photoshop document (.psd, .psb)…", "", true) {
                     self.import_psd();
                 }
                 if menu_item(ui, "Images as layers…", "", self.doc.has_room(1, 1)) {

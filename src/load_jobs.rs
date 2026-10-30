@@ -48,7 +48,7 @@ impl Dudel {
         } else if path
             .extension()
             .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("psd"))
+            .is_some_and(|s| s.eq_ignore_ascii_case("psd") || s.eq_ignore_ascii_case("psb"))
         {
             LoadKind::Psd
         } else {

@@ -742,7 +742,7 @@ impl Dudel {
             rfd::AsyncFileDialog::new()
                 .add_filter("Dudel project", &["dudel"])
                 .add_filter("CSP raster canvas", &["clip"])
-                .add_filter("Photoshop document", &["psd"]),
+                .add_filter("Photoshop document", &["psd", "psb"]),
         );
         if self.experimental_indexed_storage {
             dialog = dialog.add_filter("Experimental indexed project", &["didx"]);
@@ -884,7 +884,7 @@ impl Dudel {
         });
     }
     fn import_psd(&mut self) {
-        let dialog = rfd::AsyncFileDialog::new().add_filter("Photoshop document", &["psd"]);
+        let dialog = rfd::AsyncFileDialog::new().add_filter("Photoshop document", &["psd", "psb"]);
         self.ask_open_file(dialog, |app, path| {
             app.open_in_tab(move |app| app.load_document(path, false));
         });
