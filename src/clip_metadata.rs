@@ -50,6 +50,9 @@ struct Layer {
     image: bool,
     /// A vector layer whose strokes Dudel draws. Import mode only.
     vector: bool,
+    /// A screentone layer (a fill turned into dots by the tone effect).
+    /// Import mode only.
+    tone: bool,
 }
 impl Layer {
     // Observed ordinary folders may carry the closed UI bit (16).
@@ -63,12 +66,16 @@ impl Layer {
             (0, 1 | 17) | (256, 1) | (1 | 1584, 0)
         ) || self.is_image()
             || self.is_vector()
+            || self.is_tone()
     }
     fn is_image(&self) -> bool {
         self.image && self.layer_type == 0 && self.folder == 0
     }
     fn is_vector(&self) -> bool {
         self.vector && self.layer_type == 0 && self.folder == 0
+    }
+    fn is_tone(&self) -> bool {
+        self.tone && self.layer_type == 2 && self.folder == 0
     }
 }
 #[derive(Debug, serde::Serialize)]
@@ -133,6 +140,9 @@ struct Report {
     /// Import mode: each vector layer's stroke data.
     #[serde(skip)]
     vectors: BTreeMap<i64, ExternalData>,
+    /// Import mode: each tone layer's dot density (0..=1) and mask bitmap.
+    #[serde(skip)]
+    tones: BTreeMap<i64, (f32, MaskSource)>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use.
     #[serde(skip)]
@@ -143,6 +153,12 @@ struct Report {
 struct ExternalData {
     id: String,
     offset: u64,
+}
+/// A layer mask's full-size bitmap.
+#[derive(Debug)]
+struct MaskSource {
+    attributes: crate::clip_attributes::Attributes,
+    data: ExternalData,
 }
 /// An image material layer's original picture. CSP saves the original and
 /// redraws the resized result when it opens the file.
@@ -333,10 +349,112 @@ fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
     }
     Ok(())
 }
+/// The tone density (0..=1) of a `LayerEffectInfo` whose only enabled effect
+/// is the screentone. The layout (a length, version 2, then named effects)
+/// was read from CSP's line-and-tone conversion output; each check below is
+/// a field observed to be 0 for a disabled effect.
+fn tone_density(info: &[u8]) -> Option<f32> {
+    let word = |at: usize| Some(u32::from_be_bytes(info.get(at..at + 4)?.try_into().ok()?));
+    if word(0)? as usize != info.len() || word(4)? != 2 {
+        return None;
+    }
+    let find = |name: &str| {
+        let key: Vec<u8> = name.encode_utf16().flat_map(u16::to_be_bytes).collect();
+        info.windows(key.len())
+            .position(|w| w == key.as_slice())
+            .map(|at| at + key.len())
+    };
+    // EffectEdge and EffectTone start with their on/off word; the later
+    // effects start with a size word, then on/off.
+    if word(find("EffectEdge")?)? != 0 {
+        return None;
+    }
+    let tone = find("EffectTone")?;
+    if word(tone)? != 1 {
+        return None;
+    }
+    for name in [
+        "EffectTextureMap",
+        "EffectTonePosterize",
+        "EffectWaterEdge",
+        "EffectLine",
+    ] {
+        if let Some(at) = find(name)
+            && word(at + 4)? != 0
+        {
+            return None;
+        }
+    }
+    let density = word(tone + 20)?;
+    (density <= 100).then_some(density as f32 / 100.0)
+}
+/// Screentone layers: their dot density and layer mask.
+fn tone_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
+    let candidates = rows(
+        db,
+        "SELECT MainId,LayerEffectInfo FROM Layer WHERE LayerType=2 AND LayerFolder=0 \
+         AND coalesce(LayerLayerMaskMipmap,0)!=0 AND length(LayerEffectInfo)<=4096 \
+         AND length(GradationFillInfo)>0",
+        MAX_ENTRIES + 1,
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+    )?;
+    for (id, info) in candidates {
+        let Some(density) = tone_density(&info) else {
+            continue;
+        };
+        let Ok(mask) = mask_source(db, id) else {
+            continue;
+        };
+        if let Some(layer) = report.layers.iter_mut().find(|layer| layer.id == id) {
+            layer.tone = true;
+            report.tones.insert(id, (density, mask));
+        }
+    }
+    Ok(())
+}
+/// A layer's full-size mask bitmap.
+fn mask_source(db: &Connection, id: i64) -> Result<MaskSource, String> {
+    let (attribute, block): (Vec<u8>, Vec<u8>) = db
+        .query_row(
+            "SELECT o.Attribute,o.BlockData FROM Layer l \
+             JOIN Mipmap m ON m.MainId=l.LayerLayerMaskMipmap AND m.LayerId=l.MainId \
+             JOIN MipmapInfo i ON i.MainId=m.BaseMipmapInfo AND i.LayerId=l.MainId AND i.ThisScale=100 \
+             JOIN Offscreen o ON o.MainId=i.Offscreen AND o.LayerId=l.MainId \
+             WHERE l.MainId=?1 AND length(o.Attribute)<=?2 AND length(o.BlockData)<=64",
+            rusqlite::params![id, crate::clip_attributes::MAX_BYTES as i64],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "mask bitmap not found")?;
+    let attributes = crate::clip_attributes::parse(&attribute)?;
+    if !attributes.is_mask() {
+        return Err("not a mask bitmap".into());
+    }
+    let external = std::str::from_utf8(&block)
+        .ok()
+        .filter(|id| id.starts_with("extrnlid"))
+        .ok_or("mask has no data reference")?;
+    let offset: i64 = db
+        .query_row(
+            "SELECT Offset FROM ExternalChunk WHERE ExternalID=?1",
+            [external],
+            |row| row.get(0),
+        )
+        .map_err(|_| "mask data is missing")?;
+    Ok(MaskSource {
+        attributes,
+        data: ExternalData {
+            id: external.to_owned(),
+            offset: u64::try_from(offset).map_err(|_| "invalid mask offset")?,
+        },
+    })
+}
 fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> Result<(), String> {
     let columns = table_columns(db, "Layer")?;
     if study && columns.contains("VectorNormalStrokeIndex") {
         vector_layers(db, report)?;
+    }
+    if study && columns.contains("LayerEffectInfo") && columns.contains("GradationFillInfo") {
+        tone_layers(db, report)?;
     }
     if study && columns.contains("ResizableImageInfo") {
         let images = rows(
@@ -413,8 +531,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             ));
         }
         report.locks.insert(id, lock);
+        let tone = report.layers.iter().any(|l| l.id == id && l.is_tone());
         if (lock != 0 && (!study || lock & !17 != 0))
-            || mask != 0
+            || (mask != 0 && !(tone && masking == 0))
             || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
         {
             layer_issue(report, study, id, "unsupported lock/mask metadata".into());
@@ -489,6 +608,12 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 {
                     continue;
                 }
+                if study
+                    && ["GradationFillInfo", "LayerEffectInfo"].contains(&field)
+                    && report.layers.iter().any(|l| l.id == id && l.is_tone())
+                {
+                    continue;
+                }
                 // Expression color Gray (1) is stored as gray tiles, which the
                 // raster decoder expands; other expression colors stay skipped.
                 if study
@@ -509,15 +634,21 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
     // Paper, image material and vector layers carry fixed render-type values
     // (every observed layer of each kind has the same set); ordinary layers
     // none.
-    for (field, paper_expected, image_expected, vector_expected) in [
-        ("DrawToRenderOffscreenType", 61, Some(20), Some(10)),
-        ("SpecialRenderType", 20, None, None),
-        ("DrawToRenderMipmapType", 31, Some(20), None),
-        ("MoveOffsetAndExpandType", 31, Some(10), None),
-        ("FixOffsetAndExpandType", 31, Some(10), None),
-        ("RenderBoundForLayerMoveType", 31, Some(10), None),
-        ("SetRenderThumbnailInfoType", 31, Some(10), None),
-        ("DrawRenderThumbnailType", 31, None, None),
+    for (field, paper_expected, image_expected, vector_expected, tone_expected) in [
+        (
+            "DrawToRenderOffscreenType",
+            61,
+            Some(20),
+            Some(10),
+            Some(60),
+        ),
+        ("SpecialRenderType", 20, None, None, None),
+        ("DrawToRenderMipmapType", 31, Some(20), None, Some(32)),
+        ("MoveOffsetAndExpandType", 31, Some(10), None, Some(30)),
+        ("FixOffsetAndExpandType", 31, Some(10), None, Some(30)),
+        ("RenderBoundForLayerMoveType", 31, Some(10), None, Some(30)),
+        ("SetRenderThumbnailInfoType", 31, Some(10), None, Some(30)),
+        ("DrawRenderThumbnailType", 31, None, None, Some(30)),
     ] {
         if !columns.contains(field) {
             if report.layers.iter().any(|layer| layer.layer_type == 1584) {
@@ -546,10 +677,15 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 .layers
                 .iter()
                 .any(|layer| layer.id == id && layer.is_vector());
+            let tone = report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.is_tone());
             if (paper && value != Some(paper_expected))
                 || (image && value.filter(|v| *v != 0) != image_expected)
                 || (vector && value.filter(|v| *v != 0) != vector_expected)
-                || (!paper && !image && !vector && value.is_some_and(|value| value != 0))
+                || (tone && value.filter(|v| *v != 0) != tone_expected)
+                || (!paper && !image && !vector && !tone && value.is_some_and(|value| value != 0))
             {
                 layer_issue(report, study, id, format!("unsupported {field}"));
             }
@@ -689,8 +825,15 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         .layers
         .iter()
         .filter(|layer| {
+            // Tone layers also set the 2 bit (seen only on them) beside the
+            // visible bit.
             !layer.supported_kind()
-                || ![0, 1, 4, 5].contains(&layer.visibility)
+                || !(if layer.is_tone() {
+                    &[2, 3][..]
+                } else {
+                    &[0, 1, 4, 5]
+                })
+                .contains(&layer.visibility)
                 || (layer.composite != 0 && (!study || clip_blend(layer.composite).is_none()))
                 || ![0, 1].contains(&layer.clip)
         })
@@ -1123,6 +1266,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
                 paper_draw_color: None,
                 image: false,
                 vector: false,
+                tone: false,
             })
         },
     )?;
@@ -1404,6 +1548,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         layer_issues: BTreeMap::new(),
         images: BTreeMap::new(),
         vectors: BTreeMap::new(),
+        tones: BTreeMap::new(),
         plain_brush_styles: BTreeSet::new(),
         animation: Animation::default(),
     })
@@ -1693,6 +1838,48 @@ fn prepare_document_mode(
             .or_default()
             .push(format!("unsupported vector strokes ({error})"));
     }
+    let canvas_size = [report.canvas.width as usize, report.canvas.height as usize];
+    let mut masks = BTreeMap::new();
+    let mut failed = Vec::new();
+    let mut mask_budget = crate::clip_blocks::Budget::default();
+    for (&id, (_, mask)) in &report.tones {
+        let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
+        let read = inventory
+            .external_body_bounds(mask.data.offset, mask.data.id.len())
+            .and_then(|(offset, bytes)| {
+                source
+                    .seek(SeekFrom::Start(offset))
+                    .map_err(|error| error.to_string())?;
+                crate::clip_raster::decode_mask(
+                    &mut source,
+                    bytes,
+                    &mask.attributes,
+                    crate::clip_raster::Placement {
+                        canvas: canvas_size,
+                        layer_offset: [layer.offset_x, layer.offset_y],
+                        render_offset: [
+                            layer.render_offscreen_offset_x,
+                            layer.render_offscreen_offset_y,
+                        ],
+                    },
+                    &mut mask_budget,
+                    cancelled,
+                )
+            });
+        match read {
+            Ok(coverage) => {
+                masks.insert(id, coverage);
+            }
+            Err(error) => failed.push((id, error)),
+        }
+    }
+    for (id, error) in failed {
+        report
+            .layer_issues
+            .entry(id)
+            .or_default()
+            .push(format!("unsupported tone layer mask ({error})"));
+    }
     let root = report
         .layers
         .iter()
@@ -1795,6 +1982,7 @@ fn prepare_document_mode(
         let known = layer.layer_type == 1
             || layer.is_image()
             || layer.is_vector()
+            || layer.is_tone()
             || layer.layer_type == 1584
             || (matches!(layer.layer_type, 0 | 256) && layer.is_folder());
         let depth = entry.depth as usize;
@@ -1833,6 +2021,17 @@ fn prepare_document_mode(
             Some((_, names)) => names.push(name),
             None => skips.push((reasons, vec![name])),
         }
+    }
+    let toned: Vec<String> = kept
+        .iter()
+        .filter(|(entry, _)| masks.contains_key(&entry.id))
+        .map(|(entry, _)| name_of(entry.id))
+        .collect();
+    if !toned.is_empty() {
+        notes.push(format!(
+            "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel has no screentone): {}.",
+            name_list(&toned)
+        ));
     }
     let drawn: Vec<String> = kept
         .iter()
@@ -1911,6 +2110,7 @@ fn prepare_document_mode(
         let content = match layer.layer_type {
             1 => crate::clip_document::Content::Raster,
             0 if layer.is_image() || layer.is_vector() => crate::clip_document::Content::Raster,
+            2 if layer.is_tone() => crate::clip_document::Content::Raster,
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
             1584 => {
                 let Some(color) = &layer.paper_draw_color else {
@@ -1969,6 +2169,16 @@ fn prepare_document_mode(
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
             if let Some(strokes) = vectors.get(&id) {
                 return crate::clip_vector::render(strokes, canvas, cancelled);
+            }
+            // Tone dots are drawn as their average: black at the dot density,
+            // shown through the layer mask.
+            if let Some((density, _)) = report.tones.get(&id) {
+                let alpha = (density * 255.0).round() as u8;
+                return Ok(crate::pixels::Pixels::solid(
+                    canvas[0],
+                    canvas[1],
+                    [0, 0, 0, alpha],
+                ));
             }
             if let Some(image) = report.images.get(&id) {
                 let (offset, bytes) = inventory
@@ -2061,6 +2271,17 @@ fn prepare_document_mode(
         let lock = report.locks.get(&id).copied().unwrap_or(0);
         layer.locked = lock & 1 != 0;
         layer.alpha_locked = !layer.folder && lock & 16 != 0;
+        if let Some(coverage) = masks.remove(&id) {
+            layer.mask = Some(crate::layer_mask::LayerMask {
+                id: crate::document::LayerId::new(),
+                enabled: true,
+                linked: true,
+                coverage,
+            });
+        }
+    }
+    if doc.layers.iter().any(|layer| layer.mask.is_some()) {
+        doc.version = 2;
     }
     doc.validate()?;
     Ok((doc, notes, details))
@@ -2977,6 +3198,7 @@ pub(crate) mod tests {
                 paper_draw_color: None,
                 image: false,
                 vector: false,
+                tone: false,
             });
         }
         assert!(
@@ -3100,6 +3322,39 @@ pub(crate) mod tests {
         assert!(study.layer_issues.contains_key(&30));
     }
     #[test]
+    fn tone_effects_give_their_density_only_when_nothing_else_is_on() {
+        fn name(out: &mut Vec<u8>, text: &str) {
+            out.extend((text.len() as u32).to_be_bytes());
+            out.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
+        }
+        let info = |edge: u32, tone: u32, density: u32, line: u32| {
+            let mut body = Vec::new();
+            name(&mut body, "EffectEdge");
+            body.extend(edge.to_be_bytes());
+            body.extend(3.0f64.to_be_bytes());
+            name(&mut body, "EffectTone");
+            for word in [tone, 0x4052_0000, 0, 1, 2, density] {
+                body.extend(word.to_be_bytes());
+            }
+            name(&mut body, "EffectLine");
+            body.extend(8u32.to_be_bytes());
+            body.extend(line.to_be_bytes());
+            body.extend(0u32.to_be_bytes());
+            let mut out = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+            out.extend(2u32.to_be_bytes());
+            out.extend(body);
+            out
+        };
+        assert_eq!(tone_density(&info(0, 1, 30, 0)), Some(0.3));
+        assert_eq!(tone_density(&info(1, 1, 30, 0)), None);
+        assert_eq!(tone_density(&info(0, 0, 30, 0)), None);
+        assert_eq!(tone_density(&info(0, 1, 30, 1)), None);
+        assert_eq!(tone_density(&info(0, 1, 101, 0)), None);
+        let mut short = info(0, 1, 30, 0);
+        short.pop();
+        assert_eq!(tone_density(&short), None);
+    }
+    #[test]
     fn switched_off_proofing_and_inch_canvases_open() {
         let db = fixture();
         // Proofing and canvas color adjustment keep stored settings while off.
@@ -3209,6 +3464,7 @@ pub(crate) mod tests {
                 paper_draw_color: None,
                 image: false,
                 vector: false,
+                tone: false,
             });
         }
         assert!(

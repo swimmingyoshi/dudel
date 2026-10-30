@@ -9,6 +9,8 @@ const PACKING: [u32; 16] = [
 pub(crate) const GRAY_PACKING: [u32; 16] = [
     17, 1, 1, 2, 65536, 1, 256, 1, 256, 65536, 256, 256, 8, 8, 0, 0,
 ];
+/// Layer masks: one coverage byte per pixel.
+pub(crate) const MASK_PACKING: [u32; 16] = [1, 1, 0, 1, 0, 0, 0, 1, 256, 0, 256, 256, 8, 8, 0, 0];
 /// Largest bitmap side. Layers may extend past the canvas (CSP keeps moved
 /// pixels), so this exceeds Dudel's canvas side; decoding keeps the part on
 /// the canvas.
@@ -32,9 +34,19 @@ impl Attributes {
     pub(crate) fn transparent_default(&self) -> bool {
         self.init_color_words == [20, 0, 0, 0, 4]
     }
-    /// Color bytes per pixel after the alpha plane: 4 (B, G, R, unused) or 1 (gray).
+    /// Color bytes per pixel after the alpha plane: 4 (B, G, R, unused), 1
+    /// (gray) or none (a mask's coverage).
     pub(crate) fn color_channels(&self) -> usize {
-        if self.packing == GRAY_PACKING { 1 } else { 4 }
+        if self.packing == GRAY_PACKING {
+            1
+        } else if self.packing == MASK_PACKING {
+            0
+        } else {
+            4
+        }
+    }
+    pub(crate) fn is_mask(&self) -> bool {
+        self.packing == MASK_PACKING
     }
     /// Decoded bytes per 256 x 256 tile: the alpha plane plus the color plane.
     pub(crate) fn tile_bytes(&self) -> usize {
@@ -106,7 +118,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Attributes, String> {
     for value in &mut packing {
         *value = word(&mut reader)?;
     }
-    if packing != PACKING && packing != GRAY_PACKING {
+    if packing != PACKING && packing != GRAY_PACKING && packing != MASK_PACKING {
         return Err(format!("Unsupported offscreen channel packing {packing:?}"));
     }
     tag(&mut reader, "InitColor")?;

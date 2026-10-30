@@ -442,6 +442,14 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   views. frame.clip and Girl_horns.clip (3000 x 4200) import and match their
   previews; ag-psd gradient-overlay (3508 x 4960) imports layered.
 
+- 2026-10-29 (Claude, CSP tones + copy): Import details text is selectable
+  (canvas Copy no longer steals Ctrl+C) with a Copy all button. Tone layers
+  (LayerType 2 with EffectTone; line-and-tone conversion) import as black at
+  the dot density through their CSP mask (1-byte mask packing now decoded,
+  `clip_raster::decode_mask`). All 61 owner CSP files import; skipped: two
+  text layers and CardBase's hidden LayerMasking=1 layer. Open: CSP masks on
+  ordinary layers (no sample yet), screentone dots, text layers, `.psb`.
+
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
   Corpora and pen testing not rerun.

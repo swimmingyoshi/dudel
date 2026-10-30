@@ -120,6 +120,56 @@ pub(crate) fn decode(
     Ok(pixels)
 }
 
+/// A layer mask bitmap (one coverage byte per pixel) placed like a raster;
+/// outside the bitmap the mask hides.
+pub(crate) fn decode_mask(
+    reader: &mut impl Read,
+    body_bytes: u64,
+    attributes: &Attributes,
+    placement: Placement,
+    budget: &mut Budget,
+    cancelled: &impl Fn() -> bool,
+) -> Result<crate::layer_mask::Mask, String> {
+    let [width, height] = placement.canvas;
+    if !attributes.is_mask() || !attributes.transparent_default() {
+        return Err("Unsupported clip mask layout".into());
+    }
+    let mut mask = crate::layer_mask::Mask::new(width, height, 0)?;
+    let combined = |axis: usize| {
+        placement.layer_offset[axis]
+            .checked_add(placement.render_offset[axis])
+            .ok_or("Clip mask combined offset overflow")
+    };
+    let offset = [combined(0)?, combined(1)?];
+    clip_blocks::decode_layout(
+        reader,
+        body_bytes,
+        &attributes.block_sizes,
+        attributes.tile_bytes(),
+        budget,
+        cancelled,
+        &mut |index, raw| {
+            let [left, top] = attributes.tile_origin(index)?;
+            let mut writer = mask.writer();
+            for y in 0..256usize.min(attributes.height as usize - top) {
+                let dy = offset[1] + (top + y) as i64;
+                if dy < 0 || dy >= height as i64 {
+                    continue;
+                }
+                for x in 0..256usize.min(attributes.width as usize - left) {
+                    let dx = offset[0] + (left + x) as i64;
+                    let value = raw[y * 256 + x];
+                    if value != 0 && dx >= 0 && dx < width as i64 {
+                        writer.set(dx as usize, dy as usize, value);
+                    }
+                }
+            }
+            Ok(())
+        },
+    )?;
+    Ok(mask)
+}
+
 /// An image material layer's original picture (`source`, `size`) placed on
 /// the canvas by where its top-left, top-right and bottom-left corners land.
 /// Bilinear in premultiplied color (clamped to the picture, so its edge does
@@ -360,6 +410,55 @@ mod tests {
             &mut Budget::default(),
             &|| false,
         )
+    }
+    #[test]
+    fn masks_decode_one_coverage_byte_placed_by_offsets() {
+        let mut tile = vec![0u8; 65536];
+        tile[0] = 255;
+        tile[3 * 256 + 2] = 128;
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        z.write_all(&tile).unwrap();
+        let body = clip_blocks::tests::fixture_sized(&[Some(z.finish().unwrap())], 65536);
+        let size = u32::from_be_bytes(body[8..12].try_into().unwrap());
+        let attrs = crate::clip_attributes::parse(&crate::clip_attributes::fixture_packed(
+            8,
+            8,
+            &[20, 0, 0, 0, 4],
+            &[size],
+            crate::clip_attributes::MASK_PACKING,
+        ))
+        .unwrap();
+        assert!(attrs.is_mask() && attrs.tile_bytes() == 65536);
+        let mask = decode_mask(
+            &mut Cursor::new(&body),
+            body.len() as u64,
+            &attrs,
+            Placement {
+                canvas: [10, 10],
+                layer_offset: [1, 1],
+                render_offset: [0, 0],
+            },
+            &mut Budget::default(),
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!((mask.at(1, 1), mask.at(3, 4), mask.at(0, 0)), (255, 128, 0));
+        // Color layouts are not masks.
+        assert!(
+            decode_mask(
+                &mut Cursor::new(&body),
+                body.len() as u64,
+                &attributes(8, 8, &body),
+                Placement {
+                    canvas: [10, 10],
+                    layer_offset: [0, 0],
+                    render_offset: [0, 0],
+                },
+                &mut Budget::default(),
+                &|| false,
+            )
+            .is_err()
+        );
     }
     #[test]
     fn known_channels_hidden_rgb_alpha_and_partial_edges_are_exact() {

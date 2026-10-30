@@ -10,6 +10,7 @@ use std::{
 const TILE_BYTES: usize = 256 * 256 * 5;
 /// Gray layers store one color byte per pixel after the alpha plane.
 const GRAY_TILE_BYTES: usize = 256 * 256 * 2;
+const MASK_TILE_BYTES: usize = 256 * 256;
 /// Tiles per bitmap: 64 x 64 covers a 16384 px layer that extends past the canvas.
 const MAX_SLOTS: usize = 64 * 64;
 const MAX_COMPRESSED: usize = 1024 * 1024;
@@ -277,7 +278,7 @@ fn scan_each(
         let index = word(&mut record)?;
         let declared = word(&mut record)? as usize;
         if index as usize != blocks.len()
-            || ![TILE_BYTES, GRAY_TILE_BYTES].contains(&declared)
+            || ![TILE_BYTES, GRAY_TILE_BYTES, MASK_TILE_BYTES].contains(&declared)
             || tile_bytes.is_some_and(|expected| expected != declared)
             || word(&mut record)? != 256
             || word(&mut record)? != 256
