@@ -191,8 +191,8 @@ PSD (`src/psd_import.rs`, new):
 - [ ] Test against PSDs saved by Krita
 - [ ] Performance: adding a layer costs ~2 ms at 100 layers, ~28 ms at 500,
       ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
-- [ ] PSB, CMYK, 16-bit layered (grayscale, pass-through groups and adjustment
-      layers are done)
+- [x] PSB, CMYK, 16-bit layered (2026-10-30: Lr16 layer lists, converted to
+      8 bits; psd-tools 215 -> 223 and ag-psd 69 -> 70 layered, no regressions)
 - [ ] PSD export (none yet)
 
 Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md).

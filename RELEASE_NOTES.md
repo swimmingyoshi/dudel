@@ -52,7 +52,8 @@ the package has been uploaded to a public store.
   draws round dots (even shading for other dot shapes and very fine tones),
   with their CSP mask as an editable layer mask.
 - Photoshop large documents (`.psb`) open like `.psd` files, and CMYK files open with
-  their colors converted through the file's color profile.
+  their colors converted through the file's color profile. 16-bit files open with
+  their layers instead of as one flattened layer.
 - Canvases up to 16,384 px per side and 100 megapixels (10,000 x 10,000), up from
   4096 x 4096, for new canvases, resizing and CSP/PSD/PNG imports. Mask-aware
   projects share the full 2 GiB pixel budget. Import details text can be selected

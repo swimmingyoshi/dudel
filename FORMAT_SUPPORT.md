@@ -11,7 +11,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | No | 8-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features |
+| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | No | 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -179,14 +179,16 @@ its saved image.
 Public Photoshop-saved test files from the MIT-licensed
 [ag-psd](https://github.com/Agamnentzar/ag-psd) and
 [psd-tools](https://github.com/psd-tools/psd-tools) projects were checked (not
-distributed). ag-psd: 69 of 89 files (PSD and PSB) import with layers and 6 are
-background-only; psd-tools, which concentrates on edge features: 225 of 316 with layers. Layered imports match the
+distributed). ag-psd: 70 of 89 files (PSD and PSB) import with layers and 6 are
+background-only; psd-tools, which concentrates on edge features: 223 of 316 with layers
+and 11 background-only (counted 2026-10-30). Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
 and two small pass-through/fill cases. The rest fall back to the flattened image or are
 unsupported color modes (Lab, indexed, bitmap, 32-bit).
 
-16-bit RGB imports use the saved composite and convert to 8-bit channels. Extra
+16-bit RGB and grayscale files import their layers (Photoshop keeps them in the Lr16
+block), converted to 8-bit channels; the saved composite is converted the same way. Extra
 alpha channels are not mistaken for transparency; merged transparency uses the
 PSD layer-count marker. Embedded profiles are reported but not converted.
 PSB files read the same way as PSD. CMYK files (8 and 16 bit) open in RGB: colors go

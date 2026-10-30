@@ -602,10 +602,12 @@ fn nesting(groups: impl Iterator<Item = u32>) -> Option<Vec<Option<u8>>> {
     }
     (depth == 0).then_some(depths)
 }
+#[allow(clippy::too_many_arguments)]
 fn layers(
     data: &[u8],
     width: usize,
     height: usize,
+    depth: u16,
     colors: &Colors,
     global_angle: f64,
     big: bool,
@@ -1014,7 +1016,8 @@ fn layers(
                 .checked_add(cw * ch)
                 .filter(|b| *b <= crate::document::MAX_PAYLOAD)
                 .ok_or("PSD layer payload exceeds memory budget")?;
-            planes.insert(id, decode(data, cw, ch, 1, 8, big, cancel)?);
+            let plane = decode(data, cw, ch, 1, depth, big, cancel)?;
+            planes.insert(id, if depth == 16 { to_8_bit(&plane) } else { plane });
         }
         if let Some(fill) = &record.solid {
             // A gradient spans the shape's path, else the layer's own bounds.
@@ -1312,7 +1315,7 @@ fn saved_image(
         if depth == 8 {
             raw[at]
         } else {
-            ((u16::from_be_bytes([raw[at], raw[at + 1]]) as u32 + 128) / 257) as u8
+            sample_8_bit([raw[at], raw[at + 1]])
         }
     };
     let rgb = colors.rgb(samples, value, cancel)?;
@@ -1390,6 +1393,16 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
+/// A big-endian 16-bit sample rounded to 8 bits.
+fn sample_8_bit(sample: [u8; 2]) -> u8 {
+    ((u32::from(u16::from_be_bytes(sample)) + 128) / 257) as u8
+}
+fn to_8_bit(samples: &[u8]) -> Vec<u8> {
+    samples
+        .chunks_exact(2)
+        .map(|sample| sample_8_bit([sample[0], sample[1]]))
+        .collect()
+}
 fn parse(data: &[u8], cancel: &impl Fn() -> bool) -> Result<Imported, String> {
     parse_mode(data, cancel, true)
 }
@@ -1399,15 +1412,23 @@ fn layer_count(data: &[u8], depth: u16, big: bool) -> Result<i16, String> {
     if data.is_empty() {
         return Ok(0);
     }
-    let mut reader = Reader(data);
-    let mut primary = reader.section_wide(big)?;
-    let count = if primary.0.is_empty() {
+    if let Some(mut list) = high_depth_layers(data, depth, big)? {
+        return list.u16().map(|v| v as i16);
+    }
+    let mut primary = Reader(data).section_wide(big)?;
+    Ok(if primary.0.is_empty() {
         0
     } else {
         primary.u16()? as i16
-    };
+    })
+}
+/// The Lr16 layer list of a 16-bit file: the same layout as the ordinary
+/// layer list, with 16-bit channel samples.
+fn high_depth_layers(data: &[u8], depth: u16, big: bool) -> Result<Option<Reader<'_>>, String> {
+    let mut reader = Reader(data);
+    reader.section_wide(big)?;
     if depth != 16 || reader.0.is_empty() {
-        return Ok(count);
+        return Ok(None);
     }
     // Some writers omit the global mask field entirely.
     if !reader.0.starts_with(b"8BIM") && !reader.0.starts_with(b"8B64") {
@@ -1422,14 +1443,14 @@ fn layer_count(data: &[u8], depth: u16, big: bool) -> Result<i16, String> {
             return Err("Invalid PSD global additional-info signature".into());
         }
         let key = reader.take(4)?;
-        let mut value = reader.section_wide(wide_key(big, key))?;
+        let value = reader.section_wide(wide_key(big, key))?;
         let padding = (4 - value.0.len() % 4) % 4;
         reader.take(padding)?;
         if key == b"Lr16" {
-            return value.u16().map(|v| v as i16);
+            return Ok(Some(value));
         }
     }
-    Ok(count)
+    Ok(None)
 }
 fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<Imported, String> {
     check(cancel)?;
@@ -1570,11 +1591,28 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     if background_only {
         details
             .push("This file holds only a background image; it was imported as one layer.".into());
-    } else if layered && depth == 8 && !layer_data.0.is_empty() {
+    } else if layered && !layer_data.0.is_empty() {
+        // A 16-bit list is handed over in the ordinary list's framing.
+        let list = match high_depth_layers(layer_data.0, depth, big)? {
+            Some(list) => {
+                let mut framed = if big {
+                    (list.0.len() as u64).to_be_bytes().to_vec()
+                } else {
+                    u32::try_from(list.0.len())
+                        .map_err(|_| "PSD 16-bit layer list is too large")?
+                        .to_be_bytes()
+                        .to_vec()
+                };
+                framed.extend_from_slice(list.0);
+                std::borrow::Cow::Owned(framed)
+            }
+            None => std::borrow::Cow::Borrowed(layer_data.0),
+        };
         match layers(
-            layer_data.0,
+            &list,
             width,
             height,
+            depth,
             &colors,
             global_angle,
             big,
@@ -1583,6 +1621,9 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             Ok((mut document, order, (layer_notes, layer_details))) => {
                 document.dpi = dpi;
                 details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
+                if depth == 16 {
+                    details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
+                }
                 notes.extend(layer_notes);
                 details.extend(layer_details);
                 let flipped = match order {
@@ -2051,6 +2092,61 @@ mod tests {
                 [gray, gray, gray, 255]
             );
         }
+    }
+    #[test]
+    fn sixteen_bit_files_import_their_lr16_layers() {
+        // Photoshop leaves the ordinary list empty and writes Lr16: the same
+        // records, with 16-bit samples. Two 1 x 1 layers, left and right.
+        let layer = |left: i32, color: [u16; 4], name: &str| {
+            let mut record = Vec::new();
+            for value in [0, left, 1, left + 1] {
+                record.extend(value.to_be_bytes());
+            }
+            record.extend(4u16.to_be_bytes());
+            for id in [0i16, 1, 2, -1] {
+                record.extend(id.to_be_bytes());
+                record.extend(4u32.to_be_bytes());
+            }
+            record.extend(b"8BIMnorm");
+            record.extend([255, 0, 0, 0]);
+            let mut extra = 0u32.to_be_bytes().to_vec();
+            extra.extend(0u32.to_be_bytes());
+            extra.push(name.len() as u8);
+            extra.extend(name.as_bytes());
+            extra.extend(vec![0; (4 - (name.len() + 1) % 4) % 4]);
+            record.extend(section(&extra));
+            let mut planes = Vec::new();
+            for sample in [color[0], color[1], color[2], color[3]] {
+                planes.extend([0, 0]);
+                planes.extend(sample.to_be_bytes());
+            }
+            (record, planes)
+        };
+        let (first, first_planes) = layer(0, [0xffff, 0x8000, 0x0101, 0xffff], "Left");
+        let (second, second_planes) = layer(1, [0x0000, 0x4040, 0xfefe, 0x8080], "Right");
+        let mut list = 2u16.to_be_bytes().to_vec();
+        list.extend([first, second].concat());
+        list.extend([first_planes, second_planes].concat());
+        let mut info = section(&[]);
+        info.extend(section(&[]));
+        info.extend(b"8BIMLr16");
+        info.extend(section(&list));
+        info.extend(vec![0; (4 - list.len() % 4) % 4]);
+        let mut file = fixture(&[]);
+        file[22..24].copy_from_slice(&16u16.to_be_bytes());
+        file.truncate(34);
+        file.extend(section(&info));
+        // A saved image, which the layers are preferred over.
+        file.extend([0, 0]);
+        file.extend([0u8; 2 * 2 * 3]);
+        let imported = parse(&file, &|| false).unwrap();
+        let document = &imported.document;
+        let names: Vec<_> = document.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["Left", "Right"]);
+        assert_eq!(document.layers[0].pixels.rgba(0), [255, 128, 1, 255]);
+        assert_eq!(document.layers[1].pixels.rgba(1), [0, 64, 254, 128]);
+        assert!(imported.details.iter().any(|d| d.contains("16-bit")));
+        assert!(!imported.notes.iter().any(|n| n.contains("flattened")));
     }
     #[test]
     fn sixteen_bit_alternate_layer_count_controls_composite_alpha() {
