@@ -471,6 +471,22 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   only when its mask shows everything and was never painted (meaning of the
   bit still unknown). Open: more samples for densities over 50%, other dot
   shapes, offset grids, and 600 dpi cells.
+
+- 2026-10-30 (Claude, hide/unhide speed): on 2d.clip (3840 x 3840, 26
+  layers) hiding a full-canvas layer took ~5 s to appear: the display
+  recomposited every tile at full resolution and showed nothing until all
+  were done. Now (1) masks count when deciding a layer shows nothing in a
+  tile, for display skipping and the compositor (Tone 6 toggle 4.4 s -> 10
+  ms; Tone 4 touches 95 tiles, not 225); (2) tiles shown reduced (zoomed
+  out on canvases of 2048 px and up) are first composited one pixel per
+  texel and shown, then refined exactly in the background; a brush edit on
+  the fast path drops the refinement (full-canvas toggle shown in ~0.55 s,
+  exact after ~4.5 s); (3) the compositor walks 64-pixel strips layer by
+  layer, checked equal to the per-pixel path on random documents. Prepare +
+  history for a toggle is ~1.5 ms. Measure with the ignored
+  `toggle_latency` test (`DUDEL_TOGGLE_FILE`). Open: full-resolution views
+  (zoomed in) still recomposite at ~40 ns per layer per pixel; the blend
+  math would need vectorizing.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

@@ -11,6 +11,9 @@ struct Tile {
     texture: Option<egui::TextureHandle>,
     first: Color32,
     signature: Vec<LayerSignature>,
+    /// The texture is a quick one (a pixel per `level` square) still to be
+    /// replaced by the exact composite.
+    rough: bool,
 }
 
 /// Uniform padded tiles sample identically from a single texel at every zoom
@@ -232,7 +235,7 @@ fn subtree_has_payload(doc: &Document, index: usize, rect: [usize; 4]) -> bool {
     }
     if !layer.folder {
         return layer.display_reference.as_ref().map_or_else(
-            || layer.pixels.region_has_coverage(doc.width, rect),
+            || layer.pixels.region_has_coverage(doc.width, rect) && !layer.mask_hides(rect),
             |r| r.intersects(rect),
         );
     }
@@ -331,6 +334,11 @@ struct DisplayJob {
     source_rect: [usize; 4],
     preparation: Preparation,
     signature: Vec<LayerSignature>,
+    /// 1 for the exact composite, else the side of the squares a quick job
+    /// composites one pixel of.
+    step: usize,
+    /// Replaces quick tiles that already show the current document.
+    refine: bool,
     /// Neighbouring tiles in the same row composited by the same job, each
     /// with its local rectangle and source signature.
     batch: Vec<(usize, [usize; 4], Vec<LayerSignature>)>,
@@ -365,14 +373,23 @@ struct DisplayWorker {
 }
 type DisplayResult = Result<(Vec<u8>, f64), String>;
 impl DisplayWorker {
-    fn start(doc: &Document, rect: [usize; 4], transparent: bool) -> Result<Self, String> {
+    fn start(
+        doc: &Document,
+        rect: [usize; 4],
+        transparent: bool,
+        step: usize,
+    ) -> Result<Self, String> {
         let doc = doc.clone();
         let snapshot = crate::snapshot_memory::Snapshot::capture(&doc);
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let handle = crate::display_workers::spawn(move || {
             let started = std::time::Instant::now();
-            let pixels = doc.composite_region_cancelable(rect, &worker_cancel, transparent)?;
+            let pixels = if step > 1 {
+                doc.composite_sampled_cancelable(rect, step, &worker_cancel, transparent)?
+            } else {
+                doc.composite_region_cancelable(rect, &worker_cancel, transparent)?
+            };
             Ok((pixels, started.elapsed().as_secs_f64() * 1000.0))
         })
         .map_err(|error| error.to_string())?;
@@ -781,6 +798,34 @@ impl CanvasTextures {
                 |job| matches!(&job.preparation, Preparation::Worker(worker) if !worker.ready()),
             )
     }
+    /// A quick tile already showing `doc`, nearest the view first.
+    fn next_rough(&self, doc: &Document) -> Option<usize> {
+        let visible = |index: usize| {
+            self.viewport.is_none_or(|(area, view)| {
+                let [left, top, right, bottom] = self.tiles[index].bounds;
+                let corners = [
+                    pos2(left as f32, top as f32),
+                    pos2(right as f32, top as f32),
+                    pos2(right as f32, bottom as f32),
+                    pos2(left as f32, bottom as f32),
+                ]
+                .map(|point| view.to_screen(point));
+                Rect::from_points(&corners).intersects(area)
+            })
+        };
+        let candidates = || {
+            self.tiles.iter().enumerate().filter(|(index, tile)| {
+                tile.rough
+                    && tile.level == self.levels[*index]
+                    && self.pending[*index].is_none()
+                    && unchanged(tile, doc)
+            })
+        };
+        candidates()
+            .find(|(index, _)| visible(*index))
+            .or_else(|| candidates().next())
+            .map(|(index, _)| index)
+    }
     fn next_pending(&self) -> Option<usize> {
         self.pending
             .iter()
@@ -836,11 +881,21 @@ impl CanvasTextures {
                 texture: None,
                 first: Color32::WHITE,
                 signature: Vec::new(),
+                rough: false,
             })
             .collect();
         self.pending = vec![None; self.tiles.len()];
         self.levels = vec![1; self.tiles.len()];
         true
+    }
+    /// Nothing is left but replacing quick tiles with exact ones.
+    fn only_refining(&self) -> bool {
+        self.composite.as_ref().is_none_or(|job| job.refine)
+            && self.generation.is_none()
+            && !self.resolution_stale()
+            && !self.refresh
+            && self.retired.is_none()
+            && self.pending.iter().all(Option::is_none)
     }
     pub(crate) fn busy(&self) -> bool {
         self.generation.is_some()
@@ -849,10 +904,12 @@ impl CanvasTextures {
             || self.retired.is_some()
             || self.composite.is_some()
             || self.pending.iter().any(Option::is_some)
+            || (!self.worker_failed && self.tiles.iter().any(|tile| tile.rough))
     }
-    /// Whether the cached path may update resident tiles in place.
+    /// Whether the cached path may update resident tiles in place. Refining
+    /// quick tiles does not hold it up; the small path drops that job.
     fn cached_path_ready(&self, doc: &Document) -> bool {
-        !self.busy()
+        (!self.busy() || self.only_refining())
             && self.dimensions == [doc.width, doc.height]
             && self.tiles.iter().all(|tile| tile.texture.is_some())
             && self
@@ -1056,21 +1113,57 @@ impl CanvasTextures {
                 break;
             }
             if self.composite.is_none() {
-                let Some(index) = self.next_pending() else {
-                    break;
+                // Stale tiles first; once every tile shows the document, quick
+                // tiles are replaced with exact ones.
+                let use_worker = !self.worker_failed;
+                #[cfg(test)]
+                let use_worker = use_worker && self.test_units.is_none();
+                let (index, refine) = match self.next_pending() {
+                    Some(index) => (index, false),
+                    None => match self.next_rough(doc) {
+                        Some(index) if use_worker => (index, true),
+                        _ => break,
+                    },
                 };
-                let local = self.pending[index].take().unwrap();
+                let full = [0, 0, EXTENT, EXTENT];
+                let local = if refine {
+                    full
+                } else {
+                    self.pending[index].take().unwrap()
+                };
+                // Whole tiles shown reduced are first composited one pixel per
+                // shown texel, so a large change appears quickly.
+                let step = if !refine && use_worker && local == full {
+                    self.levels[index]
+                } else {
+                    1
+                };
                 let tile = self.tiles[index].bounds;
                 let mut source_rect = tile_source_rect(tile, local, doc);
-                // Join pending neighbours on the same row, left then right.
+                // Join neighbours on the same row needing the same work, left
+                // then right.
                 let mut batch = Vec::new();
-                for step in [-1isize, 1] {
-                    let mut next = index as isize + step;
-                    while batch.len() + 1 < BATCH
+                for direction in [-1isize, 1] {
+                    let mut next = index as isize + direction;
+                    // Quick jobs cost a fraction of an exact one; take more
+                    // tiles each, as there is a frame's wait between jobs.
+                    while batch.len() + 1 < BATCH * step
                         && let Some(neighbour) =
                             usize::try_from(next).ok().filter(|n| *n < self.tiles.len())
                         && self.tiles[neighbour].bounds[1] == tile[1]
-                        && let Some(local) = self.pending[neighbour].take()
+                        && let Some(local) = if refine {
+                            self.tiles[neighbour].rough.then_some(full).filter(|_| {
+                                self.tiles[neighbour].level == self.levels[neighbour]
+                                    && unchanged(&self.tiles[neighbour], doc)
+                                    && self.pending[neighbour].is_none()
+                            })
+                        } else if step > 1 {
+                            self.pending[neighbour]
+                                .filter(|local| *local == full && self.levels[neighbour] == step)
+                                .and_then(|_| self.pending[neighbour].take())
+                        } else {
+                            self.pending[neighbour].take()
+                        }
                     {
                         let bounds = self.tiles[neighbour].bounds;
                         let rect = tile_source_rect(bounds, local, doc);
@@ -1081,14 +1174,11 @@ impl CanvasTextures {
                             source_rect[3].max(rect[3]),
                         ];
                         batch.push((neighbour, local, signature(doc, bounds)));
-                        next += step;
+                        next += direction;
                     }
                 }
-                let use_worker = !self.worker_failed;
-                #[cfg(test)]
-                let use_worker = use_worker && self.test_units.is_none();
                 let preparation = if use_worker {
-                    match DisplayWorker::start(doc, source_rect, self.transparent) {
+                    match DisplayWorker::start(doc, source_rect, self.transparent, step) {
                         Ok(worker) => Preparation::Worker(worker),
                         Err(error) => {
                             self.worker_failed = true;
@@ -1117,6 +1207,8 @@ impl CanvasTextures {
                     source_rect,
                     preparation,
                     signature: signature(doc, tile),
+                    step,
+                    refine,
                     batch,
                 });
             }
@@ -1139,6 +1231,8 @@ impl CanvasTextures {
                 source_rect,
                 preparation,
                 signature: first_signature,
+                step,
+                refine: _,
                 batch,
             } = self.composite.take().unwrap();
             let (source, worker_ms) = match preparation.finish() {
@@ -1199,11 +1293,13 @@ impl CanvasTextures {
                 tile.texture =
                     Some(ctx.load_texture(format!("painting-tile-next-{index}"), image, options));
                 tile.signature = signature;
+                // A sub-rectangle keeps the rest of a quick tile quick.
+                tile.rough = step > 1 || (tile.rough && local != [0, 0, EXTENT, EXTENT]);
                 performance.upload_ms += started.elapsed().as_secs_f64() * 1000.0;
             }
         }
         if self.retired.is_none()
-            && self.composite.is_none()
+            && self.composite.as_ref().is_none_or(|job| job.refine)
             && self.pending.iter().all(Option::is_none)
             && self.tiles.iter().enumerate().all(|(index, tile)| {
                 tile.texture.is_some() && tile.level == self.levels[index] && unchanged(tile, doc)
@@ -1338,6 +1434,11 @@ impl CanvasTextures {
             return;
         }
         debug_assert!(self.cached_path_ready(doc));
+        // A refinement composited from an older document would overwrite
+        // this edit; drop it, and its tiles stay quick until the next pass.
+        if self.composite.as_ref().is_some_and(|job| job.refine) {
+            self.composite = None;
+        }
         let options_changed = self.options != Some(options);
         let overview_scale = overview_level(doc);
         for (index, tile) in self.tiles.iter_mut().enumerate() {
@@ -2476,6 +2577,122 @@ mod tests {
             textures.resolution_builds, count,
             "small canvases ignore viewport changes"
         );
+    }
+
+    /// A large canvas zoomed out, with a layer that covers every tile.
+    fn zoomed_out_canvas() -> (egui::Context, Document, CanvasTextures, Rect) {
+        let ctx = egui::Context::default();
+        let mut doc = Document::new(2048, 2048);
+        doc.layers[0].pixels = (0..doc.width * doc.height)
+            .flat_map(|i| [(i % 251) as u8, 71, (i / doc.width % 251) as u8, 255])
+            .collect::<Vec<_>>()
+            .into();
+        doc.add_layer();
+        doc.layers[1].pixels = [20, 120, 220, 128].repeat(doc.width * doc.height).into();
+        let mut textures = CanvasTextures::default();
+        let area = Rect::from_min_size(Pos2::ZERO, egui::vec2(512.0, 512.0));
+        textures.set_viewport(
+            area,
+            View {
+                origin: area.center(),
+                zoom: 0.2,
+                rotation: 0.0,
+                mirror: false,
+                half: egui::vec2(1024.0, 1024.0),
+            },
+        );
+        (ctx, doc, textures, area)
+    }
+    #[test]
+    fn hiding_a_layer_shows_quick_tiles_first_then_exact_ones() {
+        let (ctx, mut doc, mut textures, _) = zoomed_out_canvas();
+        let mut images = std::collections::HashMap::new();
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        assert!(textures.levels.iter().all(|level| *level == 4));
+        doc.layers[1].visible = false;
+        let before = shown_ids(&textures);
+        let mut quick_frame = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while shown_ids(&textures) == before {
+            let output = ctx.run(Default::default(), |ctx| {
+                textures.update_sliced(
+                    ctx,
+                    &doc,
+                    false,
+                    None,
+                    egui::TextureOptions::LINEAR,
+                    &mut Performance::default(),
+                );
+            });
+            retain_images(&mut images, &output.textures_delta).unwrap();
+            quick_frame = textures.tiles.iter().any(|tile| tile.rough);
+            assert!(std::time::Instant::now() < deadline, "no frame was shown");
+        }
+        // Shown before every tile was composited exactly, and each quick tile
+        // holds the true composite at its texels' middles.
+        assert!(quick_frame);
+        assert!(textures.tiles.iter().all(|tile| unchanged(tile, &doc)));
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        assert!(textures.tiles.iter().all(|tile| !tile.rough));
+        check_viewport_samples(&textures, &doc, &images);
+    }
+    #[test]
+    fn painting_while_quick_tiles_refine_keeps_the_stroke() {
+        let (ctx, mut doc, mut textures, _) = zoomed_out_canvas();
+        let mut images = std::collections::HashMap::new();
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        doc.layers[1].visible = false;
+        while !textures.tiles.iter().all(|tile| unchanged(tile, &doc))
+            || textures.composite.is_none()
+        {
+            let output = ctx.run(Default::default(), |ctx| {
+                textures.update_sliced(
+                    ctx,
+                    &doc,
+                    false,
+                    None,
+                    egui::TextureOptions::LINEAR,
+                    &mut Performance::default(),
+                );
+            });
+            retain_images(&mut images, &output.textures_delta).unwrap();
+        }
+        assert!(textures.composite.as_ref().is_some_and(|job| job.refine));
+        // A small stroke takes the fast path and drops the refinement, which
+        // was composited without it.
+        let rect = [1000, 1000, 1004, 1003];
+        doc.layers[0]
+            .pixels
+            .writer()
+            .write_region(doc.width, rect, &[255, 0, 0, 255].repeat(12));
+        let mut damage = crate::render_region::Damage::default();
+        damage.include(rect);
+        let output = ctx.run(Default::default(), |ctx| {
+            textures.update_damage(
+                ctx,
+                &doc,
+                false,
+                damage.clone(),
+                egui::TextureOptions::LINEAR,
+                &mut Performance::default(),
+            );
+        });
+        retain_images(&mut images, &output.textures_delta).unwrap();
+        assert!(textures.composite.is_none());
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        assert!(
+            textures
+                .tiles
+                .iter()
+                .all(|tile| !tile.rough && unchanged(tile, &doc))
+        );
+        check_viewport_samples(&textures, &doc, &images);
+        let stroked = textures
+            .tiles
+            .iter()
+            .position(|tile| dirty_rect(tile.bounds, rect, doc.width, doc.height).is_some())
+            .unwrap();
+        check_viewport_indices(&textures, &doc, &images, [stroked]);
     }
 
     #[test]
@@ -3807,6 +4024,8 @@ mod tests {
                 capacity: 257 * 35 * 4,
                 snapshot,
             }),
+            step: 1,
+            refine: false,
             batch: Vec::new(),
         });
         let first = ctx.run(Default::default(), |ctx| {
@@ -3888,7 +4107,7 @@ mod tests {
         doc.layers[doc.active].blend = crate::blend::BlendMode::Multiply;
         let rect = [240, 240, 513, 257];
         let expected = doc.composite_region(rect[0], rect[1], rect[2], rect[3]);
-        let worker = DisplayWorker::start(&doc, rect, false).unwrap();
+        let worker = DisplayWorker::start(&doc, rect, false, 1).unwrap();
         doc.layers[doc.active].opacity = 0.1;
         doc.layers[doc.active].pixels.writer().write_region(
             513,
@@ -3936,6 +4155,8 @@ mod tests {
                 capacity: 288 * 257 * 4,
                 snapshot,
             }),
+            step: 1,
+            refine: false,
             batch: Vec::new(),
         });
         let first = ctx.run(Default::default(), |ctx| {
@@ -4050,6 +4271,8 @@ mod tests {
                 capacity: 257 * 35 * 4,
                 snapshot: crate::snapshot_memory::Snapshot::default(),
             }),
+            step: 1,
+            refine: false,
             batch: Vec::new(),
         });
         let mut retained = std::collections::HashMap::new();
@@ -4672,5 +4895,91 @@ mod tests {
             textures.update(ctx, &doc, true, None, options, &mut performance)
         });
         assert_eq!(textures.tiles.len(), 1);
+    }
+}
+
+/// How long hiding and showing layers takes to appear on a real file:
+/// `DUDEL_TOGGLE_FILE=FILE.clip cargo test --release toggle_latency -- --ignored --nocapture`.
+#[cfg(test)]
+mod toggle_latency {
+    use super::*;
+    #[test]
+    #[ignore]
+    fn toggle_latency_on_a_real_file() {
+        let path = std::env::var("DUDEL_TOGGLE_FILE").unwrap();
+        let mut doc = crate::clip_metadata::import_document(std::path::Path::new(&path), &|| false)
+            .unwrap()
+            .document;
+        let ctx = egui::Context::default();
+        let mut textures = CanvasTextures::default();
+        let area = Rect::from_min_size(Pos2::ZERO, egui::vec2(1400.0, 900.0));
+        let zoom = 900.0 / doc.height as f32;
+        textures.set_viewport(
+            area,
+            crate::view::View {
+                origin: area.center(),
+                zoom,
+                rotation: 0.0,
+                mirror: false,
+                half: egui::vec2(doc.width as f32 / 2.0, doc.height as f32 / 2.0),
+            },
+        );
+        let frame = |textures: &mut CanvasTextures, doc: &Document| {
+            let _ = ctx.run(Default::default(), |ctx| {
+                textures.update_sliced(
+                    ctx,
+                    doc,
+                    false,
+                    None,
+                    egui::TextureOptions::LINEAR,
+                    &mut Performance::default(),
+                );
+            });
+        };
+        let shown = |t: &CanvasTextures| {
+            t.presented
+                .iter()
+                .map(|p| p.texture.id())
+                .collect::<Vec<_>>()
+        };
+        let started = std::time::Instant::now();
+        while textures.presented.is_empty() {
+            frame(&mut textures, &doc);
+        }
+        println!(
+            "open: first frame {:.0} ms",
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+        while textures.busy() {
+            frame(&mut textures, &doc);
+        }
+        println!(
+            "open: exact {:.0} ms (zoom {zoom:.3}, levels {:?})",
+            started.elapsed().as_secs_f64() * 1000.0,
+            textures
+                .levels
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+        );
+        for name in ["Layer 10", "Tone 4", "Tone 6", "Layer 2 2"] {
+            for visible in [false, true] {
+                let index = doc.layers.iter().position(|l| l.name == name).unwrap();
+                doc.layers[index].visible = visible;
+                let before = shown(&textures);
+                let started = std::time::Instant::now();
+                frame(&mut textures, &doc);
+                while shown(&textures) == before && textures.busy() {
+                    frame(&mut textures, &doc);
+                }
+                let first = started.elapsed().as_secs_f64() * 1000.0;
+                while textures.busy() {
+                    frame(&mut textures, &doc);
+                }
+                println!(
+                    "{name:10} visible={visible}: shown {first:.0} ms, exact {:.0} ms",
+                    started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+        }
     }
 }

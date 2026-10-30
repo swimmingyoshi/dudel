@@ -233,6 +233,41 @@ impl Mask {
     }
     /// Present-tile bounds for a mostly-white mask. These bound every possible
     /// non-white source byte; they do not describe masks with another default.
+    /// Whether the mask hides all of `rect` (clamped to the mask): every
+    /// coverage byte there is 0.
+    pub(crate) fn region_is_clear(&self, rect: [usize; 4]) -> bool {
+        let [w, h] = self.0.dimensions;
+        let [left, top, right, bottom] = [
+            rect[0].min(w),
+            rect[1].min(h),
+            rect[2].min(w),
+            rect[3].min(h),
+        ];
+        if left >= right || top >= bottom {
+            return true;
+        }
+        let columns = self.0.columns();
+        for row in top / SIDE..=(bottom - 1) / SIDE {
+            for column in left / SIDE..=(right - 1) / SIDE {
+                let index = row * columns + column;
+                let [x0, y0, x1, y1] = self.0.rect(index);
+                let Some(bytes) = &self.0.tiles[index] else {
+                    if self.0.default != 0 {
+                        return false;
+                    }
+                    continue;
+                };
+                let (from, to) = (left.max(x0) - x0, right.min(x1) - x0);
+                for y in top.max(y0)..bottom.min(y1) {
+                    let start = (y - y0) * (x1 - x0);
+                    if bytes[start + from..start + to].iter().any(|v| *v != 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
     pub(crate) fn white_sparse_regions(&self) -> Option<Vec<[usize; 4]>> {
         let [w, h] = self.dimensions();
         if self.0.default != 255 || self.payload_bytes() > w * h / 4 {

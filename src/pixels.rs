@@ -62,6 +62,15 @@ impl Tiles {
             bytes[offset..offset + 4].try_into().unwrap()
         })
     }
+    #[inline]
+    fn rgba_at(&self, x: usize, y: usize) -> [u8; 4] {
+        assert!(x < self.width && y < self.height);
+        let block = (y / SIDE) * self.columns + x / SIDE;
+        let offset = ((y % SIDE) * SIDE + x % SIDE) * 4;
+        self.blocks[block].as_ref().map_or([0; 4], |bytes| {
+            bytes[offset..offset + 4].try_into().unwrap()
+        })
+    }
 }
 /// Sparse copy-on-write pixels, with explicit flat compatibility for older tools.
 #[derive(Clone)]
@@ -834,6 +843,15 @@ impl Pixels {
             || self.0.tiles.as_ref().unwrap().rgba(index),
             |b| b[index * 4..index * 4 + 4].try_into().unwrap(),
         )
+    }
+    /// `rgba` by coordinates, for loops that already know them; tiled
+    /// storage then needs no division by the width.
+    #[inline]
+    pub(crate) fn rgba_at(&self, width: usize, x: usize, y: usize) -> [u8; 4] {
+        match &self.0.tiles {
+            Some(tiles) => tiles.rgba_at(x, y),
+            None => self.rgba(y * width + x),
+        }
     }
     pub fn write_rgba(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
         if let Some(flat) = &self.0.flat {

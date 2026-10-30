@@ -266,14 +266,26 @@ impl Layer {
             return true;
         }
         self.display_reference.as_ref().map_or_else(
-            || self.pixels.region_has_payload(rect),
+            || self.pixels.region_has_payload(rect) && !self.mask_hides(rect),
             |r| r.intersects(rect),
         )
     }
+    /// Whether an enabled mask hides all of `rect`, so the layer's pixels
+    /// show nowhere there.
+    pub(crate) fn mask_hides(&self, rect: [usize; 4]) -> bool {
+        self.mask
+            .as_ref()
+            .is_some_and(|mask| mask.enabled && mask.coverage.region_is_clear(rect))
+    }
     pub(crate) fn mask_coverage(&self, index: usize, width: usize) -> f32 {
-        self.mask.as_ref().filter(|m| m.enabled).map_or(1.0, |m| {
-            f32::from(m.coverage.at(index % width, index / width)) / 255.0
-        })
+        self.mask_coverage_at(index % width, index / width)
+    }
+    #[inline]
+    fn mask_coverage_at(&self, x: usize, y: usize) -> f32 {
+        self.mask
+            .as_ref()
+            .filter(|m| m.enabled)
+            .map_or(1.0, |m| f32::from(m.coverage.at(x, y)) / 255.0)
     }
     pub(crate) fn pixel_alpha(&self, alpha: u8) -> f32 {
         if self.csp_byte_opacity {
@@ -769,42 +781,27 @@ impl Document {
         self.composite_layers(index, levels, 0, &self.layers, 0, plan);
         levels[0].finish()
     }
-    /// `composite_pixel` for a pixel where `empty[i]` marks raster layers that
-    /// contribute zero alpha (hidden, transparent or nothing stored). Those add
-    /// a zero source without reading pixels, which matches reading a
-    /// transparent pixel exactly while still closing clipping groups.
-    fn composite_pixel_sparse(
-        &self,
-        index: usize,
-        levels: &mut [Level],
-        empty: &[bool],
-        plan: &[u16],
-    ) -> [f32; 4] {
-        levels[0] = EMPTY_LEVEL;
-        let mut top = 0;
-        for (global, (layer, &empty)) in self.layers.iter().zip(empty).enumerate() {
-            if empty {
-                let depth = layer.depth as usize;
-                open_levels(levels, &mut top, depth, plan, global);
-                levels[depth].add([0.0; 3], 0.0, layer.clipped, layer.blend);
-            } else {
-                top = self.composite_layers(
-                    index,
-                    levels,
-                    top,
-                    std::slice::from_ref(layer),
-                    global,
-                    plan,
-                );
-            }
-        }
-        levels[0].finish()
-    }
     /// Composite `layers`, which start at index `start` of the document's
     /// layers, onto the open levels. `plan` is `pass_plan` for the document.
     fn composite_layers(
         &self,
         index: usize,
+        levels: &mut [Level],
+        top: usize,
+        layers: &[Layer],
+        start: usize,
+        plan: &[u16],
+    ) -> usize {
+        let at = [index % self.width, index / self.width];
+        self.composite_layers_at(index, at, levels, top, layers, start, plan)
+    }
+    /// `composite_layers` with the pixel's coordinates already known, so
+    /// each layer reads its pixel and mask without dividing the index again.
+    #[allow(clippy::too_many_arguments)]
+    fn composite_layers_at(
+        &self,
+        index: usize,
+        [x, y]: [usize; 2],
         levels: &mut [Level],
         mut top: usize,
         layers: &[Layer],
@@ -827,7 +824,7 @@ impl Document {
                     (below, 0.0)
                 };
                 let t = if layer.visible {
-                    layer.opacity * layer.mask_coverage(index, self.width)
+                    layer.opacity * layer.mask_coverage_at(x, y)
                 } else {
                     0.0
                 };
@@ -862,7 +859,7 @@ impl Document {
             }
             if let Some(adjustment) = &layer.adjustment {
                 let t = if layer.visible {
-                    layer.opacity * layer.mask_coverage(index, self.width)
+                    layer.opacity * layer.mask_coverage_at(x, y)
                 } else {
                     0.0
                 };
@@ -877,7 +874,7 @@ impl Document {
                     [0.0; 4]
                 };
                 let a = if layer.visible {
-                    content[3] * layer.opacity * layer.mask_coverage(index, self.width)
+                    content[3] * layer.opacity * layer.mask_coverage_at(x, y)
                 } else {
                     0.0
                 };
@@ -888,12 +885,12 @@ impl Document {
                 };
                 levels[depth].add(color, a, layer.clipped, layer.blend);
             } else {
-                let pixel = layer.display_reference.as_ref().map_or_else(
-                    || layer.pixels.rgba(index),
-                    |r| r.pixel(index % self.width, index / self.width),
-                );
+                let pixel = layer
+                    .display_reference
+                    .as_ref()
+                    .map_or_else(|| layer.pixels.rgba_at(self.width, x, y), |r| r.pixel(x, y));
                 let mut a = if layer.visible {
-                    layer.pixel_alpha(pixel[3]) * layer.mask_coverage(index, self.width)
+                    layer.pixel_alpha(pixel[3]) * layer.mask_coverage_at(x, y)
                 } else {
                     0.0
                 };
@@ -1043,18 +1040,77 @@ impl Document {
         transparent: bool,
         check: impl Fn() -> Result<(), String> + Sync,
     ) -> Result<Vec<u8>, String> {
+        self.composite_grid(rect, 1, transparent, check)
+    }
+    /// A quick, blocky stand-in for `composite_bounds_checked`: one pixel
+    /// composited per `step` square (squares aligned to the canvas), spread
+    /// over its square. Reducing it by `step` gives exactly those pixels.
+    pub(crate) fn composite_sampled_cancelable(
+        &self,
+        rect: [usize; 4],
+        step: usize,
+        cancel: &std::sync::atomic::AtomicBool,
+        transparent: bool,
+    ) -> Result<Vec<u8>, String> {
+        self.composite_grid(rect, step.max(1), transparent, || {
+            crate::fill::check_cancel(Some(cancel))
+        })
+    }
+    fn composite_grid(
+        &self,
+        rect: [usize; 4],
+        step: usize,
+        transparent: bool,
+        check: impl Fn() -> Result<(), String> + Sync,
+    ) -> Result<Vec<u8>, String> {
         check()?;
         if self.has_effects() {
             let expanded = crate::layer_effects::expand(self, false, &|| check().is_err())?;
-            return expanded.composite_bounds_checked(rect, transparent, check);
+            return expanded.composite_grid(rect, step, transparent, check);
         }
         let [left, top, right, bottom] = rect;
         let width = right.saturating_sub(left);
         let height = bottom.saturating_sub(top);
-        let mut out = vec![0; width * height * 4];
         if width == 0 || height == 0 {
-            return Ok(out);
+            return Ok(vec![0; width * height * 4]);
         }
+        // The middle of each step square, kept inside the rectangle.
+        let samples = |from: usize, to: usize| -> Vec<usize> {
+            if step == 1 {
+                return (from..to).collect();
+            }
+            (from / step * step..to)
+                .step_by(step)
+                .map(|start| (start + step / 2).clamp(from, to - 1))
+                .collect()
+        };
+        let (xs, ys) = (samples(left, right), samples(top, bottom));
+        let values = self.composite_samples(rect, &xs, &ys, transparent, &check)?;
+        if step == 1 {
+            return Ok(values);
+        }
+        let mut out = vec![0; width * height * 4];
+        for (row, y) in out.chunks_exact_mut(width * 4).zip(top..) {
+            let source = &values[(y / step - top / step) * xs.len() * 4..][..xs.len() * 4];
+            for (pixel, x) in row.chunks_exact_mut(4).zip(left..) {
+                pixel.copy_from_slice(&source[(x / step - left / step) * 4..][..4]);
+            }
+        }
+        Ok(out)
+    }
+    /// The composite at each (x, y) of `xs` by `ys` (ascending, inside
+    /// `rect`), row by row.
+    fn composite_samples(
+        &self,
+        rect: [usize; 4],
+        xs: &[usize],
+        ys: &[usize],
+        transparent: bool,
+        check: &(impl Fn() -> Result<(), String> + Sync),
+    ) -> Result<Vec<u8>, String> {
+        let [left, top, right, bottom] = rect;
+        let width = xs.len();
+        let mut out = vec![0; width * ys.len() * 4];
         // Per 256px storage block, which raster layers add nothing there.
         // Sparse layers then cost no pixel reads outside the blocks they paint.
         const BLOCK: usize = crate::pixels::SIDE;
@@ -1084,43 +1140,72 @@ impl Document {
             .collect();
         let sparse = empty.iter().any(|block| block.iter().any(|skip| *skip));
         let pass = pass_plan(&self.layers);
+        // Short strips of a row go through the layers one layer at a time,
+        // so each layer's pixels and mask are read in order instead of every
+        // layer being visited for each pixel in turn. Each pixel keeps its own
+        // level stack and sees exactly the steps it would on its own.
+        const STRIP: usize = 64;
         let rows = |chunk: &mut [u8], first_row: usize| {
-            let mut levels = [EMPTY_LEVEL; MAX_DEPTH as usize + 1];
-            for (offset, pixel) in chunk.chunks_exact_mut(4).enumerate() {
-                if offset & 1023 == 0 {
-                    check()?;
-                }
-                let (x, y) = (left + offset % width, top + first_row + offset / width);
-                let index = y * self.width + x;
-                let value = if sparse {
-                    let block =
-                        (y / BLOCK - first_row_block) * block_columns + x / BLOCK - first_column;
-                    self.composite_pixel_sparse(index, &mut levels, &empty[block], &pass)
-                } else {
-                    self.composite_pixel(index, &mut levels, &pass)
-                };
-                for c in 0..3 {
-                    pixel[c] = if transparent {
-                        if value[3] > 0.0 {
-                            (value[c] / value[3]).round() as u8
-                        } else {
-                            0
+            let mut stacks = vec![([EMPTY_LEVEL; MAX_DEPTH as usize + 1], 0); STRIP];
+            for (out, &y) in chunk.chunks_exact_mut(width * 4).zip(&ys[first_row..]) {
+                check()?;
+                let mut start = 0;
+                while start < width {
+                    // Strips never cross a storage block.
+                    let mut end = start + 1;
+                    while end < width && end - start < STRIP && xs[end] / BLOCK == xs[start] / BLOCK
+                    {
+                        end += 1;
+                    }
+                    let strip = &xs[start..end];
+                    let stacks = &mut stacks[..strip.len()];
+                    let skip = sparse.then(|| {
+                        &empty[(y / BLOCK - first_row_block) * block_columns + strip[0] / BLOCK
+                            - first_column]
+                    });
+                    for (levels, open) in stacks.iter_mut() {
+                        levels[0] = EMPTY_LEVEL;
+                        *open = 0;
+                    }
+                    for (global, layer) in self.layers.iter().enumerate() {
+                        let depth = layer.depth as usize;
+                        // A layer with nothing here adds a zero source without reading
+                        // pixels: the same as a transparent pixel, and it still closes
+                        // clipping groups.
+                        if skip.is_some_and(|skip| skip[global]) {
+                            for (levels, open) in stacks.iter_mut() {
+                                open_levels(levels, open, depth, &pass, global);
+                                levels[depth].add([0.0; 3], 0.0, layer.clipped, layer.blend);
+                            }
+                            continue;
                         }
-                    } else {
-                        (value[c] + 255.0 * (1.0 - value[3])).round() as u8
-                    };
+                        for ((levels, open), &x) in stacks.iter_mut().zip(strip) {
+                            *open = self.composite_layers_at(
+                                y * self.width + x,
+                                [x, y],
+                                levels,
+                                *open,
+                                std::slice::from_ref(layer),
+                                global,
+                                &pass,
+                            );
+                        }
+                    }
+                    for (offset, (levels, _)) in stacks.iter().enumerate() {
+                        let value = levels[0].finish();
+                        let pixel = &mut out[(start + offset) * 4..][..4];
+                        pixel.copy_from_slice(&output_pixel(value, transparent));
+                    }
+                    start = end;
                 }
-                pixel[3] = if transparent {
-                    (value[3] * 255.0).round() as u8
-                } else {
-                    255
-                };
             }
             Ok::<(), String>(())
         };
         // Small brush regions stay on the calling thread; full refreshes
-        // (undo, layer edits, export) split rows across cores.
-        let threads = if width * height >= 1 << 16 {
+        // (undo, layer edits, export) and quick passes over large areas
+        // split rows across cores.
+        let height = ys.len();
+        let threads = if (right - left) * (bottom - top) >= 1 << 16 && width * height >= 64 {
             std::thread::available_parallelism().map_or(1, |n| n.get().min(16))
         } else {
             1
@@ -2423,6 +2508,121 @@ mod tests {
                 &reference[start..start + 380 * 4]
             );
         }
+    }
+    #[test]
+    fn strip_composite_matches_per_pixel_compositing_on_random_documents() {
+        use crate::blend::BlendMode;
+        let (w, h) = (300, 140);
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let mut checked = 0;
+        for _ in 0..150 {
+            // Children come first, one level deeper, then their folder.
+            fn group(
+                depth: u8,
+                next: &mut impl FnMut(usize) -> usize,
+                w: usize,
+                h: usize,
+            ) -> Vec<Layer> {
+                let mut layers = Vec::new();
+                for _ in 0..1 + next(4) {
+                    if depth < 3 && next(4) == 0 {
+                        layers.extend(group(depth + 1, next, w, h));
+                        let mut folder = Layer::new_folder("folder".into());
+                        folder.depth = depth;
+                        folder.blend = [
+                            BlendMode::Normal,
+                            BlendMode::PassThrough,
+                            BlendMode::Multiply,
+                        ][next(3)];
+                        folder.opacity = [1.0, 0.6][next(2)];
+                        folder.visible = next(6) != 0;
+                        layers.push(folder);
+                        continue;
+                    }
+                    let mut layer = Layer::raster("layer".into(), w, h);
+                    layer.depth = depth;
+                    let rect = [next(w), next(h), 0, 0];
+                    let rect = [
+                        rect[0],
+                        rect[1],
+                        rect[0] + 1 + next(w - rect[0]),
+                        rect[1] + 1 + next(h - rect[1]),
+                    ];
+                    let rgba = [
+                        next(256) as u8,
+                        next(256) as u8,
+                        next(256) as u8,
+                        [255, 128, 0][next(3)],
+                    ];
+                    let count = (rect[2] - rect[0]) * (rect[3] - rect[1]);
+                    layer
+                        .pixels
+                        .writer()
+                        .write_region(w, rect, &rgba.repeat(count));
+                    layer.blend = BlendMode::ALL[next(BlendMode::ALL.len())];
+                    layer.opacity = [1.0, 0.7, 0.0][next(3)];
+                    layer.visible = next(5) != 0;
+                    layer.clipped = next(3) == 0;
+                    if next(3) == 0 {
+                        let mut coverage =
+                            crate::layer_mask::Mask::new(w, h, [0, 255][next(2)]).unwrap();
+                        let mut writer = coverage.writer();
+                        for _ in 0..2_000 {
+                            writer.set(next(w), next(h), next(256) as u8);
+                        }
+                        layer.mask = Some(crate::layer_mask::LayerMask {
+                            id: LayerId::new(),
+                            enabled: next(4) != 0,
+                            linked: true,
+                            coverage,
+                        });
+                    }
+                    layers.push(layer);
+                }
+                layers
+            }
+            let mut doc = Document::new(w, h);
+            doc.layers = group(0, &mut next, w, h);
+            doc.active = 0;
+            if doc.validate().is_err() {
+                continue;
+            }
+            checked += 1;
+            for transparent in [false, true] {
+                let fast = doc.composite_display_region([0, 0, w, h], transparent);
+                for (i, pixel) in fast.chunks_exact(4).enumerate() {
+                    assert_eq!(
+                        pixel,
+                        doc.composite_display_pixel(i, transparent),
+                        "pixel {i}"
+                    );
+                }
+            }
+            // The quick version holds the true composite at each square's middle.
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let rect = [3, 5, 290, 131];
+            let quick = doc
+                .composite_sampled_cancelable(rect, 4, &cancel, false)
+                .unwrap();
+            for y in rect[1]..rect[3] {
+                for x in rect[0]..rect[2] {
+                    let at = |v: usize, from: usize, to: usize| (v / 4 * 4 + 2).clamp(from, to - 1);
+                    let sample = at(y, rect[1], rect[3]) * w + at(x, rect[0], rect[2]);
+                    let index = ((y - rect[1]) * (rect[2] - rect[0]) + x - rect[0]) * 4;
+                    assert_eq!(
+                        &quick[index..index + 4],
+                        doc.composite_display_pixel(sample, false)
+                    );
+                }
+            }
+        }
+        assert!(checked >= 40, "only {checked} random documents were valid");
     }
     #[test]
     fn regional_prefix_plan_matches_scalar_states_and_pixels_across_empty_groups() {
