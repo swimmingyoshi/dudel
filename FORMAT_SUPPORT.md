@@ -46,7 +46,7 @@ and PSD source files, including renamed files recognized by their signatures.
 | Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
 | Glow dodge, Add (glow), Through (pass-through folders) | Native Color dodge (glow), Add (glow) and Pass through |
 | Layer palette color labels | Ignored (a Layers-panel label; it does not change the picture) |
-| Vector layers drawn with plain round brushes | Drawn from their strokes into editable raster layers (CSP saves strokes, not pixels). Width follows each point's pen pressure; CSP's tapering and brush curves are approximated, so lines can be slightly heavier. Strokes using textured, spray or watercolor brushes skip the layer |
+| Vector layers drawn with plain round brushes | Drawn from their strokes into editable raster layers (CSP saves strokes, not pixels). Width follows each point's pen pressure and the brush's anti-aliasing level fades light strokes as CSP does; all of the owner's vector files match CSP's saved previews within one level on average. Strokes using textured, spray or watercolor brushes skip the layer |
 | Screentone (Tone) layers, as made by line-and-tone conversion | Black at the tone's dot density, shown through the layer's mask, which imports as an editable Dudel layer mask (Dudel draws no dots) |
 | Text, balloon, material, correction and effect layers; masks on other layers, monochrome | That layer (or folder and its contents) is skipped and named in Import details |
 | Layer color settings | Pixels keep their stored colors; noted in Import details |

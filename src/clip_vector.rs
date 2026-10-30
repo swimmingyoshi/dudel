@@ -12,6 +12,10 @@
 //! Point: x and y (f64), integer dab bounds, a flag word, then pressure (f32)
 //! and ten further values Dudel does not use. A point's radius is width x
 //! pressure, which matched CSP's saved previews best of the models tried.
+//! The brush's anti-aliasing level (0 none to 3 strong) moves the edge's
+//! one-pixel ramp inward and widens it a little: at 0 it is centered on the
+//! radius, at 3 it ends there and spans 1.5 px, which makes light strokes
+//! thinner and fainter as in CSP (fitted on previews saved at full size).
 use crate::pixels::Pixels;
 
 const HEADER: usize = 88;
@@ -30,6 +34,8 @@ pub(crate) struct Stroke {
     pub width: f64,
     /// `BrushStyle.MainId` the stroke was drawn with.
     pub style: u32,
+    /// The brush style's anti-aliasing level, 0 (none) to 3 (strong).
+    pub antialias: u8,
     pub points: Vec<Point>,
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -105,6 +111,7 @@ pub(crate) fn parse(body: &[u8]) -> Result<Vec<Stroke>, String> {
             opacity: opacity as f32,
             width,
             style: u32_at(h, 72),
+            antialias: 0,
             points,
         });
         at = end;
@@ -132,6 +139,8 @@ pub(crate) fn render(
             return Err("Vector drawing canceled".into());
         }
         let radius = |p: &Point| stroke.width * p.pressure;
+        let level = f64::from(stroke.antialias.min(3)) / 3.0;
+        let (inset, soft) = (0.5 * (1.0 - level), 1.0 + 0.5 * level);
         // Pixel bounds of the whole stroke, clipped to the canvas.
         let mut bounds = [
             f64::INFINITY,
@@ -187,7 +196,7 @@ pub(crate) fn render(
                     let r = ra + (rb - ra) * t;
                     let distance = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
                     // A line thinner than a pixel covers it only by its width.
-                    let c = (r - distance + 0.5).clamp(0.0, 1.0).min(2.0 * r) as f32;
+                    let c = ((r - distance + inset) / soft).clamp(0.0, 1.0).min(2.0 * r) as f32;
                     let cell = &mut coverage[row + x - left];
                     if c > *cell {
                         *cell = c;
@@ -274,6 +283,7 @@ mod tests {
             opacity: 1.0,
             width: 2.0,
             style: 1,
+            antialias: 0,
             points: vec![
                 Point {
                     x: 2.0,
@@ -321,6 +331,16 @@ mod tests {
         assert_eq!(at(10, 10)[3], 0);
         // Round caps reach past the end points by the radius.
         assert!(at(19, 6)[3] > 0 && at(0, 6)[3] > 0);
+        // Strong anti-aliasing fades the edge inside the radius.
+        let soft = Stroke {
+            antialias: 3,
+            ..line([0, 0, 0], 6.0)
+        };
+        let soft = render(&[soft], [20, 12], &|| false).unwrap();
+        let hard = render(&[line([0, 0, 0], 6.0)], [20, 12], &|| false).unwrap();
+        let edge = |p: &Pixels| p.rgba(4 * 20 + 10)[3];
+        assert!(edge(&soft) < edge(&hard));
+        assert_eq!(soft.rgba(6 * 20 + 10)[3], 255);
         assert!(render(&[line([0; 3], 5.0)], [20, 12], &|| true).is_err());
     }
 }

@@ -144,9 +144,10 @@ struct Report {
     #[serde(skip)]
     tones: BTreeMap<i64, (f32, MaskSource)>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
-    /// spray, watercolor or blending), which vector strokes may use.
+    /// spray, watercolor or blending), which vector strokes may use, with
+    /// their anti-aliasing level.
     #[serde(skip)]
-    plain_brush_styles: BTreeSet<u32>,
+    plain_brush_styles: BTreeMap<u32, u8>,
 }
 /// An external chunk holding one layer's data.
 #[derive(Debug)]
@@ -294,7 +295,12 @@ fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
         return Ok(());
     }
     let style_columns = table_columns(db, "BrushStyle")?;
-    let mut plain = String::from("SELECT MainId FROM BrushStyle WHERE 1");
+    let antialias = if style_columns.contains("AntiAlias") {
+        "coalesce(AntiAlias,0)"
+    } else {
+        "0"
+    };
+    let mut plain = format!("SELECT MainId,{antialias} FROM BrushStyle WHERE 1");
     for column in [
         "PatternStyle",
         "CompositeMode",
@@ -306,10 +312,12 @@ fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
             plain.push_str(&format!(" AND coalesce(\"{column}\",0)=0"));
         }
     }
-    report.plain_brush_styles = rows(db, &plain, MAX_ENTRIES, |row| row.get::<_, i64>(0))?
-        .into_iter()
-        .filter_map(|id| u32::try_from(id).ok())
-        .collect();
+    report.plain_brush_styles = rows(db, &plain, MAX_ENTRIES, |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?
+    .into_iter()
+    .filter_map(|(id, level)| Some((u32::try_from(id).ok()?, level.clamp(0, 3) as u8)))
+    .collect();
     let layers = rows(
         db,
         "SELECT l.MainId,v.VectorData FROM Layer l JOIN VectorObjectList v ON v.LayerId=l.MainId \
@@ -1549,7 +1557,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         images: BTreeMap::new(),
         vectors: BTreeMap::new(),
         tones: BTreeMap::new(),
-        plain_brush_styles: BTreeSet::new(),
+        plain_brush_styles: BTreeMap::new(),
         animation: Animation::default(),
     })
 }
@@ -2291,7 +2299,7 @@ fn read_vector(
     source: &mut File,
     inventory: &clip_container::Inventory,
     data: &ExternalData,
-    plain_styles: &BTreeSet<u32>,
+    plain_styles: &BTreeMap<u32, u8>,
 ) -> Result<Vec<crate::clip_vector::Stroke>, String> {
     const MAX_VECTOR_BYTES: u64 = 512 * 1024 * 1024;
     let (offset, bytes) = inventory.external_body_bounds(data.offset, data.id.len())?;
@@ -2305,9 +2313,11 @@ fn read_vector(
     source
         .read_exact(&mut body)
         .map_err(|error| error.to_string())?;
-    let strokes = crate::clip_vector::parse(&body)?;
-    if let Some(stroke) = strokes.iter().find(|s| !plain_styles.contains(&s.style)) {
-        return Err(format!("brush style {}", stroke.style));
+    let mut strokes = crate::clip_vector::parse(&body)?;
+    for stroke in &mut strokes {
+        stroke.antialias = *plain_styles
+            .get(&stroke.style)
+            .ok_or_else(|| format!("brush style {}", stroke.style))?;
     }
     Ok(strokes)
 }
@@ -3309,7 +3319,7 @@ pub(crate) mod tests {
         );
         assert_eq!(study.vectors[&30].offset, 500);
         // Textured styles are not plain; strokes using them skip the layer.
-        assert_eq!(study.plain_brush_styles, BTreeSet::from([1]));
+        assert_eq!(study.plain_brush_styles, BTreeMap::from([(1, 0)]));
         // Strict inspection still refuses vector layers.
         let mut strict = with_vector(&db).unwrap();
         document_features(&db, &mut strict).unwrap();
