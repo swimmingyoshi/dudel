@@ -27,6 +27,19 @@ impl ImportReport {
     pub(crate) fn is_empty(&self) -> bool {
         self.notes.is_empty() && self.details.is_empty()
     }
+    /// Every message as plain text, notes first, for the clipboard.
+    pub(crate) fn text(&self) -> String {
+        let mut lines = self.notes.clone();
+        if !self.details.is_empty() {
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push("Other details:".into());
+            lines.extend(self.details.iter().cloned());
+        }
+        lines.join("
+")
+    }
 }
 
 pub(crate) fn verify(
@@ -204,6 +217,13 @@ impl crate::Dudel {
             .vscroll(true)
             .show(ctx, |ui| {
                 ui.label("Your source file has not been changed. Save the imported artwork as a new .dudel project.");
+                if ui
+                    .button("Copy all")
+                    .on_hover_text("Copy every message as text (or select text and press Ctrl+C)")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(report.text());
+                }
                 ui.separator();
                 if report.notes.is_empty() {
                     ui.label("Nothing was left out.");
@@ -265,5 +285,10 @@ mod tests {
         let loss = ImportReport::new(vec!["Skipped layer “Ink”.".into()], Vec::new());
         assert!(loss.open);
         assert!(ImportReport::default().is_empty());
+        let both = ImportReport::new(vec!["Skipped “Ink”.".into()], vec!["Frame 1.".into()]);
+        assert_eq!(both.text(), "Skipped “Ink”.
+
+Other details:
+Frame 1.");
     }
 }

@@ -335,10 +335,17 @@ impl Dudel {
         let paste_shortcut = self.clipboard_paste_shortcut(ctx);
         let command_shift = Modifiers::COMMAND | Modifiers::SHIFT;
         let key = |modifiers: Modifiers, key: Key| ctx.input_mut(|i| i.consume_key(modifiers, key));
+        // Text selected in a label (Import details, notes) copies as text;
+        // leave Copy to egui instead of copying the canvas.
+        let text_selected = ctx
+            .with_plugin(|labels: &mut egui::text_selection::LabelSelectionState| {
+                labels.has_selection()
+            })
+            .unwrap_or(false);
         let (copy, cut, paste) = ctx.input_mut(|input| {
             let mut commands = (false, false, false);
             input.events.retain(|event| match event {
-                egui::Event::Copy => {
+                egui::Event::Copy if !text_selected => {
                     commands.0 = true;
                     false
                 }
@@ -356,7 +363,7 @@ impl Dudel {
         });
         if cut || key(Modifiers::COMMAND, Key::X) {
             self.copy_canvas(true);
-        } else if copy || key(Modifiers::COMMAND, Key::C) {
+        } else if copy || (!text_selected && key(Modifiers::COMMAND, Key::C)) {
             self.copy_canvas(false);
         }
         if paste || paste_shortcut || key(Modifiers::COMMAND, Key::V) {
