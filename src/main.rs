@@ -136,6 +136,7 @@ mod render_region;
 mod replay;
 mod rulers;
 mod save_jobs;
+mod screentone;
 mod selection;
 mod selection_contour;
 mod selection_mask;

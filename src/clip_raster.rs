@@ -121,7 +121,8 @@ pub(crate) fn decode(
 }
 
 /// A layer mask bitmap (one coverage byte per pixel) placed like a raster;
-/// outside the bitmap the mask hides.
+/// outside the bitmap the mask hides. Unwritten blocks hide, or show when
+/// the mask was created showing everything.
 pub(crate) fn decode_mask(
     reader: &mut impl Read,
     body_bytes: u64,
@@ -131,16 +132,40 @@ pub(crate) fn decode_mask(
     cancelled: &impl Fn() -> bool,
 ) -> Result<crate::layer_mask::Mask, String> {
     let [width, height] = placement.canvas;
-    if !attributes.is_mask() || !attributes.transparent_default() {
+    let opaque = attributes.opaque_default();
+    if !attributes.is_mask() || !(attributes.transparent_default() || opaque) {
         return Err("Unsupported clip mask layout".into());
     }
-    let mut mask = crate::layer_mask::Mask::new(width, height, 0)?;
     let combined = |axis: usize| {
         placement.layer_offset[axis]
             .checked_add(placement.render_offset[axis])
             .ok_or("Clip mask combined offset overflow")
     };
     let offset = [combined(0)?, combined(1)?];
+    // The canvas part the bitmap covers.
+    let span = |axis: usize, size: u32, limit: usize| {
+        let start = offset[axis].clamp(0, limit as i64) as usize;
+        let end = (offset[axis] + i64::from(size)).clamp(0, limit as i64) as usize;
+        start..end
+    };
+    let (columns, rows) = (
+        span(0, attributes.width, width),
+        span(1, attributes.height, height),
+    );
+    let whole = columns == (0..width) && rows == (0..height);
+    let mut mask =
+        crate::layer_mask::Mask::new(width, height, if opaque && whole { 255 } else { 0 })?;
+    if opaque && !whole {
+        let mut writer = mask.writer();
+        for y in rows {
+            if cancelled() {
+                return Err("Clip mask decoding canceled".into());
+            }
+            for x in columns.clone() {
+                writer.set(x, y, 255);
+            }
+        }
+    }
     clip_blocks::decode_layout(
         reader,
         body_bytes,
@@ -159,7 +184,7 @@ pub(crate) fn decode_mask(
                 for x in 0..256usize.min(attributes.width as usize - left) {
                     let dx = offset[0] + (left + x) as i64;
                     let value = raw[y * 256 + x];
-                    if value != 0 && dx >= 0 && dx < width as i64 {
+                    if (value != 0 || opaque) && dx >= 0 && dx < width as i64 {
                         writer.set(dx as usize, dy as usize, value);
                     }
                 }

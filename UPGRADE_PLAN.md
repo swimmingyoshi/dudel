@@ -459,6 +459,19 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   tone fields (72.0, 60.0, density) need a print-resolution sample to map
   lines/angle.
 
+- 2026-10-30 (Claude, screentone dots): owner's SCREENTONE.clip (300 dpi, 85
+  lines, 45 deg, 40%) mapped the EffectTone record (resolution, dot shape,
+  density source, density, lines, render flag, angle, noise size, offsets).
+  `src/screentone.rs` snaps cells to whole pixels and grows each cell's round
+  dot to the density's share of its pixels; the import matches CSP's preview
+  exactly (1,000,000 of 1,000,000 pixels, was a skipped layer). Only round
+  dots at a set density with the observed flag and no offset are drawn;
+  cells under 2 px (2d.clip) stay even shading, unchanged. Masks created
+  showing everything now decode, and a tone's LayerMasking=1 is accepted
+  only when its mask shows everything and was never painted (meaning of the
+  bit still unknown). Open: more samples for densities over 50%, other dot
+  shapes, offset grids, and 600 dpi cells.
+
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
   Corpora and pen testing not rerun.

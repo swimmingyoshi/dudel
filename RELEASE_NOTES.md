@@ -48,8 +48,9 @@ the package has been uploaded to a public store.
   past the canvas, canvases set in inches, and files with color proofing
   settings that are switched off. Vector layers are drawn from their strokes
   as raster layers instead of being skipped; Layers-panel color labels no
-  longer skip layers. Screentone layers import as even shading with their
-  CSP mask as an editable layer mask.
+  longer skip layers. Screentone layers import with their dots drawn as CSP
+  draws round dots (even shading for other dot shapes and very fine tones),
+  with their CSP mask as an editable layer mask.
 - Photoshop large documents (`.psb`) open like `.psd` files, and CMYK files open with
   their colors converted through the file's color profile.
 - Canvases up to 16,384 px per side and 100 megapixels (10,000 x 10,000), up from

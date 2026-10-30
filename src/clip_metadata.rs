@@ -140,9 +140,9 @@ struct Report {
     /// Import mode: each vector layer's stroke data.
     #[serde(skip)]
     vectors: BTreeMap<i64, ExternalData>,
-    /// Import mode: each tone layer's dot density (0..=1) and mask bitmap.
+    /// Import mode: each tone layer's effect and mask bitmap.
     #[serde(skip)]
-    tones: BTreeMap<i64, (f32, MaskSource)>,
+    tones: BTreeMap<i64, (ToneEffect, MaskSource)>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use, with
     /// their anti-aliasing level.
@@ -357,11 +357,18 @@ fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
     }
     Ok(())
 }
-/// The tone density (0..=1) of a `LayerEffectInfo` whose only enabled effect
-/// is the screentone. The layout (a length, version 2, then named effects)
-/// was read from CSP's line-and-tone conversion output; each check below is
-/// a field observed to be 0 for a disabled effect.
-fn tone_density(info: &[u8]) -> Option<f32> {
+/// A screentone effect: its dot density (percent) and, when Dudel can draw
+/// its dots, their grid.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ToneEffect {
+    percent: u32,
+    screen: Option<crate::screentone::Screen>,
+}
+/// The tone effect of a `LayerEffectInfo` whose only enabled effect is the
+/// screentone. The layout (a length, version 2, then named effects) was read
+/// from CSP's line-and-tone conversion output; each check below is a field
+/// observed to be 0 for a disabled effect.
+fn tone_effect(info: &[u8]) -> Option<ToneEffect> {
     let word = |at: usize| Some(u32::from_be_bytes(info.get(at..at + 4)?.try_into().ok()?));
     if word(0)? as usize != info.len() || word(4)? != 2 {
         return None;
@@ -394,9 +401,37 @@ fn tone_density(info: &[u8]) -> Option<f32> {
         }
     }
     let density = word(tone + 20)?;
-    (density <= 100).then_some(density as f32 / 100.0)
+    if density > 100 {
+        return None;
+    }
+    // After on/off: the resolution the tone was laid out for (f64), dot
+    // shape, density source, density, lines (f64), a render flag, a zero,
+    // angle, noise size, a further size, and the grid's offset as integers
+    // and then as f64 pairs, in the order CSP saves them. Dudel draws round
+    // dots (shape 1) at the set density (source 2) with the flag and
+    // offsets the observed tones have; other tones are shaded evenly.
+    let float = |at: usize| Some(f64::from_be_bytes(info.get(at..at + 8)?.try_into().ok()?));
+    let screen = (|| {
+        let plain = word(tone + 12)? == 1
+            && word(tone + 16)? == 2
+            && word(tone + 32)? == 1
+            && word(tone + 52)? == 0
+            && word(tone + 56)? == 0
+            && float(tone + 60)? == 0.0
+            && float(tone + 68)? == 0.0;
+        plain.then_some(crate::screentone::Screen {
+            lines: float(tone + 24)?,
+            resolution: float(tone + 4)?,
+            angle: word(tone + 40)?,
+        })
+    })()
+    .filter(|screen| screen.side().is_some());
+    Some(ToneEffect {
+        percent: density,
+        screen,
+    })
 }
-/// Screentone layers: their dot density and layer mask.
+/// Screentone layers: their effect and layer mask.
 fn tone_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
     let candidates = rows(
         db,
@@ -407,7 +442,7 @@ fn tone_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
         |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
     )?;
     for (id, info) in candidates {
-        let Some(density) = tone_density(&info) else {
+        let Some(effect) = tone_effect(&info) else {
             continue;
         };
         let Ok(mask) = mask_source(db, id) else {
@@ -415,7 +450,7 @@ fn tone_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
         };
         if let Some(layer) = report.layers.iter_mut().find(|layer| layer.id == id) {
             layer.tone = true;
-            report.tones.insert(id, (density, mask));
+            report.tones.insert(id, (effect, mask));
         }
     }
     Ok(())
@@ -540,9 +575,19 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         }
         report.locks.insert(id, lock);
         let tone = report.layers.iter().any(|l| l.id == id && l.is_tone());
+        // A tone layer may carry LayerMasking 1 (meaning unverified) when its
+        // mask shows everything and was never painted: whether the bit turns
+        // the mask off or not, the layer looks the same.
+        let unmasked_tone = tone
+            && masking == 1
+            && report.tones.get(&id).is_some_and(|(_, mask)| {
+                mask.attributes.opaque_default() && mask.attributes.unpainted()
+            });
         if (lock != 0 && (!study || lock & !17 != 0))
-            || (mask != 0 && !(tone && masking == 0))
-            || (masking != if id == report.canvas.root { 32 } else { 0 } && !study_folder_masking)
+            || (mask != 0 && !(tone && masking == 0 || unmasked_tone))
+            || (masking != if id == report.canvas.root { 32 } else { 0 }
+                && !study_folder_masking
+                && !unmasked_tone)
         {
             layer_issue(report, study, id, "unsupported lock/mask metadata".into());
         }
@@ -2055,15 +2100,26 @@ fn prepare_document_mode(
             None => skips.push((reasons, vec![name])),
         }
     }
-    let toned: Vec<String> = kept
-        .iter()
-        .filter(|(entry, _)| masks.contains_key(&entry.id))
-        .map(|(entry, _)| name_of(entry.id))
-        .collect();
-    if !toned.is_empty() {
+    let toned = |dotted: bool| -> Vec<String> {
+        kept.iter()
+            .filter(|(entry, _)| {
+                masks.contains_key(&entry.id)
+                    && report.tones[&entry.id].0.screen.is_some() == dotted
+            })
+            .map(|(entry, _)| name_of(entry.id))
+            .collect()
+    };
+    let (dotted, shaded) = (toned(true), toned(false));
+    if !dotted.is_empty() {
         notes.push(format!(
-            "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel has no screentone): {}.",
-            name_list(&toned)
+            "Screentone drawn as its dots on an ordinary layer, through the layer's mask (Dudel has no screentone settings): {}.",
+            name_list(&dotted)
+        ));
+    }
+    if !shaded.is_empty() {
+        notes.push(format!(
+            "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel draws the dots themselves only for round dots at a set density, spaced 2 px or more apart): {}.",
+            name_list(&shaded)
         ));
     }
     let drawn: Vec<String> = kept
@@ -2203,10 +2259,14 @@ fn prepare_document_mode(
             if let Some(strokes) = vectors.get(&id) {
                 return crate::clip_vector::render(strokes, canvas, cancelled);
             }
-            // Tone dots are drawn as their average: black at the dot density,
-            // shown through the layer mask.
-            if let Some((density, _)) = report.tones.get(&id) {
-                let alpha = (density * 255.0).round() as u8;
+            // Tone dots are drawn as CSP draws them when Dudel can, otherwise
+            // as their average: black at the dot density. Both are shown
+            // through the layer mask.
+            if let Some((tone, _)) = report.tones.get(&id) {
+                if let Some(screen) = &tone.screen {
+                    return crate::screentone::render(screen, tone.percent, canvas, cancelled);
+                }
+                let alpha = (tone.percent as f32 / 100.0 * 255.0).round() as u8;
                 return Ok(crate::pixels::Pixels::solid(
                     canvas[0],
                     canvas[1],
@@ -3424,14 +3484,61 @@ pub(crate) mod tests {
             out.extend(body);
             out
         };
-        assert_eq!(tone_density(&info(0, 1, 30, 0)), Some(0.3));
-        assert_eq!(tone_density(&info(1, 1, 30, 0)), None);
-        assert_eq!(tone_density(&info(0, 0, 30, 0)), None);
-        assert_eq!(tone_density(&info(0, 1, 30, 1)), None);
-        assert_eq!(tone_density(&info(0, 1, 101, 0)), None);
+        let percent = |info: &[u8]| tone_effect(info).map(|tone| tone.percent);
+        assert_eq!(percent(&info(0, 1, 30, 0)), Some(30));
+        assert_eq!(percent(&info(1, 1, 30, 0)), None);
+        assert_eq!(percent(&info(0, 0, 30, 0)), None);
+        assert_eq!(percent(&info(0, 1, 30, 1)), None);
+        assert_eq!(percent(&info(0, 1, 101, 0)), None);
         let mut short = info(0, 1, 30, 0);
         short.pop();
-        assert_eq!(tone_density(&short), None);
+        assert_eq!(percent(&short), None);
+        // Too short for the grid: shaded evenly.
+        assert_eq!(tone_effect(&info(0, 1, 30, 0)).unwrap().screen, None);
+    }
+    #[test]
+    fn round_dot_tones_at_a_set_density_get_their_grid() {
+        fn name(out: &mut Vec<u8>, text: &str) {
+            out.extend((text.len() as u32).to_be_bytes());
+            out.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
+        }
+        // CSP's full record: 300 dpi, round dots, set density 40%, 85
+        // lines, 45°, no offset.
+        let info = |shape: u32, offset: u32| {
+            let mut body = Vec::new();
+            name(&mut body, "EffectEdge");
+            body.extend(0u32.to_be_bytes());
+            name(&mut body, "EffectTone");
+            body.extend(1u32.to_be_bytes());
+            body.extend(300.0f64.to_be_bytes());
+            for word in [shape, 2, 40] {
+                body.extend(word.to_be_bytes());
+            }
+            body.extend(85.0f64.to_be_bytes());
+            for word in [1, 0, 45, 10, 0, offset, 0] {
+                body.extend(word.to_be_bytes());
+            }
+            body.extend([0.0f64, 0.0].map(f64::to_be_bytes).concat());
+            let mut out = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+            out.extend(2u32.to_be_bytes());
+            out.extend(body);
+            out
+        };
+        let screen = crate::screentone::Screen {
+            lines: 85.0,
+            resolution: 300.0,
+            angle: 45,
+        };
+        assert_eq!(
+            tone_effect(&info(1, 0)),
+            Some(ToneEffect {
+                percent: 40,
+                screen: Some(screen)
+            })
+        );
+        // Other dot shapes and moved grids are shaded evenly.
+        assert_eq!(tone_effect(&info(2, 0)).unwrap().screen, None);
+        assert_eq!(tone_effect(&info(1, 3)).unwrap().screen, None);
     }
     #[test]
     fn switched_off_proofing_and_inch_canvases_open() {
