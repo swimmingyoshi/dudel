@@ -424,6 +424,16 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   from every file. Gates pass (993 tests). Committed locally, not pushed. Full
   Verify and the owner's pen pass still open. Next CSP gap: vector layers.
 
+- 2026-10-29 (Claude, CSP gaps from the owner's Documents\CSP files): image
+  material layers (original resampled to the stored corners), oversized
+  layer bitmaps, inch canvases, switched-off proofing, palette color labels,
+  and vector layers (`src/clip_vector.rs`: stroke layout read from the
+  owner's files, radius = width x pressure fitted against CSP previews:
+  Nightcrawler 5.26 -> 0.43 mean levels off, REnderPurple 5.18 -> 3.65 where
+  CSP tapers low-pressure ends more). Open: CSP's size curves
+  (`SizeEffector` with BrushEffectorGraphData), screentone layers (LayerType
+  2), CSP layer masks, canvases over 4096 px (frame.clip, Girl_horns.clip).
+
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
   Corpora and pen testing not rerun.

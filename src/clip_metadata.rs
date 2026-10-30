@@ -48,6 +48,8 @@ struct Layer {
     /// An image material layer (a placed picture CSP can resize): it stores
     /// the resized result as an ordinary render bitmap. Import mode only.
     image: bool,
+    /// A vector layer whose strokes Dudel draws. Import mode only.
+    vector: bool,
 }
 impl Layer {
     // Observed ordinary folders may carry the closed UI bit (16).
@@ -60,9 +62,13 @@ impl Layer {
             (self.layer_type, self.folder),
             (0, 1 | 17) | (256, 1) | (1 | 1584, 0)
         ) || self.is_image()
+            || self.is_vector()
     }
     fn is_image(&self) -> bool {
         self.image && self.layer_type == 0 && self.folder == 0
+    }
+    fn is_vector(&self) -> bool {
+        self.vector && self.layer_type == 0 && self.folder == 0
     }
 }
 #[derive(Debug, serde::Serialize)]
@@ -124,6 +130,19 @@ struct Report {
     /// it lands on the canvas.
     #[serde(skip)]
     images: BTreeMap<i64, ImageSource>,
+    /// Import mode: each vector layer's stroke data.
+    #[serde(skip)]
+    vectors: BTreeMap<i64, ExternalData>,
+    /// Import mode: brush styles drawn as plain round brushes (no texture,
+    /// spray, watercolor or blending), which vector strokes may use.
+    #[serde(skip)]
+    plain_brush_styles: BTreeSet<u32>,
+}
+/// An external chunk holding one layer's data.
+#[derive(Debug)]
+struct ExternalData {
+    id: String,
+    offset: u64,
 }
 /// An image material layer's original picture. CSP saves the original and
 /// redraws the resized result when it opens the file.
@@ -244,8 +263,81 @@ fn image_source(db: &Connection, id: i64) -> Result<ImageSource, String> {
         corners: [tl, tr, bl],
     })
 }
+/// Vector layers with exactly one stroke-data row, and the brush styles they
+/// may use.
+fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
+    let tables: BTreeSet<String> = rows(
+        db,
+        "SELECT name FROM sqlite_schema WHERE type='table'",
+        4096,
+        |row| row.get::<_, String>(0),
+    )?
+    .into_iter()
+    .collect();
+    if !tables.contains("VectorObjectList") || !tables.contains("BrushStyle") {
+        return Ok(());
+    }
+    let style_columns = table_columns(db, "BrushStyle")?;
+    let mut plain = String::from("SELECT MainId FROM BrushStyle WHERE 1");
+    for column in [
+        "PatternStyle",
+        "CompositeMode",
+        "TexturePattern",
+        "UseWaterColor",
+        "SprayFlag",
+    ] {
+        if style_columns.contains(column) {
+            plain.push_str(&format!(" AND coalesce(\"{column}\",0)=0"));
+        }
+    }
+    report.plain_brush_styles = rows(db, &plain, MAX_ENTRIES, |row| row.get::<_, i64>(0))?
+        .into_iter()
+        .filter_map(|id| u32::try_from(id).ok())
+        .collect();
+    let layers = rows(
+        db,
+        "SELECT l.MainId,v.VectorData FROM Layer l JOIN VectorObjectList v ON v.LayerId=l.MainId \
+         WHERE l.LayerType=0 AND l.LayerFolder=0 AND coalesce(l.VectorNormalStrokeIndex,0)!=0 \
+         AND (SELECT count(*) FROM VectorObjectList w WHERE w.LayerId=l.MainId)=1 \
+         AND length(v.VectorData)=40",
+        MAX_ENTRIES + 1,
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+    )?;
+    for (id, data) in layers {
+        let Some(external) = std::str::from_utf8(&data)
+            .ok()
+            .filter(|id| id.starts_with("extrnlid"))
+        else {
+            continue;
+        };
+        let Ok(offset) = db.query_row(
+            "SELECT Offset FROM ExternalChunk WHERE ExternalID=?1",
+            [external],
+            |row| row.get::<_, i64>(0),
+        ) else {
+            continue;
+        };
+        let Ok(offset) = u64::try_from(offset) else {
+            continue;
+        };
+        if let Some(layer) = report.layers.iter_mut().find(|layer| layer.id == id) {
+            layer.vector = true;
+            report.vectors.insert(
+                id,
+                ExternalData {
+                    id: external.to_owned(),
+                    offset,
+                },
+            );
+        }
+    }
+    Ok(())
+}
 fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> Result<(), String> {
     let columns = table_columns(db, "Layer")?;
+    if study && columns.contains("VectorNormalStrokeIndex") {
+        vector_layers(db, report)?;
+    }
     if study && columns.contains("ResizableImageInfo") {
         let images = rows(
             db,
@@ -391,6 +483,12 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 if study && field == "AnimationFolder" {
                     continue;
                 }
+                if study
+                    && field == "VectorNormalStrokeIndex"
+                    && report.layers.iter().any(|l| l.id == id && l.is_vector())
+                {
+                    continue;
+                }
                 // Expression color Gray (1) is stored as gray tiles, which the
                 // raster decoder expands; other expression colors stay skipped.
                 if study
@@ -408,17 +506,18 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             }
         }
     }
-    // Paper layers and image material layers carry fixed render-type values
-    // (every observed image layer has the same set); ordinary layers none.
-    for (field, paper_expected, image_expected) in [
-        ("DrawToRenderOffscreenType", 61, Some(20)),
-        ("SpecialRenderType", 20, None),
-        ("DrawToRenderMipmapType", 31, Some(20)),
-        ("MoveOffsetAndExpandType", 31, Some(10)),
-        ("FixOffsetAndExpandType", 31, Some(10)),
-        ("RenderBoundForLayerMoveType", 31, Some(10)),
-        ("SetRenderThumbnailInfoType", 31, Some(10)),
-        ("DrawRenderThumbnailType", 31, None),
+    // Paper, image material and vector layers carry fixed render-type values
+    // (every observed layer of each kind has the same set); ordinary layers
+    // none.
+    for (field, paper_expected, image_expected, vector_expected) in [
+        ("DrawToRenderOffscreenType", 61, Some(20), Some(10)),
+        ("SpecialRenderType", 20, None, None),
+        ("DrawToRenderMipmapType", 31, Some(20), None),
+        ("MoveOffsetAndExpandType", 31, Some(10), None),
+        ("FixOffsetAndExpandType", 31, Some(10), None),
+        ("RenderBoundForLayerMoveType", 31, Some(10), None),
+        ("SetRenderThumbnailInfoType", 31, Some(10), None),
+        ("DrawRenderThumbnailType", 31, None, None),
     ] {
         if !columns.contains(field) {
             if report.layers.iter().any(|layer| layer.layer_type == 1584) {
@@ -443,9 +542,14 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 .layers
                 .iter()
                 .any(|layer| layer.id == id && layer.is_image());
+            let vector = report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.is_vector());
             if (paper && value != Some(paper_expected))
                 || (image && value.filter(|v| *v != 0) != image_expected)
-                || (!paper && !image && value.is_some_and(|value| value != 0))
+                || (vector && value.filter(|v| *v != 0) != vector_expected)
+                || (!paper && !image && !vector && value.is_some_and(|value| value != 0))
             {
                 layer_issue(report, study, id, format!("unsupported {field}"));
             }
@@ -1017,6 +1121,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
                 render_offscreen_offset_y: r.get(13)?,
                 paper_draw_color: None,
                 image: false,
+                vector: false,
             })
         },
     )?;
@@ -1297,6 +1402,8 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         locks: BTreeMap::new(),
         layer_issues: BTreeMap::new(),
         images: BTreeMap::new(),
+        vectors: BTreeMap::new(),
+        plain_brush_styles: BTreeSet::new(),
         animation: Animation::default(),
     })
 }
@@ -1565,7 +1672,26 @@ fn prepare_document_mode(
     if cancelled() {
         return Err("Clip document assembly canceled".into());
     }
-    let (mut source, inventory, report) = read_source_mode(input, study)?;
+    let (mut source, inventory, mut report) = read_source_mode(input, study)?;
+    // Strokes are read before planning, so a vector layer Dudel cannot draw
+    // is skipped and named like any other unsupported layer.
+    let mut vectors = BTreeMap::new();
+    let mut failed = Vec::new();
+    for (&id, data) in &report.vectors {
+        match read_vector(&mut source, &inventory, data, &report.plain_brush_styles) {
+            Ok(strokes) => {
+                vectors.insert(id, strokes);
+            }
+            Err(error) => failed.push((id, error)),
+        }
+    }
+    for (id, error) in failed {
+        report
+            .layer_issues
+            .entry(id)
+            .or_default()
+            .push(format!("unsupported vector strokes ({error})"));
+    }
     let root = report
         .layers
         .iter()
@@ -1667,6 +1793,7 @@ fn prepare_document_mode(
         let layer = layer_of(entry.id);
         let known = layer.layer_type == 1
             || layer.is_image()
+            || layer.is_vector()
             || layer.layer_type == 1584
             || (matches!(layer.layer_type, 0 | 256) && layer.is_folder());
         let depth = entry.depth as usize;
@@ -1705,6 +1832,19 @@ fn prepare_document_mode(
             Some((_, names)) => names.push(name),
             None => skips.push((reasons, vec![name])),
         }
+    }
+    let drawn: Vec<String> = kept
+        .iter()
+        .filter(|(entry, _)| vectors.contains_key(&entry.id))
+        .map(|(entry, _)| name_of(entry.id))
+        .collect();
+    if !drawn.is_empty() {
+        notes.push(format!(
+            "Vector {} drawn as raster pixels from {} strokes (lines cannot be edited as vectors here, and may differ slightly from CSP's): {}.",
+            if drawn.len() == 1 { "layer" } else { "layers" },
+            if drawn.len() == 1 { "its" } else { "their" },
+            name_list(&drawn)
+        ));
     }
     for (reasons, names) in skips {
         notes.push(format!(
@@ -1769,7 +1909,7 @@ fn prepare_document_mode(
         };
         let content = match layer.layer_type {
             1 => crate::clip_document::Content::Raster,
-            0 if layer.is_image() => crate::clip_document::Content::Raster,
+            0 if layer.is_image() || layer.is_vector() => crate::clip_document::Content::Raster,
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
             1584 => {
                 let Some(color) = &layer.paper_draw_color else {
@@ -1826,6 +1966,9 @@ fn prepare_document_mode(
     let mut doc =
         crate::clip_document::assemble(canvas, entries, active, &issues, cancelled, &mut |id| {
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
+            if let Some(strokes) = vectors.get(&id) {
+                return crate::clip_vector::render(strokes, canvas, cancelled);
+            }
             if let Some(image) = report.images.get(&id) {
                 let (offset, bytes) = inventory
                     .external_body_bounds(image.external_chunk_offset, image.external_id.len())?;
@@ -1921,13 +2064,41 @@ fn prepare_document_mode(
     doc.validate()?;
     Ok((doc, notes, details))
 }
+/// One vector layer's strokes, if they only use plain round brushes.
+fn read_vector(
+    source: &mut File,
+    inventory: &clip_container::Inventory,
+    data: &ExternalData,
+    plain_styles: &BTreeSet<u32>,
+) -> Result<Vec<crate::clip_vector::Stroke>, String> {
+    const MAX_VECTOR_BYTES: u64 = 512 * 1024 * 1024;
+    let (offset, bytes) = inventory.external_body_bounds(data.offset, data.id.len())?;
+    if bytes > MAX_VECTOR_BYTES {
+        return Err("vector data too large".into());
+    }
+    source
+        .seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let mut body = vec![0; bytes as usize];
+    source
+        .read_exact(&mut body)
+        .map_err(|error| error.to_string())?;
+    let strokes = crate::clip_vector::parse(&body)?;
+    if let Some(stroke) = strokes.iter().find(|s| !plain_styles.contains(&s.style)) {
+        return Err(format!("brush style {}", stroke.style));
+    }
+    Ok(strokes)
+}
 /// A short, user-facing reason for skipping a layer.
 fn skip_reason(issues: &[String]) -> String {
     let mut reasons = BTreeSet::new();
     for issue in issues {
         reasons.insert(match () {
+            _ if issue.contains("vector strokes") => {
+                "vector layer with brush features Dudel cannot draw yet"
+            }
             _ if issue.contains("Vector") => {
-                "vector layer (CSP redraws vectors when it opens a file and does not save their pixels; Dudel cannot draw CSP vectors yet)"
+                "vector layer Dudel cannot read (CSP saves vector strokes, not their pixels)"
             }
             _ if issue.contains("TextLayer") => "text layer",
             _ if issue.contains("Balloon") => "speech balloon",
@@ -2804,6 +2975,7 @@ pub(crate) mod tests {
                 render_offscreen_offset_y: 0,
                 paper_draw_color: None,
                 image: false,
+                vector: false,
             });
         }
         assert!(
@@ -2884,6 +3056,47 @@ pub(crate) mod tests {
             study.layer_issues.contains_key(&30),
             "import must never bypass rendering features"
         );
+    }
+    #[test]
+    fn vector_layers_with_plain_brushes_are_drawn_not_skipped() {
+        const VECTOR: &str = "extrnlidFEDCBA9876543210FEDCBA9876543210";
+        let with_vector = |db: &Connection| metadata(db, &[(ID.into(), 80), (VECTOR.into(), 500)]);
+        let db = fixture();
+        db.execute_batch(
+            "ALTER TABLE Layer ADD COLUMN LayerName TEXT; ALTER TABLE Layer ADD COLUMN LayerLock INTEGER; ALTER TABLE Layer ADD COLUMN LayerMasking INTEGER; ALTER TABLE Layer ADD COLUMN LayerLayerMaskMipmap INTEGER; ALTER TABLE Layer ADD COLUMN LayerUsePaletteColor INTEGER;
+             ALTER TABLE Layer ADD COLUMN VectorNormalStrokeIndex INTEGER;
+             ALTER TABLE Layer ADD COLUMN DrawToRenderOffscreenType INTEGER;
+             UPDATE Layer SET LayerType=1 WHERE MainId=40;
+             UPDATE Layer SET LayerName='',LayerLock=0,LayerMasking=0,LayerLayerMaskMipmap=0,LayerUsePaletteColor=0; UPDATE Layer SET LayerMasking=32 WHERE MainId=20;
+             UPDATE Layer SET LayerType=0,VectorNormalStrokeIndex=1,DrawToRenderOffscreenType=10 WHERE MainId=30;
+             CREATE TABLE VectorObjectList (MainId INTEGER,CanvasId INTEGER,LayerId INTEGER,VectorData BLOB);
+             INSERT INTO VectorObjectList VALUES (1,7,30,CAST('extrnlidFEDCBA9876543210FEDCBA9876543210' AS BLOB));
+             INSERT INTO ExternalChunk VALUES ('extrnlidFEDCBA9876543210FEDCBA9876543210',500);
+             CREATE TABLE BrushStyle (MainId INTEGER,TexturePattern INTEGER,SprayFlag INTEGER);
+             INSERT INTO BrushStyle VALUES (1,0,0),(2,3,0);",
+        )
+        .unwrap();
+        let mut study = with_vector(&db).unwrap();
+        document_features_mode(&db, &mut study, true).unwrap();
+        assert!(study.layers.iter().any(|l| l.id == 30 && l.is_vector()));
+        assert!(
+            !study.layer_issues.contains_key(&30),
+            "{:?}",
+            study.layer_issues
+        );
+        assert_eq!(study.vectors[&30].offset, 500);
+        // Textured styles are not plain; strokes using them skip the layer.
+        assert_eq!(study.plain_brush_styles, BTreeSet::from([1]));
+        // Strict inspection still refuses vector layers.
+        let mut strict = with_vector(&db).unwrap();
+        document_features(&db, &mut strict).unwrap();
+        assert!(!strict.import_issues.is_empty());
+        // A render type other than the observed one is not drawn.
+        db.execute_batch("UPDATE Layer SET DrawToRenderOffscreenType=20 WHERE MainId=30")
+            .unwrap();
+        let mut study = with_vector(&db).unwrap();
+        document_features_mode(&db, &mut study, true).unwrap();
+        assert!(study.layer_issues.contains_key(&30));
     }
     #[test]
     fn switched_off_proofing_and_inch_canvases_open() {
@@ -2994,6 +3207,7 @@ pub(crate) mod tests {
                 render_offscreen_offset_y: 0,
                 paper_draw_color: None,
                 image: false,
+                vector: false,
             });
         }
         assert!(

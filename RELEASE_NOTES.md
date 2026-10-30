@@ -46,7 +46,9 @@ the package has been uploaded to a public store.
   in Import details instead.
 - CSP import reads image material layers (placed pictures), layers that extend
   past the canvas, canvases set in inches, and files with color proofing
-  settings that are switched off.
+  settings that are switched off. Vector layers are drawn from their strokes
+  as raster layers instead of being skipped; Layers-panel color labels no
+  longer skip layers.
 - Import details opens by itself only when a CSP or PSD import left something
   out; other notes (timeline frame, animation cels, drawing aids) are behind the
   Import details button in the status bar.
