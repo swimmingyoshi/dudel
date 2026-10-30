@@ -10,7 +10,8 @@ use std::{
 const TILE_BYTES: usize = 256 * 256 * 5;
 /// Gray layers store one color byte per pixel after the alpha plane.
 const GRAY_TILE_BYTES: usize = 256 * 256 * 2;
-const MAX_SLOTS: usize = 256;
+/// Tiles per bitmap: 64 x 64 covers a 16384 px layer that extends past the canvas.
+const MAX_SLOTS: usize = 64 * 64;
 const MAX_COMPRESSED: usize = 1024 * 1024;
 const MAX_BODY: u64 = 64 * 1024 * 1024;
 pub(crate) struct Budget {
@@ -22,7 +23,8 @@ impl Default for Budget {
     /// full-size canvas. Tiles inflate one at a time, so this bounds work,
     /// not memory held at once.
     fn default() -> Self {
-        let slots = crate::document::MAX_RASTER_LAYERS * MAX_SLOTS;
+        // A full canvas is 16 x 16 tiles; larger bitmaps share this budget.
+        let slots = crate::document::MAX_RASTER_LAYERS * 256;
         Self {
             slots,
             decoded: slots * TILE_BYTES,

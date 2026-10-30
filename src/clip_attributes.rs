@@ -9,7 +9,11 @@ const PACKING: [u32; 16] = [
 pub(crate) const GRAY_PACKING: [u32; 16] = [
     17, 1, 1, 2, 65536, 1, 256, 1, 256, 65536, 256, 256, 8, 8, 0, 0,
 ];
-pub(crate) const MAX_BYTES: usize = 16 + 102 + 58 + 34 + 256 * 4;
+/// Largest bitmap side. Layers may extend past the canvas (CSP keeps moved
+/// pixels), so this exceeds Dudel's canvas side; decoding keeps the part on
+/// the canvas.
+pub(crate) const MAX_SIDE: u32 = 16384;
+pub(crate) const MAX_BYTES: usize = 16 + 102 + 58 + 34 + 64 * 64 * 4;
 
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Attributes {
@@ -91,8 +95,8 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Attributes, String> {
     let height = word(&mut reader)?;
     let columns = word(&mut reader)?;
     let rows = word(&mut reader)?;
-    if !(1..=4096).contains(&width)
-        || !(1..=4096).contains(&height)
+    if !(1..=MAX_SIDE).contains(&width)
+        || !(1..=MAX_SIDE).contains(&height)
         || columns != width.div_ceil(256)
         || rows != height.div_ceil(256)
     {
@@ -215,6 +219,11 @@ mod tests {
         assert_eq!(parsed.block_sizes, [104; 8]);
         let max = fixture(4096, 4096, &[20, 0, 0, 0, 4], &[104; 256]);
         assert_eq!(parse(&max).unwrap().block_sizes.len(), 256);
+        // Layers moved partly off the canvas keep a bitmap larger than it.
+        let past = fixture(5888, 6400, &[20, 0, 0, 0, 4], &[104; 23 * 25]);
+        assert_eq!(parse(&past).unwrap().block_sizes.len(), 575);
+        let huge = fixture(16385, 256, &[20, 0, 0, 0, 4], &[104; 65]);
+        assert!(parse(&huge).is_err());
     }
     #[test]
     fn all_truncations_and_malformed_sections_geometry_packing_and_sizes_fail() {

@@ -45,6 +45,9 @@ struct Layer {
     render_offscreen_offset_x: i64,
     render_offscreen_offset_y: i64,
     paper_draw_color: Option<PaperDrawColor>,
+    /// An image material layer (a placed picture CSP can resize): it stores
+    /// the resized result as an ordinary render bitmap. Import mode only.
+    image: bool,
 }
 impl Layer {
     // Observed ordinary folders may carry the closed UI bit (16).
@@ -56,7 +59,10 @@ impl Layer {
         matches!(
             (self.layer_type, self.folder),
             (0, 1 | 17) | (256, 1) | (1 | 1584, 0)
-        )
+        ) || self.is_image()
+    }
+    fn is_image(&self) -> bool {
+        self.image && self.layer_type == 0 && self.folder == 0
     }
 }
 #[derive(Debug, serde::Serialize)]
@@ -114,6 +120,20 @@ struct Report {
     /// Import mode: the cel each animation folder shows on the saved frame.
     #[serde(skip)]
     animation: Animation,
+    /// Import mode: each image material layer's original picture and where
+    /// it lands on the canvas.
+    #[serde(skip)]
+    images: BTreeMap<i64, ImageSource>,
+}
+/// An image material layer's original picture. CSP saves the original and
+/// redraws the resized result when it opens the file.
+#[derive(Debug)]
+struct ImageSource {
+    attributes: crate::clip_attributes::Attributes,
+    external_id: String,
+    external_chunk_offset: u64,
+    /// Where the picture's top-left, top-right and bottom-left corners land.
+    corners: [[f64; 2]; 3],
 }
 #[derive(Debug, Default)]
 struct Animation {
@@ -164,8 +184,92 @@ fn layer_issue(report: &mut Report, study: bool, id: i64, message: String) {
         report.import_issues.push(format!("Layer {id}: {message}"));
     }
 }
+/// An image material layer's original picture and placement. The layout of
+/// `ResizableImageInfo` was read from every observed image layer: a header
+/// whose first word is its own length (120), the original's size in words 8
+/// and 9, and from byte 120 the four placed corners as (x, y) doubles in the
+/// order top left, top right, bottom left, bottom right.
+fn image_source(db: &Connection, id: i64) -> Result<ImageSource, String> {
+    let (info, attribute, block): (Vec<u8>, Vec<u8>, Vec<u8>) = db
+        .query_row(
+            "SELECT l.ResizableImageInfo,o.Attribute,o.BlockData FROM Layer l \
+             JOIN Mipmap m ON m.MainId=l.ResizableOriginalMipmap AND m.LayerId=l.MainId \
+             JOIN MipmapInfo i ON i.MainId=m.BaseMipmapInfo AND i.LayerId=l.MainId AND i.ThisScale=100 \
+             JOIN Offscreen o ON o.MainId=i.Offscreen AND o.LayerId=l.MainId \
+             WHERE l.MainId=?1 AND length(l.ResizableImageInfo)=184 \
+             AND length(o.Attribute)<=?2 AND length(o.BlockData)<=64",
+            rusqlite::params![id, crate::clip_attributes::MAX_BYTES as i64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| "original picture not found")?;
+    let word = |at: usize| u32::from_be_bytes(info[at..at + 4].try_into().unwrap());
+    let double = |at: usize| f64::from_be_bytes(info[at..at + 8].try_into().unwrap());
+    let attributes = crate::clip_attributes::parse(&attribute)?;
+    if word(0) != 120 || [word(32), word(36)] != [attributes.width, attributes.height] {
+        return Err("unrecognized placement record".into());
+    }
+    if !attributes.transparent_default()
+        || attributes.width as usize > crate::document::MAX_SIDE
+        || attributes.height as usize > crate::document::MAX_SIDE
+    {
+        return Err("original picture too large or not transparent".into());
+    }
+    let corner = |i: usize| [double(120 + i * 16), double(128 + i * 16)];
+    let [tl, tr, bl, br] = [corner(0), corner(1), corner(2), corner(3)];
+    let skew = (tr[0] + bl[0] - tl[0] - br[0]).abs() + (tr[1] + bl[1] - tl[1] - br[1]).abs();
+    if [tl, tr, bl, br]
+        .iter()
+        .flatten()
+        .any(|v| !v.is_finite() || v.abs() > 1e6)
+        || skew > 0.5
+    {
+        return Err("distorted placement".into());
+    }
+    let external_id = std::str::from_utf8(&block)
+        .ok()
+        .filter(|id| id.len() == 40 && id.starts_with("extrnlid"))
+        .ok_or("original picture has no data reference")?
+        .to_owned();
+    let offset: i64 = db
+        .query_row(
+            "SELECT Offset FROM ExternalChunk WHERE ExternalID=?1",
+            [&external_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "original picture data is missing")?;
+    Ok(ImageSource {
+        attributes,
+        external_id,
+        external_chunk_offset: u64::try_from(offset).map_err(|_| "invalid data offset")?,
+        corners: [tl, tr, bl],
+    })
+}
 fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> Result<(), String> {
     let columns = table_columns(db, "Layer")?;
+    if study && columns.contains("ResizableImageInfo") {
+        let images = rows(
+            db,
+            "SELECT MainId FROM Layer WHERE LayerType=0 AND LayerFolder=0 AND length(ResizableImageInfo)>0",
+            MAX_ENTRIES + 1,
+            |row| row.get::<_, i64>(0),
+        )?;
+        for layer in &mut report.layers {
+            layer.image = images.contains(&layer.id);
+        }
+        for id in images {
+            match image_source(db, id) {
+                Ok(source) => {
+                    report.images.insert(id, source);
+                }
+                Err(error) => layer_issue(
+                    report,
+                    study,
+                    id,
+                    format!("unsupported image material layer ({error})"),
+                ),
+            }
+        }
+    }
     if [
         "LayerName",
         "LayerLock",
@@ -307,15 +411,17 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             }
         }
     }
-    for (field, paper_expected) in [
-        ("DrawToRenderOffscreenType", 61),
-        ("SpecialRenderType", 20),
-        ("DrawToRenderMipmapType", 31),
-        ("MoveOffsetAndExpandType", 31),
-        ("FixOffsetAndExpandType", 31),
-        ("RenderBoundForLayerMoveType", 31),
-        ("SetRenderThumbnailInfoType", 31),
-        ("DrawRenderThumbnailType", 31),
+    // Paper layers and image material layers carry fixed render-type values
+    // (every observed image layer has the same set); ordinary layers none.
+    for (field, paper_expected, image_expected) in [
+        ("DrawToRenderOffscreenType", 61, Some(20)),
+        ("SpecialRenderType", 20, None),
+        ("DrawToRenderMipmapType", 31, Some(20)),
+        ("MoveOffsetAndExpandType", 31, Some(10)),
+        ("FixOffsetAndExpandType", 31, Some(10)),
+        ("RenderBoundForLayerMoveType", 31, Some(10)),
+        ("SetRenderThumbnailInfoType", 31, Some(10)),
+        ("DrawRenderThumbnailType", 31, None),
     ] {
         if !columns.contains(field) {
             if report.layers.iter().any(|layer| layer.layer_type == 1584) {
@@ -336,8 +442,13 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 .layers
                 .iter()
                 .any(|layer| layer.id == id && layer.layer_type == 1584);
+            let image = report
+                .layers
+                .iter()
+                .any(|layer| layer.id == id && layer.is_image());
             if (paper && value != Some(paper_expected))
-                || (!paper && value.is_some_and(|value| value != 0))
+                || (image && value.filter(|v| *v != 0) != image_expected)
+                || (!paper && !image && value.is_some_and(|value| value != 0))
             {
                 layer_issue(report, study, id, format!("unsupported {field}"));
             }
@@ -411,18 +522,34 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         }
     }
     let canvas_columns = table_columns(db, "Canvas")?;
-    for field in [
-        "CanvasSrcProfileName",
-        "CanvasDstProfileName",
-        "CanvasDstProfile",
-        "CanvasSimulateSrcProfileName",
-        "CanvasSimulateDstProfileName",
-        "CanvasSimulateSrcProfile",
-        "CanvasSimulateDstProfile",
-        "CanvasColorAdjustmentToneCurve",
-        "CanvasColorAdjustmentLevel",
-    ] {
+    let switch = |field: &str| -> Result<Option<i64>, String> {
         if !canvas_columns.contains(field) {
+            return Ok(None);
+        }
+        db.query_row(
+            &format!("SELECT coalesce(\"{field}\",0) FROM Canvas"),
+            [],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .map_err(db_error)
+    };
+    // Color proofing and the canvas color adjustment keep their last settings
+    // while switched off; only switched-on settings change what CSP shows.
+    let simulating = switch("CanvasDoSimulateColor")? != Some(0);
+    let adjusting = switch("CanvasUseColorAdjustment")? != Some(0);
+    for (field, used) in [
+        ("CanvasSrcProfileName", true),
+        ("CanvasDstProfileName", true),
+        ("CanvasDstProfile", true),
+        ("CanvasSimulateSrcProfileName", simulating),
+        ("CanvasSimulateDstProfileName", simulating),
+        ("CanvasSimulateSrcProfile", simulating),
+        ("CanvasSimulateDstProfile", simulating),
+        ("CanvasColorAdjustmentToneCurve", adjusting),
+        ("CanvasColorAdjustmentLevel", adjusting),
+    ] {
+        if !canvas_columns.contains(field) || !used {
             continue;
         }
         let length: i64 = db
@@ -439,17 +566,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         }
     }
     for field in ["CanvasDoSimulateColor", "CanvasUseColorAdjustment"] {
-        if !canvas_columns.contains(field) {
-            continue;
-        }
-        let value: i64 = db
-            .query_row(
-                &format!("SELECT coalesce(\"{field}\",0) FROM Canvas"),
-                [],
-                |row| row.get(0),
-            )
-            .map_err(db_error)?;
-        if value != 0 {
+        if switch(field)?.is_some_and(|value| value != 0) {
             report
                 .import_issues
                 .push(format!("Unsupported canvas {field}"));
@@ -837,9 +954,36 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
             })
         },
     )?;
-    let canvas = canvases.pop().ok_or("Missing clip canvas")?;
+    let mut canvas = canvases.pop().ok_or("Missing clip canvas")?;
     if canvas.unit != 0 {
-        return Err("Unsupported clip canvas unit: physical dimensions require verified raster geometry conversion".into());
+        // Unit 3 is inches: 2.5 x 3.5 at 1200 dpi is CSP's 3000 x 4200 px
+        // canvas bitmap in every observed file. Other units are unverified.
+        if canvas.unit != 3 || !canvas.resolution.is_finite() || canvas.resolution <= 0. {
+            return Err(format!(
+                "Unsupported clip canvas unit {} (pixels and inches are supported)",
+                canvas.unit
+            ));
+        }
+        let pixels = |inches: f64| {
+            let value = inches * canvas.resolution;
+            ((value - value.round()).abs() < 0.01).then_some(value.round())
+        };
+        let (Some(width), Some(height)) = (pixels(canvas.width), pixels(canvas.height)) else {
+            return Err("Clip canvas size in inches is not a whole number of pixels".into());
+        };
+        (canvas.width, canvas.height) = (width, height);
+    }
+    if canvas.width.is_finite()
+        && canvas.height.is_finite()
+        && (canvas.width > crate::document::MAX_SIDE as f64
+            || canvas.height > crate::document::MAX_SIDE as f64)
+    {
+        return Err(format!(
+            "This canvas is {} × {} px; Dudel canvases are limited to {} px per side",
+            canvas.width,
+            canvas.height,
+            crate::document::MAX_SIDE
+        ));
     }
     if canvas.id <= 0
         || !canvas.resolution.is_finite()
@@ -875,6 +1019,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
                 render_offscreen_offset_x: r.get(12)?,
                 render_offscreen_offset_y: r.get(13)?,
                 paper_draw_color: None,
+                image: false,
             })
         },
     )?;
@@ -1154,6 +1299,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         document_properties: BTreeMap::new(),
         locks: BTreeMap::new(),
         layer_issues: BTreeMap::new(),
+        images: BTreeMap::new(),
         animation: Animation::default(),
     })
 }
@@ -1523,6 +1669,7 @@ fn prepare_document_mode(
         }
         let layer = layer_of(entry.id);
         let known = layer.layer_type == 1
+            || layer.is_image()
             || layer.layer_type == 1584
             || (matches!(layer.layer_type, 0 | 256) && layer.is_folder());
         let depth = entry.depth as usize;
@@ -1625,6 +1772,7 @@ fn prepare_document_mode(
         };
         let content = match layer.layer_type {
             1 => crate::clip_document::Content::Raster,
+            0 if layer.is_image() => crate::clip_document::Content::Raster,
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
             1584 => {
                 let Some(color) = &layer.paper_draw_color else {
@@ -1681,6 +1829,36 @@ fn prepare_document_mode(
     let mut doc =
         crate::clip_document::assemble(canvas, entries, active, &issues, cancelled, &mut |id| {
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
+            if let Some(image) = report.images.get(&id) {
+                let (offset, bytes) = inventory
+                    .external_body_bounds(image.external_chunk_offset, image.external_id.len())?;
+                source
+                    .seek(SeekFrom::Start(offset))
+                    .map_err(|error| error.to_string())?;
+                let size = [
+                    image.attributes.width as usize,
+                    image.attributes.height as usize,
+                ];
+                let original = crate::clip_raster::decode(
+                    &mut source,
+                    bytes,
+                    &image.attributes,
+                    crate::clip_raster::Placement {
+                        canvas: size,
+                        layer_offset: [0, 0],
+                        render_offset: [0, 0],
+                    },
+                    &mut budget,
+                    cancelled,
+                )?;
+                return crate::clip_raster::place(
+                    &original,
+                    size,
+                    image.corners,
+                    canvas,
+                    cancelled,
+                );
+            }
             let full = report
                 .full_scale
                 .iter()
@@ -1759,6 +1937,7 @@ fn skip_reason(issues: &[String]) -> String {
             _ if issue.contains("FilterLayer") => "correction layer",
             _ if issue.contains("Gradation") => "gradient fill",
             _ if issue.contains("LayerEffect") => "layer effect",
+            _ if issue.contains("image material") => "image layer Dudel cannot place",
             _ if issue.contains("Material") => "material layer",
             _ if issue.contains("lock/mask/palette") => "layer mask or palette colors",
             _ if issue.contains("monochrome") => "monochrome fill",
@@ -1769,9 +1948,14 @@ fn skip_reason(issues: &[String]) -> String {
         });
     }
     // A vector or text layer also reports its render metadata; name it once.
-    if reasons.len() > 1 {
-        reasons.remove("unsupported CSP feature");
-        reasons.remove("unsupported layer type or blend mode");
+    let generic = [
+        "unsupported CSP feature",
+        "unsupported layer type or blend mode",
+    ];
+    if reasons.iter().any(|reason| !generic.contains(reason)) {
+        for reason in generic {
+            reasons.remove(reason);
+        }
     }
     reasons.into_iter().collect::<Vec<_>>().join(", ")
 }
@@ -2565,7 +2749,7 @@ pub(crate) mod tests {
             "UPDATE Canvas SET CanvasWidth=4097",
             "UPDATE Canvas SET CanvasWidth=4097,CanvasHeight=4096",
             "UPDATE Canvas SET CanvasWidth=32.5",
-            "UPDATE Canvas SET CanvasUnit=3,CanvasWidth=2,CanvasHeight=3",
+            "UPDATE Canvas SET CanvasUnit=1,CanvasWidth=2,CanvasHeight=3",
             "UPDATE Canvas SET CanvasResolution=0",
             "INSERT INTO Canvas SELECT * FROM Canvas",
             "UPDATE Offscreen SET Attribute=zeroblob(65537)",
@@ -2622,6 +2806,7 @@ pub(crate) mod tests {
                 render_offscreen_offset_x: 0,
                 render_offscreen_offset_y: 0,
                 paper_draw_color: None,
+                image: false,
             });
         }
         assert!(
@@ -2698,6 +2883,47 @@ pub(crate) mod tests {
             "import must never bypass rendering features"
         );
     }
+    #[test]
+    fn switched_off_proofing_and_inch_canvases_open() {
+        let db = fixture();
+        // Proofing and canvas color adjustment keep stored settings while off.
+        db.execute_batch(
+            "ALTER TABLE Canvas ADD COLUMN CanvasDoSimulateColor INTEGER;
+             ALTER TABLE Canvas ADD COLUMN CanvasUseColorAdjustment INTEGER;
+             ALTER TABLE Canvas ADD COLUMN CanvasSimulateSrcProfile BLOB;
+             ALTER TABLE Canvas ADD COLUMN CanvasColorAdjustmentLevel BLOB;
+             ALTER TABLE Layer ADD COLUMN LayerName TEXT; ALTER TABLE Layer ADD COLUMN LayerLock INTEGER; ALTER TABLE Layer ADD COLUMN LayerMasking INTEGER; ALTER TABLE Layer ADD COLUMN LayerLayerMaskMipmap INTEGER; ALTER TABLE Layer ADD COLUMN LayerUsePaletteColor INTEGER;
+             UPDATE Layer SET LayerType=1 WHERE MainId=40;
+             UPDATE Layer SET LayerName='',LayerLock=0,LayerMasking=0,LayerLayerMaskMipmap=0,LayerUsePaletteColor=0; UPDATE Layer SET LayerMasking=32 WHERE MainId=20;
+             UPDATE Canvas SET CanvasDoSimulateColor=0,CanvasUseColorAdjustment=0,CanvasSimulateSrcProfile=x'01',CanvasColorAdjustmentLevel=x'01'",
+        )
+        .unwrap();
+        let mut report = check(&db).unwrap();
+        document_features(&db, &mut report).unwrap();
+        assert!(report.import_issues.is_empty(), "{:?}", report.import_issues);
+        for on in [
+            "UPDATE Canvas SET CanvasDoSimulateColor=1",
+            "UPDATE Canvas SET CanvasUseColorAdjustment=1",
+        ] {
+            db.execute_batch(on).unwrap();
+            let mut report = check(&db).unwrap();
+            document_features(&db, &mut report).unwrap();
+            assert!(!report.import_issues.is_empty(), "accepted {on}");
+        }
+        // 0.32 x 0.48 inches at 100 dpi is the fixture's 32 x 48 px.
+        let db = fixture();
+        db.execute_batch(
+            "UPDATE Canvas SET CanvasUnit=3,CanvasWidth=0.32,CanvasHeight=0.48,CanvasResolution=100",
+        )
+        .unwrap();
+        let report = check(&db).unwrap();
+        assert_eq!([report.canvas.width, report.canvas.height], [32.0, 48.0]);
+        db.execute_batch("UPDATE Canvas SET CanvasWidth=0.325").unwrap();
+        assert!(check(&db).is_err());
+        db.execute_batch("UPDATE Canvas SET CanvasWidth=50,CanvasHeight=0.48")
+            .unwrap();
+        assert!(check(&db).unwrap_err().contains("4096 px per side"));
+    }
 
     #[test]
     fn snapshot_is_read_only_bounded_and_interruptible() {
@@ -2760,6 +2986,7 @@ pub(crate) mod tests {
                 render_offscreen_offset_x: 0,
                 render_offscreen_offset_y: 0,
                 paper_draw_color: None,
+                image: false,
             });
         }
         assert!(

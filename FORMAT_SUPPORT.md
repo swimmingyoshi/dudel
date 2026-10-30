@@ -34,6 +34,10 @@ and PSD source files, including renamed files recognized by their signatures.
 | --- | --- |
 | Supported 8-bit RGBA tiles, partial alpha, names and offsets | Editable raster layers |
 | Gray expression-color layers | Editable raster layers (gray expanded to RGB) |
+| Image material layers (placed pictures) | Editable raster layers: the stored original is resized and placed where CSP shows it (CSP saves only the original). Distorted (non-rectangular) placements are skipped |
+| Layer pixels beyond the canvas edge | Kept in CSP; Dudel imports the part on the canvas |
+| Canvases set in inches | Converted at the canvas resolution; other physical units are unsupported |
+| Color proofing or canvas color adjustment that is switched off | Ignored (only switched-on settings change the picture) |
 | Ordinary folders, nested folders, clipping | Native hierarchy/compositor |
 | Standard blend modes, edit/alpha locks, opacity, visibility | Mapped to native properties |
 | Plain paper | Rasterized color layer |

@@ -120,9 +120,188 @@ pub(crate) fn decode(
     Ok(pixels)
 }
 
+/// An image material layer's original picture (`source`, `size`) placed on
+/// the canvas by where its top-left, top-right and bottom-left corners land.
+/// Bilinear in premultiplied color (clamped to the picture, so its edge does
+/// not fade), averaged over the footprint when the picture shrinks; pixels
+/// the picture's boundary crosses are covered in proportion.
+pub(crate) fn place(
+    source: &Pixels,
+    size: [usize; 2],
+    corners: [[f64; 2]; 3],
+    canvas: [usize; 2],
+    cancelled: &impl Fn() -> bool,
+) -> Result<Pixels, String> {
+    let ([sw, sh], [cw, ch]) = (size, canvas);
+    let flat = source.region(sw, [0, 0, sw, sh]);
+    let [origin, right, down] = corners;
+    // Canvas step per source pixel along the picture's rows and columns.
+    let ax = [
+        (right[0] - origin[0]) / sw as f64,
+        (right[1] - origin[1]) / sw as f64,
+    ];
+    let ay = [
+        (down[0] - origin[0]) / sh as f64,
+        (down[1] - origin[1]) / sh as f64,
+    ];
+    let det = ax[0] * ay[1] - ax[1] * ay[0];
+    if !det.is_finite() || det.abs() < 1e-9 {
+        return Err("Degenerate clip image placement".into());
+    }
+    let far = [
+        right[0] + down[0] - origin[0],
+        right[1] + down[1] - origin[1],
+    ];
+    let span = |axis: usize, limit: usize| {
+        let values = [origin[axis], right[axis], down[axis], far[axis]];
+        let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        (
+            low.floor().clamp(0.0, limit as f64) as usize,
+            high.ceil().clamp(0.0, limit as f64) as usize,
+        )
+    };
+    let ((left, end_x), (top, end_y)) = (span(0, cw), span(1, ch));
+    let mut pixels = Pixels::sparse(cw, ch);
+    if left >= end_x || top >= end_y {
+        return Ok(pixels);
+    }
+    let scale = ax[0].hypot(ax[1]).min(ay[0].hypot(ay[1]));
+    let taps = if scale < 1.0 {
+        ((1.0 / scale).ceil() as usize).min(8)
+    } else {
+        1
+    };
+    let texel = |x: i64, y: i64| -> [f64; 4] {
+        let (x, y) = (x.clamp(0, sw as i64 - 1), y.clamp(0, sh as i64 - 1));
+        let i = (y as usize * sw + x as usize) * 4;
+        let a = f64::from(flat[i + 3]) / 255.0;
+        [
+            f64::from(flat[i]) * a,
+            f64::from(flat[i + 1]) * a,
+            f64::from(flat[i + 2]) * a,
+            a,
+        ]
+    };
+    // Canvas point to source position, in source pixels.
+    let source_at = |px: f64, py: f64| {
+        let (dx, dy) = (px - origin[0], py - origin[1]);
+        (
+            (dx * ay[1] - dy * ay[0]) / det,
+            (ax[0] * dy - ax[1] * dx) / det,
+        )
+    };
+    const EDGE: usize = 4;
+    let mut row = vec![0u8; (end_x - left) * 4];
+    for y in top..end_y {
+        if cancelled() {
+            return Err("Clip image placement canceled".into());
+        }
+        for (column, x) in (left..end_x).enumerate() {
+            let mut inside = 0;
+            for ey in 0..EDGE {
+                for ex in 0..EDGE {
+                    let (u, v) = source_at(
+                        x as f64 + (ex as f64 + 0.5) / EDGE as f64,
+                        y as f64 + (ey as f64 + 0.5) / EDGE as f64,
+                    );
+                    inside +=
+                        usize::from((0.0..sw as f64).contains(&u) && (0.0..sh as f64).contains(&v));
+                }
+            }
+            let out = &mut row[column * 4..column * 4 + 4];
+            if inside == 0 {
+                out.copy_from_slice(&[0; 4]);
+                continue;
+            }
+            let coverage = inside as f64 / (EDGE * EDGE) as f64;
+            let mut sum = [0.0; 4];
+            for ty in 0..taps {
+                for tx in 0..taps {
+                    let (u, v) = source_at(
+                        x as f64 + (tx as f64 + 0.5) / taps as f64,
+                        y as f64 + (ty as f64 + 0.5) / taps as f64,
+                    );
+                    // Pixel centers sit at +0.5.
+                    let (u, v) = (u - 0.5, v - 0.5);
+                    let (x0, y0) = (u.floor(), v.floor());
+                    let (fx, fy) = (u - x0, v - y0);
+                    let (x0, y0) = (x0 as i64, y0 as i64);
+                    for (sx, sy, w) in [
+                        (x0, y0, (1.0 - fx) * (1.0 - fy)),
+                        (x0 + 1, y0, fx * (1.0 - fy)),
+                        (x0, y0 + 1, (1.0 - fx) * fy),
+                        (x0 + 1, y0 + 1, fx * fy),
+                    ] {
+                        let t = texel(sx, sy);
+                        for c in 0..4 {
+                            sum[c] += t[c] * w;
+                        }
+                    }
+                }
+            }
+            let n = (taps * taps) as f64;
+            let alpha = sum[3] / n * coverage;
+            if alpha * 255.0 < 0.5 {
+                out.copy_from_slice(&[0; 4]);
+                continue;
+            }
+            for c in 0..3 {
+                out[c] = (sum[c] / sum[3]).round().clamp(0.0, 255.0) as u8;
+            }
+            out[3] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+        pixels
+            .writer()
+            .write_region(cw, [left, y, end_x, y + 1], &row);
+    }
+    Ok(pixels)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placed_pictures_scale_and_move_by_their_corners() {
+        // A 2 x 2 picture, left column red, right column blue, doubled and
+        // moved to (4, 2) on a 10 x 8 canvas.
+        let mut source = Pixels::sparse(2, 2);
+        for y in 0..2 {
+            source
+                .writer()
+                .write_region(2, [0, y, 2, y + 1], &[255, 0, 0, 255, 0, 0, 255, 255]);
+        }
+        let placed = place(
+            &source,
+            [2, 2],
+            [[4.0, 2.0], [8.0, 2.0], [4.0, 6.0]],
+            [10, 8],
+            &|| false,
+        )
+        .unwrap();
+        let at = |x: usize, y: usize| placed.rgba(y * 10 + x);
+        assert_eq!(at(4, 3), [255, 0, 0, 255]);
+        assert_eq!(at(7, 4), [0, 0, 255, 255]);
+        assert_eq!(at(3, 3)[3], 0);
+        assert_eq!(at(8, 3)[3], 0);
+        // Between the columns the colors blend; color never darkens toward
+        // the transparent outside (premultiplied sampling).
+        assert!(at(5, 3)[0] > 0 && at(6, 3)[2] > 0);
+        assert_eq!(at(4, 2)[0], 255);
+        // Shrinking averages: half size, one pixel per column pair.
+        let small = place(
+            &source,
+            [2, 2],
+            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+            [4, 4],
+            &|| false,
+        )
+        .unwrap();
+        let [r, _, b, a] = small.rgba(0);
+        assert!(r > 100 && b > 100 && a == 255, "{r} {b} {a}");
+        assert!(place(&source, [2, 2], [[0.0; 2]; 3], [4, 4], &|| false).is_err());
+    }
     use std::io::{Cursor, Write};
     fn body(raws: &[Option<Vec<u8>>]) -> Vec<u8> {
         let streams: Vec<_> = raws
