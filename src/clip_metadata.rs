@@ -1282,7 +1282,7 @@ pub(crate) fn prepare_document(
     input: &Path,
     cancelled: &impl Fn() -> bool,
 ) -> Result<crate::document::Document, String> {
-    prepare_document_mode(input, cancelled, true).map(|(doc, _)| doc)
+    prepare_document_mode(input, cancelled, true).map(|(doc, ..)| doc)
 }
 
 /// Native equivalents of the CSP blend identifiers, as listed by the
@@ -1339,9 +1339,13 @@ pub(crate) fn import_document(
     input: &Path,
     cancelled: &impl Fn() -> bool,
 ) -> Result<crate::import_report::Imported, String> {
-    let (document, mut notes) = prepare_document_mode(input, cancelled, true)?;
-    notes.insert(0, "Dudel draws folders, clipping and blend modes itself, so small differences from Clip Studio Paint are possible.".into());
-    Ok(crate::import_report::Imported { document, notes })
+    let (document, notes, mut details) = prepare_document_mode(input, cancelled, true)?;
+    details.insert(0, "Dudel draws folders, clipping and blend modes itself, so small differences from Clip Studio Paint are possible.".into());
+    Ok(crate::import_report::Imported {
+        document,
+        notes,
+        details,
+    })
 }
 
 pub(crate) fn import_preview(
@@ -1407,13 +1411,14 @@ pub(crate) fn import_preview(
         notes: vec![format!(
             "Opened the saved preview at {width} × {height} px. This may be reduced resolution. Layers, masks and animation were flattened by CSP when it saved this preview; they are not editable here."
         )],
+        details: Vec::new(),
     })
 }
 fn prepare_document_mode(
     input: &Path,
     cancelled: &impl Fn() -> bool,
     study: bool,
-) -> Result<(crate::document::Document, Vec<String>), String> {
+) -> Result<(crate::document::Document, Vec<String>, Vec<String>), String> {
     if cancelled() {
         return Err("Clip document assembly canceled".into());
     }
@@ -1453,7 +1458,7 @@ fn prepare_document_mode(
     }
     // The detailed omissions serve the study reports; the user gets a short
     // summary (the folder-masking detail is internal and left out).
-    let mut notes = Vec::new();
+    let (mut notes, mut details) = (Vec::new(), Vec::new());
     let layer_of = |id: i64| report.layers.iter().find(|layer| layer.id == id).unwrap();
     let name_of = |id: i64| {
         report
@@ -1487,7 +1492,7 @@ fn prepare_document_mode(
             })
             .collect();
         let layers: BTreeSet<i64> = report.guide_omissions.values().flatten().copied().collect();
-        notes.push(format!(
+        details.push(format!(
             "Drawing aids ({}) on {} were not imported; they do not change the picture.",
             kinds.join(", "),
             if layers.len() == 1 {
@@ -1573,7 +1578,7 @@ fn prepare_document_mode(
             .animation
             .current_frame
             .map_or(String::new(), |f| format!(" (frame {})", f as i64 + 1));
-        notes.push(format!("This file has a timeline. Dudel imported the picture on the frame it was saved on{frame}; other frames and keyframed layer changes are not imported."));
+        details.push(format!("This file has a timeline. Dudel imported the picture on the frame it was saved on{frame}; other frames and keyframed layer changes are not imported."));
     }
     for (&folder, cel) in &report.animation.folders {
         if !kept.iter().any(|(entry, _)| entry.id == folder) {
@@ -1589,7 +1594,7 @@ fn prepare_document_mode(
                 name_of(folder)
             ));
         }
-        notes.push(match cel {
+        details.push(match cel {
             Some(cel) if found => format!(
                 "Animation folder “{}” shows cel “{cel}”{}.",
                 name_of(folder),
@@ -1739,7 +1744,7 @@ fn prepare_document_mode(
         layer.alpha_locked = !layer.folder && lock & 16 != 0;
     }
     doc.validate()?;
-    Ok((doc, notes))
+    Ok((doc, notes, details))
 }
 /// A short, user-facing reason for skipping a layer.
 fn skip_reason(issues: &[String]) -> String {
@@ -1781,7 +1786,8 @@ pub(crate) fn compare_rendering(input: &Path, output: Option<&Path>) -> Result<(
         preview: crate::clip_preview::Comparison,
         quantized_leaf_opacity_hypothesis: crate::clip_preview::Comparison,
     }
-    let (mut doc, omissions) = prepare_document_mode(input, &|| false, true)?;
+    let (mut doc, mut omissions, details) = prepare_document_mode(input, &|| false, true)?;
+    omissions.extend(details);
     let mut source = File::open(input).map_err(|error| error.to_string())?;
     let length = source.metadata().map_err(|error| error.to_string())?.len();
     let inventory = clip_container::scan(&mut source, length)?;
@@ -2018,7 +2024,8 @@ pub(crate) fn compare_export(
     file.take(16 * 1024 * 1024 + 1)
         .read_to_end(&mut encoded)
         .map_err(|error| error.to_string())?;
-    let (doc, omissions) = prepare_document_mode(input, &|| false, true)?;
+    let (doc, mut omissions, details) = prepare_document_mode(input, &|| false, true)?;
+    omissions.extend(details);
     let comparison =
         crate::clip_preview::compare(&encoded, [doc.width as u32, doc.height as u32], &doc)?;
     clip_container::write_report(
@@ -2178,7 +2185,7 @@ pub(crate) mod tests {
             assert_eq!(doc.layers.len(), 2);
             assert!(doc.layers[1].folder && !doc.layers[0].folder);
             assert_eq!(doc.layers[0].visible, shown, "{note}");
-            let notes = imported.notes.join("\n");
+            let notes = [imported.notes, imported.details].concat().join("\n");
             assert!(notes.contains("frame 5"), "{notes}");
             assert!(notes.contains(note), "{notes}");
             // Strict inspection still refuses timelines.
@@ -2284,7 +2291,7 @@ pub(crate) mod tests {
                 "UPDATE Layer SET LayerType=0,LayerFolder={folder},LayerRenderMipmap=0,LayerNextIndex=0,LayerFirstChildIndex=40,LayerMasking=32 WHERE MainId=30"
             );
             std::fs::write(&path, worker_fixture_with_sql(&sql)).unwrap();
-            let (doc, notes) = prepare_document_mode(&path, &|| false, true).unwrap();
+            let (doc, notes, _) = prepare_document_mode(&path, &|| false, true).unwrap();
             // The folder-masking detail is internal: no note for the user.
             assert!(notes.is_empty(), "{notes:?}");
             assert_eq!(doc.layers.len(), 2);
@@ -2381,7 +2388,7 @@ pub(crate) mod tests {
             assert!(!error.contains("private source text"));
             // Import leaves the layer out entirely and says so; its payload is
             // never read as raster pixels and its text never reaches a note.
-            let (doc, notes) = prepare_document_mode(&path, &|| false, true).unwrap();
+            let (doc, notes, _) = prepare_document_mode(&path, &|| false, true).unwrap();
             assert_eq!(doc.layers.len(), complete - 1, "{field}");
             assert!(notes.iter().any(|n| n.starts_with("Skipped")), "{notes:?}");
             assert!(notes.iter().all(|n| !n.contains("private source text")));

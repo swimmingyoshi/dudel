@@ -417,8 +417,12 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 - 2026-10-29 (Claude, PSD masks + adjustment kinds): mask density/feather and
   grouped notes (5fdb500); six more adjustment kinds with PSD parsing and
   Adjustment window controls; blend-box wheel no longer scrolls the effects
-  window. Gates pass (992 tests). Committed locally, not pushed. Full Verify
-  and the owner's pen pass still open.
+  window. Import messages split into notes (something left out) and details
+  (`Imported.details`, per-tab `ImportReport`): the Import details window opens
+  by itself only for notes; a status-bar button reopens it. Private CSP corpus:
+  the window now opens for 6 of 30 files (skipped vector/text layers), down
+  from every file. Gates pass (993 tests). Committed locally, not pushed. Full
+  Verify and the owner's pen pass still open. Next CSP gap: vector layers.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

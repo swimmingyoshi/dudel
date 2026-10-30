@@ -23,7 +23,7 @@ pub struct LoadJob {
     kind: LoadKind,
     revision: u64,
     cancel: Arc<AtomicBool>,
-    notes: Arc<std::sync::Mutex<Vec<String>>>,
+    notes: Arc<std::sync::Mutex<(Vec<String>, Vec<String>)>>,
 }
 impl Dudel {
     pub(crate) fn load_document(&mut self, path: PathBuf, png: bool) {
@@ -70,7 +70,7 @@ impl Dudel {
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let worker_path = path.clone();
-        let notes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let notes = Arc::new(std::sync::Mutex::new((Vec::new(), Vec::new())));
         let worker_notes = notes.clone();
         let worker = std::thread::spawn(move || {
             if worker_cancel.load(Ordering::Relaxed) {
@@ -91,7 +91,8 @@ impl Dudel {
                     }?;
                     *worker_notes
                         .lock()
-                        .map_err(|_| "Import report unavailable")? = imported.notes;
+                        .map_err(|_| "Import report unavailable")? =
+                        (imported.notes, imported.details);
                     Ok(imported.document)
                 }
                 LoadKind::Project => storage::load_project(&worker_path),
@@ -190,7 +191,8 @@ impl Dudel {
                 .join()
                 .unwrap_or_else(|_| Err("Document loading worker failed".into()));
             if !canceled && job.revision == self.revision && result.is_ok() {
-                self.import_notes = job.notes.lock().map(|n| n.clone()).unwrap_or_default();
+                let (notes, details) = job.notes.lock().map(|n| n.clone()).unwrap_or_default();
+                self.import_report = crate::import_report::ImportReport::new(notes, details);
             }
             self.commit_load(job.path, job.kind, job.revision, canceled, result);
             self.settle_tab_after_load();

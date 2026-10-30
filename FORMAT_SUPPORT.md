@@ -46,6 +46,11 @@ and PSD source files, including renamed files recognized by their signatures.
 | Profiles, proofing and color adjustments | Layered conversion rejected |
 | Unknown channel layouts, damaged references or more than 1,000 raster layers | Layered conversion rejected |
 
+The Import details window opens by itself only when something was left out or may
+look different (a skipped layer, an effect Dudel cannot draw). Background that does
+not change the picture (the saved timeline frame, animation cels, drawing aids, how
+the file was read) waits behind the **Import details** button in the status bar.
+
 A skipped layer never has its stored pixels misread as ordinary raster art; it
 is left out and listed by name. If CSP's selected layer was skipped, the first
 imported raster layer is selected instead.

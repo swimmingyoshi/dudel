@@ -1,7 +1,32 @@
 //! User-visible conversion notes stay separate from editable document content.
 pub(crate) struct Imported {
     pub document: crate::document::Document,
+    /// What was left out or may look different from the source.
     pub notes: Vec<String>,
+    /// Background that does not change the picture (frames, drawing aids,
+    /// how the import was made).
+    pub details: Vec<String>,
+}
+
+/// The last import's messages for one project tab. The window opens by
+/// itself only when something was left out; details wait behind a button.
+#[derive(Default)]
+pub(crate) struct ImportReport {
+    pub notes: Vec<String>,
+    pub details: Vec<String>,
+    pub open: bool,
+}
+impl ImportReport {
+    pub(crate) fn new(notes: Vec<String>, details: Vec<String>) -> Self {
+        Self {
+            open: !notes.is_empty(),
+            notes,
+            details,
+        }
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.notes.is_empty() && self.details.is_empty()
+    }
 }
 
 pub(crate) fn verify(
@@ -29,6 +54,7 @@ pub(crate) fn verify(
         folders: usize,
         masks: usize,
         notes: Vec<String>,
+        details: Vec<String>,
         rasters: Vec<crate::clip_raster::Statistics>,
         /// Bottom to top: depth, name, and blend/opacity/clipping/visibility.
         stack: Vec<String>,
@@ -98,6 +124,7 @@ pub(crate) fn verify(
         folders: doc.layers.iter().filter(|l| l.folder).count(),
         masks: doc.layers.iter().filter(|l| l.mask.is_some()).count(),
         notes: imported.notes,
+        details: imported.details,
         rasters: doc
             .layers
             .iter()
@@ -166,19 +193,77 @@ fn difference(rendered: &[u8], reference: &[u8]) -> Difference {
 
 impl crate::Dudel {
     pub(crate) fn import_report_ui(&mut self, ctx: &crate::egui::Context) {
-        if self.import_notes.is_empty() {
+        let report = &mut self.import_report;
+        if !report.open || report.is_empty() {
             return;
         }
         let mut open = true;
         crate::egui::Window::new("Import details")
-            .open(&mut open).default_width(440.0).vscroll(true)
+            .open(&mut open)
+            .default_width(440.0)
+            .vscroll(true)
             .show(ctx, |ui| {
                 ui.label("Your source file has not been changed. Save the imported artwork as a new .dudel project.");
                 ui.separator();
-                for note in &self.import_notes { ui.label(note); }
+                if report.notes.is_empty() {
+                    ui.label("Nothing was left out.");
+                }
+                for note in &report.notes {
+                    ui.label(note);
+                }
+                if report.details.is_empty() {
+                    return;
+                }
+                if report.notes.is_empty() {
+                    ui.add_space(4.0);
+                    for detail in &report.details {
+                        ui.weak(detail);
+                    }
+                } else {
+                    crate::egui::CollapsingHeader::new(format!(
+                        "Other details ({})",
+                        report.details.len()
+                    ))
+                    .show(ui, |ui| {
+                        for detail in &report.details {
+                            ui.weak(detail);
+                        }
+                    });
+                }
             });
-        if !open {
-            self.import_notes.clear();
+        report.open = open;
+    }
+    /// A status-bar button that reopens the last import's messages.
+    pub(crate) fn import_report_button(&mut self, ui: &mut crate::egui::Ui) {
+        let report = &mut self.import_report;
+        if report.open || report.is_empty() {
+            return;
         }
+        let label = if report.notes.is_empty() {
+            "Import details".to_string()
+        } else {
+            format!("Import details ({})", report.notes.len())
+        };
+        if ui
+            .add(crate::egui::Button::new(label).small())
+            .on_hover_text("What the import kept, left out or changed")
+            .clicked()
+        {
+            report.open = true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_details_open_by_themselves_only_when_something_was_left_out() {
+        let quiet = ImportReport::new(Vec::new(), vec!["This file has a timeline.".into()]);
+        assert!(!quiet.open && !quiet.is_empty());
+        let loss = ImportReport::new(vec!["Skipped layer “Ink”.".into()], Vec::new());
+        assert!(loss.open);
+        assert!(ImportReport::default().is_empty());
     }
 }

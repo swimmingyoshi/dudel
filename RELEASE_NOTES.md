@@ -44,6 +44,9 @@ the package has been uploaded to a public store.
   strokes, color and gradient overlays, drop and inner shadows, outer and inner
   glows, bevel and emboss, also on folders. Satin and pattern effects are listed
   in Import details instead.
+- Import details opens by itself only when a CSP or PSD import left something
+  out; other notes (timeline frame, animation cels, drawing aids) are behind the
+  Import details button in the status bar.
 
 See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
 changes require rebuilt release artifacts and do not extend the historical

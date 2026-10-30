@@ -217,6 +217,8 @@ fn blend(key: &[u8]) -> Result<crate::blend::BlendMode, String> {
         }
     })
 }
+/// Import notes (something left out or changed) and details (background).
+type Messages = (Vec<String>, Vec<String>);
 /// Notes of one kind collected per layer, then written as one line each.
 #[derive(Default)]
 struct Grouped(Vec<(String, Vec<String>)>);
@@ -507,7 +509,7 @@ fn layers(
     mode: ColorMode,
     global_angle: f64,
     cancel: &impl Fn() -> bool,
-) -> Result<(Document, Order, Vec<String>), String> {
+) -> Result<(Document, Order, Messages), String> {
     // After the layer records come the global layer mask (how masks are shown
     // in the editor, not pixels) and document-wide blocks such as patterns,
     // text engine data and linked files. Those only matter to layers that use
@@ -518,7 +520,7 @@ fn layers(
         return Err("PSD layer count exceeds limits or is empty".into());
     }
     let mut records = Vec::new();
-    let mut notes = Vec::new();
+    let (mut notes, mut details) = (Vec::new(), Vec::new());
     let gray = matches!(mode, ColorMode::Gray);
     // Per-layer notes of one kind become one line naming the layers.
     let mut grouped = Grouped::default();
@@ -1040,7 +1042,7 @@ fn layers(
         }
     }
     if records.iter().any(|r| !r.layer.effects.is_empty()) {
-        notes.push(
+        details.push(
             "Layer effects stay editable: select a layer and open fx in the layer properties."
                 .into(),
         );
@@ -1151,7 +1153,7 @@ fn layers(
         1
     };
     doc.validate()?;
-    Ok((doc, order, notes))
+    Ok((doc, order, (notes, details)))
 }
 /// Whether reversing a flat stack matches the saved image better, judged on
 /// a grid of sample pixels.
@@ -1381,9 +1383,10 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     // image's transparency.
     let count = layer_count(layer_data.0, depth)?;
     let has_alpha = count < 0;
-    let mut notes = Vec::new();
+    let (mut notes, mut details) = (Vec::new(), Vec::new());
     if matches!(mode, ColorMode::Gray) {
-        notes.push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
+        details
+            .push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
     }
     if profile {
         notes.push(
@@ -1394,12 +1397,14 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     // An empty layer list means the document is just its background image.
     let background_only = count == 0;
     if background_only {
-        notes.push("This file holds only a background image; it was imported as one layer.".into());
+        details
+            .push("This file holds only a background image; it was imported as one layer.".into());
     } else if layered && depth == 8 && !layer_data.0.is_empty() {
         match layers(layer_data.0, width, height, mode, global_angle, cancel) {
-            Ok((mut document, order, layer_notes)) => {
-                notes.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
+            Ok((mut document, order, (layer_notes, layer_details))) => {
+                details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
                 notes.extend(layer_notes);
+                details.extend(layer_details);
                 let flipped = match order {
                     Order::BottomFirst => false,
                     Order::TopFirst => true,
@@ -1417,9 +1422,13 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
                     document.active = document.layers.len() - 1;
                 }
                 if flipped {
-                    notes.push("This file lists its layers top first, unlike Photoshop. Dudel read them in that order to match the file's saved image.".into());
+                    details.push("This file lists its layers top first, unlike Photoshop. Dudel read them in that order to match the file's saved image.".into());
                 }
-                return Ok(Imported { document, notes });
+                return Ok(Imported {
+                    document,
+                    notes,
+                    details,
+                });
             }
             Err(error) => {
                 check(cancel)?;
@@ -1448,13 +1457,17 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         reader.0, width, height, channels, depth, mode, has_alpha, cancel,
     )?;
     if depth == 16 {
-        notes.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
+        details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
     }
     let mut document = Document::new(width, height);
     document.layers[0].name = "PSD composite (flattened)".into();
     document.layers[0].pixels = pixels.into();
     document.validate()?;
-    Ok(Imported { document, notes })
+    Ok(Imported {
+        document,
+        notes,
+        details,
+    })
 }
 
 #[cfg(test)]
@@ -1622,7 +1635,7 @@ mod tests {
         let mask = &imported.document.layers[1].mask.as_ref().unwrap().coverage;
         assert_eq!(mask.at(0, 0), 255);
         assert_eq!(mask.at(1, 0), 75);
-        assert!(imported.notes.iter().any(|n| n.contains("editable")));
+        assert!(imported.details.iter().any(|n| n.contains("editable")));
     }
     #[test]
     fn mask_density_reveals_and_feather_softens() {
@@ -1701,7 +1714,7 @@ mod tests {
         assert_eq!(layer.mask.as_ref().unwrap().coverage.at(1, 0), 75);
         assert_eq!(layer.depth, 1);
         assert!(imported.document.layers[1].folder);
-        assert!(imported.notes.iter().any(|n| n.contains("grayscale")));
+        assert!(imported.details.iter().any(|n| n.contains("grayscale")));
         // A grayscale file must not accept RGB layer channel IDs as gray pixels.
         let mut invalid = layer_file(&[raster("Invalid", 0, [9; 4], false)]);
         invalid[24..26].copy_from_slice(&1u16.to_be_bytes());
@@ -1873,7 +1886,7 @@ mod tests {
             },
         ]);
         let imported = parse(&file, &|| false).unwrap();
-        assert!(imported.notes.iter().any(|n| n.contains("editable")));
+        assert!(imported.details.iter().any(|n| n.contains("editable")));
         let blends: Vec<_> = imported.document.layers.iter().map(|l| l.blend).collect();
         assert_eq!(
             blends,
@@ -1903,7 +1916,7 @@ mod tests {
             .map(|l| (l.name.as_str(), l.depth))
             .collect();
         assert_eq!(stack, [("Paper", 0), ("Ink", 1), ("Folder", 0)]);
-        assert!(imported.notes.iter().any(|n| n.contains("top first")));
+        assert!(imported.details.iter().any(|n| n.contains("top first")));
         // Flat: the saved image decides. Records list "Top" first, and
         // only a blue saved image means Top really is on top.
         for (saved, top_first) in [([0u8, 0, 255], true), ([255, 0, 0], false)] {
@@ -1930,7 +1943,7 @@ mod tests {
             };
             assert_eq!(names, expected);
             assert_eq!(
-                imported.notes.iter().any(|n| n.contains("top first")),
+                imported.details.iter().any(|n| n.contains("top first")),
                 top_first
             );
             assert_eq!(imported.document.active, 1);
@@ -2099,7 +2112,7 @@ mod tests {
         assert_eq!(overlay.pixels.rgba(1), [0, 0, 0, 0]);
         assert_eq!(expanded.layers[0].blend, crate::blend::BlendMode::Multiply);
         assert!(imported.notes.iter().any(|n| n.contains("satin")));
-        assert!(imported.notes.iter().any(|n| n.contains("stay editable")));
+        assert!(imported.details.iter().any(|n| n.contains("stay editable")));
         // With the effects switched off the layer imports alone.
         let off = parse(&file(false), &|| false).unwrap();
         assert_eq!(off.document.layers.len(), 2);
@@ -2243,7 +2256,7 @@ mod tests {
         assert_eq!(imported.document.layers.len(), 1);
         assert!(
             imported
-                .notes
+                .details
                 .iter()
                 .any(|n| n.contains("only a background image"))
         );

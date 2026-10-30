@@ -1565,6 +1565,7 @@ impl Dudel {
             egui::vec2(width, 26.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                self.import_report_button(ui);
                 // Recording stays visible beside the status, never instead of it.
                 if let Some(label) = self.timelapse_status() {
                     let recording = label == "Recording timelapse";

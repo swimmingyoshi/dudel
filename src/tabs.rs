@@ -154,6 +154,7 @@ project_session! {
     effects_sent: Option<(crate::document::LayerId, Vec<crate::layer_effects::LayerEffect>)>,
     effects_shown: Vec<u64>,
     mask_view_shown: bool,
+    import_report: crate::import_report::ImportReport,
     symmetry: crate::symmetry::Symmetry,
     symmetry_drag: bool,
     layer_symmetry: std::collections::HashMap<crate::document::LayerId, crate::symmetry::Symmetry>,

@@ -399,7 +399,7 @@ struct Dudel {
     extensions: Vec<extensions::Installed>,
     extension_errors: Vec<String>,
     extension_manager: bool,
-    import_notes: Vec<String>,
+    import_report: import_report::ImportReport,
     extension_panels: std::collections::BTreeSet<String>,
     references: references::References,
     /// Images placed on the canvas to draw from; saved with the project.
@@ -619,7 +619,7 @@ impl Default for Dudel {
             extensions: vec![],
             extension_errors: vec![],
             extension_manager: false,
-            import_notes: Vec::new(),
+            import_report: Default::default(),
             extension_panels: Default::default(),
             references: references::References::default(),
             reference_layers: Default::default(),
