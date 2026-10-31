@@ -227,9 +227,11 @@ Photoshop stores as whole numbers are rounded (CSP's brightness 29.8 becomes
 30). Clip Studio Paint's two kinds have no exact Photoshop form, and the status
 line names them: tone curves become Photoshop curves through nine points of the
 CSP curve (within 1-2 levels), and Hue/Saturation/Luminosity becomes
-Hue/Saturation with the same values. Hue and darkening match, but CSP changes
-lightness before saturation and Photoshop after, so colors can move by up to 20
-levels. Exposure from a grayscale PSD acts on gray's tone curve in Dudel but on
+Hue/Saturation with the same values. Hue and darkening match within a level,
+but CSP works in HSV, where lightening also drains saturation, and Photoshop in
+HSL; no Photoshop adjustment or combination of them works in HSV, so
+saturation changes and lightening can move colors by tens of levels (the
+owner's +60/-40/+20 sample: mean 3.7, at most 20 levels). Exposure from a grayscale PSD acts on gray's tone curve in Dudel but on
 sRGB's in the RGB export. The flattened image is stored blended against white,
 as Photoshop stores it. The file's resolution is the project's DPI. Opacity is stored in
 1/255 steps, so a CSP layer at 66% comes back at 168/255; low-opacity Hard Mix

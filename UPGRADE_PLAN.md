@@ -210,7 +210,10 @@ PSD (`src/psd_import.rs`, new):
       omitted, gradient-map tail, 4-row `mixr`, `phfl` v2 RGB. Hue ranges
       keep their order (overlaps apply in order). CSP tone curves: 9 samples
       (within 1-2 levels); CSP HSL as hue2 master (up to 20 levels on the
-      +60/-40/+20 sample: CSP changes lightness before saturation). Public
+      +60/-40/+20 sample). Measured: hue exact, darkening within 1, but CSP's
+      HSV saturation (+-40: up to 62) and lightening (+20: up to 39) have no
+      Photoshop form; two layers or fitted values gain nothing (mean 3.8 ->
+      3.5, max 26 either way), so it stays one editable layer. Public
       set: every adjustment file reopens exact except grayscale exposure
       (gamma 1.75 vs RGB 2.2).
 - [ ] PSD export: editable effects (`lfx2` descriptors) instead of effect layers
@@ -221,8 +224,6 @@ PSD (`src/psd_import.rs`, new):
       ZIP layer channels, and reads records bottom first; see FORMAT_SUPPORT.
 - [x] PSD export opens in Affinity and Photopea (owner, 2026-10-31)
 - [ ] PSD export: owner check in Krita (on Linux) and Photoshop if available
-- [ ] CSP Hue/Saturation/Luminosity export: closer match (two Photoshop
-      layers, lightness then hue/saturation) if it matters in practice
 - [ ] Export speed: Frieren takes ~2.3 s (exact pixel bounds visit every
       painted pixel; composite on the export thread)
 
