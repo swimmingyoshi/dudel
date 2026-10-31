@@ -2131,6 +2131,7 @@ fn main() -> eframe::Result {
                     layer.adjustment =
                         Some(adjustment::Adjustment::new(adjustment::Settings::Curves {
                             channels: vec![(0, vec![[0, 0], [70, 40], [190, 225], [255, 255]])],
+                            bezier: false,
                         }));
                     app.doc.layers.push(layer);
                     app.doc.active = app.doc.layers.len() - 1;

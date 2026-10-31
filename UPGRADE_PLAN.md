@@ -499,6 +499,20 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   (155 vs CSP's 135 on the paper); a natural spline after a ~2.2 gamma
   gets within 1-2 levels, too few levels to confirm. Needs a gradient
   sample. Brightness/contrast and hue/saturation were at defaults.
+
+- 2026-10-30 (Claude, owner's correction and tone samples): correction
+  layers (type 4098, SpecialRenderType 13, FilterLayerInfo) import as Dudel
+  adjustment layers. Tone curve: 32 curves x (count + 32 u16 pairs), the
+  first the master; CSP's curve is a quadratic B-spline of its points (a
+  Bezier for one middle point): Curves gained `bezier`. ToneCurve-TEST 0.46
+  mean levels off. Brightness/contrast: out = (in + b - 128)/(1 - c) + 128,
+  mapped exactly onto the legacy formula; 0.22 levels off. Hue/saturation/
+  luminosity does not fit HLS (luminosity on gray is 0.8x + 50; colored
+  pixels differ): neutral settings only until its code is read. Line (shape
+  4) and square (shape 2) tones: CSP functions read (square = two bands of
+  the cell's sides, line = one band; same radius search), but these
+  canvases' previews are half size and CSP re-renders tones anti-aliased for
+  them, so the shapes are not yet checked or drawn.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

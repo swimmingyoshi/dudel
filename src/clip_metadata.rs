@@ -53,6 +53,9 @@ struct Layer {
     /// A screentone layer (a fill turned into dots by the tone effect).
     /// Import mode only.
     tone: bool,
+    /// A correction layer Dudel imports as an adjustment layer. Import mode
+    /// only.
+    correction: bool,
 }
 impl Layer {
     // Observed ordinary folders may carry the closed UI bit (16).
@@ -68,6 +71,11 @@ impl Layer {
             || self.is_image()
             || self.is_vector()
             || self.is_tone()
+            || self.is_correction()
+    }
+    /// Correction layers are type 4096 with the layer mask bit (2).
+    fn is_correction(&self) -> bool {
+        self.correction && self.layer_type == 4098 && self.folder == 0
     }
     /// An ordinary raster layer; type 3 is one with a layer mask.
     fn is_raster(&self) -> bool {
@@ -149,9 +157,13 @@ struct Report {
     /// Import mode: each tone layer's effect and mask bitmap.
     #[serde(skip)]
     tones: BTreeMap<i64, (ToneEffect, MaskSource)>,
-    /// Import mode: the layer mask of each masked raster layer.
+    /// Import mode: the layer mask of each masked raster or correction
+    /// layer.
     #[serde(skip)]
     raster_masks: BTreeMap<i64, MaskSource>,
+    /// Import mode: each correction layer's adjustment.
+    #[serde(skip)]
+    corrections: BTreeMap<i64, crate::adjustment::Settings>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use, with
     /// their anti-aliasing level.
@@ -366,6 +378,80 @@ fn vector_layers(db: &Connection, report: &mut Report) -> Result<(), String> {
     }
     Ok(())
 }
+/// A correction layer's settings as a Dudel adjustment (`FilterLayerInfo`:
+/// kind, byte length, then the values). Only what CSP was checked against
+/// on the owner's samples converts; anything else keeps the layer skipped.
+fn correction(info: &[u8]) -> Result<crate::adjustment::Settings, String> {
+    use crate::adjustment::Settings;
+    let word = |at: usize| -> Option<i32> {
+        Some(i32::from_be_bytes(info.get(at..at + 4)?.try_into().ok()?))
+    };
+    let kind = word(0).ok_or("damaged correction layer")?;
+    if word(4).and_then(|n| usize::try_from(n).ok()) != Some(info.len().saturating_sub(8)) {
+        return Err("damaged correction layer".into());
+    }
+    match kind {
+        // out = (in + brightness - 128) / (1 - contrast) + 128 in 0..=255,
+        // fitted on the owner's +30 / +40 sample within a quarter level.
+        // Photoshop's legacy formula is the same line around 127.5, so the
+        // values convert exactly. Negative contrast is not yet checked.
+        1 if info.len() == 16 => {
+            let (brightness, contrast) = (word(8).unwrap(), word(12).unwrap());
+            if !(-150..=150).contains(&brightness) || !(0..=99).contains(&contrast) {
+                return Err("brightness/contrast settings Dudel does not draw yet".into());
+            }
+            let c = contrast as f32 / 100.0;
+            Ok(Settings::BrightnessContrast {
+                brightness: brightness as f32 - 0.5 * c,
+                contrast: contrast as f32 / 0.99,
+                legacy: true,
+            })
+        }
+        4 if info.len() == 20 => {
+            if (8..20).step_by(4).any(|at| word(at) != Some(0)) {
+                return Err("hue/saturation/luminosity settings Dudel does not draw yet".into());
+            }
+            Ok(Settings::HueSaturation {
+                colorize: None,
+                master: [0.0; 3],
+                ranges: Vec::new(),
+            })
+        }
+        // 32 curves of a count and up to 32 (x, y) pairs (16-bit), the
+        // first for all channels. Only that one may bend, with at most one
+        // inner point: CSP's curve for those matched a quadratic Bezier.
+        3 if info.len() == 8 + 32 * 130 => {
+            let curve = |index: usize| -> Vec<[u16; 2]> {
+                let at = 8 + index * 130;
+                let half = |i: usize| u16::from_be_bytes([info[at + i * 2], info[at + i * 2 + 1]]);
+                (0..usize::from(half(0)).min(32))
+                    .map(|p| [half(1 + p * 2), half(2 + p * 2)])
+                    .collect()
+            };
+            if (1..32).any(|index| curve(index) != [[0, 0], [u16::MAX, u16::MAX]]) {
+                return Err("tone curves on single channels Dudel does not draw yet".into());
+            }
+            let points = curve(0);
+            if !(2..=3).contains(&points.len()) {
+                return Err(
+                    "tone curves with more than one inner point Dudel does not draw yet".into(),
+                );
+            }
+            let points: Vec<[u8; 2]> = points
+                .iter()
+                .map(|p| p.map(|v| ((u32::from(v) * 255 + 32767) / 65535) as u8))
+                .collect();
+            let settings = Settings::Curves {
+                channels: vec![(0, points)],
+                bezier: true,
+            };
+            crate::adjustment::Adjustment::try_from(settings.clone())
+                .map_err(|_| "damaged tone curve".to_string())?;
+            Ok(settings)
+        }
+        _ => Err("this correction layer kind is not supported yet".into()),
+    }
+}
 /// A screentone effect: its dot density (percent) and, when Dudel can draw
 /// its dots, their grid.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -508,10 +594,30 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
     if study && columns.contains("LayerEffectInfo") && columns.contains("GradationFillInfo") {
         tone_layers(db, report)?;
     }
+    if study && columns.contains("FilterLayerInfo") && columns.contains("SpecialRenderType") {
+        let candidates = rows(
+            db,
+            "SELECT MainId,FilterLayerInfo FROM Layer WHERE LayerType=4098 AND LayerFolder=0 \
+             AND SpecialRenderType=13 AND length(FilterLayerInfo)<=8192",
+            MAX_ENTRIES + 1,
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        for (id, info) in candidates {
+            match correction(&info) {
+                Ok(settings) => {
+                    report.corrections.insert(id, settings);
+                    if let Some(layer) = report.layers.iter_mut().find(|layer| layer.id == id) {
+                        layer.correction = true;
+                    }
+                }
+                Err(error) => layer_issue(report, study, id, error),
+            }
+        }
+    }
     if study && columns.contains("LayerLayerMaskMipmap") {
         let masked = rows(
             db,
-            "SELECT MainId FROM Layer WHERE LayerType IN (1,3) AND LayerFolder=0 AND coalesce(LayerLayerMaskMipmap,0)!=0",
+            "SELECT MainId FROM Layer WHERE LayerType IN (1,3,4098) AND LayerFolder=0 AND coalesce(LayerLayerMaskMipmap,0)!=0",
             MAX_ENTRIES + 1,
             |row| row.get::<_, i64>(0),
         )?;
@@ -608,7 +714,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         // Layers with a mask on them carry LayerMasking 0 or 1; CSP applied
         // the mask either way in the owner's files (the bit's meaning is
         // unknown, perhaps the mask's link to the layer).
-        let masked = (tone || report.raster_masks.contains_key(&id)) && [0, 1].contains(&masking);
+        let correction = report.corrections.contains_key(&id);
+        let masked = (tone || report.raster_masks.contains_key(&id))
+            && (if correction { [32, 33] } else { [0, 1] }).contains(&masking);
         if (lock != 0 && (!study || lock & !17 != 0))
             || (mask != 0 && !masked)
             || (masking != if id == report.canvas.root { 32 } else { 0 }
@@ -693,6 +801,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 {
                     continue;
                 }
+                if study && field == "FilterLayerInfo" && report.corrections.contains_key(&id) {
+                    continue;
+                }
 
                 // Expression color Gray (1) is stored as gray tiles, which the
                 // raster decoder expands; other expression colors stay skipped.
@@ -714,21 +825,57 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
     // Paper, image material and vector layers carry fixed render-type values
     // (every observed layer of each kind has the same set); ordinary layers
     // none.
-    for (field, paper_expected, image_expected, vector_expected, tone_expected) in [
+    for (
+        field,
+        paper_expected,
+        image_expected,
+        vector_expected,
+        tone_expected,
+        correction_expected,
+    ) in [
         (
             "DrawToRenderOffscreenType",
             61,
             Some(20),
             Some(10),
             Some(60),
+            None,
         ),
-        ("SpecialRenderType", 20, None, None, None),
-        ("DrawToRenderMipmapType", 31, Some(20), None, Some(32)),
-        ("MoveOffsetAndExpandType", 31, Some(10), None, Some(30)),
-        ("FixOffsetAndExpandType", 31, Some(10), None, Some(30)),
-        ("RenderBoundForLayerMoveType", 31, Some(10), None, Some(30)),
-        ("SetRenderThumbnailInfoType", 31, Some(10), None, Some(30)),
-        ("DrawRenderThumbnailType", 31, None, None, Some(30)),
+        ("SpecialRenderType", 20, None, None, None, Some(13)),
+        ("DrawToRenderMipmapType", 31, Some(20), None, Some(32), None),
+        (
+            "MoveOffsetAndExpandType",
+            31,
+            Some(10),
+            None,
+            Some(30),
+            None,
+        ),
+        ("FixOffsetAndExpandType", 31, Some(10), None, Some(30), None),
+        (
+            "RenderBoundForLayerMoveType",
+            31,
+            Some(10),
+            None,
+            Some(30),
+            None,
+        ),
+        (
+            "SetRenderThumbnailInfoType",
+            31,
+            Some(10),
+            None,
+            Some(30),
+            Some(20),
+        ),
+        (
+            "DrawRenderThumbnailType",
+            31,
+            None,
+            None,
+            Some(30),
+            Some(20),
+        ),
     ] {
         if !columns.contains(field) {
             if report.layers.iter().any(|layer| layer.layer_type == 1584) {
@@ -761,11 +908,18 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 .layers
                 .iter()
                 .any(|layer| layer.id == id && layer.is_tone());
+            let correction = report.corrections.contains_key(&id);
             if (paper && value != Some(paper_expected))
                 || (image && value.filter(|v| *v != 0) != image_expected)
                 || (vector && value.filter(|v| *v != 0) != vector_expected)
                 || (tone && value.filter(|v| *v != 0) != tone_expected)
-                || (!paper && !image && !vector && !tone && value.is_some_and(|value| value != 0))
+                || (correction && value.filter(|v| *v != 0) != correction_expected)
+                || (!paper
+                    && !image
+                    && !vector
+                    && !tone
+                    && !correction
+                    && value.is_some_and(|value| value != 0))
             {
                 layer_issue(report, study, id, format!("unsupported {field}"));
             }
@@ -908,7 +1062,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             // Layers with a layer mask (tones, and rasters of type 3) also
             // set the 2 bit beside the visible bit.
             !layer.supported_kind()
-                || !(if layer.is_tone() || layer.layer_type == 3 {
+                || !(if layer.is_tone() || matches!(layer.layer_type, 3 | 4098) {
                     &[2, 3][..]
                 } else {
                     &[0, 1, 4, 5]
@@ -1358,6 +1512,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
                 image: false,
                 vector: false,
                 tone: false,
+                correction: false,
             })
         },
     )?;
@@ -1641,6 +1796,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         vectors: BTreeMap::new(),
         tones: BTreeMap::new(),
         raster_masks: BTreeMap::new(),
+        corrections: BTreeMap::new(),
         plain_brush_styles: BTreeMap::new(),
         animation: Animation::default(),
     })
@@ -2102,6 +2258,7 @@ fn prepare_document_mode(
         }
         let layer = layer_of(entry.id);
         let known = layer.is_raster()
+            || layer.is_correction()
             || layer.is_image()
             || layer.is_vector()
             || layer.is_tone()
@@ -2247,6 +2404,9 @@ fn prepare_document_mode(
             1 | 3 => crate::clip_document::Content::Raster,
             0 if layer.is_image() || layer.is_vector() => crate::clip_document::Content::Raster,
             2 if layer.is_tone() => crate::clip_document::Content::Raster,
+            4098 if layer.is_correction() => {
+                crate::clip_document::Content::Adjustment(report.corrections[&layer.id].clone())
+            }
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
             1584 => {
                 let Some(color) = &layer.paper_draw_color else {
@@ -3385,6 +3545,7 @@ pub(crate) mod tests {
                 image: false,
                 vector: false,
                 tone: false,
+                correction: false,
             });
         }
         assert!(
@@ -3542,6 +3703,53 @@ pub(crate) mod tests {
         assert_eq!(percent(&short), None);
         // Too short for the grid: shaded evenly.
         assert_eq!(tone_effect(&info(0, 1, 30, 0)).unwrap().screen, None);
+    }
+    #[test]
+    fn correction_layers_convert_only_checked_settings() {
+        use crate::adjustment::{Adjustment, Settings};
+        let words =
+            |values: &[i32]| -> Vec<u8> { values.iter().flat_map(|v| v.to_be_bytes()).collect() };
+        // Brightness +30, contrast +40: CSP's (in + 30 - 128) / 0.6 + 128.
+        let settings = correction(&words(&[1, 8, 30, 40])).unwrap();
+        let line = Adjustment::try_from(settings).unwrap();
+        for (input, output) in [(40.0, 31.3), (100.0, 131.3), (128.0, 178.0), (150.0, 214.7)] {
+            assert!((line.apply([input; 3])[0] - output).abs() < 0.1, "{input}");
+        }
+        assert!(correction(&words(&[1, 8, 30, -40])).is_err());
+        // Hue/saturation/luminosity only when it changes nothing.
+        assert!(matches!(
+            correction(&words(&[4, 12, 0, 0, 0])),
+            Ok(Settings::HueSaturation { .. })
+        ));
+        assert!(correction(&words(&[4, 12, 60, -40, 20])).is_err());
+        // Tone curve: 32 curves of 65 words, the first for all channels.
+        let curve = |master: &[[u16; 2]], red: &[[u16; 2]]| {
+            let mut info = words(&[3, 4160]);
+            for index in 0..32 {
+                let points: &[[u16; 2]] = match index {
+                    0 => master,
+                    1 => red,
+                    _ => &[[0, 0], [u16::MAX, u16::MAX]],
+                };
+                let mut block = vec![points.len() as u16];
+                block.extend(points.iter().flatten());
+                block.resize(65, 0);
+                info.extend(block.iter().flat_map(|v| v.to_be_bytes()));
+            }
+            correction(&info)
+        };
+        let identity = [[0, 0], [u16::MAX, u16::MAX]];
+        assert_eq!(
+            curve(&[[0, 0], [25368, 48914], [u16::MAX, u16::MAX]], &identity).unwrap(),
+            Settings::Curves {
+                channels: vec![(0, vec![[0, 0], [99, 190], [255, 255]])],
+                bezier: true,
+            }
+        );
+        let four = [[0, 0], [9000, 20000], [40000, 50000], [u16::MAX, u16::MAX]];
+        assert!(curve(&four, &identity).is_err());
+        assert!(curve(&identity, &[[0, 0], [30000, 40000], [u16::MAX, u16::MAX]]).is_err());
+        assert!(correction(&words(&[2, 0])).is_err());
     }
     #[test]
     fn round_dot_tones_at_a_set_density_get_their_grid() {
@@ -3708,6 +3916,7 @@ pub(crate) mod tests {
                 image: false,
                 vector: false,
                 tone: false,
+                correction: false,
             });
         }
         assert!(

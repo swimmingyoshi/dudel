@@ -40,6 +40,10 @@ pub(crate) enum Settings {
     /// (channel: 0 all after 1..=3 red, green, blue; [input, output] points).
     Curves {
         channels: Vec<(u8, Vec<[u8; 2]>)>,
+        /// Clip Studio Paint's curves: the points between the ends pull the
+        /// curve towards them (a quadratic B-spline) instead of lying on it.
+        #[serde(default)]
+        bezier: bool,
     },
     BrightnessContrast {
         brightness: f32,
@@ -122,6 +126,7 @@ pub(crate) fn presets() -> [Settings; 15] {
         },
         Settings::Curves {
             channels: vec![(0, vec![[0, 0], [255, 255]])],
+            bezier: false,
         },
         Settings::BrightnessContrast {
             brightness: 0.0,
@@ -181,9 +186,77 @@ pub(crate) fn presets() -> [Settings; 15] {
 pub(crate) const BLACK_WHITE_DEFAULT: [f32; 6] = [40.0, 60.0, 40.0, 60.0, 20.0, 80.0];
 /// A curve through `points` ([input, output] in 0..=255), sampled at every
 /// input level, as the curves editor draws it.
-pub(crate) fn sample_curve(points: &[[u8; 2]]) -> [f32; 256] {
-    let spline = Spline::new(points);
-    std::array::from_fn(|i| spline.at(i as f32 / 255.0) * 255.0)
+pub(crate) fn sample_curve(points: &[[u8; 2]], bezier: bool) -> [f32; 256] {
+    let curve = Curve::new(points, bezier);
+    std::array::from_fn(|i| curve.at(i as f32 / 255.0) * 255.0)
+}
+/// A curves channel: a spline through its points (Photoshop) or one its
+/// inner points pull on (Clip Studio Paint).
+enum Curve {
+    Spline(Spline),
+    Bezier(Vec<[f32; 2]>),
+}
+impl Curve {
+    fn new(points: &[[u8; 2]], bezier: bool) -> Self {
+        if bezier {
+            Self::Bezier(
+                points
+                    .iter()
+                    .map(|p| p.map(|v| f32::from(v) / 255.0))
+                    .collect(),
+            )
+        } else {
+            Self::Spline(Spline::new(points))
+        }
+    }
+    fn at(&self, v: f32) -> f32 {
+        match self {
+            Self::Spline(spline) => spline.at(v),
+            Self::Bezier(points) => bezier_at(points, v),
+        }
+    }
+}
+/// A clamped uniform quadratic B-spline over `points` (x ascending): from the
+/// first point to the last, a quadratic Bezier between each pair of midpoints
+/// of the inner points. Three points make one Bezier, which matched CSP's
+/// tone curve on the owner's samples within half a level.
+fn bezier_at(points: &[[f32; 2]], v: f32) -> f32 {
+    let n = points.len();
+    let v = v.clamp(points[0][0], points[n - 1][0]);
+    if n == 2 {
+        let [[x0, y0], [x1, y1]] = [points[0], points[1]];
+        return if x1 > x0 {
+            (y0 + (y1 - y0) * (v - x0) / (x1 - x0)).clamp(0.0, 1.0)
+        } else {
+            y0
+        };
+    }
+    let mid = |i: usize| -> [f32; 2] {
+        if i == 0 {
+            points[0]
+        } else if i == n - 2 {
+            points[n - 1]
+        } else {
+            [
+                (points[i][0] + points[i + 1][0]) / 2.0,
+                (points[i][1] + points[i + 1][1]) / 2.0,
+            ]
+        }
+    };
+    // Segment k runs from mid(k) to mid(k + 1), pulled by points[k + 1].
+    let k = (0..n - 2).find(|&k| v <= mid(k + 1)[0]).unwrap_or(n - 3);
+    let ([x0, y0], [cx, cy], [x2, y2]) = (mid(k), points[k + 1], mid(k + 1));
+    // x(t) = (1-t)^2 x0 + 2t(1-t) cx + t^2 x2: solve for t in 0..=1.
+    let a = x0 - 2.0 * cx + x2;
+    let b = 2.0 * (cx - x0);
+    let c = x0 - v;
+    let t = if a.abs() < 1e-7 {
+        if b.abs() < 1e-7 { 0.0 } else { -c / b }
+    } else {
+        (-b + (b * b - 4.0 * a * c).max(0.0).sqrt()) / (2.0 * a)
+    }
+    .clamp(0.0, 1.0);
+    ((1.0 - t) * (1.0 - t) * y0 + 2.0 * t * (1.0 - t) * cy + t * t * y2).clamp(0.0, 1.0)
 }
 /// Settings plus the lookup tables drawn from them, built once.
 #[derive(Clone, Serialize, Deserialize)]
@@ -388,7 +461,7 @@ impl Settings {
                             && (0.01..=9.99).contains(&c.gamma)
                     })
             }
-            Settings::Curves { channels } => {
+            Settings::Curves { channels, .. } => {
                 channels.len() <= 4
                     && channels.iter().all(|(channel, points)| {
                         *channel <= 3
@@ -517,10 +590,10 @@ impl Settings {
                     level(channels.first(), level(channels.get(i + 1), v))
                 }))
             }
-            Settings::Curves { channels } => {
-                let splines: Vec<(u8, Spline)> = channels
+            Settings::Curves { channels, bezier } => {
+                let splines: Vec<(u8, Curve)> = channels
                     .iter()
-                    .map(|(c, points)| (*c, Spline::new(points)))
+                    .map(|(c, points)| (*c, Curve::new(points, *bezier)))
                     .collect();
                 Some(Box::new(move |i, v| {
                     let apply = |channel: u8, v: f32| {
@@ -947,6 +1020,7 @@ pub(crate) fn from_psd(key: &[u8], data: &[u8], gray: bool) -> Result<Option<Set
         }
         b"curv" => Settings::Curves {
             channels: curves(data, gray).ok_or_else(damaged)?,
+            bezier: false,
         },
         b"brit" => {
             let brightness = r.u16().ok_or_else(damaged)? as i16;
@@ -1312,6 +1386,29 @@ mod tests {
     }
 
     #[test]
+    fn csp_curves_bend_towards_their_inner_points() {
+        let csp = |points: Vec<[u8; 2]>, v: f32| {
+            apply(
+                Settings::Curves {
+                    channels: vec![(0, points)],
+                    bezier: true,
+                },
+                [v; 3],
+            )[0]
+        };
+        // CSP's saved preview: (0.5, 0.667) takes 114 to 135, where a curve
+        // through the point would give 155.
+        assert_eq!(csp(vec![[0, 0], [128, 170], [255, 255]], 114.0), 135.0);
+        assert_eq!(csp(vec![[0, 0], [99, 190], [255, 255]], 100.0), 145.0);
+        assert_eq!(csp(vec![[0, 0], [255, 255]], 77.0), 77.0);
+        // More inner points join quadratic pieces at their midpoints: the
+        // curve stays inside 0..=255 and rises with its points.
+        let points = vec![[0, 0], [60, 120], [140, 150], [200, 230], [255, 255]];
+        let values: Vec<f32> = (0..=255).map(|v| csp(points.clone(), v as f32)).collect();
+        assert!(values.windows(2).all(|w| w[1] >= w[0]));
+        assert_eq!((values[0], values[255]), (0.0, 255.0));
+    }
+    #[test]
     fn simple_adjustments_map_colors() {
         assert_eq!(
             apply(Settings::Invert, [0.0, 100.0, 255.0]),
@@ -1343,6 +1440,7 @@ mod tests {
                 (0, vec![[0, 0], [128, 200], [255, 255]]),
                 (1, vec![[0, 255], [255, 0]]),
             ],
+            bezier: false,
         };
         let out = apply(curves, [128.0, 128.0, 0.0]);
         assert_eq!(out[1], 200.0);
@@ -1351,7 +1449,8 @@ mod tests {
             (out[0]
                 - apply(
                     Settings::Curves {
-                        channels: vec![(0, vec![[0, 0], [128, 200], [255, 255]])]
+                        channels: vec![(0, vec![[0, 0], [128, 200], [255, 255]])],
+                        bezier: false,
                     },
                     [127.0; 3]
                 )[0])
@@ -1818,7 +1917,8 @@ mod tests {
             curv.extend(output.to_be_bytes());
             curv.extend(input.to_be_bytes());
         }
-        let Some(Settings::Curves { channels }) = from_psd(b"curv", &curv, false).unwrap() else {
+        let Some(Settings::Curves { channels, .. }) = from_psd(b"curv", &curv, false).unwrap()
+        else {
             panic!()
         };
         assert_eq!(channels, vec![(0, vec![[0, 0], [128, 200], [255, 255]])]);

@@ -8,6 +8,8 @@ pub(crate) enum Content {
     Raster,
     Folder,
     Paper([u8; 3]),
+    /// A correction layer, as a Dudel adjustment layer.
+    Adjustment(crate::adjustment::Settings),
 }
 pub(crate) struct Entry {
     pub(crate) source_id: i64,
@@ -110,6 +112,11 @@ pub(crate) fn assemble(
                 }
                 let mut layer = Layer::raster(entry.name, width, height);
                 layer.pixels = pixels;
+                layer
+            }
+            Content::Adjustment(settings) => {
+                let mut layer = Layer::raster(entry.name, width, height);
+                layer.adjustment = Some(crate::adjustment::Adjustment::try_from(settings)?);
                 layer
             }
             Content::Paper(rgb) => {

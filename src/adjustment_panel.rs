@@ -224,11 +224,11 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
                 channels[index] = Some(value);
             }
         }
-        Settings::Curves { channels } => {
+        Settings::Curves { channels, bezier } => {
             let index = channel_picker(ui) as u8;
             let at = channels.iter().position(|(c, _)| *c == index);
             let mut points = at.map_or(vec![[0, 0], [255, 255]], |at| channels[at].1.clone());
-            if curve_editor(ui, &mut points) {
+            if curve_editor(ui, &mut points, *bezier) {
                 match at {
                     Some(at) => channels[at].1 = points,
                     None => channels.push((index, points)),
@@ -405,7 +405,7 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
 
 /// A curves graph: input along the bottom, output up the side. Returns
 /// whether the points changed.
-fn curve_editor(ui: &mut egui::Ui, points: &mut Vec<[u8; 2]>) -> bool {
+fn curve_editor(ui: &mut egui::Ui, points: &mut Vec<[u8; 2]>, bezier: bool) -> bool {
     let side = ui.available_width().clamp(160.0, 256.0);
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -467,7 +467,7 @@ fn curve_editor(ui: &mut egui::Ui, points: &mut Vec<[u8; 2]>) -> bool {
             selected = near(points, at);
             let [x, _] = from_screen(at);
             if selected.is_none() && !points.iter().any(|p| p[0] == x) && points.len() < 64 {
-                let curve = crate::adjustment::sample_curve(points);
+                let curve = crate::adjustment::sample_curve(points, bezier);
                 let y = curve[usize::from(x)].round().clamp(0.0, 255.0) as u8;
                 let i = points.partition_point(|p| p[0] < x);
                 points.insert(i, [x, y]);
@@ -505,7 +505,7 @@ fn curve_editor(ui: &mut egui::Ui, points: &mut Vec<[u8; 2]>) -> bool {
         Some(i) => d.insert_temp(id, i),
         None => d.remove::<usize>(id),
     });
-    let curve = crate::adjustment::sample_curve(points);
+    let curve = crate::adjustment::sample_curve(points, bezier);
     let line: Vec<Pos2> = curve
         .iter()
         .enumerate()
@@ -583,6 +583,7 @@ mod tests {
             id,
             Settings::Curves {
                 channels: vec![(0, vec![[0, 0]])],
+                bezier: false,
             },
         );
         assert_eq!(
