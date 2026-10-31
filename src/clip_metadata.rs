@@ -503,12 +503,18 @@ fn tone_effect(info: &[u8]) -> Option<ToneEffect> {
     // shape, density source, density, lines (f64), a render flag, a zero,
     // angle, noise size, a further size, and the grid's offset as integers
     // and then as f64 pairs, in the order CSP saves them. Dudel draws round
-    // dots (shape 1) at the set density (source 2) with the flag and
-    // offsets the observed tones have; other tones are shaded evenly.
+    // dots (shape 1), squares (2) and lines (4) at the set density (source
+    // 2) with the flag and offsets the observed tones have; other tones are
+    // shaded evenly.
     let float = |at: usize| Some(f64::from_be_bytes(info.get(at..at + 8)?.try_into().ok()?));
     let screen = (|| {
-        let plain = word(tone + 12)? == 1
-            && word(tone + 16)? == 2
+        let shape = match word(tone + 12)? {
+            1 => crate::screentone::Shape::Round,
+            2 => crate::screentone::Shape::Square,
+            4 => crate::screentone::Shape::Line,
+            _ => return None,
+        };
+        let plain = word(tone + 16)? == 2
             && word(tone + 32)? == 1
             && word(tone + 52)? == 0
             && word(tone + 56)? == 0
@@ -518,6 +524,7 @@ fn tone_effect(info: &[u8]) -> Option<ToneEffect> {
             lines: float(tone + 24)?,
             resolution: float(tone + 4)?,
             angle: word(tone + 40)?,
+            shape,
         })
     })()
     .filter(|screen| screen.side().is_some());
@@ -2322,7 +2329,7 @@ fn prepare_document_mode(
     }
     if !shaded.is_empty() {
         notes.push(format!(
-            "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel draws the dots themselves only for round dots at a set density, spaced 2 px or more apart): {}.",
+            "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel draws the dots themselves only for round, square and line tones at a set density, spaced 2 px or more apart): {}.",
             name_list(&shaded)
         ));
     }
@@ -3783,6 +3790,7 @@ pub(crate) mod tests {
             lines: 85.0,
             resolution: 300.0,
             angle: 45,
+            shape: crate::screentone::Shape::Round,
         };
         assert_eq!(
             tone_effect(&info(1, 0)),
@@ -3791,8 +3799,15 @@ pub(crate) mod tests {
                 screen: Some(screen)
             })
         );
+        assert_eq!(
+            tone_effect(&info(4, 0)).unwrap().screen,
+            Some(crate::screentone::Screen {
+                shape: crate::screentone::Shape::Line,
+                ..screen
+            })
+        );
         // Other dot shapes and moved grids are shaded evenly.
-        assert_eq!(tone_effect(&info(2, 0)).unwrap().screen, None);
+        assert_eq!(tone_effect(&info(7, 0)).unwrap().screen, None);
         assert_eq!(tone_effect(&info(1, 3)).unwrap().screen, None);
     }
     #[test]

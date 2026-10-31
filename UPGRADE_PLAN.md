@@ -509,10 +509,12 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   mapped exactly onto the legacy formula; 0.22 levels off. Hue/saturation/
   luminosity does not fit HLS (luminosity on gray is 0.8x + 50; colored
   pixels differ): neutral settings only until its code is read. Line (shape
-  4) and square (shape 2) tones: CSP functions read (square = two bands of
-  the cell's sides, line = one band; same radius search), but these
-  canvases' previews are half size and CSP re-renders tones anti-aliased for
-  them, so the shapes are not yet checked or drawn.
+  4) and square (shape 2) tones: square = two bands along the cell's sides,
+  line = one band (the other side past 90 deg, scanned by columns); lines
+  shrink up to three more times instead of the row-order cut, so 70% ends
+  at 77 of 98 pixels (squares 66). Both match the owner's 1000 px samples
+  pixel for pixel. Half-size previews are no use for tones: CSP re-renders
+  them anti-aliased at the preview's resolution.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
