@@ -56,6 +56,8 @@ struct Layer {
     /// A correction layer Dudel imports as an adjustment layer. Import mode
     /// only.
     correction: bool,
+    /// A text layer Dudel draws from its words and layout. Import mode only.
+    text: bool,
 }
 impl Layer {
     // Observed ordinary folders may carry the closed UI bit (16).
@@ -72,6 +74,10 @@ impl Layer {
             || self.is_vector()
             || self.is_tone()
             || self.is_correction()
+            || self.is_text()
+    }
+    fn is_text(&self) -> bool {
+        self.text && self.layer_type == 0 && self.folder == 0
     }
     /// Correction layers are type 4096 with the layer mask bit (2).
     fn is_correction(&self) -> bool {
@@ -164,6 +170,9 @@ struct Report {
     /// Import mode: each correction layer's adjustment.
     #[serde(skip)]
     corrections: BTreeMap<i64, crate::adjustment::Settings>,
+    /// Import mode: each text layer's line and the font that draws it.
+    #[serde(skip)]
+    texts: BTreeMap<i64, (crate::clip_text::Text, std::sync::Arc<ab_glyph::FontVec>)>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use, with
     /// their anti-aliasing level.
@@ -625,6 +634,45 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             }
         }
     }
+    if study && columns.contains("TextLayerString") && columns.contains("TextLayerAttributes") {
+        let candidates = rows(
+            db,
+            "SELECT MainId,TextLayerString,TextLayerAttributes FROM Layer WHERE LayerType=0 \
+             AND LayerFolder=0 AND length(TextLayerString) BETWEEN 1 AND 65536 \
+             AND length(TextLayerAttributes)<=65536",
+            MAX_ENTRIES + 1,
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            },
+        )?;
+        let mut fonts: BTreeMap<String, Option<std::sync::Arc<ab_glyph::FontVec>>> =
+            BTreeMap::new();
+        for (id, string, attributes) in candidates {
+            let text = crate::clip_text::parse(&string, &attributes).and_then(|text| {
+                let font = fonts
+                    .entry(text.font.clone())
+                    .or_insert_with(|| {
+                        crate::clip_text::find_font(&text.font).map(std::sync::Arc::new)
+                    })
+                    .clone()
+                    .ok_or_else(|| format!("font {} is not installed", text.font))?;
+                Ok((text, font))
+            });
+            match text {
+                Ok(text) => {
+                    report.texts.insert(id, text);
+                    if let Some(layer) = report.layers.iter_mut().find(|layer| layer.id == id) {
+                        layer.text = true;
+                    }
+                }
+                Err(error) => layer_issue(report, study, id, format!("text layer: {error}")),
+            }
+        }
+    }
     if study && columns.contains("LayerLayerMaskMipmap") {
         let masked = rows(
             db,
@@ -815,6 +863,15 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 if study && field == "FilterLayerInfo" && report.corrections.contains_key(&id) {
                     continue;
                 }
+                // Text layers keep their words and styling (material content
+                // type 110); Dudel draws them.
+                if study
+                    && (["TextLayerString", "TextLayerAttributes"].contains(&field)
+                        || (field == "MaterialContentType" && scalar == 110))
+                    && report.texts.contains_key(&id)
+                {
+                    continue;
+                }
 
                 // Expression color Gray (1) is stored as gray tiles, which the
                 // raster decoder expands; other expression colors stay skipped.
@@ -833,61 +890,47 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             }
         }
     }
-    // Paper, image material and vector layers carry fixed render-type values
-    // (every observed layer of each kind has the same set); ordinary layers
-    // none.
-    for (
-        field,
-        paper_expected,
-        image_expected,
-        vector_expected,
-        tone_expected,
-        correction_expected,
-    ) in [
+    // Paper, image material, vector, tone, correction and text layers carry
+    // fixed render-type values (every observed layer of each kind has the
+    // same set); ordinary layers none. Per field: paper, then the others
+    // (None meaning the field is unset or 0).
+    type Expected = (i64, [Option<i64>; 5]);
+    const RENDER_TYPES: [(&str, Expected); 8] = [
+        // Image, vector, tone, correction, text.
         (
             "DrawToRenderOffscreenType",
-            61,
-            Some(20),
-            Some(10),
-            Some(60),
-            None,
+            (61, [Some(20), Some(10), Some(60), None, Some(40)]),
         ),
-        ("SpecialRenderType", 20, None, None, None, Some(13)),
-        ("DrawToRenderMipmapType", 31, Some(20), None, Some(32), None),
+        (
+            "SpecialRenderType",
+            (20, [None, None, None, Some(13), None]),
+        ),
+        (
+            "DrawToRenderMipmapType",
+            (31, [Some(20), None, Some(32), None, Some(40)]),
+        ),
         (
             "MoveOffsetAndExpandType",
-            31,
-            Some(10),
-            None,
-            Some(30),
-            None,
+            (31, [Some(10), None, Some(30), None, Some(50)]),
         ),
-        ("FixOffsetAndExpandType", 31, Some(10), None, Some(30), None),
+        (
+            "FixOffsetAndExpandType",
+            (31, [Some(10), None, Some(30), None, None]),
+        ),
         (
             "RenderBoundForLayerMoveType",
-            31,
-            Some(10),
-            None,
-            Some(30),
-            None,
+            (31, [Some(10), None, Some(30), None, None]),
         ),
         (
             "SetRenderThumbnailInfoType",
-            31,
-            Some(10),
-            None,
-            Some(30),
-            Some(20),
+            (31, [Some(10), None, Some(30), Some(20), None]),
         ),
         (
             "DrawRenderThumbnailType",
-            31,
-            None,
-            None,
-            Some(30),
-            Some(20),
+            (31, [None, None, Some(30), Some(20), None]),
         ),
-    ] {
+    ];
+    for (field, (paper_expected, special)) in RENDER_TYPES {
         if !columns.contains(field) {
             if report.layers.iter().any(|layer| layer.layer_type == 1584) {
                 report
@@ -903,35 +946,25 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
         )?;
         for (id, value) in values {
-            let paper = report
-                .layers
-                .iter()
-                .any(|layer| layer.id == id && layer.layer_type == 1584);
-            let image = report
-                .layers
-                .iter()
-                .any(|layer| layer.id == id && layer.is_image());
-            let vector = report
-                .layers
-                .iter()
-                .any(|layer| layer.id == id && layer.is_vector());
-            let tone = report
-                .layers
-                .iter()
-                .any(|layer| layer.id == id && layer.is_tone());
-            let correction = report.corrections.contains_key(&id);
-            if (paper && value != Some(paper_expected))
-                || (image && value.filter(|v| *v != 0) != image_expected)
-                || (vector && value.filter(|v| *v != 0) != vector_expected)
-                || (tone && value.filter(|v| *v != 0) != tone_expected)
-                || (correction && value.filter(|v| *v != 0) != correction_expected)
-                || (!paper
-                    && !image
-                    && !vector
-                    && !tone
-                    && !correction
-                    && value.is_some_and(|value| value != 0))
-            {
+            let Some(layer) = report.layers.iter().find(|layer| layer.id == id) else {
+                continue;
+            };
+            let kinds = [
+                layer.is_image(),
+                layer.is_vector(),
+                layer.is_tone(),
+                report.corrections.contains_key(&id),
+                report.texts.contains_key(&id),
+            ];
+            let set = value.filter(|v| *v != 0);
+            let fits = if layer.layer_type == 1584 {
+                value == Some(paper_expected)
+            } else if let Some(kind) = kinds.iter().position(|k| *k) {
+                set == special[kind]
+            } else {
+                set.is_none()
+            };
+            if !fits {
                 layer_issue(report, study, id, format!("unsupported {field}"));
             }
         }
@@ -1524,6 +1557,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
                 vector: false,
                 tone: false,
                 correction: false,
+                text: false,
             })
         },
     )?;
@@ -1808,6 +1842,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         tones: BTreeMap::new(),
         raster_masks: BTreeMap::new(),
         corrections: BTreeMap::new(),
+        texts: BTreeMap::new(),
         plain_brush_styles: BTreeMap::new(),
         animation: Animation::default(),
     })
@@ -2270,6 +2305,7 @@ fn prepare_document_mode(
         let layer = layer_of(entry.id);
         let known = layer.is_raster()
             || layer.is_correction()
+            || layer.is_text()
             || layer.is_image()
             || layer.is_vector()
             || layer.is_tone()
@@ -2335,6 +2371,17 @@ fn prepare_document_mode(
         notes.push(format!(
             "Screentone drawn as even shading at its dot density, through the layer's mask (Dudel draws the dots themselves only for round, square and line tones at a set density, spaced 2 px or more apart): {}.",
             name_list(&shaded)
+        ));
+    }
+    let written: Vec<String> = kept
+        .iter()
+        .filter(|(entry, _)| report.texts.contains_key(&entry.id))
+        .map(|(entry, _)| name_of(entry.id))
+        .collect();
+    if !written.is_empty() {
+        notes.push(format!(
+            "Text drawn by Dudel with the font it names, as pixels on an ordinary layer (CSP does not save text pixels; edges can differ slightly): {}.",
+            name_list(&written)
         ));
     }
     let drawn: Vec<String> = kept
@@ -2413,7 +2460,9 @@ fn prepare_document_mode(
         };
         let content = match layer.layer_type {
             1 | 3 => crate::clip_document::Content::Raster,
-            0 if layer.is_image() || layer.is_vector() => crate::clip_document::Content::Raster,
+            0 if layer.is_image() || layer.is_vector() || layer.is_text() => {
+                crate::clip_document::Content::Raster
+            }
             2 if layer.is_tone() => crate::clip_document::Content::Raster,
             4098 if layer.is_correction() => {
                 crate::clip_document::Content::Adjustment(report.corrections[&layer.id].clone())
@@ -2476,6 +2525,15 @@ fn prepare_document_mode(
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
             if let Some(strokes) = vectors.get(&id) {
                 return crate::clip_vector::render(strokes, canvas, cancelled);
+            }
+            if let Some((text, font)) = report.texts.get(&id) {
+                return crate::clip_text::render(
+                    text,
+                    font,
+                    report.canvas.resolution,
+                    canvas,
+                    cancelled,
+                );
             }
             // Tone dots are drawn as CSP draws them when Dudel can, otherwise
             // as their average: black at the dot density. Both are shown
@@ -3557,6 +3615,7 @@ pub(crate) mod tests {
                 vector: false,
                 tone: false,
                 correction: false,
+                text: false,
             });
         }
         assert!(
@@ -3952,6 +4011,7 @@ pub(crate) mod tests {
                 vector: false,
                 tone: false,
                 correction: false,
+                text: false,
             });
         }
         assert!(

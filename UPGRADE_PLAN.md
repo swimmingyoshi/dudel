@@ -516,6 +516,17 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   at 77 of 98 pixels (squares 66). Both match the owner's 1000 px samples
   pixel for pixel. Half-size previews are no use for tones: CSP re-renders
   them anti-aliased at the preview's resolution.
+
+- 2026-10-30 (Claude, text layers): CSP does not save text pixels;
+  `src/clip_text.rs` reads TextLayerAttributes' little-endian records (0x1F
+  font full name, 0x20 size 1/100 pt, 0x21 direction, 0x22 color 3 x u32,
+  0x23 alignment, 0x2A box, 0x40 laid-out quad in 1/100 px) and draws the
+  line with ab_glyph and the named system font (names in any language), no
+  kerning, baseline one descent in from the line box's far side, vertical
+  Latin turned counter-clockwise. CSP-TEST: horizontal 1.4, vertical 2.2
+  levels off (vertical best 2 px right). Card_Guisw's right-aligned white
+  bold 12 pt line (box shorter than the line, older file without 0x4A) is
+  3 px right and 4 px low: open. Several lines/styles still skip.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

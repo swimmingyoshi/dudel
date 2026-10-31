@@ -33,6 +33,7 @@ mod clip_document;
 mod clip_metadata;
 mod clip_preview;
 mod clip_raster;
+mod clip_text;
 mod clip_timeline;
 mod clip_vector;
 mod clipboard;
