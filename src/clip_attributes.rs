@@ -38,10 +38,6 @@ impl Attributes {
     pub(crate) fn opaque_default(&self) -> bool {
         self.init_color_words == [20, 1, u32::MAX, 0, 4]
     }
-    /// No block holds pixels: the whole bitmap is its initial color.
-    pub(crate) fn unpainted(&self) -> bool {
-        self.block_sizes.iter().all(|&size| size == 104)
-    }
     /// Color bytes per pixel after the alpha plane: 4 (B, G, R, unused), 1
     /// (gray) or none (a mask's coverage).
     pub(crate) fn color_channels(&self) -> usize {

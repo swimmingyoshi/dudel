@@ -54,7 +54,8 @@ and PSD source files, including renamed files recognized by their signatures.
 | Gray expression-color layers | Editable raster layers (gray expanded to RGB) |
 | Image material layers (placed pictures) | Editable raster layers: the stored original is resized and placed where CSP shows it (CSP saves only the original). Distorted (non-rectangular) placements are skipped |
 | Layer pixels beyond the canvas edge | Kept in CSP; Dudel imports the part on the canvas |
-| Canvases set in inches | Converted at the canvas resolution; other physical units are unsupported |
+| Canvases set in inches or millimetres | Converted at the canvas resolution (millimetres round to the nearest pixel, as CSP does); other physical units are unsupported |
+| Layer masks on raster layers | Imported as editable Dudel layer masks; matches CSP's saved preview exactly on the owner's test file |
 | Color proofing or canvas color adjustment that is switched off | Ignored (only switched-on settings change the picture) |
 | Ordinary folders, nested folders, clipping | Native hierarchy/compositor |
 | Standard blend modes, edit/alpha locks, opacity, visibility | Mapped to native properties |
@@ -66,7 +67,7 @@ and PSD source files, including renamed files recognized by their signatures.
 | Layer palette color labels | Ignored (a Layers-panel label; it does not change the picture) |
 | Vector layers drawn with plain round brushes | Drawn from their strokes into editable raster layers (CSP saves strokes, not pixels). Width follows each point's pen pressure and the brush's anti-aliasing level fades light strokes as CSP does; all of the owner's vector files match CSP's saved previews within one level on average. Strokes using textured, spray or watercolor brushes skip the layer |
 | Screentone (Tone) layers, as made by line-and-tone conversion or the Tone layer effect | Round dots at a set density are drawn as CSP draws them (matching CSP's saved preview pixel for pixel on the owner's 300 dpi tone); other dot shapes, densities taken from the layer's colors, and dots under 2 px apart are drawn as black at the tone's dot density. Either way the tone shows through the layer's mask, which imports as an editable Dudel layer mask (Dudel draws no live screentone) |
-| Text, balloon, material, correction and effect layers; masks on other layers, monochrome | That layer (or folder and its contents) is skipped and named in Import details |
+| Text (CSP does not save their pixels), balloon, material, correction and effect layers; masks on folders, monochrome | That layer (or folder and its contents) is skipped and named in Import details |
 | Layer color settings | Pixels keep their stored colors; noted in Import details |
 | Profiles, proofing and color adjustments | Layered conversion rejected |
 | Unknown channel layouts, damaged references or more than 1,000 raster layers | Layered conversion rejected |

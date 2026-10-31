@@ -468,6 +468,58 @@ mod tests {
         )
         .unwrap();
         assert_eq!((mask.at(1, 1), mask.at(3, 4), mask.at(0, 0)), (255, 128, 0));
+        // A mask created showing everything: unwritten blocks show, written
+        // ones keep their zeros, and outside the bitmap still hides.
+        let opaque = crate::clip_attributes::parse(&crate::clip_attributes::fixture_packed(
+            8,
+            8,
+            &[20, 1, u32::MAX, 0, 4],
+            &[size],
+            crate::clip_attributes::MASK_PACKING,
+        ))
+        .unwrap();
+        let place = |offset: i64| Placement {
+            canvas: [10, 10],
+            layer_offset: [offset, offset],
+            render_offset: [0, 0],
+        };
+        let painted = decode_mask(
+            &mut Cursor::new(&body),
+            body.len() as u64,
+            &opaque,
+            place(1),
+            &mut Budget::default(),
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                painted.at(1, 1),
+                painted.at(3, 4),
+                painted.at(2, 1),
+                painted.at(0, 0)
+            ),
+            (255, 128, 0, 0)
+        );
+        let empty = clip_blocks::tests::fixture_sized(&[None], 65536);
+        let unwritten = crate::clip_attributes::parse(&crate::clip_attributes::fixture_packed(
+            10,
+            10,
+            &[20, 1, u32::MAX, 0, 4],
+            &[u32::from_be_bytes(empty[8..12].try_into().unwrap())],
+            crate::clip_attributes::MASK_PACKING,
+        ))
+        .unwrap();
+        let shown = decode_mask(
+            &mut Cursor::new(&empty),
+            empty.len() as u64,
+            &unwritten,
+            place(0),
+            &mut Budget::default(),
+            &|| false,
+        )
+        .unwrap();
+        assert!((0..10).all(|y| (0..10).all(|x| shown.at(x, y) == 255)));
         // Color layouts are not masks.
         assert!(
             decode_mask(

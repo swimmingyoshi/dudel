@@ -64,10 +64,16 @@ impl Layer {
         matches!(
             (self.layer_type, self.folder),
             (0, 1 | 17) | (256, 1) | (1 | 1584, 0)
-        ) || self.is_image()
+        ) || self.is_raster()
+            || self.is_image()
             || self.is_vector()
             || self.is_tone()
     }
+    /// An ordinary raster layer; type 3 is one with a layer mask.
+    fn is_raster(&self) -> bool {
+        matches!(self.layer_type, 1 | 3) && self.folder == 0
+    }
+
     fn is_image(&self) -> bool {
         self.image && self.layer_type == 0 && self.folder == 0
     }
@@ -143,6 +149,9 @@ struct Report {
     /// Import mode: each tone layer's effect and mask bitmap.
     #[serde(skip)]
     tones: BTreeMap<i64, (ToneEffect, MaskSource)>,
+    /// Import mode: the layer mask of each masked raster layer.
+    #[serde(skip)]
+    raster_masks: BTreeMap<i64, MaskSource>,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use, with
     /// their anti-aliasing level.
@@ -499,6 +508,27 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
     if study && columns.contains("LayerEffectInfo") && columns.contains("GradationFillInfo") {
         tone_layers(db, report)?;
     }
+    if study && columns.contains("LayerLayerMaskMipmap") {
+        let masked = rows(
+            db,
+            "SELECT MainId FROM Layer WHERE LayerType IN (1,3) AND LayerFolder=0 AND coalesce(LayerLayerMaskMipmap,0)!=0",
+            MAX_ENTRIES + 1,
+            |row| row.get::<_, i64>(0),
+        )?;
+        for id in masked {
+            match mask_source(db, id) {
+                Ok(mask) => {
+                    report.raster_masks.insert(id, mask);
+                }
+                Err(error) => layer_issue(
+                    report,
+                    study,
+                    id,
+                    format!("unsupported layer mask ({error})"),
+                ),
+            }
+        }
+    }
     if study && columns.contains("ResizableImageInfo") {
         let images = rows(
             db,
@@ -575,19 +605,15 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         }
         report.locks.insert(id, lock);
         let tone = report.layers.iter().any(|l| l.id == id && l.is_tone());
-        // A tone layer may carry LayerMasking 1 (meaning unverified) when its
-        // mask shows everything and was never painted: whether the bit turns
-        // the mask off or not, the layer looks the same.
-        let unmasked_tone = tone
-            && masking == 1
-            && report.tones.get(&id).is_some_and(|(_, mask)| {
-                mask.attributes.opaque_default() && mask.attributes.unpainted()
-            });
+        // Layers with a mask on them carry LayerMasking 0 or 1; CSP applied
+        // the mask either way in the owner's files (the bit's meaning is
+        // unknown, perhaps the mask's link to the layer).
+        let masked = (tone || report.raster_masks.contains_key(&id)) && [0, 1].contains(&masking);
         if (lock != 0 && (!study || lock & !17 != 0))
-            || (mask != 0 && !(tone && masking == 0 || unmasked_tone))
+            || (mask != 0 && !masked)
             || (masking != if id == report.canvas.root { 32 } else { 0 }
                 && !study_folder_masking
-                && !unmasked_tone)
+                && !masked)
         {
             layer_issue(report, study, id, "unsupported lock/mask metadata".into());
         }
@@ -667,6 +693,7 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 {
                     continue;
                 }
+
                 // Expression color Gray (1) is stored as gray tiles, which the
                 // raster decoder expands; other expression colors stay skipped.
                 if study
@@ -878,10 +905,10 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         .layers
         .iter()
         .filter(|layer| {
-            // Tone layers also set the 2 bit (seen only on them) beside the
-            // visible bit.
+            // Layers with a layer mask (tones, and rasters of type 3) also
+            // set the 2 bit beside the visible bit.
             !layer.supported_kind()
-                || !(if layer.is_tone() {
+                || !(if layer.is_tone() || layer.layer_type == 3 {
                     &[2, 3][..]
                 } else {
                     &[0, 1, 4, 5]
@@ -1221,7 +1248,7 @@ fn layer_order(canvas: &Canvas, layers: &[Layer]) -> Result<Vec<Entry>, String> 
     }
     if layers
         .iter()
-        .filter(|layer| layer.folder == 0 && layer.layer_type == 1)
+        .filter(|layer| layer.folder == 0 && matches!(layer.layer_type, 1 | 3))
         .count()
         > MAX_RASTER_LAYERS
     {
@@ -1254,16 +1281,27 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
     let mut canvas = canvases.pop().ok_or("Missing clip canvas")?;
     if canvas.unit != 0 {
         // Unit 3 is inches: 2.5 x 3.5 at 1200 dpi is CSP's 3000 x 4200 px
-        // canvas bitmap in every observed file. Other units are unverified.
-        if canvas.unit != 3 || !canvas.resolution.is_finite() || canvas.resolution <= 0. {
+        // canvas bitmap in every observed file. Unit 2 is millimetres,
+        // rounded to the nearest pixel: 257 x 364 mm at 350 dpi is CSP's
+        // 3541 x 5016 px bitmap (3541.3 x 5015.7). Other units are
+        // unverified.
+        if ![2, 3].contains(&canvas.unit)
+            || !canvas.resolution.is_finite()
+            || canvas.resolution <= 0.
+        {
             return Err(format!(
-                "Unsupported clip canvas unit {} (pixels and inches are supported)",
+                "Unsupported clip canvas unit {} (pixels, millimetres and inches are supported)",
                 canvas.unit
             ));
         }
-        let pixels = |inches: f64| {
-            let value = inches * canvas.resolution;
-            ((value - value.round()).abs() < 0.01).then_some(value.round())
+        let millimetres = canvas.unit == 2;
+        let pixels = |size: f64| {
+            let value = if millimetres {
+                size / 25.4 * canvas.resolution
+            } else {
+                size * canvas.resolution
+            };
+            (millimetres || (value - value.round()).abs() < 0.01).then_some(value.round())
         };
         let (Some(width), Some(height)) = (pixels(canvas.width), pixels(canvas.height)) else {
             return Err("Clip canvas size in inches is not a whole number of pixels".into());
@@ -1602,6 +1640,7 @@ fn metadata(db: &Connection, actual_external: &[(String, u64)]) -> Result<Report
         images: BTreeMap::new(),
         vectors: BTreeMap::new(),
         tones: BTreeMap::new(),
+        raster_masks: BTreeMap::new(),
         plain_brush_styles: BTreeMap::new(),
         animation: Animation::default(),
     })
@@ -1920,7 +1959,12 @@ fn prepare_document_mode(
     let mut masks = BTreeMap::new();
     let mut failed = Vec::new();
     let mut mask_budget = crate::clip_blocks::Budget::default();
-    for (&id, (_, mask)) in &report.tones {
+    let sources = report
+        .tones
+        .iter()
+        .map(|(id, (_, mask))| (*id, mask))
+        .chain(report.raster_masks.iter().map(|(id, mask)| (*id, mask)));
+    for (id, mask) in sources {
         let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
         let read = inventory
             .external_body_bounds(mask.data.offset, mask.data.id.len())
@@ -1956,7 +2000,7 @@ fn prepare_document_mode(
             .layer_issues
             .entry(id)
             .or_default()
-            .push(format!("unsupported tone layer mask ({error})"));
+            .push(format!("unsupported layer mask ({error})"));
     }
     let root = report
         .layers
@@ -2057,7 +2101,7 @@ fn prepare_document_mode(
             ancestors.pop();
         }
         let layer = layer_of(entry.id);
-        let known = layer.layer_type == 1
+        let known = layer.is_raster()
             || layer.is_image()
             || layer.is_vector()
             || layer.is_tone()
@@ -2103,8 +2147,11 @@ fn prepare_document_mode(
     let toned = |dotted: bool| -> Vec<String> {
         kept.iter()
             .filter(|(entry, _)| {
-                masks.contains_key(&entry.id)
-                    && report.tones[&entry.id].0.screen.is_some() == dotted
+                report
+                    .tones
+                    .get(&entry.id)
+                    .is_some_and(|(tone, _)| tone.screen.is_some() == dotted)
+                    && masks.contains_key(&entry.id)
             })
             .map(|(entry, _)| name_of(entry.id))
             .collect()
@@ -2197,7 +2244,7 @@ fn prepare_document_mode(
             None => true,
         };
         let content = match layer.layer_type {
-            1 => crate::clip_document::Content::Raster,
+            1 | 3 => crate::clip_document::Content::Raster,
             0 if layer.is_image() || layer.is_vector() => crate::clip_document::Content::Raster,
             2 if layer.is_tone() => crate::clip_document::Content::Raster,
             0 | 256 if layer.is_folder() => crate::clip_document::Content::Folder,
@@ -2613,7 +2660,7 @@ pub(crate) fn compare_folder_caches(input: &Path, output: Option<&Path>) -> Resu
                 .unwrap();
             let content = if layer.is_folder() {
                 crate::clip_document::Content::Folder
-            } else if layer.layer_type == 1 {
+            } else if layer.is_raster() {
                 crate::clip_document::Content::Raster
             } else {
                 return Err("Folder cache study supports only raster descendants".into());
@@ -3582,6 +3629,16 @@ pub(crate) mod tests {
         db.execute_batch("UPDATE Canvas SET CanvasWidth=0.325")
             .unwrap();
         assert!(check(&db).is_err());
+        // Millimetres round to the nearest pixel: 8.2 x 12.1 mm at 100 dpi
+        // is 32.3 x 47.6 px, the fixture's 32 x 48.
+        db.execute_batch(
+            "UPDATE Canvas SET CanvasUnit=2,CanvasWidth=8.2,CanvasHeight=12.1,CanvasResolution=100",
+        )
+        .unwrap();
+        let report = check(&db).unwrap();
+        assert_eq!([report.canvas.width, report.canvas.height], [32.0, 48.0]);
+        db.execute_batch("UPDATE Canvas SET CanvasUnit=3,CanvasWidth=0.32,CanvasHeight=0.48")
+            .unwrap();
         db.execute_batch("UPDATE Canvas SET CanvasWidth=200,CanvasHeight=0.48")
             .unwrap();
         assert!(check(&db).unwrap_err().contains("16,384 px per side"));

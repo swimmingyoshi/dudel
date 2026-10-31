@@ -487,6 +487,18 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   `toggle_latency` test (`DUDEL_TOGGLE_FILE`). Open: full-resolution views
   (zoomed in) still recomposite at ~40 ns per layer per pixel; the blend
   math would need vectorizing.
+
+- 2026-10-30 (Claude, CSP-TEST.clip from the owner): masks on raster layers
+  (type 3 = raster with mask; the visibility 2 bit and LayerMasking 0/1
+  accompany a mask, which CSP applies either way) import as Dudel masks;
+  black and paper areas match the preview exactly. Millimetre canvases
+  (unit 2, rounded to the nearest pixel) open the eight comic pages. Text
+  layers: CSP does not save their pixels (the render block is missing), so
+  they need Dudel's own text layout; still skipped. Correction layers: the
+  tone curve (0.5 -> 0.667 on the master curve) is not Dudel's sRGB spline
+  (155 vs CSP's 135 on the paper); a natural spline after a ~2.2 gamma
+  gets within 1-2 levels, too few levels to confirm. Needs a gradient
+  sample. Brightness/contrast and hue/saturation were at defaults.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

@@ -45,7 +45,8 @@ the package has been uploaded to a public store.
   glows, bevel and emboss, also on folders. Satin and pattern effects are listed
   in Import details instead.
 - CSP import reads image material layers (placed pictures), layers that extend
-  past the canvas, canvases set in inches, and files with color proofing
+  past the canvas, canvases set in inches or millimetres, layer masks on raster
+  layers, and files with color proofing
   settings that are switched off. Vector layers are drawn from their strokes
   as raster layers instead of being skipped; Layers-panel color labels no
   longer skip layers. Screentone layers import with their dots drawn as CSP
