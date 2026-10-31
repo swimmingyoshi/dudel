@@ -934,8 +934,7 @@ impl VectorMask {
     }
 }
 
-/// A descriptor as bytes (without a version word), for building test files.
-#[cfg(test)]
+/// A descriptor as bytes, without a version word.
 pub(crate) fn encode(descriptor: &Descriptor) -> Vec<u8> {
     fn key(out: &mut Vec<u8>, k: &str) {
         out.extend((if k.len() == 4 { 0 } else { k.len() as u32 }).to_be_bytes());
@@ -991,7 +990,8 @@ pub(crate) fn encode(descriptor: &Descriptor) -> Vec<u8> {
                 out.extend(0u32.to_be_bytes());
                 key(out, class);
             }
-            Value::Raw => unimplemented!(),
+            // Only read from files; never built to be written.
+            Value::Raw => unreachable!("raw descriptor values are never written"),
         }
     }
     let mut out = Vec::new();

@@ -1,7 +1,7 @@
 //! Photoshop (.psd) export: every layer and folder with its name, blend mode,
 //! opacity, clipping, visibility, locks and mask, plus the flattened image.
-//! Layer effects are written as the layers they draw (Photoshop's Create
-//! Layers). Adjustment layers are not written yet.
+//! Adjustment layers are written as Photoshop's own; layer effects as the
+//! layers they draw (Photoshop's Create Layers).
 use crate::{
     blend::BlendMode,
     document::{Document, Layer},
@@ -55,11 +55,15 @@ pub(crate) fn notes(doc: &Document) -> Vec<String> {
     };
     let list = crate::clip_metadata::name_list;
     let mut notes = Vec::new();
-    let adjustments = names(&|l| l.adjustment.is_some());
-    if !adjustments.is_empty() {
+    let approximated = names(&|l| {
+        l.adjustment
+            .as_ref()
+            .is_some_and(|a| crate::adjustment::psd_approximated(a.settings()))
+    });
+    if !approximated.is_empty() {
         notes.push(format!(
-            "Adjustment layers are not written yet: {}. The flattened image still shows them.",
-            list(&adjustments)
+            "Clip Studio Paint's Hue/Saturation/Luminosity and tone curves have no exact Photoshop form; written as the closest Photoshop adjustment: {}.",
+            list(&approximated)
         ));
     }
     let effects = names(&|l| !l.folder && l.effects.iter().any(|e| e.enabled));
@@ -178,13 +182,15 @@ impl Writer<'_> {
     /// One layer record and its channel data. `section` marks folder records.
     fn record(&mut self, layer: &Layer, section: Option<u32>) -> Result<(), String> {
         let (w, h) = (self.width, self.height);
-        let bounds = (section.is_none())
+        // Folders and adjustment layers have no pixels of their own.
+        let pixelless = section.is_some() || layer.adjustment.is_some();
+        let bounds = (!pixelless)
             .then(|| pixel_bounds(layer, w, h))
             .flatten()
             .unwrap_or([0; 4]);
         let [left, top, right, bottom] = bounds;
-        let mut channels: Vec<(i16, Vec<u8>)> = if section.is_some() {
-            // Folders carry empty color channels, as Photoshop writes them.
+        let mut channels: Vec<(i16, Vec<u8>)> = if pixelless {
+            // Empty color channels, as Photoshop writes them.
             [-1, 0, 1, 2].map(|id| (id, vec![0, 0])).into()
         } else {
             let rgba = planes(
@@ -233,11 +239,11 @@ impl Writer<'_> {
             .push((layer.opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
         self.records.push(u8::from(layer.clipped));
         // Bit 0 protects transparency, bit 1 hides; bits 3 and 4 mark a
-        // folder record's pixels as irrelevant.
+        // folder or adjustment record's pixels as irrelevant.
         self.records.push(
             u8::from(layer.alpha_locked)
                 | if layer.visible { 0 } else { 2 }
-                | if section.is_some() { 8 | 16 } else { 0 },
+                | if pixelless { 8 | 16 } else { 0 },
         );
         self.records.push(0);
         let mut extra = Vec::new();
@@ -271,6 +277,11 @@ impl Writer<'_> {
         }
         units.iter().for_each(|u| luni.extend(u.to_be_bytes()));
         tagged(&mut extra, b"luni", &luni);
+        if let Some(adjustment) = &layer.adjustment {
+            for (key, data) in crate::adjustment::to_psd(adjustment.settings()) {
+                tagged(&mut extra, &key, &data);
+            }
+        }
         if let Some(kind) = section {
             let mut lsct = kind.to_be_bytes().to_vec();
             lsct.extend(b"8BIM");
@@ -325,7 +336,7 @@ pub(crate) fn encode(doc: &Document, cancel: &AtomicBool) -> Result<Vec<u8>, Str
         channels: Vec::new(),
     };
     let mut open = 0;
-    for layer in expanded.layers.iter().filter(|l| l.adjustment.is_none()) {
+    for layer in &expanded.layers {
         // Entering a folder writes its divider first.
         while open < layer.depth + u8::from(layer.folder) {
             writer.divider()?;
@@ -547,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn effects_become_layers_and_adjustments_are_named_in_notes() {
+    fn effects_become_layers_and_adjustment_layers_are_written() {
         let (w, h) = (64, 64);
         let mut doc = Document::new(w, h);
         paint(&mut doc.layers[0], w, [16, 16, 48, 48], [200, 30, 30, 255]);
@@ -563,26 +574,180 @@ mod tests {
         doc.layers.push(invert);
         doc.active = 0;
         let notes = notes(&doc);
-        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert_eq!(notes.len(), 1, "{notes:?}");
         let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
-        let mut expanded = crate::layer_effects::expand(&doc, false, &|| false).unwrap();
-        expanded.layers.pop();
-        assert!(expanded.layers.len() > 1);
+        let expanded = crate::layer_effects::expand(&doc, false, &|| false).unwrap();
+        assert!(expanded.layers.len() > 2);
         assert_eq!(back.layers.len(), expanded.layers.len());
         assert_eq!(back.layers[expanded.active].blend, BlendMode::AddGlow);
         for (a, b) in expanded.layers.iter().zip(&back.layers) {
-            assert_eq!(a.pixels.as_slice(), b.pixels.as_slice(), "{}", a.name);
+            assert_eq!(a.adjustment, b.adjustment, "{}", a.name);
+            if a.adjustment.is_none() {
+                assert_eq!(a.pixels.as_slice(), b.pixels.as_slice(), "{}", a.name);
+            }
+        }
+        assert_eq!(back.composite(), doc.composite());
+    }
+
+    #[test]
+    fn every_adjustment_kind_survives_a_round_trip() {
+        use crate::adjustment::{LevelsChannel, Settings};
+        let mut all: Vec<Settings> = crate::adjustment::presets().into();
+        all.extend([
+            Settings::Posterize { levels: 7 },
+            Settings::Threshold { level: 99 },
+            Settings::Levels {
+                channels: vec![
+                    Some(LevelsChannel {
+                        input: [10.0, 240.0],
+                        output: [5.0, 250.0],
+                        gamma: 1.25,
+                    }),
+                    None,
+                    Some(LevelsChannel {
+                        input: [0.0, 200.0],
+                        output: [0.0, 255.0],
+                        gamma: 0.8,
+                    }),
+                    None,
+                ],
+            },
+            Settings::Curves {
+                channels: vec![
+                    (0, vec![[0, 0], [100, 140], [255, 255]]),
+                    (2, vec![[0, 20], [255, 230]]),
+                ],
+                bezier: false,
+            },
+            Settings::BrightnessContrast {
+                brightness: 30.0,
+                contrast: -20.0,
+                legacy: false,
+            },
+            Settings::BrightnessContrast {
+                brightness: -40.0,
+                contrast: 15.0,
+                legacy: true,
+            },
+            Settings::Exposure {
+                exposure: 0.5,
+                offset: -0.0625,
+                gamma: 1.25,
+                encoding: 2.2,
+            },
+            Settings::HueSaturation {
+                colorize: None,
+                master: [20.0, -30.0, 10.0],
+                ranges: vec![([15.0, 45.0, 75.0, 105.0], [10.0, 20.0, -5.0])],
+            },
+            Settings::HueSaturation {
+                colorize: Some([200.0, 40.0, -10.0]),
+                master: [0.0; 3],
+                ranges: vec![],
+            },
+            Settings::GradientMap {
+                stops: vec![
+                    (0.0, [10.0, 20.0, 30.0], 0.5),
+                    (0.25, [100.0, 0.0, 200.0], 0.3),
+                    (1.0, [250.0, 240.0, 230.0], 0.5),
+                ],
+                reverse: true,
+            },
+            Settings::ColorBalance {
+                tones: [[10.0, -20.0, 0.0], [0.0, 5.0, 5.0], [-100.0, 0.0, 100.0]],
+                preserve_luminosity: true,
+            },
+            Settings::Vibrance {
+                vibrance: 25.0,
+                saturation: -10.0,
+            },
+            Settings::BlackWhite {
+                weights: [50.0, 60.0, -40.0, 160.0, 20.0, 80.0],
+                tint: Some([225.0, 211.0, 179.0]),
+            },
+            Settings::PhotoFilter {
+                color: [236.0, 138.0, 0.0],
+                density: 25.0,
+                preserve_luminosity: true,
+            },
+            Settings::ChannelMixer {
+                rows: [
+                    [100.0, 0.0, 0.0, 0.0],
+                    [0.0, 80.0, 20.0, 0.0],
+                    [0.0, 0.0, 100.0, 5.0],
+                ],
+                monochrome: false,
+            },
+            Settings::SelectiveColor {
+                colors: std::array::from_fn(|i| [i as f32, -(i as f32), 10.0, 0.0]),
+                absolute: true,
+            },
+        ]);
+        // CSP's kinds are approximated; see the next test.
+        all.retain(|s| !crate::adjustment::psd_approximated(s));
+        let (w, h) = (4, 4);
+        for settings in all {
+            let mut doc = Document::new(w, h);
+            paint(&mut doc.layers[0], w, [0, 0, w, h], [200, 100, 50, 255]);
+            let mut layer = Layer::raster("Adjust".into(), w, h);
+            layer.adjustment = Some(crate::adjustment::Adjustment::new(settings.clone()));
+            layer.opacity = 0.6;
+            doc.layers.push(layer);
+            let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
+            let read = back.layers[1].adjustment.as_ref().map(|a| a.settings());
+            // Identity curves and levels read back without channels.
+            let neutral = |s: &Settings| match s {
+                Settings::Curves { channels, .. } => channels
+                    .iter()
+                    .all(|(_, points)| points == &[[0, 0], [255, 255]]),
+                Settings::Levels { channels } => channels
+                    .iter()
+                    .flatten()
+                    .all(|c| c.input == [0.0, 255.0] && c.output == [0.0, 255.0] && c.gamma == 1.0),
+                _ => false,
+            };
+            match read {
+                Some(read) if neutral(&settings) && neutral(read) => {}
+                read => assert_eq!(read, Some(&settings)),
+            }
+            assert_eq!(back.composite(), doc.composite(), "{}", settings.name());
         }
     }
 
     #[test]
-    fn a_document_of_only_adjustments_still_writes_a_layer() {
-        let mut doc = Document::new(8, 8);
-        doc.layers[0].adjustment = Some(crate::adjustment::Adjustment::new(
-            crate::adjustment::Settings::Invert,
-        ));
+    fn csp_adjustments_are_written_as_close_photoshop_ones() {
+        use crate::adjustment::{Adjustment, Settings};
+        let bezier = Settings::Curves {
+            channels: vec![(0, vec![[0, 0], [128, 200], [255, 255]])],
+            bezier: true,
+        };
+        let hsl = Settings::HueSaturationLuminosity {
+            hue: 30,
+            saturation: -20,
+            luminosity: 10,
+        };
+        let mut doc = Document::new(4, 4);
+        for (i, settings) in [bezier.clone(), hsl].into_iter().enumerate() {
+            let mut layer = Layer::raster(format!("CSP {i}"), 4, 4);
+            layer.adjustment = Some(Adjustment::new(settings));
+            doc.layers.push(layer);
+        }
+        assert_eq!(notes(&doc).len(), 1);
         let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
-        assert_eq!(back.layers.len(), 1);
-        assert!(back.layers[0].adjustment.is_none());
+        let curve = back.layers[1].adjustment.clone().unwrap();
+        assert!(matches!(
+            curve.settings(),
+            Settings::Curves { bezier: false, .. }
+        ));
+        let original = Adjustment::new(bezier);
+        for v in 0..=255 {
+            let v = v as f32;
+            let (a, b) = (original.apply([v; 3])[0], curve.apply([v; 3])[0]);
+            assert!((a - b).abs() <= 2.0, "{v}: {a} vs {b}");
+        }
+        assert!(matches!(
+            back.layers[2].adjustment.as_ref().unwrap().settings(),
+            Settings::HueSaturation { .. }
+        ));
     }
 }

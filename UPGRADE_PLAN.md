@@ -204,16 +204,25 @@ PSD (`src/psd_import.rs`, new):
       all 30 private CSP files exact (apart from opacity steps); 366/366
       importable public PSDs with no layer mismatches and exact flattened
       images. psd-tools (independent) opens every file.
-- [ ] PSD export: adjustment layers (write `levl`/`curv`/`hue2`/… back; the
-      inverse of `adjustment::from_psd`; CSP-only HueSaturationLuminosity and
-      bezier curves need a mapping or a baked fallback)
+- [x] PSD export: adjustment layers (2026-10-31, `adjustment::to_psd`, the
+      inverse of `from_psd`, layouts per psd-tools and blocks dumped from the
+      public set): all 16 kinds; `CgEd` + zeroed `brit`, `Crv ` tail, `Lvls`
+      omitted, gradient-map tail, 4-row `mixr`, `phfl` v2 RGB. Hue ranges
+      keep their order (overlaps apply in order). CSP tone curves: 9 samples
+      (within 1-2 levels); CSP HSL as hue2 master (up to 20 levels on the
+      +60/-40/+20 sample: CSP changes lightness before saturation). Public
+      set: every adjustment file reopens exact except grayscale exposure
+      (gamma 1.75 vs RGB 2.2).
 - [ ] PSD export: editable effects (`lfx2` descriptors) instead of effect layers
 - [ ] PSD export: mask link state (not stored; masks reopen linked), PSB for
       files over 4 GB of layer data, 16-bit export
 - [x] PSD export opens in Live2D Cubism Editor 5.2 (owner, 2026-10-31: Frieren
       export and a v2 re-export). Cubism needs ResolutionInfo, cannot read
       ZIP layer channels, and reads records bottom first; see FORMAT_SUPPORT.
-- [ ] PSD export: owner check in Photoshop/Photopea and Krita
+- [x] PSD export opens in Affinity and Photopea (owner, 2026-10-31)
+- [ ] PSD export: owner check in Krita (on Linux) and Photoshop if available
+- [ ] CSP Hue/Saturation/Luminosity export: closer match (two Photoshop
+      layers, lightness then hue/saturation) if it matters in practice
 - [ ] Export speed: Frieren takes ~2.3 s (exact pixel bounds visit every
       painted pixel; composite on the export thread)
 
@@ -437,6 +446,11 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-31 (Claude, PSD adjustment export): adjustment layers written back
+  (see goal 5); `psd_vector::encode` now ships (was test-only). The round-trip
+  report compares adjustments by effect on 216 sample colors. Owner confirmed
+  Cubism, Affinity and Photopea open exports.
 
 - 2026-10-31 (Claude, PSD export): first version, see goal 5. The importer's
   per-layer limit was 64 MP and is now the canvas limit, so full-canvas layers

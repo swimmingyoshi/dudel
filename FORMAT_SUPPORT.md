@@ -12,7 +12,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, effects as layers and the flattened image; adjustment layers not yet written |
+| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, effects as layers and the flattened image |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -219,9 +219,19 @@ transparent pixels. Color dodge (glow) and Add (glow) are written as Photoshop's
 Color Dodge and Linear Dodge with Transparency Shapes off, which blend the same
 way. Layer effects are written as the layers they draw, like Photoshop's Create
 Layers, so the file looks right but the effects are no longer editable.
-Adjustment layers are not written yet; the status line names them, and the
-flattened image (stored blended against white, as Photoshop stores it) still
-shows them. The file's resolution is the project's DPI. Opacity is stored in
+Adjustment layers are written as Photoshop's own, editable there: levels,
+curves, brightness/contrast, exposure, hue/saturation, gradient map, color
+balance, vibrance, black & white, photo filter, channel mixer, selective color,
+invert, posterize and threshold, laid out as Photoshop writes them. Settings
+Photoshop stores as whole numbers are rounded (CSP's brightness 29.8 becomes
+30). Clip Studio Paint's two kinds have no exact Photoshop form, and the status
+line names them: tone curves become Photoshop curves through nine points of the
+CSP curve (within 1-2 levels), and Hue/Saturation/Luminosity becomes
+Hue/Saturation with the same values. Hue and darkening match, but CSP changes
+lightness before saturation and Photoshop after, so colors can move by up to 20
+levels. Exposure from a grayscale PSD acts on gray's tone curve in Dudel but on
+sRGB's in the RGB export. The flattened image is stored blended against white,
+as Photoshop stores it. The file's resolution is the project's DPI. Opacity is stored in
 1/255 steps, so a CSP layer at 66% comes back at 168/255; low-opacity Hard Mix
 layers can change visibly from that alone. Export never replaces a file that is
 not already a PSD.
@@ -234,6 +244,7 @@ layers load), and it assumes layers are stored bottom first, so files written
 top first load with the stacking reversed. Dudel's export always writes the
 resolution, RLE and bottom-first order, and its import reads either order, so
 opening such a PSD in Dudel and exporting it again gives a file Cubism loads.
+The owner also opened exports in Affinity and Photopea.
 
 ## Verification scope
 
@@ -250,13 +261,17 @@ and lists the imported stack (`stack`). With `DUDEL_VERIFY_IMAGES` set, the
 rendering, the saved image and each layer are also written as PNGs next to the report.
 `--roundtrip-psd INPUT OUTPUT.psd [NEW_REPORT.json]` exports a PSD, PSB, CSP or
 Dudel file to PSD and opens the result again: it lists any layer whose settings,
-pixels or mask came back different (`mismatches`), and compares the reopened
+pixels, mask or adjustment came back different (`mismatches`; adjustments are
+compared by what they do to sample colors), and compares the reopened
 render and the saved flattened image with the original (`reopened`,
 `saved_composite`; `reopened_with_written_opacity` allows for opacity steps).
 On 2026-10-31 a 146-layer VTuber model, a private 30-file CSP corpus and the 366
 public Photoshop-saved files (ag-psd and psd-tools, MIT) that Dudel imports came
-back with no mismatches and an exact flattened image. Renders were exact apart
-from opacity steps, except files with adjustment layers. The independent
+back with no mismatches and an exact flattened image. With adjustment layers
+written, renders were exact apart from opacity steps (at most 2 levels, and
+Dissolve pixels that flip with them), except one grayscale-exposure sample;
+CSP correction-layer samples came back within 1 level, except
+Hue/Saturation/Luminosity (up to 20, mean 3.7). The independent
 psd-tools reader opened every exported file, and its own render of the layers
 matched the flattened image to within 2 levels, except where it differs from
 Photoshop (glow modes).

@@ -208,6 +208,23 @@ fn difference(rendered: &[u8], reference: &[u8]) -> Difference {
     result
 }
 
+/// Whether two adjustments change colors alike (within half a level, on a
+/// grid of sample colors); settings can differ in form but not in effect.
+fn same_effect(
+    a: Option<&crate::adjustment::Adjustment>,
+    b: Option<&crate::adjustment::Adjustment>,
+) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => (0..216).all(|i| {
+            let c = [i / 36, i / 6 % 6, i % 6].map(|v| v as f32 * 51.0);
+            let (x, y) = (a.apply(c), b.apply(c));
+            (0..3).all(|k| (x[k] - y[k]).abs() <= 0.5)
+        }),
+        _ => false,
+    }
+}
+
 /// Export a PSD, project or CSP file to PSD and open it again: whether every
 /// written layer comes back with its settings and pixels, and how both
 /// renders and the saved flattened image compare with the original.
@@ -232,20 +249,8 @@ pub(crate) fn roundtrip_psd(
     crate::psd_export::write(&doc, psd, &cancel)?;
     let export_ms = started.elapsed().as_millis();
     let back = crate::psd_import::import(psd, &|| false)?;
-    // What was written: effects drawn as layers, adjustment layers left out.
-    let mut written: Vec<_> = crate::layer_effects::expand(&doc, false, &|| false)?
-        .layers
-        .into_iter()
-        .filter(|l| l.adjustment.is_none())
-        .collect();
-    if written.is_empty() {
-        // The export's stand-in, since Photoshop needs a layer.
-        written.push(crate::document::Layer::raster(
-            "Layer 1".into(),
-            doc.width,
-            doc.height,
-        ));
-    }
+    // What was written: effects drawn as layers.
+    let written = crate::layer_effects::expand(&doc, false, &|| false)?.layers;
     let settings = |l: &crate::document::Layer| {
         format!(
             "{}{} {} {:.0}%{}{}{}{}",
@@ -268,9 +273,19 @@ pub(crate) fn roundtrip_psd(
         ));
     }
     for (a, b) in written.iter().zip(&back.document.layers) {
+        let approximated = a
+            .adjustment
+            .as_ref()
+            .is_some_and(|a| crate::adjustment::psd_approximated(a.settings()));
         if settings(a) != settings(b) {
             mismatches.push(format!("{} -> {}", settings(a), settings(b)));
+        } else if !approximated && !same_effect(a.adjustment.as_ref(), b.adjustment.as_ref()) {
+            mismatches.push(format!(
+                "adjustment differs: {} {:?} -> {:?}",
+                a.name, a.adjustment, b.adjustment
+            ));
         } else if !a.folder
+            && a.adjustment.is_none()
             && a.pixels.region(doc.width, [0, 0, doc.width, doc.height])
                 != b.pixels.region(doc.width, [0, 0, doc.width, doc.height])
         {

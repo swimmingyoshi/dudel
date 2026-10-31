@@ -1303,6 +1303,315 @@ pub(crate) fn from_psd(key: &[u8], data: &[u8], gray: bool) -> Result<Option<Set
         _ => return Ok(None),
     }))
 }
+/// Whether Photoshop has no exact form for these settings, so `to_psd`
+/// writes the closest Photoshop adjustment instead.
+pub(crate) fn psd_approximated(settings: &Settings) -> bool {
+    matches!(
+        settings,
+        Settings::HueSaturationLuminosity { .. } | Settings::Curves { bezier: true, .. }
+    )
+}
+/// Photoshop's tagged blocks for an adjustment layer: the inverse of
+/// `from_psd`, laid out as Photoshop writes them (as read by psd-tools).
+pub(crate) fn to_psd(settings: &Settings) -> Vec<([u8; 4], Vec<u8>)> {
+    fn short(out: &mut Vec<u8>, v: f32) {
+        out.extend((v.round().clamp(-32768.0, 65535.0) as i32 as u16).to_be_bytes());
+    }
+    fn pad(mut out: Vec<u8>) -> Vec<u8> {
+        out.resize(out.len().next_multiple_of(4), 0);
+        out
+    }
+    fn descriptor(items: Vec<(&str, crate::psd_vector::Value)>) -> Vec<u8> {
+        let mut out = 16u32.to_be_bytes().to_vec();
+        out.extend(crate::psd_vector::encode(&crate::psd_vector::Descriptor {
+            class: "null".into(),
+            items: items.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+        }));
+        pad(out)
+    }
+    use crate::psd_vector::Value;
+    let long = |v: f32| Value::Integer(v.round() as i64);
+    let mut out = Vec::new();
+    let key = match settings {
+        Settings::Invert => b"nvrt",
+        Settings::Posterize { levels } => {
+            short(&mut out, f32::from(*levels));
+            short(&mut out, 0.0);
+            b"post"
+        }
+        Settings::Threshold { level } => {
+            short(&mut out, f32::from(*level));
+            short(&mut out, 0.0);
+            b"thrs"
+        }
+        Settings::Levels { channels } => {
+            short(&mut out, 2.0);
+            let identity = LevelsChannel {
+                input: [0.0, 255.0],
+                output: [0.0, 255.0],
+                gamma: 1.0,
+            };
+            for i in 0..29 {
+                let c = channels.get(i).copied().flatten().unwrap_or(identity);
+                for v in [c.input[0], c.input[1], c.output[0], c.output[1]] {
+                    short(&mut out, v.clamp(0.0, 255.0));
+                }
+                short(&mut out, (c.gamma * 100.0).clamp(1.0, 999.0));
+            }
+            b"levl"
+        }
+        Settings::Curves { channels, bezier } => {
+            let mut channels: Vec<(u8, Vec<[u8; 2]>)> = channels
+                .iter()
+                .filter(|(id, _)| *id <= 3)
+                .map(|(id, points)| {
+                    // Photoshop curves are splines of at most 16 points; a
+                    // CSP curve is sampled for the spline to follow it.
+                    if !*bezier && points.len() <= 16 {
+                        return (*id, points.clone());
+                    }
+                    let table = sample_curve(points, *bezier);
+                    let samples = (0..=8).map(|i| (i * 32).min(255));
+                    let points = samples
+                        .map(|x| [x as u8, table[x].round().clamp(0.0, 255.0) as u8])
+                        .collect();
+                    (*id, points)
+                })
+                .collect();
+            channels.sort_by_key(|(id, _)| *id);
+            out.push(0);
+            short(&mut out, 1.0);
+            let bitmap = channels.iter().fold(0u32, |b, (id, _)| b | 1 << id);
+            out.extend(bitmap.to_be_bytes());
+            let points = |out: &mut Vec<u8>, points: &[[u8; 2]]| {
+                short(out, points.len() as f32);
+                for [input, output] in points {
+                    short(out, f32::from(*output));
+                    short(out, f32::from(*input));
+                }
+            };
+            for (_, list) in &channels {
+                points(&mut out, list);
+            }
+            out.extend(b"Crv ");
+            short(&mut out, 4.0);
+            out.extend((channels.len() as u32).to_be_bytes());
+            for (id, list) in &channels {
+                short(&mut out, f32::from(*id));
+                points(&mut out, list);
+            }
+            b"curv"
+        }
+        Settings::BrightnessContrast {
+            brightness,
+            contrast,
+            legacy,
+        } => {
+            // Photoshop keeps the values in `CgEd`; `brit` holds them only
+            // for legacy mode.
+            let mut brit = Vec::new();
+            let legacy_values = if *legacy {
+                [*brightness, *contrast]
+            } else {
+                [0.0; 2]
+            };
+            legacy_values.iter().for_each(|v| short(&mut brit, *v));
+            short(&mut brit, if *legacy { 127.0 } else { 0.0 });
+            brit.extend([0, 0]);
+            let cged = descriptor(vec![
+                ("Vrsn", Value::Integer(1)),
+                ("Brgh", long(*brightness)),
+                ("Cntr", long(*contrast)),
+                ("means", Value::Integer(127)),
+                ("Lab ", Value::Bool(false)),
+                ("useLegacy", Value::Bool(*legacy)),
+                ("Auto", Value::Bool(false)),
+            ]);
+            return vec![(*b"brit", brit), (*b"CgEd", cged)];
+        }
+        Settings::Exposure {
+            exposure,
+            offset,
+            gamma,
+            ..
+        } => {
+            short(&mut out, 1.0);
+            for v in [exposure, offset, gamma] {
+                out.extend(v.to_bits().to_be_bytes());
+            }
+            b"expA"
+        }
+        Settings::HueSaturation {
+            colorize,
+            master,
+            ranges,
+        } => write_hue_saturation(&mut out, *colorize, *master, ranges),
+        // Clip Studio Paint's HSV change, as Photoshop's HSL master.
+        Settings::HueSaturationLuminosity {
+            hue,
+            saturation,
+            luminosity,
+        } => write_hue_saturation(
+            &mut out,
+            None,
+            [*hue, *saturation, *luminosity].map(|v| v as f32),
+            &[],
+        ),
+        Settings::GradientMap { stops, reverse } => {
+            short(&mut out, 1.0);
+            out.extend([u8::from(*reverse), 0]);
+            let name: Vec<u16> = "Custom\0".encode_utf16().collect();
+            out.extend((name.len() as u32).to_be_bytes());
+            name.iter().for_each(|u| out.extend(u.to_be_bytes()));
+            short(&mut out, stops.len() as f32);
+            for (location, color, midpoint) in stops {
+                out.extend(((location * 4096.0).round() as u32).to_be_bytes());
+                out.extend(((midpoint * 100.0).round() as u32).to_be_bytes());
+                short(&mut out, 0.0);
+                color.iter().for_each(|c| short(&mut out, c * 257.0));
+                out.extend([0; 4]);
+            }
+            // Fully opaque from end to end.
+            short(&mut out, 2.0);
+            for location in [0u32, 4096] {
+                out.extend(location.to_be_bytes());
+                out.extend(50u32.to_be_bytes());
+                short(&mut out, 255.0);
+            }
+            // Expansion, interpolation, length, mode, random seed, show
+            // transparency, vector color, roughness, color model, minimum
+            // and maximum color: Photoshop's values for a solid gradient.
+            for v in [2u16, 4096, 32, 0] {
+                out.extend(v.to_be_bytes());
+            }
+            out.extend(0u32.to_be_bytes());
+            out.extend([0, 0, 0, 1]);
+            out.extend(2048u32.to_be_bytes());
+            out.extend(3u16.to_be_bytes());
+            out.extend([0; 8]);
+            out.extend([0x80, 0].repeat(4));
+            out.extend([0; 2]);
+            b"grdm"
+        }
+        Settings::ColorBalance {
+            tones,
+            preserve_luminosity,
+        } => {
+            tones.iter().flatten().for_each(|v| short(&mut out, *v));
+            out.push(u8::from(*preserve_luminosity));
+            b"blnc"
+        }
+        Settings::Vibrance {
+            vibrance,
+            saturation,
+        } => {
+            let mut items = Vec::new();
+            if vibrance.round() != 0.0 {
+                items.push(("vibrance", long(*vibrance)));
+            }
+            if saturation.round() != 0.0 {
+                items.push(("Strt", long(*saturation)));
+            }
+            return vec![(*b"vibA", descriptor(items))];
+        }
+        Settings::BlackWhite { weights, tint } => {
+            let keys = ["Rd  ", "Yllw", "Grn ", "Cyn ", "Bl  ", "Mgnt"];
+            let mut items: Vec<_> = keys
+                .iter()
+                .zip(weights)
+                .map(|(k, w)| (*k, long(*w)))
+                .collect();
+            // Photoshop's default tint when none is used.
+            let color = tint.unwrap_or([225.0, 211.0, 179.0]);
+            let rgb = crate::psd_vector::Descriptor {
+                class: "RGBC".into(),
+                items: ["Rd  ", "Grn ", "Bl  "]
+                    .iter()
+                    .zip(color)
+                    .map(|(k, v)| ((*k).into(), Value::Number(f64::from(v))))
+                    .collect(),
+            };
+            items.push(("useTint", Value::Bool(tint.is_some())));
+            items.push(("tintColor", Value::Object(rgb)));
+            items.push(("bwPresetKind", Value::Integer(1)));
+            items.push(("blackAndWhitePresetFileName", Value::Text("\0".into())));
+            return vec![(*b"blwh", descriptor(items))];
+        }
+        Settings::PhotoFilter {
+            color,
+            density,
+            preserve_luminosity,
+        } => {
+            // Version 2 with an RGB color (space 0).
+            short(&mut out, 2.0);
+            short(&mut out, 0.0);
+            color.iter().for_each(|c| short(&mut out, c * 257.0));
+            short(&mut out, 0.0);
+            out.extend((density.round().clamp(0.0, 100.0) as u32).to_be_bytes());
+            out.push(u8::from(*preserve_luminosity));
+            b"phfl"
+        }
+        Settings::ChannelMixer { rows, monochrome } => {
+            short(&mut out, 1.0);
+            short(&mut out, f32::from(u8::from(*monochrome)));
+            for [r, g, b, constant] in rows {
+                for v in [*r, *g, *b, 0.0, *constant] {
+                    short(&mut out, v);
+                }
+            }
+            // The black output row, unused in RGB.
+            for v in [0.0, 0.0, 0.0, 100.0, 0.0] {
+                short(&mut out, v);
+            }
+            b"mixr"
+        }
+        Settings::SelectiveColor { colors, absolute } => {
+            short(&mut out, 1.0);
+            short(&mut out, f32::from(u8::from(*absolute)));
+            out.extend([0; 8]);
+            colors.iter().flatten().for_each(|v| short(&mut out, *v));
+            b"selc"
+        }
+    };
+    vec![(*key, pad(out))]
+}
+/// `hue2`: version 2, the colorize flag, colorization and master (hue,
+/// saturation, lightness), then six ranges (reds, yellows, greens, cyans,
+/// blues, magentas): the given ranges first, then Photoshop's defaults.
+fn write_hue_saturation(
+    out: &mut Vec<u8>,
+    colorize: Option<[f32; 3]>,
+    master: [f32; 3],
+    ranges: &[([f32; 4], [f32; 3])],
+) -> &'static [u8; 4] {
+    let short = |out: &mut Vec<u8>, v: f32| out.extend((v.round() as i16).to_be_bytes());
+    out.extend([0, 2, u8::from(colorize.is_some()), 0]);
+    for v in colorize
+        .unwrap_or([0.0, 25.0, 0.0])
+        .into_iter()
+        .chain(master)
+    {
+        short(out, v);
+    }
+    // Photoshop's default ranges, centered every 60 degrees from red.
+    let mut slots: [([f32; 4], [f32; 3]); 6] = [
+        [315.0, 345.0, 15.0, 45.0],
+        [15.0, 45.0, 75.0, 105.0],
+        [75.0, 105.0, 135.0, 165.0],
+        [135.0, 165.0, 195.0, 225.0],
+        [195.0, 225.0, 255.0, 285.0],
+        [255.0, 285.0, 315.0, 345.0],
+    ]
+    .map(|range| (range, [0.0; 3]));
+    // Overlapping ranges apply in order, so they keep theirs.
+    for (slot, range) in slots.iter_mut().zip(ranges) {
+        *slot = *range;
+    }
+    for (range, change) in slots {
+        range.into_iter().chain(change).for_each(|v| short(out, v));
+    }
+    b"hue2"
+}
 /// A Photoshop color record (space, then components) as sRGB 0..=255:
 /// RGB, Lab or grayscale.
 fn psd_color(space: u16, [a, b, c]: [u16; 3]) -> Option<[f32; 3]> {
