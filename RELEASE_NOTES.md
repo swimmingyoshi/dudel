@@ -46,8 +46,8 @@ the package has been uploaded to a public store.
   in Import details instead.
 - CSP import reads image material layers (placed pictures), layers that extend
   past the canvas, canvases set in inches or millimetres, layer masks on raster
-  layers, Tone Curve and Brightness/Contrast correction layers (as editable
-  adjustment layers), and files with color proofing
+  layers, Tone Curve, Brightness/Contrast and Hue/Saturation/Luminosity correction
+  layers (as editable adjustment layers; the last also a new Dudel adjustment), and files with color proofing
   settings that are switched off. Vector layers are drawn from their strokes
   as raster layers instead of being skipped; Layers-panel color labels no
   longer skip layers. Screentone layers import with their dots drawn as CSP

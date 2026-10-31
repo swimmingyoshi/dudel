@@ -407,15 +407,19 @@ fn correction(info: &[u8]) -> Result<crate::adjustment::Settings, String> {
                 legacy: true,
             })
         }
+        // Hue (degrees), saturation and luminosity (percent), drawn with
+        // CSP's own whole-number HSV.
         4 if info.len() == 20 => {
-            if (8..20).step_by(4).any(|at| word(at) != Some(0)) {
-                return Err("hue/saturation/luminosity settings Dudel does not draw yet".into());
-            }
-            Ok(Settings::HueSaturation {
-                colorize: None,
-                master: [0.0; 3],
-                ranges: Vec::new(),
-            })
+            let (hue, saturation, luminosity) =
+                (word(8).unwrap(), word(12).unwrap(), word(16).unwrap());
+            let settings = Settings::HueSaturationLuminosity {
+                hue,
+                saturation,
+                luminosity,
+            };
+            crate::adjustment::Adjustment::try_from(settings.clone())
+                .map_err(|_| "hue/saturation/luminosity settings out of range".to_string())?;
+            Ok(settings)
         }
         // 32 curves of a count and up to 32 (x, y) pairs (16-bit), the
         // first for all channels. Only that one may bend, with at most one
@@ -3723,12 +3727,28 @@ pub(crate) mod tests {
             assert!((line.apply([input; 3])[0] - output).abs() < 0.1, "{input}");
         }
         assert!(correction(&words(&[1, 8, 30, -40])).is_err());
-        // Hue/saturation/luminosity only when it changes nothing.
-        assert!(matches!(
-            correction(&words(&[4, 12, 0, 0, 0])),
-            Ok(Settings::HueSaturation { .. })
-        ));
-        assert!(correction(&words(&[4, 12, 60, -40, 20])).is_err());
+        // Hue/saturation/luminosity in CSP's own model: +20 luminosity takes
+        // black to 50 (not 51), and +60 / -40 / +20 turns pure red into
+        // CSP's (212, 215, 111) up to one level.
+        let hsl = |values: [i32; 3]| {
+            Adjustment::try_from(
+                correction(&words(&[4, 12, values[0], values[1], values[2]])).unwrap(),
+            )
+            .unwrap()
+        };
+        assert_eq!(hsl([0, 0, 20]).apply([0.0; 3]), [50.0; 3]);
+        assert_eq!(
+            hsl([0, 0, 0]).apply([12.0, 200.0, 99.0]),
+            [12.0, 200.0, 99.0]
+        );
+        let red = hsl([60, -40, 20]).apply([255.0, 6.0, 0.0]);
+        assert!(
+            red.iter()
+                .zip([212.0, 215.0, 111.0])
+                .all(|(a, b)| (a - b).abs() <= 1.0),
+            "{red:?}"
+        );
+        assert!(correction(&words(&[4, 12, 400, 0, 0])).is_err());
         // Tone curve: 32 curves of 65 words, the first for all channels.
         let curve = |master: &[[u16; 2]], red: &[[u16; 2]]| {
             let mut info = words(&[3, 4160]);

@@ -61,6 +61,13 @@ pub(crate) enum Settings {
     },
     /// Hue in degrees, saturation and lightness in -100..=100. `colorize`
     /// replaces hue and saturation; `ranges` are trapezoids of hue degrees.
+    /// Clip Studio Paint's Hue/Saturation/Luminosity: whole-number HSV with
+    /// hue in degrees, saturation and luminosity in percent.
+    HueSaturationLuminosity {
+        hue: i32,
+        saturation: i32,
+        luminosity: i32,
+    },
     HueSaturation {
         colorize: Option<[f32; 3]>,
         master: [f32; 3],
@@ -114,7 +121,7 @@ fn srgb_gamma() -> f32 {
     2.2
 }
 /// The kinds offered when adding an adjustment layer, with neutral settings.
-pub(crate) fn presets() -> [Settings; 15] {
+pub(crate) fn presets() -> [Settings; 16] {
     let identity = LevelsChannel {
         input: [0.0, 255.0],
         output: [0.0, 255.0],
@@ -143,6 +150,11 @@ pub(crate) fn presets() -> [Settings; 15] {
             colorize: None,
             master: [0.0; 3],
             ranges: Vec::new(),
+        },
+        Settings::HueSaturationLuminosity {
+            hue: 0,
+            saturation: 0,
+            luminosity: 0,
         },
         Settings::GradientMap {
             stops: vec![(0.0, [0.0; 3], 0.5), (1.0, [255.0; 3], 0.5)],
@@ -350,6 +362,7 @@ impl Settings {
             Settings::BrightnessContrast { .. } => "Brightness/Contrast",
             Settings::Exposure { .. } => "Exposure",
             Settings::HueSaturation { .. } => "Hue/Saturation",
+            Settings::HueSaturationLuminosity { .. } => "Hue/Saturation/Luminosity",
             Settings::GradientMap { .. } => "Gradient Map",
             Settings::ColorBalance { .. } => "Color Balance",
             Settings::Vibrance { .. } => "Vibrance",
@@ -395,6 +408,11 @@ impl Adjustment {
                 tones,
                 preserve_luminosity,
             } => color_balance(c, tones, *preserve_luminosity),
+            Settings::HueSaturationLuminosity {
+                hue,
+                saturation,
+                luminosity,
+            } => csp_hsv(c, *hue, *saturation, *luminosity),
             Settings::Vibrance {
                 vibrance,
                 saturation,
@@ -489,6 +507,15 @@ impl Settings {
                     && (-20.0..=20.0).contains(exposure)
                     && (-0.5..=0.5).contains(offset)
                     && (0.01..=9.99).contains(gamma)
+            }
+            Settings::HueSaturationLuminosity {
+                hue,
+                saturation,
+                luminosity,
+            } => {
+                (-180..=180).contains(hue)
+                    && (-100..=100).contains(saturation)
+                    && (-100..=100).contains(luminosity)
             }
             Settings::HueSaturation {
                 colorize,
@@ -708,6 +735,91 @@ impl Spline {
             + ((a * a * a - a) * self.m[i] + (b * b * b - b) * self.m[i + 1]) * h * h / 6.0)
             .clamp(0.0, 1.0)
     }
+}
+
+/// Clip Studio Paint's hue/saturation/luminosity: whole-number HSV on 8-bit
+/// color, with hue in 1/0x30000 of a turn, saturation in 1/0x10000 and
+/// value in 0..=255, settings in 1/0x8000 (truncated). Luminosity moves
+/// value toward white or black (lightening also drains saturation), then
+/// saturation, which lowering also darkens a little. Matched CSP's saved
+/// preview within its rounding on the owner's +60 / -40 / +20 sample.
+fn csp_hsv(c: [f32; 3], hue: i32, saturation: i32, luminosity: i32) -> [f32; 3] {
+    // The whole-number round trip would move some colors by a level.
+    if hue % 360 == 0 && saturation == 0 && luminosity == 0 {
+        return c;
+    }
+    let [r, g, b] = c.map(|v| i64::from(v.round().clamp(0.0, 255.0) as u8));
+    let turn = 0x30000i64;
+    let hue = i64::from(hue).rem_euclid(360) * turn / 360;
+    let saturation = i64::from(saturation) * 0x8000 / 100;
+    let luminosity = i64::from(luminosity) * 0x8000 / 100;
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let delta = max - min;
+    let mut s = if max == 0 { 0 } else { delta * 0x10000 / max };
+    let mut h = 0;
+    if s != 0 {
+        let part = |high: i64, low: i64| (high - low) * 0x8000 / delta;
+        h = if max == r {
+            if g < b { turn - part(b, g) } else { part(g, b) }
+        } else if max == g {
+            if b < r {
+                0x10000 - part(r, b)
+            } else {
+                0x10000 + part(b, r)
+            }
+        } else if r < g {
+            0x20000 - part(g, r)
+        } else {
+            0x20000 + part(r, g)
+        };
+        if h >= turn {
+            h -= turn;
+        }
+    }
+    let mut v = max;
+    if hue != 0 {
+        h += hue;
+        if h >= turn {
+            h -= turn;
+        }
+    }
+    if luminosity < 0 {
+        v = (v - ((v * -luminosity) >> 15)).max(0);
+    } else if luminosity > 0 {
+        v = ((((255 - v) * luminosity) >> 15) + v).min(255);
+        s = (s - ((s * luminosity) >> 15)).max(0);
+    }
+    if saturation != 0 && s > 0 && v > 0 {
+        if saturation < 0 {
+            let lowered = (s - ((s * -saturation) >> 15)).max(0);
+            v = (v - (((s - lowered) * v) >> 17)).max(0);
+            s = lowered;
+        } else {
+            let mut gain = ((0x10000 - s) * saturation) >> 15;
+            let added = (gain * v) >> 16;
+            if v + added > 255 {
+                gain = gain * (255 - v) / added;
+                v = 255;
+            } else {
+                v += added;
+            }
+            s = (s + gain).min(0x10000);
+        }
+    }
+    let f = h & 0x7fff;
+    let low = ((0x10000 - s) * v) >> 16;
+    let falling = ((0x10000 - ((f * s) >> 15)) * v) >> 16;
+    let rising = ((0x10000 - (((0x8000 - f) * s) >> 15)) * v) >> 16;
+    let [r, g, b] = match h >> 15 {
+        0 => [v, rising, low],
+        1 => [falling, v, low],
+        2 => [low, v, rising],
+        3 => [low, falling, v],
+        4 => [rising, low, v],
+        5 => [v, low, falling],
+        _ => [v; 3],
+    };
+    [r, g, b].map(|v| v as f32)
 }
 
 /// Photoshop's brightness/contrast (CS3 and later), as fitted by psd-tools:

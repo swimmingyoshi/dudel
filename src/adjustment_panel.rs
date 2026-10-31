@@ -268,6 +268,15 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
                     .text("Gamma"),
             );
         }
+        Settings::HueSaturationLuminosity {
+            hue,
+            saturation,
+            luminosity,
+        } => {
+            ui.add(egui::Slider::new(hue, -180..=180).text("Hue"));
+            ui.add(egui::Slider::new(saturation, -100..=100).text("Saturation"));
+            ui.add(egui::Slider::new(luminosity, -100..=100).text("Luminosity"));
+        }
         Settings::HueSaturation {
             colorize,
             master,

@@ -507,8 +507,9 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   Bezier for one middle point): Curves gained `bezier`. ToneCurve-TEST 0.46
   mean levels off. Brightness/contrast: out = (in + b - 128)/(1 - c) + 128,
   mapped exactly onto the legacy formula; 0.22 levels off. Hue/saturation/
-  luminosity does not fit HLS (luminosity on gray is 0.8x + 50; colored
-  pixels differ): neutral settings only until its code is read. Line (shape
+  luminosity: whole-number HSV (hue 0..0x30000, saturation 0..0x10000,
+  settings x 0x8000 / 100 truncated), as the new HueSaturationLuminosity
+  adjustment, 0.25 levels off. Line (shape
   4) and square (shape 2) tones: square = two bands along the cell's sides,
   line = one band (the other side past 90 deg, scanned by columns); lines
   shrink up to three more times instead of the row-order cut, so 70% ends
