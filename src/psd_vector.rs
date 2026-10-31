@@ -324,6 +324,91 @@ pub(crate) fn gradient(settings: &Descriptor) -> Result<Gradient, String> {
         opacities,
     })
 }
+impl Gradient {
+    /// The descriptor items `gradient` reads, as Photoshop writes them for
+    /// a gradient overlay or stroke.
+    pub(crate) fn psd_items(&self) -> Vec<(String, Value)> {
+        let unit = |unit: &str, v: f64| Value::Unit(unit.into(), v);
+        let object = |class: &str, items: Vec<(&str, Value)>| {
+            Value::Object(Descriptor {
+                class: class.into(),
+                items: items.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+            })
+        };
+        let place = |location: f64, midpoint: f64| {
+            [
+                ("Lctn", Value::Integer((location * 4096.0).round() as i64)),
+                ("Mdpn", Value::Integer((midpoint * 100.0).round() as i64)),
+            ]
+        };
+        let colors = self
+            .colors
+            .iter()
+            .map(|(location, [r, g, b], midpoint)| {
+                let rgb = object(
+                    "RGBC",
+                    vec![
+                        ("Rd  ", Value::Number(*r)),
+                        ("Grn ", Value::Number(*g)),
+                        ("Bl  ", Value::Number(*b)),
+                    ],
+                );
+                let mut items = vec![
+                    ("Clr ", rgb),
+                    ("Type", Value::Enum("Clry".into(), "UsrS".into())),
+                ];
+                items.extend(place(*location, *midpoint));
+                object("Clrt", items)
+            })
+            .collect();
+        let opacities = self
+            .opacities
+            .iter()
+            .map(|(location, opacity, midpoint)| {
+                let mut items = vec![("Opct", unit("#Prc", opacity * 100.0))];
+                items.extend(place(*location, *midpoint));
+                object("TrnS", items)
+            })
+            .collect();
+        let ramp = object(
+            "Grdn",
+            vec![
+                ("Nm  ", Value::Text("Custom\0".into())),
+                ("GrdF", Value::Enum("GrdF".into(), "CstS".into())),
+                ("Intr", Value::Number(4096.0)),
+                ("Clrs", Value::List(colors)),
+                ("Trns", Value::List(opacities)),
+            ],
+        );
+        let kind = match self.kind {
+            GradientKind::Linear => "Lnr ",
+            GradientKind::Radial => "Rdl ",
+            GradientKind::Angle => "Angl",
+            GradientKind::Reflected => "Rflc",
+            GradientKind::Diamond => "Dmnd",
+        };
+        let offset = object(
+            "Pnt ",
+            vec![
+                ("Hrzn", unit("#Prc", self.offset[0] * 100.0)),
+                ("Vrtc", unit("#Prc", self.offset[1] * 100.0)),
+            ],
+        );
+        [
+            ("Grad", ramp),
+            ("Angl", unit("#Ang", self.angle)),
+            ("Type", Value::Enum("GrdT".into(), kind.into())),
+            ("Rvrs", Value::Bool(self.reverse)),
+            ("Dthr", Value::Bool(false)),
+            ("Algn", Value::Bool(self.aligned)),
+            ("Scl ", unit("#Prc", self.scale * 100.0)),
+            ("Ofst", offset),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v))
+        .collect()
+    }
+}
 /// Interpolate stops at `t`, honoring each segment's midpoint.
 fn ramp<const N: usize>(stops: &[(f64, [f64; N], f64)], t: f64) -> [f64; N] {
     let first = stops[0];

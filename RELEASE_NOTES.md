@@ -30,7 +30,8 @@ the package has been uploaded to a public store.
 - PSD export: File > Export Photoshop document (.psd) writes every layer and
   folder with names, blend modes (glow modes included), opacity, clipping,
   visibility, locks, masks and adjustment layers, plus the flattened image.
-  Layer effects become separate layers, like Photoshop's Create Layers. CSP's
+  Layer effects stay editable as Photoshop layer styles; Export PSD for Live2D
+  draws them as separate layers instead, like Photoshop's Create Layers. CSP's
   tone curves and Hue/Saturation/Luminosity become the closest Photoshop
   adjustments. Exports open in Live2D Cubism, Affinity and Photopea.
 - PSD import accepts layers up to the full canvas limit (100 megapixels), not 64.

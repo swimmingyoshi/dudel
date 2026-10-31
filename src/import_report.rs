@@ -232,6 +232,7 @@ pub(crate) fn roundtrip_psd(
     input: &std::path::Path,
     psd: &std::path::Path,
     output: Option<&std::path::Path>,
+    effects: crate::psd_export::Effects,
 ) -> Result<(), String> {
     let extension = input
         .extension()
@@ -243,14 +244,16 @@ pub(crate) fn roundtrip_psd(
         "dudel" => crate::storage::load_project(input)?,
         _ => crate::clip_metadata::import_document(input, &|| false)?.document,
     };
-    let notes = crate::psd_export::notes(&doc);
+    let notes = crate::psd_export::notes(&doc, effects);
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let started = std::time::Instant::now();
-    crate::psd_export::write(&doc, psd, &cancel)?;
+    crate::psd_export::write(&doc, effects, psd, &cancel)?;
     let export_ms = started.elapsed().as_millis();
     let back = crate::psd_import::import(psd, &|| false)?;
-    // What was written: effects drawn as layers.
-    let written = crate::layer_effects::expand(&doc, false, &|| false)?.layers;
+    // What was written: layer styles, or effects drawn as layers.
+    let written = crate::psd_export::written(&doc, effects, &|| false)?
+        .0
+        .layers;
     let settings = |l: &crate::document::Layer| {
         format!(
             "{}{} {} {:.0}%{}{}{}{}",
@@ -277,8 +280,40 @@ pub(crate) fn roundtrip_psd(
             .adjustment
             .as_ref()
             .is_some_and(|a| crate::adjustment::psd_approximated(a.settings()));
+        // Enabled effects, rounded where Photoshop's angles and units round.
+        let effects = |l: &crate::document::Layer| -> Vec<String> {
+            l.effects
+                .iter()
+                .filter(|e| e.enabled)
+                .map(|e| {
+                    let text = format!("{:?}", e.effect);
+                    let mut out = String::new();
+                    let mut number = String::new();
+                    for c in text.chars().chain([' ']) {
+                        if c.is_ascii_digit() || c == '.' || (c == '-' && number.is_empty()) {
+                            number.push(c);
+                            continue;
+                        }
+                        if !number.is_empty() {
+                            let v: f64 = number.parse().unwrap_or(0.0);
+                            out += &format!("{:.2}", if v.abs() < 0.005 { 0.0 } else { v });
+                            number.clear();
+                        }
+                        out.push(c);
+                    }
+                    out
+                })
+                .collect()
+        };
         if settings(a) != settings(b) {
             mismatches.push(format!("{} -> {}", settings(a), settings(b)));
+        } else if effects(a) != effects(b) {
+            mismatches.push(format!(
+                "effects differ: {} {:?} -> {:?}",
+                a.name,
+                effects(a),
+                effects(b)
+            ));
         } else if !approximated && !same_effect(a.adjustment.as_ref(), b.adjustment.as_ref()) {
             mismatches.push(format!(
                 "adjustment differs: {} {:?} -> {:?}",

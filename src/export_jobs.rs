@@ -15,7 +15,9 @@ pub(crate) enum ExportKind {
     Png {
         transparent: bool,
     },
-    Psd,
+    Psd {
+        effects: crate::psd_export::Effects,
+    },
     /// A .zip project package.
     Package,
 }
@@ -23,7 +25,7 @@ impl ExportKind {
     fn label(self) -> &'static str {
         match self {
             Self::Png { .. } => "PNG",
-            Self::Psd => "PSD",
+            Self::Psd { .. } => "PSD",
             Self::Package => "Project package",
         }
     }
@@ -143,12 +145,12 @@ impl Dudel {
         }
         self.export_snapshot_or_queue(path, ExportKind::Png { transparent });
     }
-    pub(crate) fn export_psd_to(&mut self, path: PathBuf) {
+    pub(crate) fn export_psd_to(&mut self, path: PathBuf, effects: crate::psd_export::Effects) {
         if let Err(error) = psd_destination(&path) {
             self.status = format!("Export failed: {error}");
             return;
         }
-        self.export_snapshot_or_queue(path, ExportKind::Psd);
+        self.export_snapshot_or_queue(path, ExportKind::Psd { effects });
     }
     /// Export now, or after the strokes ahead of it finish rendering.
     pub(crate) fn export_snapshot_or_queue(&mut self, path: PathBuf, kind: ExportKind) {
@@ -188,12 +190,18 @@ impl Dudel {
     ) {
         match kind {
             ExportKind::Package => self.start_package_snapshot(path, document),
-            ExportKind::Psd => {
-                let note = crate::psd_export::notes(&document).join(" ");
-                self.start_export_worker(path, document, kind, note, |document, path, cancel| {
-                    psd_destination(path)?;
-                    crate::psd_export::write(document, path, cancel)
-                });
+            ExportKind::Psd { effects } => {
+                let note = crate::psd_export::notes(&document, effects).join(" ");
+                self.start_export_worker(
+                    path,
+                    document,
+                    kind,
+                    note,
+                    move |document, path, cancel| {
+                        psd_destination(path)?;
+                        crate::psd_export::write(document, effects, path, cancel)
+                    },
+                );
             }
             ExportKind::Png { transparent } => self.start_export_worker(
                 path,
@@ -470,10 +478,10 @@ mod tests {
         let psd = dir.path().join("painting.psd");
         let (mut app, expected) = queued_taper();
         std::fs::write(&psd, b"not a psd").unwrap();
-        app.export_psd_to(psd.clone());
+        app.export_psd_to(psd.clone(), crate::psd_export::Effects::Editable);
         assert!(app.status.contains("not a PSD"), "{}", app.status);
         std::fs::remove_file(&psd).unwrap();
-        app.export_psd_to(psd.clone());
+        app.export_psd_to(psd.clone(), crate::psd_export::Effects::Editable);
         assert!(app.queued_export.is_some());
         finish_export(&mut app);
         assert!(app.status.starts_with("PSD exported"), "{}", app.status);

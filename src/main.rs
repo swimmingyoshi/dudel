@@ -871,7 +871,7 @@ impl Dudel {
         );
         self.ask_save_file(dialog, move |app, path| app.export_to(path, transparent));
     }
-    fn export_psd(&mut self) {
+    fn export_psd(&mut self, effects: psd_export::Effects) {
         if self.adjustment.is_some() {
             self.status = "Apply or cancel the adjustment before exporting".into();
             return;
@@ -891,7 +891,7 @@ impl Dudel {
                 .add_filter("Photoshop document", &["psd"])
                 .set_file_name(format!("{name}.psd")),
         );
-        self.ask_save_file(dialog, Self::export_psd_to);
+        self.ask_save_file(dialog, move |app, path| app.export_psd_to(path, effects));
     }
     fn import_png(&mut self) {
         let dialog = rfd::AsyncFileDialog::new().add_filter("PNG image", &["png"]);
@@ -1315,8 +1315,16 @@ fn main() -> eframe::Result {
         }
         return Ok(());
     }
-    if mode.as_deref() == Some("--roundtrip-psd") {
-        let usage = "Usage: --roundtrip-psd INPUT OUTPUT.psd [NEW_REPORT.json]";
+    if matches!(
+        mode.as_deref(),
+        Some("--roundtrip-psd" | "--roundtrip-psd-effect-layers")
+    ) {
+        let usage = "Usage: --roundtrip-psd[-effect-layers] INPUT OUTPUT.psd [NEW_REPORT.json]";
+        let effects = if mode.as_deref() == Some("--roundtrip-psd") {
+            psd_export::Effects::Editable
+        } else {
+            psd_export::Effects::AsLayers
+        };
         let (Some(input), Some(psd)) = (args.next(), args.next()) else {
             eprintln!("{usage}");
             std::process::exit(1);
@@ -1327,7 +1335,7 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
         let (input, psd) = (PathBuf::from(input), PathBuf::from(psd));
-        if let Err(error) = import_report::roundtrip_psd(&input, &psd, report.as_deref()) {
+        if let Err(error) = import_report::roundtrip_psd(&input, &psd, report.as_deref(), effects) {
             eprintln!("PSD round trip: {error}");
             std::process::exit(1);
         }

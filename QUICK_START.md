@@ -202,7 +202,9 @@ waiting New/Open/Close action; the current artwork stays open.
 **File > Export PNG** flattens the image onto white paper. **File > Export
 transparent PNG** keeps composited transparency. **File > Export Photoshop
 document (.psd)** keeps the layers, folders, masks and adjustment layers for
-Photoshop, Live2D and other editors (layer effects become separate layers).
+Photoshop and other editors, with layer effects as editable layer styles.
+**File > Export PSD for Live2D (effects as layers)** draws the effects into
+layers instead, since Live2D Cubism ignores layer styles.
 Export creates a copy;
 continue saving the `.dudel` project for later editing. **File > Import > PNG as
 canvas** opens an image as a new document.

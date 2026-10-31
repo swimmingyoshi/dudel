@@ -439,7 +439,10 @@ impl Dudel {
                 self.export(true);
             }
             if menu_item(ui, "Export Photoshop document (.psd)…", "", true) {
-                self.export_psd();
+                self.export_psd(crate::psd_export::Effects::Editable);
+            }
+            if menu_item(ui, "Export PSD for Live2D (effects as layers)…", "", true) {
+                self.export_psd(crate::psd_export::Effects::AsLayers);
             }
             if menu_item(ui, "Export project package (.zip)…", "", true) {
                 self.export_package();

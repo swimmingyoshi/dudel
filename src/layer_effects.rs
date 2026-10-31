@@ -348,7 +348,7 @@ impl Effect {
         }
     }
     /// Photoshop's stacking order, bottom to top.
-    fn rank(&self) -> u8 {
+    pub(crate) fn rank(&self) -> u8 {
         match self.kind {
             Kind::DropShadow { .. } => 0,
             Kind::OuterGlow { .. } => 1,
@@ -805,6 +805,348 @@ pub(crate) fn parse(data: &[u8], global_angle: f64) -> Result<Effects, String> {
     }
     effects.list.sort_by_key(Effect::rank);
     Ok(effects)
+}
+
+/// Photoshop's descriptor name for an effect blend mode; `None` for the
+/// modes it lacks.
+fn blend_name(mode: BlendMode) -> Option<&'static str> {
+    use BlendMode::*;
+    Some(match mode {
+        Normal => "normal",
+        Dissolve => "dissolve",
+        Darken => "darken",
+        Multiply => "multiply",
+        ColorBurn => "colorBurn",
+        LinearBurn => "linearBurn",
+        DarkerColor => "darkerColor",
+        Lighten => "lighten",
+        Screen => "screen",
+        ColorDodge => "colorDodge",
+        LinearDodge => "linearDodge",
+        LighterColor => "lighterColor",
+        Overlay => "overlay",
+        SoftLight => "softLight",
+        HardLight => "hardLight",
+        VividLight => "vividLight",
+        LinearLight => "linearLight",
+        PinLight => "pinLight",
+        HardMix => "hardMix",
+        Difference => "difference",
+        Exclusion => "exclusion",
+        Subtract => "blendSubtraction",
+        Divide => "blendDivide",
+        Hue => "hue",
+        Saturation => "saturation",
+        Color => "color",
+        Luminosity => "luminosity",
+        GlowDodge | AddGlow | PassThrough => return None,
+    })
+}
+
+/// `lfx2` for a layer's effects, the inverse of `parse`, with the keys
+/// Photoshop writes for each effect. `None` when Photoshop cannot show them
+/// all: blend modes it lacks, gradient glows, or more than one glow or bevel
+/// of a kind (Photoshop has one of each); those layers keep drawn effects.
+pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
+    let unit = |unit: &str, v: f64| Value::Unit(unit.into(), v);
+    let pixels = |v: f64| unit("#Pxl", v);
+    let percent = |v: f64| unit("#Prc", v * 100.0);
+    let enumerated = |kind: &str, value: &str| Value::Enum(kind.into(), value.into());
+    let rgb = |[r, g, b]: [u8; 3]| {
+        Value::Object(Descriptor {
+            class: "RGBC".into(),
+            items: [("Rd  ", r), ("Grn ", g), ("Bl  ", b)]
+                .map(|(k, v)| (k.into(), Value::Number(f64::from(v))))
+                .into(),
+        })
+    };
+    let linear = || {
+        let point = |v: f64| {
+            Value::Object(Descriptor {
+                class: "CrPt".into(),
+                items: vec![
+                    ("Hrzn".into(), Value::Number(v)),
+                    ("Vrtc".into(), Value::Number(v)),
+                ],
+            })
+        };
+        Value::Object(Descriptor {
+            class: "ShpC".into(),
+            items: vec![
+                ("Nm  ".into(), Value::Text("Linear\0".into())),
+                ("Crv ".into(), Value::List(vec![point(0.0), point(255.0)])),
+            ],
+        })
+    };
+    // [x, y] offset back to Photoshop's angle (degrees) and distance.
+    let polar = |[x, y]: [f64; 2]| (y.atan2(-x).to_degrees(), x.hypot(y));
+    let mut slots: Vec<(&str, Vec<Descriptor>)> = Vec::new();
+    let mut add =
+        |key: &'static str, effect: Descriptor| match slots.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, list)) => list.push(effect),
+            None => slots.push((key, vec![effect])),
+        };
+    let mut bevels: Vec<&Effect> = Vec::new();
+    for layer_effect in effects {
+        let effect = &layer_effect.effect;
+        let mut items: Vec<(&str, Value)> = vec![
+            ("enab", Value::Bool(layer_effect.enabled)),
+            ("present", Value::Bool(true)),
+            ("showInDialog", Value::Bool(true)),
+        ];
+        if let Kind::Bevel { .. } = effect.kind {
+            bevels.push(effect);
+            continue;
+        }
+        items.push(("Md  ", enumerated("BlnM", blend_name(effect.blend)?)));
+        let color = match &effect.paint {
+            Paint::Color(c) => Some(*c),
+            Paint::Gradient(_) => None,
+        };
+        let opacity = ("Opct", percent(f64::from(effect.opacity)));
+        let (key, class) = match effect.kind {
+            Kind::DropShadow {
+                offset,
+                spread,
+                size,
+                ..
+            }
+            | Kind::InnerShadow {
+                offset,
+                choke: spread,
+                size,
+            } if color.is_some() => {
+                let (angle, distance) = polar(offset);
+                items.extend([
+                    ("Clr ", rgb(color?)),
+                    opacity,
+                    ("uglg", Value::Bool(false)),
+                    ("lagl", unit("#Ang", angle)),
+                    ("Dstn", pixels(distance)),
+                    ("Ckmt", pixels(spread * 100.0)),
+                    ("blur", pixels(size)),
+                    ("Nose", percent(0.0)),
+                    ("AntA", Value::Bool(false)),
+                    ("TrnS", linear()),
+                ]);
+                if let Kind::DropShadow { knockout, .. } = effect.kind {
+                    items.push(("layerConceals", Value::Bool(knockout)));
+                    ("dropShadowMulti", "DrSh")
+                } else {
+                    ("innerShadowMulti", "IrSh")
+                }
+            }
+            Kind::OuterGlow {
+                spread,
+                size,
+                precise,
+                range,
+            }
+            | Kind::InnerGlow {
+                choke: spread,
+                size,
+                precise,
+                range,
+                ..
+            } if color.is_some() => {
+                items.extend([
+                    ("Clr ", rgb(color?)),
+                    opacity,
+                    (
+                        "GlwT",
+                        enumerated("BETE", if precise { "PrBL" } else { "SfBL" }),
+                    ),
+                    ("Ckmt", pixels(spread * 100.0)),
+                    ("blur", pixels(size)),
+                    ("Nose", percent(0.0)),
+                    ("ShdN", percent(0.0)),
+                    ("AntA", Value::Bool(false)),
+                    ("TrnS", linear()),
+                    ("Inpr", percent(range)),
+                ]);
+                if let Kind::InnerGlow { center, .. } = effect.kind {
+                    let source = if center { "SrcC" } else { "SrcE" };
+                    items.push(("glwS", enumerated("IGSr", source)));
+                    ("IrGl", "IrGl")
+                } else {
+                    ("OrGl", "OrGl")
+                }
+            }
+            Kind::ColorOverlay if color.is_some() => {
+                items.extend([("Clr ", rgb(color?)), opacity]);
+                ("solidFillMulti", "SoFi")
+            }
+            Kind::GradientOverlay => {
+                let Paint::Gradient(gradient) = &effect.paint else {
+                    return None;
+                };
+                items.push(opacity);
+                let rest: Vec<_> = gradient.psd_items();
+                let mut descriptor = descriptor("GrFl", items);
+                descriptor.items.extend(rest);
+                add("gradientFillMulti", descriptor);
+                continue;
+            }
+            Kind::Stroke { size, position } => {
+                let style = match position {
+                    Position::Outside => "OutF",
+                    Position::Inside => "InsF",
+                    Position::Center => "CtrF",
+                };
+                items.extend([
+                    ("Styl", enumerated("FStl", style)),
+                    (
+                        "PntT",
+                        enumerated("FrFl", if color.is_some() { "SClr" } else { "GrFl" }),
+                    ),
+                    opacity,
+                    ("Sz  ", pixels(size)),
+                    ("overprint", Value::Bool(false)),
+                ]);
+                let mut descriptor = descriptor("FrFX", items);
+                match &effect.paint {
+                    Paint::Color(c) => descriptor.items.push(("Clr ".into(), rgb(*c))),
+                    Paint::Gradient(gradient) => descriptor.items.extend(gradient.psd_items()),
+                }
+                add("frameFXMulti", descriptor);
+                continue;
+            }
+            // Glows, shadows and color overlays painted with a gradient.
+            _ => return None,
+        };
+        add(key, descriptor(class, items));
+    }
+    // A bevel's halves share a pair number (0 in older projects, which
+    // pair by adjacency); Photoshop keeps one bevel per layer.
+    let pairs: Vec<u32> = bevels
+        .iter()
+        .filter_map(|e| match e.kind {
+            Kind::Bevel { pair, .. } => Some(pair),
+            _ => None,
+        })
+        .collect();
+    if bevels.len() > 2 || (bevels.len() == 2 && pairs[0] != pairs[1]) {
+        return None;
+    }
+    if let Some(first) = bevels.first() {
+        let half = |highlight: bool| {
+            bevels
+                .iter()
+                .find(|e| matches!(e.kind, Kind::Bevel { highlight: h, .. } if h == highlight))
+        };
+        let Kind::Bevel {
+            style,
+            technique,
+            depth,
+            size,
+            soften,
+            light,
+            up,
+            ..
+        } = first.kind
+        else {
+            unreachable!()
+        };
+        let enabled = effects
+            .iter()
+            .filter(|e| matches!(e.effect.kind, Kind::Bevel { .. }))
+            .any(|e| e.enabled);
+        let mut items: Vec<(&str, Value)> = vec![
+            ("enab", Value::Bool(enabled)),
+            ("present", Value::Bool(true)),
+            ("showInDialog", Value::Bool(true)),
+        ];
+        // A missing half is written invisible, as Photoshop needs both.
+        for (highlight, [mode, color, opacity]) in [
+            (true, ["hglM", "hglC", "hglO"]),
+            (false, ["sdwM", "sdwC", "sdwO"]),
+        ] {
+            let (blend, paint, alpha) = match half(highlight) {
+                Some(e) => (e.blend, &e.paint, f64::from(e.opacity)),
+                None => (BlendMode::Normal, &Paint::Color([0; 3]), 0.0),
+            };
+            let Paint::Color(c) = paint else {
+                return None;
+            };
+            items.extend([
+                (mode, enumerated("BlnM", blend_name(blend)?)),
+                (color, rgb(*c)),
+                (opacity, percent(alpha)),
+            ]);
+        }
+        let altitude = light[2].clamp(-1.0, 1.0).asin().to_degrees();
+        let angle = (-light[1]).atan2(light[0]).to_degrees();
+        items.extend([
+            (
+                "bvlT",
+                enumerated(
+                    "bvlT",
+                    match technique {
+                        Technique::Smooth => "SfBL",
+                        Technique::ChiselHard => "PrBL",
+                        Technique::ChiselSoft => "Slmt",
+                    },
+                ),
+            ),
+            (
+                "bvlS",
+                enumerated(
+                    "BESl",
+                    match style {
+                        BevelStyle::Inner => "InrB",
+                        BevelStyle::Outer => "OtrB",
+                        BevelStyle::Emboss => "Embs",
+                        BevelStyle::Pillow => "PlEb",
+                    },
+                ),
+            ),
+            ("uglg", Value::Bool(false)),
+            ("lagl", unit("#Ang", angle)),
+            ("Lald", unit("#Ang", altitude)),
+            ("srgR", percent(depth)),
+            ("blur", pixels(size)),
+            ("bvlD", enumerated("BESs", if up { "In  " } else { "Out " })),
+            ("TrnS", linear()),
+            ("antialiasGloss", Value::Bool(false)),
+            ("Sftn", pixels(soften)),
+            ("useShape", Value::Bool(false)),
+            ("useTexture", Value::Bool(false)),
+        ]);
+        add("ebbl", descriptor("ebbl", items));
+    }
+    let mut items: Vec<(String, Value)> = vec![
+        ("Scl ".into(), percent(1.0)),
+        ("masterFXSwitch".into(), Value::Bool(true)),
+    ];
+    for (key, mut list) in slots {
+        // One glow or bevel of each kind; a single effect of the others
+        // under its own class key, several in a list drawn first on top.
+        if key.ends_with("Multi") && list.len() > 1 {
+            list.reverse();
+            items.push((
+                key.into(),
+                Value::List(list.into_iter().map(Value::Object).collect()),
+            ));
+        } else if list.len() == 1 {
+            let effect = list.pop().unwrap();
+            items.push((effect.class.clone(), Value::Object(effect)));
+        } else {
+            return None;
+        }
+    }
+    let mut out = 0u32.to_be_bytes().to_vec();
+    out.extend(16u32.to_be_bytes());
+    out.extend(crate::psd_vector::encode(&Descriptor {
+        class: "null".into(),
+        items,
+    }));
+    Some(out)
+}
+fn descriptor(class: &str, items: Vec<(&str, Value)>) -> Descriptor {
+    Descriptor {
+        class: class.into(),
+        items: items.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+    }
 }
 
 /// One enabled effect. `Ok(None)` for keys that are not effects; `Err`

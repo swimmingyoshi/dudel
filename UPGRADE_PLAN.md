@@ -216,7 +216,16 @@ PSD (`src/psd_import.rs`, new):
       3.5, max 26 either way), so it stays one editable layer. Public
       set: every adjustment file reopens exact except grayscale exposure
       (gamma 1.75 vs RGB 2.2).
-- [ ] PSD export: editable effects (`lfx2` descriptors) instead of effect layers
+- [x] PSD export: editable effects (2026-10-31, `layer_effects::to_psd`):
+      `lfx2` in Photoshop's compact form (Scl, masterFXSwitch, present
+      effects; several of a kind as `*Multi`, first on top), key sets copied
+      from Photoshop files. Layers Photoshop cannot show (glow blend modes,
+      gradient glows/shadows, two glows or bevels of a kind) fall back to
+      effect layers with a note. File > Export PSD for Live2D keeps the
+      effect-layer form (Cubism ignores styles). Public set: every effect file
+      reopens with the same effects and an exact render; psd-tools reads them.
+- [ ] Disabled effects: written with `enab` false, but the importer drops
+      them (it skips any effect not enabled); keep `present` ones disabled
 - [ ] PSD export: mask link state (not stored; masks reopen linked), PSB for
       files over 4 GB of layer data, 16-bit export
 - [x] PSD export opens in Live2D Cubism Editor 5.2 (owner, 2026-10-31: Frieren
@@ -357,8 +366,7 @@ Stage B - native layer effects:
       gradient editor beyond the two end colors and angle
 - [ ] Effect-layer memory is not yet counted in the memory panel
 - [ ] Manual check in the app with pen (owner)
-- [ ] PSD export writes them back as editable effects (they are written as
-      effect layers for now; see goal 5)
+- [x] PSD export writes them back as editable effects (see goal 5)
 
 ### 8. PSD adjustment layers (owner, 2026-10-29)
 
@@ -447,6 +455,11 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-31 (Claude, editable effects): layer styles exported, Live2D
+  menu entry for effect layers, `--roundtrip-psd-effect-layers`. CSP HSL
+  options measured (two layers or fitted values gain nothing). Owner asked
+  to push when ready and then recreate the releases (never went public).
 
 - 2026-10-31 (Claude, PSD adjustment export): adjustment layers written back
   (see goal 5); `psd_vector::encode` now ships (was test-only). The round-trip

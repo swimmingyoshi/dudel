@@ -12,7 +12,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, effects as layers and the flattened image |
+| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, layer effects (editable styles, or drawn as layers for Live2D) and the flattened image |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -217,8 +217,16 @@ folders (pass-through included), and layer masks (disabled ones stay disabled).
 Each layer stores only its painted area, RLE-compressed, with color kept under
 transparent pixels. Color dodge (glow) and Add (glow) are written as Photoshop's
 Color Dodge and Linear Dodge with Transparency Shapes off, which blend the same
-way. Layer effects are written as the layers they draw, like Photoshop's Create
-Layers, so the file looks right but the effects are no longer editable.
+way. Layer effects are written as Photoshop layer styles, editable there: drop
+and inner shadows, outer and inner glows, strokes (color or gradient), color
+and gradient overlays, and bevel and emboss, with the keys Photoshop writes.
+Photoshop draws them with its own engine, so they can look slightly different
+from Dudel's drawing. A layer whose effects Photoshop cannot show (an effect in
+a glow blend mode, a glow or shadow painted with a gradient, or two glows or
+bevels of one kind) has its effects written as the layers they draw instead,
+like Photoshop's Create Layers, and the status line names it. **File > Export
+PSD for Live2D (effects as layers)** draws every layer's effects that way, for
+apps that ignore layer styles, such as Live2D Cubism.
 Adjustment layers are written as Photoshop's own, editable there: levels,
 curves, brightness/contrast, exposure, hue/saturation, gradient map, color
 balance, vibrance, black & white, photo filter, channel mixer, selective color,
@@ -273,7 +281,10 @@ back with no mismatches and an exact flattened image. With adjustment layers
 written, renders were exact apart from opacity steps (at most 2 levels, and
 Dissolve pixels that flip with them), except one grayscale-exposure sample;
 CSP correction-layer samples came back within 1 level, except
-Hue/Saturation/Luminosity (up to 20, mean 3.7). The independent
+Hue/Saturation/Luminosity (up to 20, mean 3.7). With effects written as
+layer styles (the default; `--roundtrip-psd-effect-layers` checks the Live2D
+form), every public file with effects reopened with the same effects and an
+exact render, and psd-tools read every style back. The independent
 psd-tools reader opened every exported file, and its own render of the layers
 matched the flattened image to within 2 levels, except where it differs from
 Photoshop (glow modes).

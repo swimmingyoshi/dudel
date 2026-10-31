@@ -1,7 +1,8 @@
 //! Photoshop (.psd) export: every layer and folder with its name, blend mode,
 //! opacity, clipping, visibility, locks and mask, plus the flattened image.
-//! Adjustment layers are written as Photoshop's own; layer effects as the
-//! layers they draw (Photoshop's Create Layers).
+//! Adjustment layers are written as Photoshop's own; layer effects as
+//! Photoshop layer styles or, by choice or where Photoshop cannot show them,
+//! as the layers they draw (Photoshop's Create Layers).
 use crate::{
     blend::BlendMode,
     document::{Document, Layer},
@@ -44,8 +45,56 @@ fn blend_key(mode: BlendMode) -> &'static [u8; 4] {
     }
 }
 
+/// How layer effects are written.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Effects {
+    /// As Photoshop layer styles, editable there; layers whose effects
+    /// Photoshop cannot show get them drawn as layers instead.
+    Editable,
+    /// Drawn as layers, like Photoshop's Create Layers: the same look in
+    /// apps that ignore layer styles, such as Live2D Cubism.
+    AsLayers,
+}
+
+/// Layer styles (`lfx2` blocks) by the layer that carries them.
+type Styles = Vec<(crate::document::LayerId, Vec<u8>)>;
+
+/// The layers the file holds, bottom first, with the layer style (`lfx2`)
+/// written on each layer that keeps its effects editable.
+pub(crate) fn written(
+    doc: &Document,
+    effects: Effects,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(Document, Styles), String> {
+    let mut styles = Vec::new();
+    let mut drawn = doc.clone();
+    if effects == Effects::Editable {
+        for layer in drawn
+            .layers
+            .iter_mut()
+            .filter(|l| !l.folder && !l.effects.is_empty())
+        {
+            if let Some(style) = crate::layer_effects::to_psd(&layer.effects) {
+                styles.push((layer.id, style));
+                layer.effects.clear();
+            }
+        }
+    }
+    let mut expanded = crate::layer_effects::expand(&drawn, false, cancel)?;
+    // Keep the effects on the layers that carry them as styles, so a reader
+    // of this document sees what the file says.
+    for layer in &mut expanded.layers {
+        if styles.iter().any(|(id, _)| *id == layer.id)
+            && let Some(source) = doc.layers.iter().find(|l| l.id == layer.id)
+        {
+            layer.effects = source.effects.clone();
+        }
+    }
+    Ok((expanded, styles))
+}
+
 /// What the export leaves out or changes, one line per kind.
-pub(crate) fn notes(doc: &Document) -> Vec<String> {
+pub(crate) fn notes(doc: &Document, effects: Effects) -> Vec<String> {
     let names = |keep: &dyn Fn(&Layer) -> bool| -> Vec<String> {
         doc.layers
             .iter()
@@ -66,11 +115,23 @@ pub(crate) fn notes(doc: &Document) -> Vec<String> {
             list(&approximated)
         ));
     }
-    let effects = names(&|l| !l.folder && l.effects.iter().any(|e| e.enabled));
-    if !effects.is_empty() {
+    let has_effects = |l: &Layer| !l.folder && l.effects.iter().any(|e| e.enabled);
+    let drawn = match effects {
+        Effects::AsLayers => names(&has_effects),
+        Effects::Editable => {
+            names(&|l| has_effects(l) && crate::layer_effects::to_psd(&l.effects).is_none())
+        }
+    };
+    if !drawn.is_empty() {
         notes.push(format!(
-            "Layer effects are written as separate layers, like Photoshop's Create Layers: {}.",
-            list(&effects)
+            "{}: {}.",
+            match effects {
+                Effects::AsLayers =>
+                    "Layer effects are written as separate layers, like Photoshop's Create Layers",
+                Effects::Editable =>
+                    "Photoshop cannot show these layers' effects (glow blend modes, gradient glows, or two glows or bevels of a kind), so they are written as separate layers",
+            },
+            list(&drawn)
         ));
     }
     notes
@@ -177,6 +238,7 @@ struct Writer<'a> {
     count: usize,
     records: Vec<u8>,
     channels: Vec<u8>,
+    styles: Styles,
 }
 impl Writer<'_> {
     /// One layer record and its channel data. `section` marks folder records.
@@ -277,6 +339,11 @@ impl Writer<'_> {
         }
         units.iter().for_each(|u| luni.extend(u.to_be_bytes()));
         tagged(&mut extra, b"luni", &luni);
+        if let Some((_, style)) = self.styles.iter().find(|(id, _)| *id == layer.id) {
+            let mut style = style.clone();
+            style.resize(style.len().next_multiple_of(4), 0);
+            tagged(&mut extra, b"lfx2", &style);
+        }
         if let Some(adjustment) = &layer.adjustment {
             for (key, data) in crate::adjustment::to_psd(adjustment.settings()) {
                 tagged(&mut extra, &key, &data);
@@ -312,7 +379,11 @@ impl Writer<'_> {
 
 /// The complete file. Every layer is written bottom first, each folder's
 /// end divider below its contents, as Photoshop does.
-pub(crate) fn encode(doc: &Document, cancel: &AtomicBool) -> Result<Vec<u8>, String> {
+pub(crate) fn encode(
+    doc: &Document,
+    effects: Effects,
+    cancel: &AtomicBool,
+) -> Result<Vec<u8>, String> {
     doc.validate()?;
     let (width, height) = (doc.width, doc.height);
     let stopped = || cancel.load(Ordering::Relaxed);
@@ -326,7 +397,7 @@ pub(crate) fn encode(doc: &Document, cancel: &AtomicBool) -> Result<Vec<u8>, Str
             *c = ((u32::from(*c) * a + 255 * (255 - a) + 127) / 255) as u8;
         }
     }
-    let expanded = crate::layer_effects::expand(doc, false, &stopped)?;
+    let (expanded, styles) = written(doc, effects, &stopped)?;
     let mut writer = Writer {
         width,
         height,
@@ -334,6 +405,7 @@ pub(crate) fn encode(doc: &Document, cancel: &AtomicBool) -> Result<Vec<u8>, Str
         count: 0,
         records: Vec::new(),
         channels: Vec::new(),
+        styles,
     };
     let mut open = 0;
     for layer in &expanded.layers {
@@ -412,10 +484,11 @@ pub(crate) fn encode(doc: &Document, cancel: &AtomicBool) -> Result<Vec<u8>, Str
 
 pub(crate) fn write(
     doc: &Document,
+    effects: Effects,
     path: &std::path::Path,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
-    let bytes = encode(doc, cancel)?;
+    let bytes = encode(doc, effects, cancel)?;
     crate::storage::atomic_stream(path, |file| {
         crate::fill::check_cancel(Some(cancel))?;
         std::io::Write::write_all(file, &bytes).map_err(|e| e.to_string())
@@ -516,7 +589,7 @@ mod tests {
         doc.version = 2;
         doc.validate().unwrap();
 
-        let bytes = encode(&doc, &AtomicBool::new(false)).unwrap();
+        let bytes = encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap();
         let imported = import(&bytes);
         let back = imported.document;
         assert_eq!((back.width, back.height, back.dpi), (w, h, 350.0));
@@ -573,9 +646,10 @@ mod tests {
         ));
         doc.layers.push(invert);
         doc.active = 0;
-        let notes = notes(&doc);
+        let notes = notes(&doc, Effects::AsLayers);
         assert_eq!(notes.len(), 1, "{notes:?}");
-        let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
+        let back =
+            import(&encode(&doc, Effects::AsLayers, &AtomicBool::new(false)).unwrap()).document;
         let expanded = crate::layer_effects::expand(&doc, false, &|| false).unwrap();
         assert!(expanded.layers.len() > 2);
         assert_eq!(back.layers.len(), expanded.layers.len());
@@ -693,7 +767,8 @@ mod tests {
             layer.adjustment = Some(crate::adjustment::Adjustment::new(settings.clone()));
             layer.opacity = 0.6;
             doc.layers.push(layer);
-            let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
+            let back =
+                import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
             let read = back.layers[1].adjustment.as_ref().map(|a| a.settings());
             // Identity curves and levels read back without channels.
             let neutral = |s: &Settings| match s {
@@ -715,6 +790,53 @@ mod tests {
     }
 
     #[test]
+    fn every_effect_stays_editable_through_a_round_trip() {
+        use crate::layer_effects::{Effect, LayerEffect, PRESETS};
+        let (w, h) = (96, 96);
+        let mut doc = Document::new(w, h);
+        paint(&mut doc.layers[0], w, [0, 0, w, h], [240, 240, 240, 255]);
+        let mut shape = Layer::raster("Shape".into(), w, h);
+        paint(&mut shape, w, [24, 24, 72, 72], [40, 120, 200, 255]);
+        let mut effects: Vec<Effect> = PRESETS.iter().filter_map(|p| Effect::preset(p)).collect();
+        effects.extend(Effect::bevel_presets(1));
+        effects.sort_by_key(Effect::rank);
+        shape.effects = effects.into_iter().map(LayerEffect::new).collect();
+        doc.layers.push(shape);
+        assert!(notes(&doc, Effects::Editable).is_empty());
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(back.layers.len(), 2, "effects stay on their layer");
+        let (a, b) = (&doc.layers[1].effects, &back.layers[1].effects);
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.effect.name(), b.effect.name());
+            assert_eq!(
+                (a.effect.blend, a.effect.paint.clone()),
+                (b.effect.blend, b.effect.paint.clone())
+            );
+            assert!((a.effect.opacity - b.effect.opacity).abs() < 1e-4);
+        }
+        let (x, y) = (doc.composite(), back.composite());
+        let worst = x.iter().zip(&y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
+        assert!(worst <= 1, "renders differ by {worst}");
+    }
+
+    #[test]
+    fn effects_photoshop_cannot_show_are_drawn_as_layers() {
+        use crate::layer_effects::{Effect, LayerEffect};
+        let mut doc = Document::new(32, 32);
+        paint(&mut doc.layers[0], 32, [8, 8, 24, 24], [0, 0, 0, 255]);
+        let mut glow = Effect::preset("Outer Glow").unwrap();
+        glow.blend = BlendMode::AddGlow;
+        doc.layers[0].effects = vec![LayerEffect::new(glow)];
+        assert_eq!(notes(&doc, Effects::Editable).len(), 1);
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert!(back.layers.len() > 1);
+        assert!(back.layers.iter().all(|l| l.effects.is_empty()));
+    }
+
+    #[test]
     fn csp_adjustments_are_written_as_close_photoshop_ones() {
         use crate::adjustment::{Adjustment, Settings};
         let bezier = Settings::Curves {
@@ -732,8 +854,9 @@ mod tests {
             layer.adjustment = Some(Adjustment::new(settings));
             doc.layers.push(layer);
         }
-        assert_eq!(notes(&doc).len(), 1);
-        let back = import(&encode(&doc, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(notes(&doc, Effects::Editable).len(), 1);
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
         let curve = back.layers[1].adjustment.clone().unwrap();
         assert!(matches!(
             curve.settings(),
