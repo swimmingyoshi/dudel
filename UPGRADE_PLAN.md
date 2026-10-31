@@ -210,7 +210,10 @@ PSD (`src/psd_import.rs`, new):
 - [ ] PSD export: editable effects (`lfx2` descriptors) instead of effect layers
 - [ ] PSD export: mask link state (not stored; masks reopen linked), PSB for
       files over 4 GB of layer data, 16-bit export
-- [ ] PSD export: owner check in Photoshop/Photopea, Krita and Live2D Cubism
+- [x] PSD export opens in Live2D Cubism Editor 5.2 (owner, 2026-10-31: Frieren
+      export and a v2 re-export). Cubism needs ResolutionInfo, cannot read
+      ZIP layer channels, and reads records bottom first; see FORMAT_SUPPORT.
+- [ ] PSD export: owner check in Photoshop/Photopea and Krita
 - [ ] Export speed: Frieren takes ~2.3 s (exact pixel bounds visit every
       painted pixel; composite on the export thread)
 

@@ -226,6 +226,15 @@ shows them. The file's resolution is the project's DPI. Opacity is stored in
 layers can change visibly from that alone. Export never replaces a file that is
 not already a PSD.
 
+Live2D Cubism Editor 5.2 opens these exports. It is stricter than Photoshop
+about three things, checked by the owner on 2026-10-31 with test copies that
+each changed one thing: it does not load a PSD without a resolution record
+(ResolutionInfo), it cannot read ZIP-compressed layers (uncompressed or RLE
+layers load), and it assumes layers are stored bottom first, so files written
+top first load with the stacking reversed. Dudel's export always writes the
+resolution, RLE and bottom-first order, and its import reads either order, so
+opening such a PSD in Dudel and exporting it again gives a file Cubism loads.
+
 ## Verification scope
 
 Regression tests cover container/tile validation, PSD raw/RLE/ZIP decoding,
