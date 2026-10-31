@@ -74,7 +74,8 @@ fn check(cancel: &impl Fn() -> bool) -> Result<(), String> {
 fn geometry([top, left, bottom, right]: [i32; 4]) -> Result<[usize; 2], String> {
     let w = i64::from(right) - i64::from(left);
     let h = i64::from(bottom) - i64::from(top);
-    if !(0..=16384).contains(&w) || !(0..=16384).contains(&h) || w * h > 67_108_864 {
+    let side = 0..=crate::document::MAX_SIDE as i64;
+    if !side.contains(&w) || !side.contains(&h) || w * h > crate::document::MAX_PIXELS as i64 {
         return Err("PSD layer dimensions exceed import limits".into());
     }
     Ok([w as usize, h as usize])

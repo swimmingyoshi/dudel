@@ -208,6 +208,137 @@ fn difference(rendered: &[u8], reference: &[u8]) -> Difference {
     result
 }
 
+/// Export a PSD, project or CSP file to PSD and open it again: whether every
+/// written layer comes back with its settings and pixels, and how both
+/// renders and the saved flattened image compare with the original.
+pub(crate) fn roundtrip_psd(
+    input: &std::path::Path,
+    psd: &std::path::Path,
+    output: Option<&std::path::Path>,
+) -> Result<(), String> {
+    let extension = input
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let doc = match extension.as_str() {
+        "psd" | "psb" => crate::psd_import::import(input, &|| false)?.document,
+        "dudel" => crate::storage::load_project(input)?,
+        _ => crate::clip_metadata::import_document(input, &|| false)?.document,
+    };
+    let notes = crate::psd_export::notes(&doc);
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    crate::psd_export::write(&doc, psd, &cancel)?;
+    let export_ms = started.elapsed().as_millis();
+    let back = crate::psd_import::import(psd, &|| false)?;
+    // What was written: effects drawn as layers, adjustment layers left out.
+    let mut written: Vec<_> = crate::layer_effects::expand(&doc, false, &|| false)?
+        .layers
+        .into_iter()
+        .filter(|l| l.adjustment.is_none())
+        .collect();
+    if written.is_empty() {
+        // The export's stand-in, since Photoshop needs a layer.
+        written.push(crate::document::Layer::raster(
+            "Layer 1".into(),
+            doc.width,
+            doc.height,
+        ));
+    }
+    let settings = |l: &crate::document::Layer| {
+        format!(
+            "{}{} {} {:.0}%{}{}{}{}",
+            if l.folder { "folder " } else { "" },
+            l.name,
+            l.blend.name(),
+            l.opacity * 100.0,
+            if l.clipped { " clipped" } else { "" },
+            if l.visible { "" } else { " hidden" },
+            if l.mask.is_some() { " masked" } else { "" },
+            format_args!(" depth {}", l.depth),
+        )
+    };
+    let mut mismatches = Vec::new();
+    if written.len() != back.document.layers.len() {
+        mismatches.push(format!(
+            "{} layers written, {} read back",
+            written.len(),
+            back.document.layers.len()
+        ));
+    }
+    for (a, b) in written.iter().zip(&back.document.layers) {
+        if settings(a) != settings(b) {
+            mismatches.push(format!("{} -> {}", settings(a), settings(b)));
+        } else if !a.folder
+            && a.pixels.region(doc.width, [0, 0, doc.width, doc.height])
+                != b.pixels.region(doc.width, [0, 0, doc.width, doc.height])
+        {
+            mismatches.push(format!("pixels differ: {}", a.name));
+        } else if let (Some(m), Some(n)) = (&a.mask, &b.mask)
+            && (m.enabled != n.enabled
+                || (0..doc.height)
+                    .any(|y| (0..doc.width).any(|x| m.coverage.at(x, y) != n.coverage.at(x, y))))
+        {
+            mismatches.push(format!("mask differs: {}", a.name));
+        }
+    }
+    let original = doc.composite_transparent();
+    let saved: Vec<u8> = {
+        let saved = crate::psd_import::saved_composite(psd)?.document;
+        (0..doc.width * doc.height)
+            .flat_map(|i| saved.layers[0].pixels.rgba(i))
+            .collect()
+    };
+    #[derive(serde::Serialize)]
+    struct Report {
+        canvas: [usize; 2],
+        bytes: u64,
+        export_ms: u128,
+        layers_written: usize,
+        export_notes: Vec<String>,
+        import_notes: Vec<String>,
+        mismatches: Vec<String>,
+        /// The reopened file's layers rendered by Dudel, against the original.
+        reopened: Difference,
+        /// The flattened image written into the file, against the original.
+        saved_composite: Difference,
+        /// A PSD keeps opacity in 1/255 steps, and CSP layers' rounding of
+        /// coverage to whole bytes is not written: the reopened render
+        /// against the original with opacity as the file holds it.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reopened_with_written_opacity: Option<Difference>,
+    }
+    let unrounded = doc
+        .layers
+        .iter()
+        .any(|l| l.csp_byte_opacity || (l.opacity * 255.0).fract() != 0.0)
+        .then(|| {
+            let mut plain = doc.clone();
+            for layer in &mut plain.layers {
+                layer.csp_byte_opacity = false;
+                layer.opacity = (layer.opacity * 255.0).round() / 255.0;
+            }
+            difference(
+                &back.document.composite_transparent(),
+                &plain.composite_transparent(),
+            )
+        });
+    let report = Report {
+        canvas: [doc.width, doc.height],
+        bytes: std::fs::metadata(psd).map_err(|e| e.to_string())?.len(),
+        export_ms,
+        layers_written: written.len(),
+        export_notes: notes,
+        import_notes: back.notes,
+        mismatches,
+        reopened: difference(&back.document.composite_transparent(), &original),
+        saved_composite: difference(&saved, &original),
+        reopened_with_written_opacity: unrounded,
+    };
+    crate::clip_container::write_report(&report, output)
+}
+
 impl crate::Dudel {
     pub(crate) fn import_report_ui(&mut self, ctx: &crate::egui::Context) {
         let report = &mut self.import_report;

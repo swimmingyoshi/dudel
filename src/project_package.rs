@@ -584,7 +584,7 @@ impl Dudel {
             self.status = format!("Package failed: {error}");
             return;
         }
-        self.export_snapshot_or_queue(path, false, true);
+        self.export_snapshot_or_queue(path, crate::export_jobs::ExportKind::Package);
     }
     /// Attach guides and references the way a save does, then write in the background.
     pub(crate) fn start_package_snapshot(&mut self, path: PathBuf, mut document: Document) {
@@ -593,9 +593,13 @@ impl Dudel {
         self.reference_layers.saved_positions(&self.doc);
         document.references = self.reference_layers.layers.clone();
         let name = self.project_name();
-        self.start_export_worker(path, document, true, move |document, path, cancel| {
-            write(document, &name, path, cancel)
-        });
+        self.start_export_worker(
+            path,
+            document,
+            crate::export_jobs::ExportKind::Package,
+            String::new(),
+            move |document, path, cancel| write(document, &name, path, cancel),
+        );
     }
     pub(crate) fn import_package(&mut self) {
         if self.package_import.is_some() {

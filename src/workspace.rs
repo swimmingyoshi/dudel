@@ -438,6 +438,9 @@ impl Dudel {
             if menu_item(ui, "Export transparent PNG…", "", true) {
                 self.export(true);
             }
+            if menu_item(ui, "Export Photoshop document (.psd)…", "", true) {
+                self.export_psd();
+            }
             if menu_item(ui, "Export project package (.zip)…", "", true) {
                 self.export_package();
             }

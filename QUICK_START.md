@@ -200,7 +200,10 @@ fence, the save may finish and report success. Canceling a save also cancels a
 waiting New/Open/Close action; the current artwork stays open.
 
 **File > Export PNG** flattens the image onto white paper. **File > Export
-transparent PNG** keeps composited transparency. Export creates an image copy;
+transparent PNG** keeps composited transparency. **File > Export Photoshop
+document (.psd)** keeps the layers, folders and masks for Photoshop, Live2D and
+other editors (layer effects become separate layers; adjustment layers are not
+written yet). Export creates a copy;
 continue saving the `.dudel` project for later editing. **File > Import > PNG as
 canvas** opens an image as a new document.
 

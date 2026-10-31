@@ -8,9 +8,8 @@ Any agent picking this up: read this first, update the checkboxes and the
 ## Base state
 
 - Released source: commit `67716b6` "Dudel 0.1.0", tag `v0.1.0` (master and linux).
-- All work is **committed locally, not pushed**: commits on top of
-  `origin/master` from `130f16f` (`git log --oneline origin/master..HEAD`),
-  including the independent review's fixes and its follow-ups. Pushing starts
+- Work through `0e0ea0f` (CSP text layers) is pushed to `origin/master`; later
+  commits are local (`git log --oneline origin/master..HEAD`). Pushing starts
   hosted CI; ask the owner first.
 - Local gates (see [TESTING.md](TESTING.md)): `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test`,
@@ -193,7 +192,27 @@ PSD (`src/psd_import.rs`, new):
       ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
 - [x] PSB, CMYK, 16-bit layered (2026-10-30: Lr16 layer lists, converted to
       8 bits; psd-tools 215 -> 223 and ag-psd 69 -> 70 layered, no regressions)
-- [ ] PSD export (none yet)
+- [x] PSD export, first version (2026-10-31, `src/psd_export.rs`): File >
+      Export Photoshop document (.psd), 8-bit RGB, background job through the
+      export queue. Layers and folders bottom first with dividers, Unicode
+      names (`luni`), blends, opacity, clipping, visibility, locks (`lspf`),
+      open/closed and pass-through folders (`lsct`), masks (canvas-relative
+      rect over the painted tiles, default color, disabled flag), glow modes as
+      dodge + `tsly` 0, effects via `layer_effects::expand` (Create Layers),
+      flattened image matted on white, resolution resource. Check with
+      `--roundtrip-psd INPUT OUT.psd [REPORT.json]`: Frieren (146 layers) and
+      all 30 private CSP files exact (apart from opacity steps); 366/366
+      importable public PSDs with no layer mismatches and exact flattened
+      images. psd-tools (independent) opens every file.
+- [ ] PSD export: adjustment layers (write `levl`/`curv`/`hue2`/… back; the
+      inverse of `adjustment::from_psd`; CSP-only HueSaturationLuminosity and
+      bezier curves need a mapping or a baked fallback)
+- [ ] PSD export: editable effects (`lfx2` descriptors) instead of effect layers
+- [ ] PSD export: mask link state (not stored; masks reopen linked), PSB for
+      files over 4 GB of layer data, 16-bit export
+- [ ] PSD export: owner check in Photoshop/Photopea, Krita and Live2D Cubism
+- [ ] Export speed: Frieren takes ~2.3 s (exact pixel bounds visit every
+      painted pixel; composite on the export thread)
 
 Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
@@ -325,7 +344,8 @@ Stage B - native layer effects:
       gradient editor beyond the two end colors and angle
 - [ ] Effect-layer memory is not yet counted in the memory panel
 - [ ] Manual check in the app with pen (owner)
-- [ ] PSD export writes them back (once PSD export exists)
+- [ ] PSD export writes them back as editable effects (they are written as
+      effect layers for now; see goal 5)
 
 ### 8. PSD adjustment layers (owner, 2026-10-29)
 
@@ -415,6 +435,16 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
 
+- 2026-10-31 (Claude, PSD export): first version, see goal 5. The importer's
+  per-layer limit was 64 MP and is now the canvas limit, so full-canvas layers
+  of 100 MP exports reopen. Findings: mask flag bit 0 is "position relative
+  to layer", not linking; Photoshop's flattened image is matted on white;
+  remaining corpus render differences are opacity in 1/255 steps (CSP layers
+  at e.g. 66%), which flips low-opacity Hard Mix pixels (one CSP file, up to
+  56 levels). Public sets and the psd-tools venv were in the session
+  scratchpad (re-clone; see FORMAT_SUPPORT verification). Gates pass (1,025
+  default / 1,034 all-feature tests). Next: write adjustment layers back.
+
 - 2026-10-29 (Claude, PSD masks + adjustment kinds): mask density/feather and
   grouped notes (5fdb500); six more adjustment kinds with PSD parsing and
   Adjustment window controls; blend-box wheel no longer scrolls the effects
@@ -471,8 +501,7 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   only when its mask shows everything and was never painted (meaning of the
   bit still unknown). Open: more samples for densities over 50%, other dot
   shapes, offset grids, and 600 dpi cells.
-
-- 2026-10-30 (Claude, hide/unhide speed): on 2d.clip (3840 x 3840, 26
+- 2026-10-30 (Claude, hide/unhide speed): on 2d.clip (3840 x 3840, 26
   layers) hiding a full-canvas layer took ~5 s to appear: the display
   recomposited every tile at full resolution and showed nothing until all
   were done. Now (1) masks count when deciding a layer shows nothing in a
@@ -487,8 +516,7 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   `toggle_latency` test (`DUDEL_TOGGLE_FILE`). Open: full-resolution views
   (zoomed in) still recomposite at ~40 ns per layer per pixel; the blend
   math would need vectorizing.
-
-- 2026-10-30 (Claude, CSP-TEST.clip from the owner): masks on raster layers
+- 2026-10-30 (Claude, CSP-TEST.clip from the owner): masks on raster layers
   (type 3 = raster with mask; the visibility 2 bit and LayerMasking 0/1
   accompany a mask, which CSP applies either way) import as Dudel masks;
   black and paper areas match the preview exactly. Millimetre canvases
@@ -499,7 +527,7 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   (155 vs CSP's 135 on the paper); a natural spline after a ~2.2 gamma
   gets within 1-2 levels, too few levels to confirm. Needs a gradient
   sample. Brightness/contrast and hue/saturation were at defaults.
-
+
 - 2026-10-30 (Claude, owner's correction and tone samples): correction
   layers (type 4098, SpecialRenderType 13, FilterLayerInfo) import as Dudel
   adjustment layers. Tone curve: 32 curves x (count + 32 u16 pairs), the
@@ -516,8 +544,7 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   at 77 of 98 pixels (squares 66). Both match the owner's 1000 px samples
   pixel for pixel. Half-size previews are no use for tones: CSP re-renders
   them anti-aliased at the preview's resolution.
-
-- 2026-10-30 (Claude, text layers): CSP does not save text pixels;
+- 2026-10-30 (Claude, text layers): CSP does not save text pixels;
   `src/clip_text.rs` reads TextLayerAttributes' little-endian records (0x1F
   font full name, 0x20 size 1/100 pt, 0x21 direction, 0x22 color 3 x u32
   (top byte), 0x23 alignment 0/1/2 = left/right/center, 0x2A box, 0x3A
@@ -531,7 +558,7 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   (centered, vertical turned) land within a pixel. Open: Card_Guisw's
   right-aligned line in a box shorter than the line is 3-4 px off; several
   styles in one layer still skip.
-
+
 - 2026-10-31 (Claude, CardBase): its hidden "Layer 1 Copy" carries
   LayerMasking 1 with no mask; the bit does not turn masks off (CSP-TEST),
   so without a mask it is now accepted. CardBase imports with every layer,

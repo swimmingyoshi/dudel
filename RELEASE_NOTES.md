@@ -27,6 +27,12 @@ the package has been uploaded to a public store.
   version to open.
 - New blend modes: Dissolve, Color dodge (glow), Add (glow), and Pass through for
   folders. CSP and PSD imports map them.
+- PSD export: File > Export Photoshop document (.psd) writes every layer and
+  folder with names, blend modes (glow modes included), opacity, clipping,
+  visibility, locks and masks, plus the flattened image. Layer effects become
+  separate layers, like Photoshop's Create Layers. Adjustment layers are not
+  written yet; the status line names them.
+- PSD import accepts layers up to the full canvas limit (100 megapixels), not 64.
 - PSD import reads each file's own layer order. Some writers list layers top
   first; groups decide it, and flat files are checked against the saved image.
 - Layer effects: **fx** in the layer properties adds editable drop and inner

@@ -228,6 +228,24 @@ impl Mask {
     pub(crate) fn dimensions(&self) -> [usize; 2] {
         self.0.dimensions
     }
+    /// Coverage wherever no tile was painted.
+    pub(crate) fn default_value(&self) -> u8 {
+        self.0.default
+    }
+    /// Bounds of the painted tiles; outside them every byte is the default.
+    pub(crate) fn painted_bounds(&self) -> Option<[usize; 4]> {
+        (0..self.0.tiles.len())
+            .filter(|&index| self.0.tiles[index].is_some())
+            .map(|index| self.0.rect(index))
+            .reduce(|a, b| {
+                [
+                    a[0].min(b[0]),
+                    a[1].min(b[1]),
+                    a[2].max(b[2]),
+                    a[3].max(b[3]),
+                ]
+            })
+    }
     pub(crate) fn payload_bytes(&self) -> usize {
         self.0.tiles.iter().flatten().map(|tile| tile.len()).sum()
     }

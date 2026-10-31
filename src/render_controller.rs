@@ -902,10 +902,8 @@ impl Dudel {
                 let export = self.queued_export.take().unwrap();
                 if export.canceled {
                     self.status = "Export canceled".into();
-                } else if export.package {
-                    self.start_package_snapshot(export.path, snapshot);
                 } else {
-                    self.start_export_snapshot(export.path, export.transparent, snapshot);
+                    self.start_export_snapshot(export.path, export.kind, snapshot);
                 }
             } else {
                 self.status = "Unrecognized rendering snapshot ticket".into();

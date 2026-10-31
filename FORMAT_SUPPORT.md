@@ -1,6 +1,7 @@
 # File format support
 
-Use `.dudel` for editable projects and PNG for sharing flattened artwork.
+Use `.dudel` for editable projects, PNG for sharing flattened artwork and PSD
+for taking layers to Photoshop, Live2D and other editors.
 This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISION.md).
 
 | Format | Open/import | Save/export | What is retained |
@@ -11,7 +12,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | No | 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features |
+| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, effects as layers and the flattened image; adjustment layers not yet written |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -205,8 +206,25 @@ a usable compatibility composite cannot fall back when layer conversion fails;
 save it with Maximize Compatibility enabled in the source editor.
 
 The reader follows [Adobe's PSD specification](https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/).
-Neither format has an export writer. Failed, canceled and stale background loads
-preserve current artwork.
+Failed, canceled and stale background loads preserve current artwork.
+
+### Photoshop export
+
+**File > Export Photoshop document (.psd)** writes an 8-bit RGB PSD with every
+layer and folder bottom first, as Photoshop does: names (Unicode), blend modes,
+opacity, clipping, visibility, transparency and pixel locks, open or closed
+folders (pass-through included), and layer masks (disabled ones stay disabled).
+Each layer stores only its painted area, RLE-compressed, with color kept under
+transparent pixels. Color dodge (glow) and Add (glow) are written as Photoshop's
+Color Dodge and Linear Dodge with Transparency Shapes off, which blend the same
+way. Layer effects are written as the layers they draw, like Photoshop's Create
+Layers, so the file looks right but the effects are no longer editable.
+Adjustment layers are not written yet; the status line names them, and the
+flattened image (stored blended against white, as Photoshop stores it) still
+shows them. The file's resolution is the project's DPI. Opacity is stored in
+1/255 steps, so a CSP layer at 66% comes back at 168/255; low-opacity Hard Mix
+layers can change visibly from that alone. Export never replaces a file that is
+not already a PSD.
 
 ## Verification scope
 
@@ -221,6 +239,19 @@ file's saved composite (`saved_composite`: exact, differing and mean difference;
 layer effects and adjustment layers are included, as they are in exports)
 and lists the imported stack (`stack`). With `DUDEL_VERIFY_IMAGES` set, the
 rendering, the saved image and each layer are also written as PNGs next to the report.
+`--roundtrip-psd INPUT OUTPUT.psd [NEW_REPORT.json]` exports a PSD, PSB, CSP or
+Dudel file to PSD and opens the result again: it lists any layer whose settings,
+pixels or mask came back different (`mismatches`), and compares the reopened
+render and the saved flattened image with the original (`reopened`,
+`saved_composite`; `reopened_with_written_opacity` allows for opacity steps).
+On 2026-10-31 a 146-layer VTuber model, a private 30-file CSP corpus and the 366
+public Photoshop-saved files (ag-psd and psd-tools, MIT) that Dudel imports came
+back with no mismatches and an exact flattened image. Renders were exact apart
+from opacity steps, except files with adjustment layers. The independent
+psd-tools reader opened every exported file, and its own render of the layers
+matched the flattened image to within 2 levels, except where it differs from
+Photoshop (glow modes).
+
 A PSD converted from a 2000 × 2000 CSP sample with two folders and Subtract
 layers imported with all 15 entries; 89% of pixels matched exactly, with a mean
 channel difference of 1.2, and the differences lie along anti-aliased line art.

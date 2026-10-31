@@ -1,4 +1,5 @@
-//! Ordered, snapshot-based PNG export. Export never changes project save state.
+//! Ordered, snapshot-based PNG, PSD and package export. Export never changes
+//! project save state.
 use crate::{Dudel, document::Document, egui, snapshot_memory::SourceWorker};
 use std::{
     io::Read,
@@ -9,12 +10,28 @@ use std::{
     },
 };
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum ExportKind {
+    Png {
+        transparent: bool,
+    },
+    Psd,
+    /// A .zip project package.
+    Package,
+}
+impl ExportKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Png { .. } => "PNG",
+            Self::Psd => "PSD",
+            Self::Package => "Project package",
+        }
+    }
+}
 pub(crate) struct QueuedExport {
     pub ticket: u64,
     pub path: PathBuf,
-    pub transparent: bool,
-    /// A .zip project package rather than a PNG.
-    pub package: bool,
+    pub kind: ExportKind,
     pub canceled: bool,
 }
 pub(crate) struct ExportJob {
@@ -23,6 +40,8 @@ pub(crate) struct ExportJob {
     cancel: Arc<AtomicBool>,
     raster_bytes: usize,
     label: &'static str,
+    /// What the export left out or changed, shown when it finishes.
+    note: String,
 }
 impl ExportJob {
     pub(crate) fn register_allocations(&self, registry: &mut crate::snapshot_memory::Registry) {
@@ -36,20 +55,28 @@ impl ExportJob {
 }
 
 fn destination(path: &Path) -> Result<(), String> {
+    destination_of(path, "png", b"\x89PNG\r\n\x1a\n", "PNG")
+}
+fn psd_destination(path: &Path) -> Result<(), String> {
+    destination_of(path, "psd", b"8BPS", "PSD")
+}
+fn destination_of(path: &Path, extension: &str, magic: &[u8], kind: &str) -> Result<(), String> {
     if !path
         .extension()
         .and_then(|s| s.to_str())
-        .is_some_and(|s| s.eq_ignore_ascii_case("png"))
+        .is_some_and(|s| s.eq_ignore_ascii_case(extension))
     {
-        return Err("Choose a .png filename for image export".into());
+        return Err(format!("Choose a .{extension} filename for {kind} export"));
     }
     match std::fs::File::open(path) {
         Ok(mut file) => {
             // A renamed project/source must never be destroyed by image export.
             if file.metadata().map_err(|e| e.to_string())?.len() != 0 {
-                let mut signature = [0; 8];
-                if file.read_exact(&mut signature).is_err() || signature != *b"\x89PNG\r\n\x1a\n" {
-                    return Err("Export destination is not a PNG; choose a new filename".into());
+                let mut signature = vec![0; magic.len()];
+                if file.read_exact(&mut signature).is_err() || signature != magic {
+                    return Err(format!(
+                        "Export destination is not a {kind}; choose a new filename"
+                    ));
                 }
             }
         }
@@ -114,15 +141,17 @@ impl Dudel {
             self.status = format!("Export failed: {error}");
             return;
         }
-        self.export_snapshot_or_queue(path, transparent, false);
+        self.export_snapshot_or_queue(path, ExportKind::Png { transparent });
+    }
+    pub(crate) fn export_psd_to(&mut self, path: PathBuf) {
+        if let Err(error) = psd_destination(&path) {
+            self.status = format!("Export failed: {error}");
+            return;
+        }
+        self.export_snapshot_or_queue(path, ExportKind::Psd);
     }
     /// Export now, or after the strokes ahead of it finish rendering.
-    pub(crate) fn export_snapshot_or_queue(
-        &mut self,
-        path: PathBuf,
-        transparent: bool,
-        package: bool,
-    ) {
+    pub(crate) fn export_snapshot_or_queue(&mut self, path: PathBuf, kind: ExportKind) {
         if self.adjustment.is_some() {
             self.status = "Apply or cancel the adjustment before exporting".into();
             return;
@@ -139,53 +168,72 @@ impl Dudel {
                     self.queued_export = Some(QueuedExport {
                         ticket,
                         path,
-                        transparent,
-                        package,
+                        kind,
                         canceled: false,
                     });
                     self.status = "Export queued after preceding artwork".into();
                 }
                 Err(error) => self.status = format!("Export could not be queued: {error}"),
             }
-        } else if package {
-            self.start_package_snapshot(path, self.doc.clone());
         } else {
-            self.start_export_snapshot(path, transparent, self.doc.clone());
+            self.start_export_snapshot(path, kind, self.doc.clone());
         }
     }
 
     pub(crate) fn start_export_snapshot(
         &mut self,
         path: PathBuf,
-        transparent: bool,
+        kind: ExportKind,
         document: Document,
     ) {
-        self.start_export_worker(path, document, false, move |document, path, cancel| {
-            write_png(document, path, transparent, cancel)
-        });
+        match kind {
+            ExportKind::Package => self.start_package_snapshot(path, document),
+            ExportKind::Psd => {
+                let note = crate::psd_export::notes(&document).join(" ");
+                self.start_export_worker(path, document, kind, note, |document, path, cancel| {
+                    psd_destination(path)?;
+                    crate::psd_export::write(document, path, cancel)
+                });
+            }
+            ExportKind::Png { transparent } => self.start_export_worker(
+                path,
+                document,
+                kind,
+                String::new(),
+                move |document, path, cancel| write_png(document, path, transparent, cancel),
+            ),
+        }
     }
     pub(crate) fn start_export_worker(
         &mut self,
         path: PathBuf,
         document: Document,
-        package: bool,
+        kind: ExportKind,
+        note: String,
         write: impl FnOnce(&Document, &Path, &AtomicBool) -> Result<(), String> + Send + 'static,
     ) {
-        // A package also holds one PNG per layer while it encodes.
-        let raster_bytes = document.width * document.height * 4 * if package { 2 } else { 1 };
+        // A package also holds one PNG per layer while it encodes, and a PSD
+        // its whole file beside the flattened image.
+        let copies = if matches!(kind, ExportKind::Png { .. }) {
+            1
+        } else {
+            2
+        };
+        let raster_bytes = document.width * document.height * 4 * copies;
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let worker_path = path.clone();
         let worker = SourceWorker::spawn(document, move |document| {
             write(&document, &worker_path, &worker_cancel)
         });
-        let label = if package { "Project package" } else { "PNG" };
+        let label = kind.label();
         self.export_job = Some(ExportJob {
             worker,
             path,
             cancel,
             raster_bytes,
             label,
+            note,
         });
         self.status = format!("Exporting {label} in background…");
     }
@@ -209,7 +257,10 @@ impl Dudel {
             let job = self.export_job.take().unwrap();
             let label = job.label;
             self.status = match job.worker.join() {
-                Ok(Ok(())) => format!("{label} exported: {}", job.path.display()),
+                Ok(Ok(())) if job.note.is_empty() => {
+                    format!("{label} exported: {}", job.path.display())
+                }
+                Ok(Ok(())) => format!("{label} exported: {}. {}", job.path.display(), job.note),
                 Ok(Err(_)) if job.cancel.load(Ordering::Relaxed) => {
                     format!("{label} export canceled")
                 }
@@ -414,6 +465,21 @@ mod tests {
         assert!(!path.exists());
         assert!(!app.status.contains("Unrecognized"));
 
+        // PSD export goes through the same queue and never replaces a file
+        // that is not a PSD.
+        let psd = dir.path().join("painting.psd");
+        let (mut app, expected) = queued_taper();
+        std::fs::write(&psd, b"not a psd").unwrap();
+        app.export_psd_to(psd.clone());
+        assert!(app.status.contains("not a PSD"), "{}", app.status);
+        std::fs::remove_file(&psd).unwrap();
+        app.export_psd_to(psd.clone());
+        assert!(app.queued_export.is_some());
+        finish_export(&mut app);
+        assert!(app.status.starts_with("PSD exported"), "{}", app.status);
+        let back = crate::psd_import::import(&psd, &|| false).unwrap().document;
+        assert_eq!(back.composite(), expected.composite());
+
         // A controlled live worker establishes that close waits rather than
         // detaching an in-flight export at application shutdown.
         let (send, receive) = std::sync::mpsc::channel();
@@ -426,6 +492,7 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             raster_bytes: 0,
             label: "PNG",
+            note: String::new(),
         });
         app.close_ready = true;
         let ctx = egui::Context::default();

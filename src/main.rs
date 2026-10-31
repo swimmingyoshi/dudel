@@ -103,6 +103,7 @@ mod move_preview;
 mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
+mod psd_export;
 mod psd_import;
 mod psd_vector;
 #[cfg(target_os = "linux")]
@@ -870,6 +871,28 @@ impl Dudel {
         );
         self.ask_save_file(dialog, move |app, path| app.export_to(path, transparent));
     }
+    fn export_psd(&mut self) {
+        if self.adjustment.is_some() {
+            self.status = "Apply or cancel the adjustment before exporting".into();
+            return;
+        }
+        if self.export_job.is_some() || self.queued_export.is_some() {
+            self.status = "An export is already running".into();
+            return;
+        }
+        let name = self
+            .path
+            .as_deref()
+            .and_then(|p| p.file_stem())
+            .map_or("Painting".into(), |s| s.to_string_lossy().into_owned());
+        let dialog = self.dialog_in(
+            locations::Kind::Exports,
+            rfd::AsyncFileDialog::new()
+                .add_filter("Photoshop document", &["psd"])
+                .set_file_name(format!("{name}.psd")),
+        );
+        self.ask_save_file(dialog, Self::export_psd_to);
+    }
     fn import_png(&mut self) {
         let dialog = rfd::AsyncFileDialog::new().add_filter("PNG image", &["png"]);
         self.ask_open_file(dialog, |app, path| {
@@ -1288,6 +1311,24 @@ fn main() -> eframe::Result {
         }
         if let Err(error) = clip_metadata::compare_export(&input, &reference, report.as_deref()) {
             eprintln!("Clip export comparison: {error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    if mode.as_deref() == Some("--roundtrip-psd") {
+        let usage = "Usage: --roundtrip-psd INPUT OUTPUT.psd [NEW_REPORT.json]";
+        let (Some(input), Some(psd)) = (args.next(), args.next()) else {
+            eprintln!("{usage}");
+            std::process::exit(1);
+        };
+        let report = args.next().map(PathBuf::from);
+        if args.next().is_some() {
+            eprintln!("{usage}");
+            std::process::exit(1);
+        }
+        let (input, psd) = (PathBuf::from(input), PathBuf::from(psd));
+        if let Err(error) = import_report::roundtrip_psd(&input, &psd, report.as_deref()) {
+            eprintln!("PSD round trip: {error}");
             std::process::exit(1);
         }
         return Ok(());
