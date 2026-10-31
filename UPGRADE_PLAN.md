@@ -519,14 +519,18 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 - 2026-10-30 (Claude, text layers): CSP does not save text pixels;
   `src/clip_text.rs` reads TextLayerAttributes' little-endian records (0x1F
-  font full name, 0x20 size 1/100 pt, 0x21 direction, 0x22 color 3 x u32,
-  0x23 alignment, 0x2A box, 0x40 laid-out quad in 1/100 px) and draws the
-  line with ab_glyph and the named system font (names in any language), no
-  kerning, baseline one descent in from the line box's far side, vertical
-  Latin turned counter-clockwise. CSP-TEST: horizontal 1.4, vertical 2.2
-  levels off (vertical best 2 px right). Card_Guisw's right-aligned white
-  bold 12 pt line (box shorter than the line, older file without 0x4A) is
-  3 px right and 4 px low: open. Several lines/styles still skip.
+  font full name, 0x20 size 1/100 pt, 0x21 direction, 0x22 color 3 x u32
+  (top byte), 0x23 alignment 0/1/2 = left/right/center, 0x2A box, 0x3A
+  rotation 1800 upright / 0 half turn, 0x40 laid-out quad in 1/100 px from
+  the box's top-left (horizontal) or top-right (vertical), opposite corner
+  when turned) and draws with ab_glyph and the named system font: no
+  kerning, words wrap to the box, lines share the quad's thickness;
+  horizontal baseline one descent above the line bottom, vertical baseline
+  0.88 em from the line top, vertical Latin turned clockwise. FONT TEST
+  (wrapped left-aligned, right-aligned, vertical; green) and CSP-TEST
+  (centered, vertical turned) land within a pixel. Open: Card_Guisw's
+  right-aligned line in a box shorter than the line is 3-4 px off; several
+  styles in one layer still skip.
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.

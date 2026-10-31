@@ -1,23 +1,27 @@
 //! CSP text layers. CSP saves a text layer's words and layout but not its
-//! pixels, so Dudel draws the line itself with the same system font.
+//! pixels, so Dudel draws the text itself with the same system font.
 //!
 //! `TextLayerAttributes` holds a few sections of character runs and then a
 //! run of little-endian (tag, byte length, data) records: 0x1F the font's
 //! full name, 0x20 its size in 1/100 pt, 0x21 the direction (16 vertical),
-//! 0x22 the color (three 32-bit channels), 0x23 the alignment, 0x2A the
-//! text box (left, top, right, bottom) and 0x40
-//! the laid-out line as four corners in 1/100 px, from the box's top-left
-//! (horizontal) or bottom-left (vertical). The baseline sits one descent in
-//! from the line box's far side. Vertical Latin text is turned a quarter
-//! counter-clockwise and reads upward. CSP does not kern. Checked against
-//! CSP's saved previews at 600 dpi: the owner's centered black Tahoma 18.7
-//! pt lines land within a pixel or two (about 1.4 and 2.2 levels off on
-//! average); a right-aligned white Tahoma Bold 12 pt line, whose box is
-//! shorter than the line, lands 3 px right of and 4 px below CSP's.
+//! 0x22 the color (three 32-bit channels), 0x23 the alignment (0 left, 1
+//! right, 2 centered), 0x2A the text box (left, top, right, bottom), 0x3A
+//! the rotation (1800 upright, 0 turned half a turn) and 0x40 the laid-out
+//! text as four corners in 1/100 px from the box corner the text starts at:
+//! top-left for horizontal text, top-right for vertical (the corner
+//! opposite when turned). Lines wrap at spaces to the box and share the
+//! laid-out thickness (one font line each across horizontal text, an em or
+//! so across vertical). Horizontal baselines sit one descent above each
+//! line's bottom; vertical ones sit 0.88 em from the line's top, where
+//! vertical layout puts the baseline of turned Latin text. Lines
+//! are aligned within the laid-out width. Vertical Latin text reads
+//! downward, turned a quarter clockwise. CSP does not kern. Checked against
+//! CSP's saved previews at 600 dpi: horizontal, vertical, turned, wrapped,
+//! left-, right- and center-aligned Tahoma lines.
 use crate::pixels::Pixels;
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
-/// One line of text as CSP laid it out.
+/// A text layer as CSP laid it out.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Text {
     pub(crate) string: String,
@@ -25,20 +29,25 @@ pub(crate) struct Text {
     pub(crate) font: String,
     /// Points.
     pub(crate) size: f64,
-    pub(crate) vertical: bool,
     pub(crate) color: [u8; 3],
-    /// Where the line starts: the line box's left and top edges for
-    /// horizontal text, its left edge and the text's lower end for
-    /// vertical text (canvas pixels).
-    pub(crate) origin: [f64; 2],
-    /// The line box's thickness across the text (pixels).
+    pub(crate) vertical: bool,
+    /// 0 left, 1 right, 2 centered.
+    pub(crate) align: u32,
+    /// Canvas pixels: where the first line's start and top meet, the unit
+    /// vectors along the lines and down across them, the laid-out length
+    /// of the longest line, the thickness of all lines together and the
+    /// room lines wrap to.
+    pub(crate) start: [f64; 2],
+    pub(crate) along: [f64; 2],
+    pub(crate) down: [f64; 2],
+    pub(crate) span: f64,
     pub(crate) thickness: f64,
+    pub(crate) wrap: f64,
 }
 
 /// Records that must hold the values of the checked samples (one style
 /// with default spacing and anti-aliasing); other values keep the layer
-/// skipped until a sample shows what they do. Alignment needs no check: the
-/// laid-out line already sits where it puts it.
+/// skipped until a sample shows what they do.
 const PLAIN: [(u32, &[u8]); 17] = [
     (0x25, &[0; 4]),
     (0x26, &[2, 0, 0, 0]),
@@ -59,13 +68,14 @@ const PLAIN: [(u32, &[u8]); 17] = [
     (0x49, &[1, 0, 0, 0]),
 ];
 
-/// The line a text layer shows, or why Dudel cannot draw it yet.
+/// The text a layer shows, or why Dudel cannot draw it yet.
 pub(crate) fn parse(string: &[u8], attributes: &[u8]) -> Result<Text, String> {
     let string = std::str::from_utf8(string)
         .map_err(|_| "damaged text")?
-        .to_owned();
-    if string.is_empty() || string.contains(['\r', '\n']) {
-        return Err("text with several lines Dudel does not draw yet".into());
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    if string.trim().is_empty() {
+        return Err("empty text".into());
     }
     // The records start at the font name; one style writes each once.
     let start = attributes
@@ -105,36 +115,74 @@ pub(crate) fn parse(string: &[u8], attributes: &[u8]) -> Result<Text, String> {
         .to_owned();
     let size = f64::from(int(0x20, 0)?) / 100.0;
     let color = [int(0x22, 0)?, int(0x22, 1)?, int(0x22, 2)?].map(|v| (v as u32 >> 24) as u8);
+    let align = u32::try_from(int(0x23, 0)?)
+        .ok()
+        .filter(|a| *a <= 2)
+        .ok_or("text alignment Dudel does not draw yet")?;
     let vertical = match int(0x21, 0)? {
         0 => false,
         16 => true,
         _ => return Err("text direction Dudel does not draw yet".into()),
     };
-    let (left, top, bottom) = (int(0x2A, 0)?, int(0x2A, 1)?, int(0x2A, 3)?);
-    let mut span = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
+    let turned = match int(0x3A, 0)? {
+        1800 => false,
+        0 => true,
+        _ => return Err("rotated text Dudel does not draw yet".into()),
+    };
+    let [left, top, right, bottom] = [0, 1, 2, 3].map(|i| int(0x2A, i).map(f64::from));
+    let (left, top, right, bottom) = (left?, top?, right?, bottom?);
+    // Upright, horizontal lines run right and stack down; vertical ones run
+    // down and stack leftward. Turned text runs the other way from the
+    // opposite corner.
+    let (mut along, mut down, mut origin) = if vertical {
+        ([0.0, 1.0], [-1.0, 0.0], [right, top])
+    } else {
+        ([1.0, 0.0], [0.0, 1.0], [left, top])
+    };
+    if turned {
+        along = along.map(|v: f64| -v);
+        down = down.map(|v: f64| -v);
+        origin = if vertical {
+            [left, bottom]
+        } else {
+            [right, bottom]
+        };
+    }
+    let dot = |a: [f64; 2], b: [f64; 2]| a[0] * b[0] + a[1] * b[1];
+    let mut extent = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
     for corner in 0..4 {
-        for (axis, range) in span.iter_mut().enumerate() {
-            let v = f64::from(int(0x40, corner * 2 + axis)?) / 100.0;
+        let point = [
+            f64::from(int(0x40, corner * 2)?) / 100.0,
+            f64::from(int(0x40, corner * 2 + 1)?) / 100.0,
+        ];
+        for (range, axis) in extent.iter_mut().zip([along, down]) {
+            let v = dot(point, axis);
             *range = [range[0].min(v), range[1].max(v)];
         }
     }
-    let [[x0, x1], [y0, y1]] = span;
-    let (origin, thickness) = if vertical {
-        ([f64::from(left) + x0, f64::from(bottom) + y1], x1 - x0)
-    } else {
-        ([f64::from(left) + x0, f64::from(top) + y0], y1 - y0)
-    };
-    if !(size > 0.0 && size < 10_000.0 && thickness > 0.0 && origin.iter().all(|v| v.is_finite())) {
+    let [[a0, a1], [d0, d1]] = extent;
+    let start = [
+        origin[0] + along[0] * a0 + down[0] * d0,
+        origin[1] + along[1] * a0 + down[1] * d0,
+    ];
+    let wrap = if vertical { bottom - top } else { right - left };
+    if !(size > 0.0 && size < 10_000.0 && a1 > a0 && d1 > d0 && start.iter().all(|v| v.is_finite()))
+    {
         return Err("damaged text attributes".into());
     }
     Ok(Text {
         string,
         font,
         size,
-        vertical,
         color,
-        origin,
-        thickness,
+        vertical,
+        align,
+        start,
+        along,
+        down,
+        span: a1 - a0,
+        thickness: d1 - d0,
+        wrap: wrap.max(a1 - a0),
     })
 }
 
@@ -235,45 +283,65 @@ pub(crate) fn render(
     let units = font.units_per_em().ok_or("Unusable font")?;
     let scale = PxScale::from(em * (font.ascent_unscaled() - font.descent_unscaled()) / units);
     let scaled = font.as_scaled(scale);
-    // Along the line: pen position; across: distance below the line box's
-    // near edge, with the baseline one descent in from its far side.
-    let baseline = text.thickness as f32 + scaled.descent();
-    let mut coverage = vec![0f32; width * height];
-    // CSP's line widths match the plain advances: no kerning.
-    let mut pen = 0.0f32;
-    for c in text.string.chars() {
-        if cancelled() {
-            return Err("Text drawing canceled".into());
-        }
-        let id = scaled.glyph_id(c);
-        let glyph = id.with_scale_and_position(scale, point(pen, baseline));
-        pen += scaled.h_advance(id);
-        let Some(outline) = font.outline_glyph(glyph) else {
-            continue;
-        };
-        let bounds = outline.px_bounds();
-        outline.draw(|gx, gy, value| {
-            // Line coordinates of this pixel's corner.
-            let (along, across) = (bounds.min.x + gx as f32, bounds.min.y + gy as f32);
-            let [x, y] = if text.vertical {
-                // A quarter turn counter-clockwise: the line runs upward and
-                // its top faces left.
-                [
-                    text.origin[0] + f64::from(across),
-                    text.origin[1] - f64::from(along) - 1.0,
-                ]
+    let advance = |s: &str| -> f32 {
+        s.chars()
+            .map(|c| scaled.h_advance(scaled.glyph_id(c)))
+            .sum()
+    };
+    // Lines wrap at spaces to the box; trailing spaces never wrap.
+    let mut lines = Vec::new();
+    for paragraph in text.string.split('\n') {
+        let mut line = String::new();
+        for word in paragraph.split_inclusive(' ') {
+            let candidate = format!("{line}{word}");
+            if !line.is_empty() && f64::from(advance(candidate.trim_end())) > text.wrap {
+                lines.push(std::mem::take(&mut line));
+                line = word.to_owned();
             } else {
-                [
-                    text.origin[0] + f64::from(along),
-                    text.origin[1] + f64::from(across),
-                ]
-            };
-            let (x, y) = (x.round(), y.round());
-            if x >= 0.0 && y >= 0.0 && (x as usize) < width && (y as usize) < height {
-                let cell = &mut coverage[y as usize * width + x as usize];
-                *cell = (*cell + value).min(1.0);
+                line = candidate;
             }
-        });
+        }
+        lines.push(line);
+    }
+    let line_height = (text.thickness / lines.len() as f64) as f32;
+    let mut coverage = vec![0f32; width * height];
+    for (index, line) in lines.iter().enumerate() {
+        let used = f64::from(advance(line.trim_end()));
+        let offset = match text.align {
+            1 => text.span - used,
+            2 => (text.span - used) / 2.0,
+            _ => 0.0,
+        } as f32;
+        let top = line_height * index as f32;
+        let baseline = if text.vertical {
+            top + 0.88 * em
+        } else {
+            top + line_height + scaled.descent()
+        };
+        let mut pen = offset;
+        for c in line.chars() {
+            if cancelled() {
+                return Err("Text drawing canceled".into());
+            }
+            let id = scaled.glyph_id(c);
+            let glyph = id.with_scale_and_position(scale, point(pen, baseline));
+            pen += scaled.h_advance(id);
+            let Some(outline) = font.outline_glyph(glyph) else {
+                continue;
+            };
+            let bounds = outline.px_bounds();
+            outline.draw(|gx, gy, value| {
+                // The middle of this pixel along and across the text.
+                let a = f64::from(bounds.min.x + gx as f32) + 0.5;
+                let d = f64::from(bounds.min.y + gy as f32) + 0.5;
+                let x = (text.start[0] + text.along[0] * a + text.down[0] * d).floor();
+                let y = (text.start[1] + text.along[1] * a + text.down[1] * d).floor();
+                if x >= 0.0 && y >= 0.0 && (x as usize) < width && (y as usize) < height {
+                    let cell = &mut coverage[y as usize * width + x as usize];
+                    *cell = (*cell + value).min(1.0);
+                }
+            });
+        }
     }
     let mut pixels = Pixels::sparse(width, height);
     let mut writer = pixels.writer();
@@ -298,8 +366,9 @@ pub(crate) fn render(
 mod tests {
     use super::*;
 
-    /// The owner's horizontal sample's records after the font name.
-    fn attributes(direction: u32, color: u32) -> Vec<u8> {
+    /// Text records after the font name: direction, alignment, rotation,
+    /// box and laid-out corners.
+    fn attributes(direction: u32, align: u32, rotation: u32, corners: [i32; 8]) -> Vec<u8> {
         let mut out = vec![0; 8];
         let mut record = |tag: u32, data: &[u8]| {
             out.extend(tag.to_le_bytes());
@@ -307,40 +376,51 @@ mod tests {
             out.extend(data);
         };
         record(0x1F, b"Tahoma Regular");
-        record(0x20, &1870u32.to_le_bytes());
+        record(0x20, &1500u32.to_le_bytes());
         record(0x21, &direction.to_le_bytes());
-        record(0x22, &[color.to_le_bytes(), [0; 4], [0; 4]].concat());
-        record(0x23, &2u32.to_le_bytes());
+        record(
+            0x22,
+            &[0x357B_357Bu32, u32::MAX, 0].map(u32::to_le_bytes).concat(),
+        );
+        record(0x23, &align.to_le_bytes());
         for (tag, value) in PLAIN {
             record(tag, value);
         }
         record(
             0x2A,
-            &[178i32, 36, 1866, 246].map(i32::to_le_bytes).concat(),
+            &[797i32, 552, 956, 971].map(i32::to_le_bytes).concat(),
         );
-        let corners = [11000i32, 0, 157800, 0, 157800, 18800, 11000, 18800];
+        record(0x3A, &rotation.to_le_bytes());
         record(0x40, &corners.map(i32::to_le_bytes).concat());
         out
     }
 
     #[test]
-    fn plain_single_lines_parse_and_others_wait_for_samples() {
-        let text = parse(b"Text Layer Horizontal", &attributes(0, 0)).unwrap();
-        assert_eq!(text.font, "Tahoma Regular");
-        assert_eq!((text.size, text.vertical), (18.7, false));
-        assert_eq!((text.origin, text.thickness), ([288.0, 36.0], 188.0));
-        assert!(parse(b"Two\nlines", &attributes(0, 0)).is_err());
-        // Colors are 32-bit channels; Dudel keeps their top byte.
+    fn layout_follows_direction_rotation_and_alignment() {
+        // The owner's vertical sample: down from the box's top-right.
+        let vertical = [-12500, 0, 0, 0, 0, 40800, -12500, 40800];
+        let text = parse(b"Vertical", &attributes(16, 0, 1800, vertical)).unwrap();
+        assert_eq!(text.color, [53, 255, 0]);
         assert_eq!(
-            parse(b"Red", &attributes(0, u32::MAX)).unwrap().color,
-            [255, 0, 0]
+            (text.start, text.along, text.down),
+            ([956.0, 552.0], [0.0, 1.0], [-1.0, 0.0])
         );
-        assert!(parse(b"Sideways", &attributes(32, 0)).is_err());
-        let vertical = parse(b"Up", &attributes(16, 0)).unwrap();
-        // From the bottom of the box (246) plus the line's lower end (188).
+        assert_eq!((text.span, text.wrap), (408.0, 419.0));
+        // Turned half a turn: up from the bottom-left.
+        let turned = [12500, 0, 0, 0, 0, -40800, 12500, -40800];
+        let text = parse(b"Up", &attributes(16, 2, 0, turned)).unwrap();
         assert_eq!(
-            (vertical.origin, vertical.thickness),
-            ([288.0, 434.0], 1468.0)
+            (text.start, text.along, text.down),
+            ([797.0, 971.0], [0.0, -1.0], [1.0, 0.0])
         );
+        let flat = [1800, 0, 70800, 0, 70800, 15100, 1800, 15100];
+        let text = parse(b"one\r\ntwo", &attributes(0, 1, 1800, flat)).unwrap();
+        assert_eq!(
+            (text.string.as_str(), text.start, text.span),
+            ("one\ntwo", [815.0, 552.0], 690.0)
+        );
+        assert!(parse(b"x", &attributes(0, 3, 1800, flat)).is_err());
+        assert!(parse(b"x", &attributes(0, 0, 900, flat)).is_err());
+        assert!(parse(b"x", &attributes(32, 0, 1800, flat)).is_err());
     }
 }
