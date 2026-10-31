@@ -776,11 +776,15 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
         let correction = report.corrections.contains_key(&id);
         let masked = (tone || report.raster_masks.contains_key(&id))
             && (if correction { [32, 33] } else { [0, 1] }).contains(&masking);
+        // Without a mask the bit has nothing to act on (CardBase's hidden
+        // copy layer carries it).
+        let maskless_bit = study && mask == 0 && masking == 1 && id != report.canvas.root;
         if (lock != 0 && (!study || lock & !17 != 0))
             || (mask != 0 && !masked)
             || (masking != if id == report.canvas.root { 32 } else { 0 }
                 && !study_folder_masking
-                && !masked)
+                && !masked
+                && !maskless_bit)
         {
             layer_issue(report, study, id, "unsupported lock/mask metadata".into());
         }

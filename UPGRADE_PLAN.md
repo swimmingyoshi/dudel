@@ -531,6 +531,11 @@ tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
   (centered, vertical turned) land within a pixel. Open: Card_Guisw's
   right-aligned line in a box shorter than the line is 3-4 px off; several
   styles in one layer still skip.
+
+- 2026-10-31 (Claude, CardBase): its hidden "Layer 1 Copy" carries
+  LayerMasking 1 with no mask; the bit does not turn masks off (CSP-TEST),
+  so without a mask it is now accepted. CardBase imports with every layer,
+  within one level of CSP's preview (256 pixels off by 1).
 
 - 2026-10-29 (Claude, review follow-ups): fixed the six open review findings
   (see "Before pushing"), committed together with the review's own fixes.
