@@ -16,7 +16,9 @@ concurrency:
 jobs:
   verify:
     runs-on: windows-latest
-    timeout-minutes: 45
+    # Full verification takes ~41 minutes (the release build alone ~16)
+    # before packaging; 45 cancelled the 2026-10-31 run mid-package.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       # Same compiler and lints as rust-toolchain.toml.

@@ -2390,7 +2390,9 @@ mod tests {
         images: &mut std::collections::HashMap<egui::TextureId, egui::ColorImage>,
     ) -> (usize, f64) {
         let previous = shown_ids(textures);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        // Generous: debug builds composite full-resolution tiles slowly, and
+        // a loaded machine took over 30 s with nothing stalled.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
         let mut peak = 0;
         let mut owner_ms = 0.0;
         loop {
