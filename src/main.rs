@@ -177,6 +177,9 @@ use document::{Document, History};
 use eframe::egui;
 use std::path::PathBuf;
 
+/// Layer panel previews by layer identity.
+type Thumbnails = std::collections::HashMap<document::LayerId, egui::TextureHandle>;
+
 struct Dudel {
     theme: themes::Theme,
     theme_editor: Option<themes::Editor>,
@@ -227,13 +230,16 @@ struct Dudel {
     selection_contour: selection_contour::Cache,
     texture: canvas_textures::CanvasTextures,
     navigator_paint: Option<navigator::PaintRequest>,
-    layer_thumbnails: Vec<egui::TextureHandle>,
-    mask_thumbnails: Vec<Option<egui::TextureHandle>>,
+    layer_thumbnails: Thumbnails,
+    mask_thumbnails: Thumbnails,
     layer_reveal: Option<(document::LayerId, paint_target::Target, [i32; 2])>,
     thumbnail_revision: Option<u64>,
     thumbnail_timer: std::time::Instant,
-    /// Pixel identity each thumbnail was drawn from, by stack position.
-    thumbnail_stamps: Vec<(bool, pixels::RegionStamp, layer_mask::LayerStamp)>,
+    /// Pixel identity each thumbnail was drawn from, by layer.
+    thumbnail_stamps: std::collections::HashMap<
+        document::LayerId,
+        (bool, pixels::RegionStamp, layer_mask::LayerStamp),
+    >,
     dirty: bool,
     dirty_region: render_region::Damage,
     modified: bool,
@@ -474,12 +480,12 @@ impl Default for Dudel {
             selection_contour: Default::default(),
             texture: Default::default(),
             navigator_paint: None,
-            layer_thumbnails: vec![],
-            mask_thumbnails: vec![],
+            layer_thumbnails: Default::default(),
+            mask_thumbnails: Default::default(),
             layer_reveal: None,
             thumbnail_revision: None,
             thumbnail_timer: std::time::Instant::now(),
-            thumbnail_stamps: Vec::new(),
+            thumbnail_stamps: Default::default(),
             dirty: true,
             dirty_region: Default::default(),
             modified: false,

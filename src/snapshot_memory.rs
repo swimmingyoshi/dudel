@@ -111,6 +111,28 @@ fn document_metadata(doc: &Document) -> usize {
             .map(|layer| layer.name.capacity())
             .sum::<usize>()
 }
+/// Identities are allocation addresses: distinct by construction, so a
+/// multiplicative hash spreads them well and is far cheaper than SipHash on
+/// the hundreds of thousands of lookups a long layer history needs.
+#[derive(Default)]
+struct AddressHasher(u64);
+impl std::hash::Hasher for AddressHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(byte as u64);
+        }
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+}
+type Seen = std::collections::HashSet<Identity, std::hash::BuildHasherDefault<AddressHasher>>;
 #[derive(Hash, PartialEq, Eq)]
 enum Identity {
     Storage(usize),
@@ -119,7 +141,7 @@ enum Identity {
 }
 #[derive(Default)]
 pub(crate) struct Registry {
-    seen: std::collections::HashSet<Identity>,
+    seen: Seen,
     live_bytes: usize,
     additional_bytes: usize,
     shared_metadata_bytes: usize,
@@ -165,13 +187,27 @@ impl Registry {
             if let Some(scene) = &layer.display_reference {
                 scene.register_allocations(self);
             }
-            if let Some(mask) = &layer.mask {
+            // Storage is copy-on-write, so within one registry a storage seen
+            // before has had all its tiles counted. History snapshots share
+            // most layers with each other; skipping them keeps a measure pass
+            // from rehashing every tile of every layer of every snapshot.
+            if let Some(mask) = &layer.mask
+                && !self.counted(mask.coverage.storage_allocation())
+            {
                 mask.coverage
                     .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
             }
-            layer
-                .pixels
-                .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
+            if !self.counted(layer.pixels.storage_allocation()) {
+                layer
+                    .pixels
+                    .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
+            }
+        }
+    }
+    fn counted(&self, id: AllocationId) -> bool {
+        match id {
+            AllocationId::Storage(id) => self.seen.contains(&Identity::Storage(id)),
+            AllocationId::Tile(id) => self.seen.contains(&Identity::Bytes(id)),
         }
     }
     pub(crate) fn add_snapshot(&mut self, snapshot: &Snapshot) {

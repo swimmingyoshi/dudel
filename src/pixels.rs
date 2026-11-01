@@ -874,6 +874,10 @@ impl Pixels {
     pub fn shares(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
+    /// The identity `visit_allocations` reports for the storage itself.
+    pub(crate) fn storage_allocation(&self) -> AllocationId {
+        AllocationId::Storage(Arc::as_ptr(&self.0) as usize)
+    }
     /// Owned payload capacities and Arc/value headers, without flattening.
     /// The caller deduplicates identities across live layers and snapshots.
     /// Allocator bookkeeping is deliberately excluded.

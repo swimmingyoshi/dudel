@@ -114,11 +114,14 @@ project_session! {
     dirty: bool,
     dirty_region: crate::render_region::Damage,
     texture: crate::canvas_textures::CanvasTextures,
-    layer_thumbnails: Vec<egui::TextureHandle>,
-    mask_thumbnails: Vec<Option<egui::TextureHandle>>,
+    layer_thumbnails: crate::Thumbnails,
+    mask_thumbnails: crate::Thumbnails,
     thumbnail_revision: Option<u64>,
     thumbnail_timer: std::time::Instant,
-    thumbnail_stamps: Vec<(bool, crate::pixels::RegionStamp, crate::layer_mask::LayerStamp)>,
+    thumbnail_stamps: std::collections::HashMap<
+        crate::document::LayerId,
+        (bool, crate::pixels::RegionStamp, crate::layer_mask::LayerStamp),
+    >,
     layer_reveal: Option<(crate::document::LayerId, crate::paint_target::Target, [i32; 2])>,
     navigator_paint: Option<crate::navigator::PaintRequest>,
     selection_drag: Option<crate::selection_ui::Drag>,
@@ -295,8 +298,8 @@ impl Dudel {
         };
         for texture in self
             .layer_thumbnails
-            .iter()
-            .chain(self.mask_thumbnails.iter().flatten())
+            .values()
+            .chain(self.mask_thumbnails.values())
         {
             add_texture(texture);
         }
@@ -308,8 +311,8 @@ impl Dudel {
             memory.canvas_rgba_bytes += session.texture.memory().texture_base_rgba_bytes;
             for texture in session
                 .layer_thumbnails
-                .iter()
-                .chain(session.mask_thumbnails.iter().flatten())
+                .values()
+                .chain(session.mask_thumbnails.values())
             {
                 add_texture(texture);
             }

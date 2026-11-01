@@ -25,6 +25,12 @@ the package has been uploaded to a public store.
 - Documents hold up to 1,000 raster layers, 2,000 entries and ten folder levels
   (was 32 / 64 / six), with a 2 GiB stored-pixel budget. Such projects need this
   version to open.
+- Large layer stacks stay responsive. Near 1,000 layers, adding a layer took up
+  to ~67 ms once the undo history filled and now takes ~6 ms. The Layers panel
+  draws only the rows on screen (a frame went from 12-18 ms to 3-6 ms), and a
+  full-resolution redraw of 990 small layers is about 11 times faster.
+  Thumbnails follow their layer when layers are added, removed or reordered,
+  instead of briefly showing their neighbours' pictures.
 - New blend modes: Dissolve, Color dodge (glow), Add (glow), and Pass through for
   folders. CSP and PSD imports map them.
 - PSD export: File > Export Photoshop document (.psd) writes every layer and

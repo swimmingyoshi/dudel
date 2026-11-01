@@ -188,8 +188,23 @@ PSD (`src/psd_import.rs`, new):
 - [x] Owner's Live2D recovery outputs: all 51 open layered; earlier "10% exact"
       was the comparison counting invisible colors, not an import problem
 - [ ] Test against PSDs saved by Krita
-- [ ] Performance: adding a layer costs ~2 ms at 100 layers, ~28 ms at 500,
-      ~53 ms near 1,000 (release). Find the per-layer work done on every edit.
+- [x] Performance with many layers (2026-10-31, measured in the release
+      build at 880-990 painted layers on 2048 x 2048): adding a layer grew to
+      ~67 ms as the undo history filled, because every checkpoint and settle
+      re-measured history memory by hashing every tile of every layer of
+      every snapshot (SipHash). `snapshot_memory::Registry` now skips a layer
+      storage it has already counted (storage is copy-on-write) and hashes
+      addresses with a multiplicative hasher: ~6 ms with 90 snapshots. The
+      Layers panel laid out all rows every frame (~10 ms of a 12-18 ms
+      frame); rows off screen now only reserve their height (~1.3 ms, frames
+      3-6 ms). Thumbnails are keyed by layer id, so inserting below many
+      layers no longer shifts and redraws all of them. The strip compositor
+      skips empty layers whose zero source changes nothing (clipped, or
+      right after another empty unclipped layer at the same depth): a full
+      2048 x 2048 recomposite of 990 small layers 10.2 s -> 0.95 s. Hide,
+      undo and select stay under ~13 ms per frame. Open: `Document::validate`
+      and the document clone in `Edit::prepare` (~1.5-2 ms at 1,000 layers);
+      blend math for dense layers is still scalar.
 - [x] PSB, CMYK, 16-bit layered (2026-10-30: Lr16 layer lists, converted to
       8 bits; psd-tools 215 -> 223 and ag-psd 69 -> 70 layered, no regressions)
 - [x] PSD export, first version (2026-10-31, `src/psd_export.rs`): File >
@@ -455,6 +470,11 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-10-31 (Claude, many-layer speed): see the Performance item in goal 5.
+  Owner chose 0.1.0 (rebuilt from current code) for the first public release,
+  after this speed work. Hosted CI was refused for billing (account payment
+  or spending limit), so local `scripts/Verify.ps1 -Mode Full` is the evidence.
 
 - 2026-10-31 (Claude, editable effects): layer styles exported, Live2D
   menu entry for effect layers, `--roundtrip-psd-effect-layers`. CSP HSL

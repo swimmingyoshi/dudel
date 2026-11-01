@@ -606,6 +606,10 @@ impl Mask {
             tiles,
         }
     }
+    /// The identity `visit_allocations` reports for the tile table itself.
+    pub(crate) fn storage_allocation(&self) -> crate::pixels::AllocationId {
+        crate::pixels::AllocationId::Storage(Arc::as_ptr(&self.0) as usize)
+    }
     pub(crate) fn visit_allocations(
         &self,
         mut visit: impl FnMut(crate::pixels::AllocationId, usize),

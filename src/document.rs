@@ -484,6 +484,42 @@ pub(crate) fn pass_plan(layers: &[Layer]) -> Vec<u16> {
     }
     plan
 }
+/// How the strip compositor treats a layer inside one storage block.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Skip {
+    /// Read and composite its pixels.
+    Draw,
+    /// Nothing here: add a zero source, which still closes a clipping group.
+    Zero,
+    /// Nothing here, and a zero source would change nothing: a clipped
+    /// layer (clipping a zero source is a no-op), or an unclipped one right
+    /// after another empty unclipped layer at its depth (the group is
+    /// already zero, and the mode of a zero group is never used).
+    Nothing,
+}
+fn skip_plan(layers: &[Layer], empty: impl Fn(&Layer) -> bool) -> Vec<Skip> {
+    let mut plan = Vec::with_capacity(layers.len());
+    // Depth of the previous entry when it was empty and left its level's
+    // group zero.
+    let mut zero_group: Option<u8> = None;
+    let mut previous_depth: Option<u8> = None;
+    for layer in layers {
+        let skip = if layer.folder || !empty(layer) {
+            zero_group = None;
+            Skip::Draw
+        } else if previous_depth == Some(layer.depth)
+            && (layer.clipped || zero_group == Some(layer.depth))
+        {
+            Skip::Nothing
+        } else {
+            zero_group = (!layer.clipped).then_some(layer.depth);
+            Skip::Zero
+        };
+        previous_depth = (!layer.folder).then_some(layer.depth);
+        plan.push(skip);
+    }
+    plan
+}
 /// Open nesting levels up to `depth` for the layer at `global` index.
 fn open_levels(levels: &mut [Level], top: &mut usize, depth: usize, plan: &[u16], global: usize) {
     while *top < depth {
@@ -1117,7 +1153,7 @@ impl Document {
         let (first_column, first_row_block) = (left / BLOCK, top / BLOCK);
         let block_columns = (right - 1) / BLOCK - first_column + 1;
         let block_rows = (bottom - 1) / BLOCK - first_row_block + 1;
-        let empty: Vec<Vec<bool>> = (0..block_rows * block_columns)
+        let empty: Vec<Vec<Skip>> = (0..block_rows * block_columns)
             .map(|block| {
                 let bx = (first_column + block % block_columns) * BLOCK;
                 let by = (first_row_block + block / block_columns) * BLOCK;
@@ -1127,18 +1163,14 @@ impl Document {
                     (bx + BLOCK).min(right),
                     (by + BLOCK).min(bottom),
                 ];
-                self.layers
-                    .iter()
-                    .map(|layer| {
-                        !layer.folder
-                            && (!layer.visible
-                                || layer.opacity == 0.0
-                                || !layer.has_display_payload(area))
-                    })
-                    .collect()
+                skip_plan(&self.layers, |layer| {
+                    !layer.visible || layer.opacity == 0.0 || !layer.has_display_payload(area)
+                })
             })
             .collect();
-        let sparse = empty.iter().any(|block| block.iter().any(|skip| *skip));
+        let sparse = empty
+            .iter()
+            .any(|block| block.iter().any(|skip| *skip != Skip::Draw));
         let pass = pass_plan(&self.layers);
         // Short strips of a row go through the layers one layer at a time,
         // so each layer's pixels and mask are read in order instead of every
@@ -1172,7 +1204,11 @@ impl Document {
                         // A layer with nothing here adds a zero source without reading
                         // pixels: the same as a transparent pixel, and it still closes
                         // clipping groups.
-                        if skip.is_some_and(|skip| skip[global]) {
+                        let skip = skip.map_or(Skip::Draw, |skip| skip[global]);
+                        if skip == Skip::Nothing {
+                            continue;
+                        }
+                        if skip == Skip::Zero {
                             for (levels, open) in stacks.iter_mut() {
                                 open_levels(levels, open, depth, &pass, global);
                                 levels[depth].add([0.0; 3], 0.0, layer.clipped, layer.blend);
@@ -2623,6 +2659,57 @@ mod tests {
             }
         }
         assert!(checked >= 40, "only {checked} random documents were valid");
+    }
+    #[test]
+    fn strip_composite_skips_runs_of_empty_layers_exactly() {
+        // Many small layers spread over several storage blocks, so most
+        // blocks see long runs of empty clipped and unclipped layers.
+        use crate::blend::BlendMode;
+        let (w, h) = (600, 300);
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        for _ in 0..12 {
+            let mut layers = Vec::new();
+            for _ in 0..60 {
+                let depth = if next(4) == 0 { 1 } else { 0 };
+                if depth == 0 && layers.last().is_some_and(|l: &Layer| l.depth == 1) {
+                    let mut folder = Layer::new_folder("folder".into());
+                    folder.blend = [BlendMode::Normal, BlendMode::PassThrough][next(2)];
+                    layers.push(folder);
+                }
+                let mut layer = Layer::raster("layer".into(), w, h);
+                layer.depth = depth;
+                let (x, y) = (next(w - 20), next(h - 20));
+                let rect = [x, y, x + 1 + next(20), y + 1 + next(20)];
+                let count = (rect[2] - rect[0]) * (rect[3] - rect[1]);
+                let rgba = [next(256) as u8, next(256) as u8, next(256) as u8, 200];
+                if next(5) != 0 {
+                    layer
+                        .pixels
+                        .writer()
+                        .write_region(w, rect, &rgba.repeat(count));
+                }
+                layer.blend = [BlendMode::Normal, BlendMode::Multiply, BlendMode::Screen][next(3)];
+                layer.clipped = next(2) == 0;
+                layers.push(layer);
+            }
+            if layers.last().is_some_and(|l| l.depth == 1) {
+                layers.push(Layer::new_folder("folder".into()));
+            }
+            let mut doc = Document::new(w, h);
+            doc.layers = layers;
+            doc.active = 0;
+            doc.validate().unwrap();
+            let fast = doc.composite_display_region([0, 0, w, h], true);
+            for (i, pixel) in fast.chunks_exact(4).enumerate() {
+                assert_eq!(pixel, doc.composite_display_pixel(i, true), "pixel {i}");
+            }
+        }
     }
     #[test]
     fn regional_prefix_plan_matches_scalar_states_and_pixels_across_empty_groups() {

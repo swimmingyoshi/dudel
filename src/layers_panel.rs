@@ -10,6 +10,14 @@ const ROW_HEIGHT: f32 = 50.0;
 const FOLDER_ROW_HEIGHT: f32 = 40.0;
 const INDENT: f32 = 14.0;
 
+fn row_height(layer: &crate::document::Layer) -> f32 {
+    if layer.folder {
+        FOLDER_ROW_HEIGHT
+    } else {
+        ROW_HEIGHT
+    }
+}
+
 enum RowAction {
     ReferencePosition {
         id: u64,
@@ -536,6 +544,15 @@ impl Dudel {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 self.reference_rows_at(ui, self.doc.layers.len());
+                // Rows outside the view only reserve their height, so long
+                // stacks cost what is on screen. The selected row is still laid
+                // out when it must scroll into view, and so is a rename.
+                let clip = ui.clip_rect();
+                let selected = if self.reference_layers.active.is_none() {
+                    self.input_layer()
+                } else {
+                    None
+                };
                 // Top of the stack first; contents of collapsed folders are hidden.
                 let mut hide_deeper_than: Option<u8> = None;
                 for index in (0..self.doc.layers.len()).rev() {
@@ -551,6 +568,18 @@ impl Dudel {
                         hide_deeper_than = Some(layer.depth);
                     }
                     let id = layer.id;
+                    let height = row_height(layer);
+                    let top = ui.cursor().top();
+                    let off_screen =
+                        top > clip.bottom() + ROW_HEIGHT || top + height < clip.top() - ROW_HEIGHT;
+                    if off_screen
+                        && !(reveal && selected == Some(index))
+                        && self.renaming != Some(index)
+                    {
+                        ui.add_space(height + ui.spacing().item_spacing.y);
+                        self.reference_rows_at(ui, index);
+                        continue;
+                    }
                     ui.push_id(id, |ui| self.layer_row(ui, index, reveal, &mut action));
                     self.reference_rows_at(ui, index);
                 }
@@ -834,11 +863,7 @@ impl Dudel {
         action: &mut Option<RowAction>,
     ) {
         let layer = &self.doc.layers[index];
-        let height = if layer.folder {
-            FOLDER_ROW_HEIGHT
-        } else {
-            ROW_HEIGHT
-        };
+        let height = row_height(layer);
         let width = ui
             .available_width()
             .min(ui.clip_rect().right() - ui.next_widget_position().x)
@@ -965,7 +990,7 @@ impl Dudel {
                     Icon::Adjustment,
                     text,
                 );
-            } else if let Some(texture) = self.layer_thumbnails.get(index) {
+            } else if let Some(texture) = self.layer_thumbnails.get(&layer.id) {
                 painter.image(
                     texture.id(),
                     thumb,
@@ -1026,7 +1051,7 @@ impl Dudel {
                 pos2(text_left - 4.0, rect.top() + 5.0),
                 vec2(thumb_side, thumb_side),
             );
-            if let Some(Some(texture)) = self.mask_thumbnails.get(index) {
+            if let Some(texture) = self.mask_thumbnails.get(&layer.id) {
                 painter.image(
                     texture.id(),
                     thumb,

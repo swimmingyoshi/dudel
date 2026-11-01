@@ -1434,7 +1434,7 @@ fn short_inspector_keeps_layers_masks_and_navigator_reachable_without_overlap() 
         for label in ["Global", "Guides"] {
             visible(&w, label);
         }
-        let layer = w.app.layer_thumbnails[0].id();
+        let layer = w.app.layer_thumbnails[&w.app.doc.layers[0].id].id();
         let thumbnail = w.texture_rect(layer);
         assert!(thumbnail.height() >= 39.0, "{size:?}: {thumbnail:?}");
         if !w
@@ -1483,7 +1483,7 @@ fn layer_list_reveals_selected_mask_on_resize_and_preserves_manual_scroll() {
     );
     ui.app.flush_render_queue();
     ui.settle();
-    let id = ui.app.mask_thumbnails[0].as_ref().unwrap().id();
+    let id = ui.app.mask_thumbnails[&ui.app.doc.layers[0].id].id();
     ui.size[1] = 500.0;
     for _ in 0..20 {
         ui.frame(vec![]);
@@ -1511,6 +1511,53 @@ fn layer_list_reveals_selected_mask_on_resize_and_preserves_manual_scroll() {
         ui.frame(vec![]);
     }
     assert!(ui.texture_rect(id).height() >= 39.0);
+}
+
+#[test]
+fn long_layer_lists_paint_only_visible_rows_and_still_reveal_the_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut ui = Workspace::sized([1280.0, 700.0]);
+    ui.app = Dudel::for_capture(directory.path().join("not-requested.png"));
+    ui.app.inspector_override = Some(true);
+    while ui.app.doc.layers.len() < 200 {
+        ui.app.doc.insert_layer_above().unwrap();
+    }
+    ui.app.changed();
+    for _ in 0..300 {
+        if ui.app.thumbnail_revision == Some(ui.app.revision) {
+            break;
+        }
+        ui.frame(vec![]);
+    }
+    assert_eq!(ui.app.layer_thumbnails.len(), 200);
+    let thumbnail =
+        |ui: &Workspace, index: usize| ui.app.layer_thumbnails[&ui.app.doc.layers[index].id].id();
+    for (selected, hidden) in [(199, 0), (0, 199)] {
+        ui.app.doc.active = selected;
+        for _ in 0..20 {
+            ui.frame(vec![]);
+        }
+        let id = thumbnail(&ui, selected);
+        assert!(
+            ui.texture_rect(id).height() >= 39.0,
+            "layer {selected} was not revealed"
+        );
+        // Rows far outside the list are not laid out at all, not even as
+        // shapes clipped away.
+        let painted = |id: egui::TextureId| {
+            fn find(shape: &egui::Shape, id: egui::TextureId) -> bool {
+                match shape {
+                    egui::Shape::Mesh(mesh) => mesh.texture_id == id,
+                    egui::Shape::Vec(shapes) => shapes.iter().any(|s| find(s, id)),
+                    _ => false,
+                }
+            }
+            ui.output.shapes.iter().any(|s| find(&s.shape, id))
+        };
+        assert!(painted(thumbnail(&ui, selected)));
+        assert!(!painted(thumbnail(&ui, hidden)));
+        assert!(!painted(thumbnail(&ui, 100)));
+    }
 }
 
 #[test]
@@ -1596,8 +1643,8 @@ fn mask_focus_thumbnails_actions_and_canvas_packets_keep_artwork_separate() {
     };
     ui.settle();
     let mask = ui.app.doc.layers[0].mask.as_ref().unwrap().id;
-    let mask_image = ui.app.mask_thumbnails[0].as_ref().unwrap().id();
-    let raster_image = ui.app.layer_thumbnails[0].id();
+    let mask_image = ui.app.mask_thumbnails[&ui.app.doc.layers[0].id].id();
+    let raster_image = ui.app.layer_thumbnails[&ui.app.doc.layers[0].id].id();
     ui.click(ui.texture_rect(raster_image).center());
     assert!(ui.app.input_stroke_target().is_raster() && ui.app.renaming.is_none());
     // A mask replaced between pointer press and release must not inherit the click.

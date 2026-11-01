@@ -86,10 +86,17 @@ pub fn pixels(layer: &Layer, width: usize, height: usize, side: usize) -> Vec<u8
 }
 impl Dudel {
     pub(crate) fn refresh_thumbnails(&mut self, ctx: &egui::Context) {
-        let stale = self.thumbnail_revision != Some(self.revision)
-            || self.layer_thumbnails.len() != self.doc.layers.len();
+        // A layer without a preview (new, or from a replaced document) is
+        // drawn without waiting for the throttles below.
+        let complete = self.thumbnail_stamps.len() == self.doc.layers.len()
+            && self
+                .doc
+                .layers
+                .iter()
+                .all(|layer| self.thumbnail_stamps.contains_key(&layer.id));
+        let stale = self.thumbnail_revision != Some(self.revision) || !complete;
         if stale
-            && self.layer_thumbnails.len() == self.doc.layers.len()
+            && complete
             && (self.stroking || self.render_queue.busy() || self.performance.defer_optional())
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(150));
@@ -99,26 +106,28 @@ impl Dudel {
             return;
         }
         if self.thumbnail_revision.is_some()
-            && self.layer_thumbnails.len() == self.doc.layers.len()
+            && complete
             && self.thumbnail_timer.elapsed().as_millis() < 200
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
             return;
         }
-        self.layer_thumbnails.truncate(self.doc.layers.len());
-        self.mask_thumbnails
-            .resize_with(self.doc.layers.len(), || None);
-        self.mask_thumbnails.truncate(self.doc.layers.len());
-        self.thumbnail_stamps.truncate(self.doc.layers.len());
+        // Keyed by layer identity: inserting, deleting or reordering layers
+        // keeps every other layer's thumbnail instead of shifting them all.
+        let present: std::collections::HashSet<_> =
+            self.doc.layers.iter().map(|layer| layer.id).collect();
+        self.layer_thumbnails.retain(|id, _| present.contains(id));
+        self.mask_thumbnails.retain(|id, _| present.contains(id));
+        self.thumbnail_stamps.retain(|id, _| present.contains(id));
         let mut prepared = 0;
-        for (index, layer) in self.doc.layers.iter().enumerate() {
+        for layer in &self.doc.layers {
             // Only layers whose pixels changed are redrawn; painting one layer
             // no longer regenerates every thumbnail every 200ms.
-            let current = index < self.layer_thumbnails.len()
-                && self.mask_thumbnails[index].is_some() == layer.mask.is_some()
+            let current = self.layer_thumbnails.contains_key(&layer.id)
+                && self.mask_thumbnails.contains_key(&layer.id) == layer.mask.is_some()
                 && self
                     .thumbnail_stamps
-                    .get(index)
+                    .get(&layer.id)
                     .is_some_and(|(folder, stamp, mask)| {
                         *folder == layer.folder
                             && stamp.matches(&layer.pixels)
@@ -139,48 +148,52 @@ impl Dudel {
                     [SIDE, SIDE],
                     &mask_pixels(&mask.coverage, SIDE),
                 );
-                if let Some(texture) = &mut self.mask_thumbnails[index] {
+                if let Some(texture) = self.mask_thumbnails.get_mut(&layer.id) {
                     texture.set(image, egui::TextureOptions::LINEAR);
                 } else {
-                    self.mask_thumbnails[index] = Some(ctx.load_texture(
-                        format!("mask preview {index}"),
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    ));
+                    self.mask_thumbnails.insert(
+                        layer.id,
+                        ctx.load_texture(
+                            format!("mask preview {:?}", layer.id),
+                            image,
+                            egui::TextureOptions::LINEAR,
+                        ),
+                    );
                 }
             } else {
-                self.mask_thumbnails[index] = None;
+                self.mask_thumbnails.remove(&layer.id);
             }
             let rect = if layer.folder {
                 [0; 4]
             } else {
                 [0, 0, self.doc.width, self.doc.height]
             };
-            let stamp = (
-                layer.folder,
-                layer.pixels.region_stamp(rect),
-                crate::layer_mask::LayerStamp::new(
-                    layer.mask.as_ref(),
-                    [0, 0, self.doc.width, self.doc.height],
+            self.thumbnail_stamps.insert(
+                layer.id,
+                (
+                    layer.folder,
+                    layer.pixels.region_stamp(rect),
+                    crate::layer_mask::LayerStamp::new(
+                        layer.mask.as_ref(),
+                        [0, 0, self.doc.width, self.doc.height],
+                    ),
                 ),
             );
-            if index < self.thumbnail_stamps.len() {
-                self.thumbnail_stamps[index] = stamp;
-            } else {
-                self.thumbnail_stamps.push(stamp);
-            }
             let image = egui::ColorImage::from_rgba_unmultiplied(
                 [SIDE, SIDE],
                 &pixels(layer, self.doc.width, self.doc.height, SIDE),
             );
-            if let Some(texture) = self.layer_thumbnails.get_mut(index) {
+            if let Some(texture) = self.layer_thumbnails.get_mut(&layer.id) {
                 texture.set(image, egui::TextureOptions::LINEAR);
             } else {
-                self.layer_thumbnails.push(ctx.load_texture(
-                    format!("layer preview {index}"),
-                    image,
-                    egui::TextureOptions::LINEAR,
-                ));
+                self.layer_thumbnails.insert(
+                    layer.id,
+                    ctx.load_texture(
+                        format!("layer preview {:?}", layer.id),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    ),
+                );
             }
         }
         self.thumbnail_revision = Some(self.revision);
@@ -208,7 +221,7 @@ mod tests {
             coverage: crate::layer_mask::Mask::new(1, 1, 255).unwrap(),
         });
         let _ = ctx.run(Default::default(), |ctx| app.refresh_thumbnails(ctx));
-        let id = app.layer_thumbnails[0].id();
+        let id = app.layer_thumbnails[&app.doc.layers[0].id].id();
         app.doc.layers[0]
             .mask
             .as_mut()
@@ -263,7 +276,7 @@ mod tests {
             let output = ctx.run(Default::default(), |ctx| app.refresh_thumbnails(ctx));
             let ids: Vec<_> = app
                 .layer_thumbnails
-                .iter()
+                .values()
                 .map(egui::TextureHandle::id)
                 .collect();
             output
@@ -287,11 +300,22 @@ mod tests {
         assert_eq!(uploads(&mut app), 0);
         app.stroking = false;
         assert_eq!(uploads(&mut app), 1);
-        // Reordering the painted layer with a blank one changes two positions.
+        // Previews follow layer identity: reordering redraws nothing, and a
+        // layer inserted below the others redraws only itself.
         app.doc.layers.swap(0, 1);
         app.revision += 1;
-        assert_eq!(uploads(&mut app), 2);
+        assert_eq!(uploads(&mut app), 0);
+        app.doc.active = 0;
+        app.doc.insert_layer_above().unwrap();
+        app.revision += 1;
+        assert_eq!(uploads(&mut app), 1);
+        assert_eq!(app.layer_thumbnails.len(), app.doc.layers.len());
+        // A deleted layer's preview is released.
+        let removed = app.doc.layers.remove(1).id;
+        app.doc.active = 0;
         app.revision += 1;
         assert_eq!(uploads(&mut app), 0);
+        assert!(!app.layer_thumbnails.contains_key(&removed));
+        assert_eq!(app.thumbnail_revision, Some(app.revision));
     }
 }
