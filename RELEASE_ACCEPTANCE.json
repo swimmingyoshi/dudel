@@ -1,14 +1,14 @@
 {
   "version": "0.1.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-10-28",
+  "decision_date": "2026-10-31",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 release preparation with the recorded evidence and disclosed support limits",
-  "application_source": "git tag v0.1.0 in the public repository (its single commit)",
-  "changes_since_previous_acceptance": "Rebuilt with build-machine path remapping; brush toolbar keeps a fixed layout in Smooth and Rope mode; low latency drawing on by default. Previously accepted binaries: dudel.exe 9713876B...F5FD8E5, dudel_thumbnails.dll 7A82B099...37F417 (private development history).",
+  "application_source": "git tag v0.1.0 in the public repository",
+  "changes_since_previous_acceptance": "Rebuilt from current source at the owner's request (the first 0.1.0 build was never published): wider CSP and PSD import, PSD export, layer effects, adjustment layers, canvases up to 16,384 px / 100 MP, 1,000 layers, many-layer speed. Evidence for this build: local Verify Full, both packaging gates, packaged PSD round trip and startup smoke tests; see RELEASE_DECISION.md. Previously accepted (unpublished) binaries: dudel.exe 8E6E1944...4CDC8B, dudel_thumbnails.dll AD08C857...314ABD2.",
   "public_release_published": false,
   "artifacts": [
-    {"path": "dudel.exe", "sha256": "8E6E1944879BC8F4AA7AF558AC6382EE644E60AE30D688F7915C733F134CDC8B"},
-    {"path": "dudel_thumbnails.dll", "sha256": "AD08C857020C3B572802A66B5C6DEC867F5D9F89E94D07E6E562C9211314ABD2"}
+    {"path": "dudel.exe", "sha256": "A3F989AF7D519602753D1E080111691953FD684CF12CE273BA5D3C5A1C648D30"},
+    {"path": "dudel_thumbnails.dll", "sha256": "6302A480D5585B0064A0AB404D5AB74BB669421F3CDE9DF0A5FF3ACC4BD641B4"}
   ]
 }

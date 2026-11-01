@@ -1,6 +1,7 @@
 # Windows 0.1 release status
 
-Updated 2026-10-28. **Release preparation is complete and accepted.** The owner requested goal
+Updated 2026-10-31 (0.1.0 rebuilt from current source; see the release
+decision for the evidence on this build). **Release preparation is complete and accepted.** The owner requested goal
 completion using the existing testing, confirmed Artist 12 use and working
 Explorer previews. [RELEASE_DECISION.md](RELEASE_DECISION.md) defines the accepted
 scope and explicitly distinguishes unperformed diagnostics from passing tests.
@@ -12,10 +13,11 @@ scope and explicitly distinguishes unperformed diagnostics from passing tests.
 - Public-package name: `dudel-0.1.0-windows-x64.zip`.
 - Matching source: `dudel-0.1.0-windows-x64-source.zip`.
 - Each ZIP has a SHA-256 sidecar; the GitHub release publishes both with the ZIPs.
-- [Accepted binaries](RELEASE_ACCEPTANCE.json): EXE `8E6E1944...134CDC8B`,
-  thumbnail DLL `AD08C857...314ABD2`. Release packaging rejects different bytes.
+- [Accepted binaries](RELEASE_ACCEPTANCE.json): EXE `A3F989AF...1C648D30`,
+  thumbnail DLL `6302A480...BD641B4`. Release packaging rejects different bytes.
 
-The final build adds path-remapped binaries, a fixed-layout brush toolbar and
+The 2026-10-31 rebuild adds the import, export, effects, adjustment and
+large-document work in the release notes. The earlier final build added path-remapped binaries, a fixed-layout brush toolbar and
 low latency drawing by default to the previously accepted source `0d8e429`
 (private development history); see [the release decision](RELEASE_DECISION.md).
 The earlier [final archive/equivalence proof](benchmarks/release-final-20261028.json)
@@ -53,7 +55,7 @@ No full suite is repeated for release prose or packaging metadata.
   matrices and broader compatibility remain scoped follow-up research. A new
   test needs a concrete unanswered question whose answer changes a decision.
 
-The tested systems, 4096-axis/512 MiB document envelope, format limits, unsigned
+The tested systems, 16,384 px / 100 MP / 1,000-layer / 2 GiB document envelope, format limits, unsigned
 status and recovery boundaries are documented in [release notes](RELEASE_NOTES.md),
 [format support](FORMAT_SUPPORT.md) and [quick start](QUICK_START.md).
 

@@ -10,6 +10,23 @@ The accepted application source is the `v0.1.0` tag of the public repository.
 [RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins both binary hashes, and
 release packaging refuses different executable or DLL bytes.
 
+**Rebuilt, 2026-10-31.** The first 0.1.0 build was prepared but never
+published; the owner held it back until CSP and PSD import were solid, then
+asked for 0.1.0 to be rebuilt from current source. The rebuild adds wider
+CSP and PSD import, PSD export, layer effects, adjustment layers, canvases up
+to 16,384 px per side and 100 MP, up to 1,000 layers, and many-layer speed
+work (see [release notes](RELEASE_NOTES.md)). Unlike the 2026-10-28 changes,
+these touch documents, compositing and file formats. Evidence on this build:
+local `scripts/Verify.ps1 -Mode Full` (1,030 default / 1,039 all-feature
+tests, Clippy, Python checks, release builds), both packaging gates (static
+runtime, no private paths or terms), a packaged PSD export round trip of a
+146-layer model that reopens pixel-exact, a packaged startup and clean close,
+and the owner's checks that exports open in Live2D Cubism, Affinity and
+Photopea. Not run on this build: hosted CI (refused for account billing on
+2026-10-31), the resource and two-hour studies, offline source rebuilds and
+the laptop install. The evidence table below describes the earlier build and
+carries over only where those areas are unchanged.
+
 **Final changes, 2026-10-28.** The evidence below was gathered on the earlier
 accepted application source (`0d8e429`, private development history). The final
 build differs from it in three reviewed ways: binaries are built with path
@@ -41,11 +58,13 @@ current binary, a timed physical session, or measurements the tools did not make
 - First release: portable Windows x64, with tested Windows 11 desktop/laptop
   configurations in [release notes](RELEASE_NOTES.md). A universal minimum OS,
   GPU or RAM specification is not established by these machines.
-- Up to 4096 pixels per axis, 32 raster layers, 64 entries, folder depth six and
-  a shared 512 MiB raster/mask payload budget. These are simultaneous budgets,
-  not a promise of 32 densely painted 4K layers.
-- Ordinary native v4/v5 projects and flattened PNG exchange are the primary
-  workflow. CSP import is restricted; unsupported features are rejected.
+- Up to 16,384 pixels per side and 100 megapixels, 1,000 raster layers, 2,000
+  entries, folder depth ten and a shared 2 GiB raster/mask payload budget.
+  These are simultaneous budgets, not a promise of 1,000 densely painted
+  maximum-size layers.
+- Ordinary native v4/v5 projects, PNG exchange and PSD export are the primary
+  workflow. CSP and PSD import cover the subsets in format support; skipped
+  layers and approximations are listed in Import details.
   Indexed storage and Linux remain experimental. See [format support](FORMAT_SUPPORT.md).
 - Exact physical pen latency, full GPU commitment, exhaustive OS/device failure,
   accessibility and multi-monitor matrices remain unmeasured or incomplete.

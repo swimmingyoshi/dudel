@@ -239,10 +239,9 @@ becomes eligible after 15 seconds and waits for strokes and pending edits to
 settle. Continuous drawing, active adjustments or slow storage can increase the
 time between completed snapshots; it is not a guarantee to preserve every stroke.
 
-Mask-aware projects share a 512 MiB budget between raster pixels and layer-mask
-coverage. Thirty-two fully populated maximum-area raster layers leave no space
-for additional mask data. Smaller or sparse layers leave room for masks; the app
-rejects projects beyond the supported payload budget.
+Raster pixels and layer-mask coverage share a 2 GiB budget. About five fully
+painted 100-megapixel layers fill it; smaller or sparse layers leave room for
+many more. The app rejects projects beyond the supported payload budget.
 
 ## Tabs, preview window and folders
 

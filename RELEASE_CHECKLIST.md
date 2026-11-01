@@ -8,8 +8,10 @@ The [current release status](RELEASE_STATUS.md) separates working-source changes
 the latest packaged workflow handoff and the older frozen performance study.
 Detailed dated checkpoints below remain evidence for their identified builds.
 
-Final 0.1.0 build: tag `v0.1.0`. The executable SHA-256 begins `8E6E1944`; the
-thumbnail DLL begins `AD08C857`. It adds path-remapped binaries, a fixed-layout
+Final 0.1.0 build (rebuilt 2026-10-31): tag `v0.1.0`. The executable SHA-256
+begins `A3F989AF`; the thumbnail DLL begins `6302A480`. The evidence on this
+rebuild is listed in RELEASE_DECISION.md. The unpublished first build
+(EXE `8E6E1944`, DLL `AD08C857`) added path-remapped binaries, a fixed-layout
 brush toolbar and low latency by default to the previously accepted source
 `0d8e429` (candidate `20261028-003227-120`, EXE `9713876B`, DLL `7A82B099`), whose
 full checks, maximum fixtures, native captures, packaging/notices checks and

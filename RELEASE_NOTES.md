@@ -5,7 +5,7 @@ existing automated, performance and owner workflow evidence, within the limits
 in [the release decision](RELEASE_DECISION.md). This document does not imply that
 the package has been uploaded to a public store.
 
-## Unreleased workflow and extension changes
+## Rebuilt 0.1.0: imports, PSD export, effects and large documents (2026-10-31)
 
 - Selection options and the compact toolbar expose Transform selection directly.
   Overlapping mirror pairs split ownership along the mirror line.
@@ -79,9 +79,10 @@ the package has been uploaded to a public store.
   out; other notes (timeline frame, animation cels, drawing aids) are behind the
   Import details button in the status bar.
 
-See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). These source
-changes require rebuilt release artifacts and do not extend the historical
-release approval to universal CSP/PSD compatibility or a complete plugin platform.
+See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). The 0.1.0
+binaries were rebuilt from this source; [the release decision](RELEASE_DECISION.md)
+lists the evidence on them. Universal CSP/PSD compatibility and a complete
+plugin platform are not claimed.
 
 ## Use
 
@@ -176,13 +177,13 @@ one-command invocation. It is an engineering check, not release certification.
 
 ## Current boundaries
 
-- One active document. Dimensions 1-4096 per side, up to 4096 x 4096 (16,777,216 pixels) for 4K artwork;
-  up to 32 raster layers and 64 total layer/folder entries. Mask-aware projects
-  share a 512 MiB raster-and-layer-mask payload budget.
+- Documents up to 16,384 px per side and 100 megapixels, up to 1,000 raster
+  layers, 2,000 layer/folder entries and ten folder levels. Raster pixels and
+  layer masks share a 2 GiB payload budget.
 - Native `.dudel` retains editable artwork; mask-aware projects need a compatible
   reader. PNG export is a flattened sharing copy. Indexed `.didx` is experimental.
-- CSP import supports a restricted subset. No general CSP/PSD compatibility or
-  color-managed print fidelity is claimed.
+- CSP and PSD import cover the subsets in [format support](FORMAT_SUPPORT.md).
+  No general CSP/PSD compatibility or color-managed print fidelity is claimed.
 - The October 21 sustained study passed. The owner confirms working Artist 12
   use and Explorer previews on October 28. Precise physical latency, actual GPU
   commitment and some native OS workflow details remain unclaimed; see current
@@ -214,7 +215,7 @@ of the current candidate:
 
 Minimum Windows version, RAM and GPU requirements have not been established.
 Windows 10, Windows ARM and other tablet models have no release acceptance in this
-record. The 512 MiB document payload limit is not the application's total RAM
+record. The 2 GiB document payload limit is not the application's total RAM
 requirement; history, display resources and background file jobs use additional
 memory. A successful small-project startup does not establish dense-4K performance.
 

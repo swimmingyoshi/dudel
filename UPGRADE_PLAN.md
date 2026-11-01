@@ -7,7 +7,8 @@ Any agent picking this up: read this first, update the checkboxes and the
 
 ## Base state
 
-- Released source: commit `67716b6` "Dudel 0.1.0", tag `v0.1.0` (master and linux).
+- 0.1.0 source: tag `v0.1.0`, moved on 2026-10-31 from the unpublished first
+  build `67716b6` to the rebuilt release commit (see Last session).
 - Work through `0e0ea0f` (CSP text layers) is pushed to `origin/master`; later
   commits are local (`git log --oneline origin/master..HEAD`). Pushing starts
   hosted CI; ask the owner first.
