@@ -817,6 +817,7 @@ impl Dudel {
         self.preview.settings = p.preview;
         self.tabs.max = p.tabs.max.clamp(1, tabs::LIMIT);
         self.timelapse.prefs = p.timelapse.sanitized();
+        self.new_canvas_form.prefs = p.new_canvas.sanitized();
         let finite = |h: Option<f32>| h.filter(|h| h.is_finite() && *h > 0.0);
         self.library_height = finite(p.layout.library_height);
         self.color_height = finite(p.layout.color_height);
@@ -859,6 +860,7 @@ impl Dudel {
             preview: self.preview.settings.clone(),
             tabs: preferences::TabPrefs { max: self.tabs.max },
             timelapse: self.timelapse.prefs.clone(),
+            new_canvas: self.new_canvas_form.prefs.clone(),
             layout: preferences::LayoutPrefs {
                 library_height: self.library_height,
                 color_height: self.color_height,
@@ -1723,9 +1725,14 @@ fn main() -> eframe::Result {
     let capture_studio = mode.as_deref() == Some("--capture-brush-studio");
     let capture_settings_recovery = mode.as_deref() == Some("--capture-settings-recovery");
     let capture_new_canvas_invalid = mode.as_deref() == Some("--capture-new-canvas-invalid");
+    let capture_new_canvas_presets = mode.as_deref() == Some("--capture-new-canvas-presets");
     let capture_new_canvas = matches!(
         mode.as_deref(),
-        Some("--capture-new-canvas" | "--capture-new-canvas-invalid")
+        Some(
+            "--capture-new-canvas"
+                | "--capture-new-canvas-invalid"
+                | "--capture-new-canvas-presets"
+        )
     );
     let capture_long_toolbar = matches!(
         mode.as_deref(),
@@ -2334,6 +2341,22 @@ fn main() -> eframe::Result {
                     if capture_new_canvas_invalid {
                         app.new_canvas_form.width = "4096".into();
                         app.new_canvas_form.height = "4096".into();
+                    }
+                    if capture_new_canvas_presets {
+                        let size = |name: &str, width, height, dpi| new_canvas::Size {
+                            name: name.into(),
+                            width,
+                            height,
+                            dpi,
+                        };
+                        app.new_canvas_form.prefs = new_canvas::Prefs {
+                            presets: vec![
+                                size("Comic page", 2894, 4093, 350.0),
+                                size("Stream overlay", 1920, 1080, 72.0),
+                                size("Icon", 512, 512, 72.0),
+                            ],
+                            recent: vec![size("", 3000, 4200, 300.0), size("", 1920, 1080, 72.0)],
+                        };
                     }
                 }
                 if capture_long_toolbar {

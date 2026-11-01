@@ -281,7 +281,10 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       buttons in the toolbar menu too, popup up to 560 px tall. Captures:
       `--capture-symmetry`, `--capture-layer-guides` now open the popups. Icons not done.
 - [ ] Other popups and dialogs: consistent padding, headers, button order
-- [ ] New canvas: custom preset save, DPI/print size, recent sizes
+- [x] New canvas: custom preset save, DPI/print size, recent sizes (2026-11-01).
+      "Save as preset" names the size and DPI (12 max, right-click removes); the last
+      5 created sizes show under Recent; both persist in preferences (`new_canvas`).
+      Print size sits beside DPI (cm, inches on hover). `--capture-new-canvas-presets`.
 - [ ] Settings: search, reset-to-default per page
 - [ ] Screenshot pass at 100% / 150% / 200% scale before and after
 

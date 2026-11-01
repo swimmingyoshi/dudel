@@ -2103,9 +2103,11 @@ fn new_canvas_keyboard_presets_and_orientation_do_not_submit_the_form() {
     let original = w.app.doc.clone();
     w.app.open_new_canvas();
     w.settle();
-    // Width has initial focus; the preceding controls are Swap and 4K.
-    w.key(egui::Key::Tab, egui::Modifiers::SHIFT);
-    w.key(egui::Key::Tab, egui::Modifiers::SHIFT);
+    // Width has initial focus; the preceding controls are Save as preset,
+    // Swap and 4K.
+    for _ in 0..3 {
+        w.key(egui::Key::Tab, egui::Modifiers::SHIFT);
+    }
     w.key(egui::Key::Enter, Default::default());
     assert!(w.app.new_canvas);
     assert_eq!(w.app.new_canvas_form.dimensions(), Ok([3840, 2160]));
@@ -3191,4 +3193,44 @@ fn installed_filters_run_from_the_filter_menu() {
     assert!(w.app.filter_job.is_none(), "{}", w.app.status);
     w.app.flush_render_queue();
     assert_eq!(&w.app.doc.layers[0].pixels[..], &[245, 225, 55, 255]);
+}
+
+#[test]
+fn new_canvas_saves_presets_and_remembers_recent_sizes() {
+    let mut w = Workspace::new();
+    w.app.open_new_canvas();
+    w.settle();
+    w.click(w.text("Full HD"));
+    w.click(w.text("Save as preset…"));
+    w.frame(vec![egui::Event::Text("Stream overlay".into())]);
+    w.key(egui::Key::Enter, Default::default());
+    assert!(w.app.new_canvas, "naming a preset does not create a canvas");
+    let presets = &w.app.new_canvas_form.prefs.presets;
+    assert_eq!(presets.len(), 1);
+    assert_eq!(
+        (
+            presets[0].name.as_str(),
+            presets[0].width,
+            presets[0].height
+        ),
+        ("Stream overlay", 1920, 1080)
+    );
+    w.click(w.text("Sketch"));
+    w.click(w.text("Stream overlay"));
+    assert_eq!(w.app.new_canvas_form.dimensions(), Ok([1920, 1080]));
+    w.click(w.text("Create canvas"));
+    w.settle();
+    assert!(!w.app.new_canvas);
+    assert_eq!((w.app.doc.width, w.app.doc.height), (1920, 1080));
+    assert_eq!(w.app.new_canvas_form.prefs.recent[0].width, 1920);
+    // Presets and recent sizes survive a restart; invalid entries do not.
+    let source = w.app.encode_preferences().unwrap();
+    let mut restored = crate::Dudel::default();
+    restored.restore_preferences_source(&source);
+    assert_eq!(restored.new_canvas_form.prefs, w.app.new_canvas_form.prefs);
+    let mut prefs = w.app.new_canvas_form.prefs.clone();
+    prefs.presets[0].width = 0;
+    prefs.recent[0].dpi = f64::NAN;
+    let prefs = prefs.sanitized();
+    assert!(prefs.presets.is_empty() && prefs.recent.is_empty());
 }

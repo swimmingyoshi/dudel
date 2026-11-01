@@ -42,6 +42,8 @@ pub struct Preferences {
     pub timelapse: crate::timelapse::Prefs,
     #[serde(default)]
     pub layout: LayoutPrefs,
+    #[serde(default)]
+    pub new_canvas: crate::new_canvas::Prefs,
 }
 
 /// Heights the artist dragged in the side panels; None keeps the automatic size.
@@ -189,6 +191,15 @@ mod tests {
                 record_new: true,
                 ..Default::default()
             },
+            new_canvas: crate::new_canvas::Prefs {
+                presets: vec![crate::new_canvas::Size {
+                    name: "Comic page".into(),
+                    width: 2894,
+                    height: 4093,
+                    dpi: 350.0,
+                }],
+                recent: vec![],
+            },
         };
         let restored = Preferences::decode(&serde_json::to_string(&p).unwrap()).unwrap();
         assert_eq!(restored.theme, p.theme);
@@ -200,6 +211,7 @@ mod tests {
         assert!(restored.preview.show_pointer && restored.preview.hide_references);
         assert_eq!(restored.tabs.max, 3);
         assert!(restored.timelapse.record_new);
+        assert_eq!(restored.new_canvas, p.new_canvas);
         assert!(!restored.show_panels);
         assert!(!restored.native_pen);
         assert_eq!(restored.color, [12, 34, 56]);
