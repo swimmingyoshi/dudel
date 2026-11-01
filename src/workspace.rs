@@ -53,7 +53,35 @@ pub(crate) fn setup_theme(ctx: &egui::Context) {
     style
         .text_styles
         .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
+    // egui's 9 pt default made hints and notes hard to read beside 15 pt text.
+    style
+        .text_styles
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(12.5));
     ctx.set_style(style);
+}
+
+/// Width of the label column beside dialog sliders.
+const SLIDER_LABEL_WIDTH: f32 = 92.0;
+
+/// A slider with its label on the left in a fixed column, so slider rows in
+/// dialogs line up and read label-first like the brush and guide panels.
+pub(crate) fn labeled_slider(
+    ui: &mut egui::Ui,
+    label: impl Into<egui::WidgetText>,
+    slider: egui::Slider,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(SLIDER_LABEL_WIDTH, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_min_width(SLIDER_LABEL_WIDTH);
+                ui.add(egui::Label::new(label).truncate());
+            },
+        );
+        ui.add(slider)
+    })
+    .inner
 }
 
 const TOOL_RAIL_WIDTH: f32 = 58.0;

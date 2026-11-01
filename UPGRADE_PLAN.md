@@ -280,7 +280,10 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       Guides sections, modes in an even 3-column grid, labels left of sliders, framed
       buttons in the toolbar menu too, popup up to 560 px tall. Captures:
       `--capture-symmetry`, `--capture-layer-guides` now open the popups. Icons not done.
-- [ ] Other popups and dialogs: consistent padding, headers, button order
+- [x] Other popups and dialogs (2026-11-01): hints use a readable Small style (12.5 pt,
+      was egui's 9 pt); adjustment and Layer Effects sliders put labels first in a
+      fixed column (`workspace::labeled_slider`). Button order was already action
+      first, Cancel last. Left alone: some tool windows can collapse, Settings cannot.
 - [x] New canvas: custom preset save, DPI/print size, recent sizes (2026-11-01).
       "Save as preset" names the size and DPI (12 max, right-click removes); the last
       5 created sizes show under Recent; both persist in preferences (`new_canvas`).
@@ -288,7 +291,8 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
 - [x] Settings: search, reset-to-default per page (2026-11-01). Search matches labels
       and keywords across pages ("wacom", "vsync", "plugins"); each page has a confirmed
       "Reset this page" that leaves other pages alone.
-- [ ] Screenshot pass at 100% / 150% / 200% scale before and after
+- [x] Screenshot pass at 100% / 150% / 200% scale (2026-11-01): ten dialogs captured
+      at each scale; all fit or scroll, no clipping beyond the fixes above.
 
 ### 7. Layer effects (owner goal, 2026-10-29)
 

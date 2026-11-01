@@ -302,31 +302,31 @@ pub(crate) fn sync_bevel_halves(original: &[LayerEffect], effects: &mut [LayerEf
 }
 
 fn pixels(ui: &mut egui::Ui, label: &str, value: &mut f64, max: f64) {
-    ui.add(
+    crate::workspace::labeled_slider(
+        ui,
+        label,
         egui::Slider::new(value, 0.0..=max)
-            .text(label)
             .suffix(" px")
             .max_decimals(1),
     );
 }
 fn percent(ui: &mut egui::Ui, label: &str, value: &mut f64) {
     let mut p = *value * 100.0;
-    if ui
-        .add(
-            egui::Slider::new(&mut p, 0.0..=100.0)
-                .text(label)
-                .suffix("%")
-                .integer(),
-        )
-        .changed()
+    if crate::workspace::labeled_slider(
+        ui,
+        label,
+        egui::Slider::new(&mut p, 0.0..=100.0).suffix("%").integer(),
+    )
+    .changed()
     {
         *value = p / 100.0;
     }
 }
 fn angle(ui: &mut egui::Ui, label: &str, value: &mut f64) {
-    ui.add(
+    crate::workspace::labeled_slider(
+        ui,
+        label,
         egui::Slider::new(value, -180.0..=180.0)
-            .text(label)
             .suffix("°")
             .integer(),
     );
@@ -458,14 +458,14 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
                     });
             });
             let mut d = *depth * 100.0;
-            if ui
-                .add(
-                    egui::Slider::new(&mut d, 1.0..=1000.0)
-                        .text("Depth")
-                        .suffix("%")
-                        .integer(),
-                )
-                .changed()
+            if crate::workspace::labeled_slider(
+                ui,
+                "Depth",
+                egui::Slider::new(&mut d, 1.0..=1000.0)
+                    .suffix("%")
+                    .integer(),
+            )
+            .changed()
             {
                 *depth = d / 100.0;
             }
@@ -477,17 +477,18 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
             pixels(ui, "Soften", soften, 16.0);
             let mut a = (-light[1]).atan2(light[0]).to_degrees();
             let mut altitude = light[2].clamp(-1.0, 1.0).asin().to_degrees();
-            let changed = ui
-                .add(
-                    egui::Slider::new(&mut a, -180.0..=180.0)
-                        .text("Angle")
-                        .suffix("°")
-                        .integer(),
-                )
-                .changed()
-                | ui.add(
+            let changed = crate::workspace::labeled_slider(
+                ui,
+                "Angle",
+                egui::Slider::new(&mut a, -180.0..=180.0)
+                    .suffix("°")
+                    .integer(),
+            )
+            .changed()
+                | crate::workspace::labeled_slider(
+                    ui,
+                    "Altitude",
                     egui::Slider::new(&mut altitude, 0.0..=90.0)
-                        .text("Altitude")
                         .suffix("°")
                         .integer(),
                 )
@@ -508,17 +509,18 @@ fn shadow_offset(ui: &mut egui::Ui, offset: &mut [f64; 2]) {
         120.0
     };
     let mut d = distance;
-    let changed = ui
-        .add(
-            egui::Slider::new(&mut a, -180.0..=180.0)
-                .text("Angle")
-                .suffix("°")
-                .integer(),
-        )
-        .changed()
-        | ui.add(
+    let changed = crate::workspace::labeled_slider(
+        ui,
+        "Angle",
+        egui::Slider::new(&mut a, -180.0..=180.0)
+            .suffix("°")
+            .integer(),
+    )
+    .changed()
+        | crate::workspace::labeled_slider(
+            ui,
+            "Distance",
             egui::Slider::new(&mut d, 0.0..=500.0)
-                .text("Distance")
                 .suffix(" px")
                 .max_decimals(1),
         )

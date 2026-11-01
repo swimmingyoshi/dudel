@@ -190,7 +190,7 @@ fn color_button(ui: &mut egui::Ui, label: &str, color: &mut [f32; 3]) {
 }
 
 fn slider(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
-    ui.add(egui::Slider::new(value, range).text(label).max_decimals(2));
+    crate::workspace::labeled_slider(ui, label, egui::Slider::new(value, range).max_decimals(2));
 }
 
 /// Controls for an adjustment's settings.
@@ -200,10 +200,10 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.label("Inverts the colors below. There is nothing to set.");
         }
         Settings::Posterize { levels } => {
-            ui.add(egui::Slider::new(levels, 2..=255).text("Levels"));
+            crate::workspace::labeled_slider(ui, "Levels", egui::Slider::new(levels, 2..=255));
         }
         Settings::Threshold { level } => {
-            ui.add(egui::Slider::new(level, 1..=255).text("Threshold"));
+            crate::workspace::labeled_slider(ui, "Threshold", egui::Slider::new(level, 1..=255));
         }
         Settings::Levels { channels } => {
             channels.resize(4, None);
@@ -212,10 +212,10 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
             let mut value = before;
             slider(ui, "Input black", &mut value.input[0], 0.0..=254.0);
             slider(ui, "Input white", &mut value.input[1], 1.0..=255.0);
-            ui.add(
-                egui::Slider::new(&mut value.gamma, 0.1..=9.99)
-                    .logarithmic(true)
-                    .text("Midtones"),
+            crate::workspace::labeled_slider(
+                ui,
+                "Midtones",
+                egui::Slider::new(&mut value.gamma, 0.1..=9.99).logarithmic(true),
             );
             slider(ui, "Output black", &mut value.output[0], 0.0..=255.0);
             slider(ui, "Output white", &mut value.output[1], 0.0..=255.0);
@@ -262,10 +262,10 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
         } => {
             slider(ui, "Exposure", exposure, -5.0..=5.0);
             slider(ui, "Offset", offset, -0.5..=0.5);
-            ui.add(
-                egui::Slider::new(gamma, 0.01..=9.99)
-                    .logarithmic(true)
-                    .text("Gamma"),
+            crate::workspace::labeled_slider(
+                ui,
+                "Gamma",
+                egui::Slider::new(gamma, 0.01..=9.99).logarithmic(true),
             );
         }
         Settings::HueSaturationLuminosity {
@@ -273,9 +273,17 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
             saturation,
             luminosity,
         } => {
-            ui.add(egui::Slider::new(hue, -180..=180).text("Hue"));
-            ui.add(egui::Slider::new(saturation, -100..=100).text("Saturation"));
-            ui.add(egui::Slider::new(luminosity, -100..=100).text("Luminosity"));
+            crate::workspace::labeled_slider(ui, "Hue", egui::Slider::new(hue, -180..=180));
+            crate::workspace::labeled_slider(
+                ui,
+                "Saturation",
+                egui::Slider::new(saturation, -100..=100),
+            );
+            crate::workspace::labeled_slider(
+                ui,
+                "Luminosity",
+                egui::Slider::new(luminosity, -100..=100),
+            );
         }
         Settings::HueSaturation {
             colorize,

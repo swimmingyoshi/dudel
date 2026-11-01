@@ -890,22 +890,22 @@ impl Dudel {
                         let before = preview.settings;
                         ui.add_enabled_ui(preview.source.is_some(), |ui| match &mut preview.settings {
                             Settings::BrightnessContrast { brightness, contrast } => {
-                                ui.add(egui::Slider::new(brightness, -100.0..=100.0).text("Brightness").integer());
-                                ui.add(egui::Slider::new(contrast, -100.0..=100.0).text("Contrast").integer());
+                                crate::workspace::labeled_slider(ui, "Brightness", egui::Slider::new(brightness, -100.0..=100.0).integer());
+                                crate::workspace::labeled_slider(ui, "Contrast", egui::Slider::new(contrast, -100.0..=100.0).integer());
                             }
                             Settings::HueSaturation { hue, saturation, lightness } => {
-                                ui.add(egui::Slider::new(hue, -180.0..=180.0).text("Hue").suffix("\u{b0}").integer());
-                                ui.add(egui::Slider::new(saturation, -100.0..=100.0).text("Saturation").integer());
-                                ui.add(egui::Slider::new(lightness, -100.0..=100.0).text("Lightness").integer());
+                                crate::workspace::labeled_slider(ui, "Hue", egui::Slider::new(hue, -180.0..=180.0).suffix("\u{b0}").integer());
+                                crate::workspace::labeled_slider(ui, "Saturation", egui::Slider::new(saturation, -100.0..=100.0).integer());
+                                crate::workspace::labeled_slider(ui, "Lightness", egui::Slider::new(lightness, -100.0..=100.0).integer());
                             }
                             Settings::Levels { black, white, gamma, output_black, output_white } => {
                                 ui.label("Input levels");
-                                ui.add(egui::Slider::new(black, 0..=white.saturating_sub(1)).text("Black point"));
-                                ui.add(egui::Slider::new(gamma, 0.1..=10.0).logarithmic(true).text("Midtones").max_decimals(2));
-                                ui.add(egui::Slider::new(white, black.saturating_add(1)..=255).text("White point"));
+                                crate::workspace::labeled_slider(ui, "Black point", egui::Slider::new(black, 0..=white.saturating_sub(1)));
+                                crate::workspace::labeled_slider(ui, "Midtones", egui::Slider::new(gamma, 0.1..=10.0).logarithmic(true).max_decimals(2));
+                                crate::workspace::labeled_slider(ui, "White point", egui::Slider::new(white, black.saturating_add(1)..=255));
                                 ui.label("Output levels");
-                                ui.add(egui::Slider::new(output_black, 0..=*output_white).text("Black"));
-                                ui.add(egui::Slider::new(output_white, *output_black..=255).text("White"));
+                                crate::workspace::labeled_slider(ui, "Black", egui::Slider::new(output_black, 0..=*output_white));
+                                crate::workspace::labeled_slider(ui, "White", egui::Slider::new(output_white, *output_black..=255));
                             }
                         });
                         if before != preview.settings { preview.error = None; }
