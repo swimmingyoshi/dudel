@@ -76,7 +76,13 @@ press and release in one frame, which took a different path than a mouse click.
 - [x] Fix: `egui::Popup::from_toggle_button_response` with fixed IDs for the
       Global and Guides buttons (`src/layer_guides.rs`)
 - [x] Test passes for mouse clicks and same-frame taps
-- [ ] Audit other `MenuButton`s whose preceding layout can change (same bug class)
+- [x] Audit other `MenuButton`s whose preceding layout can change (same bug class).
+      Found one: the toolbar Symmetry button named the mode, so choosing a mode
+      widened the bar, collapsed it to compact and closed the popup (940-1030 and
+      1420-1470 px windows). The inline label is now fixed; the mode is in its
+      tooltip (`toolbar_symmetry_popup_stays_open_while_its_label_grows`). Fill
+      options, Smooth/Rope and Color stay open across 640-1700 px. Other
+      `menu_button`s close on any click or are hover submenus.
 - [ ] Manual check with mouse and pen
 
 ### 4. Plugin / add-on system
@@ -94,13 +100,23 @@ Done (API 2, `src/extension_api.rs`, `src/extensions.rs`, [plugins/API_2.md](plu
 
 Left:
 
-- [ ] Plugin manager UI: list, enable/disable, uninstall, show capabilities and errors
-- [ ] Permission prompt on install showing declared capabilities
+- [x] Plugin manager UI: list, enable/disable, uninstall, show capabilities and errors
+      (Filter > Manage extensions; capabilities are described in words, raw IDs on hover)
+- [x] Permission prompt on install showing declared capabilities; replacements
+      mark capabilities the installed release lacked
+      (`installing_asks_first_and_lists_what_the_package_can_do`)
 - [ ] Scripted tools (custom input handling), beyond presets of native tools
 - [ ] Brush asset contributions (tip/grain textures), not only parameters
 - [ ] More panel widgets; decide the stable widget list before 0.2
-- [ ] Load/unload without restart; update/version conflict handling
-- [ ] Fuzz/limit tests for malformed API 2 manifests (size, depth, counts)
+- [x] Load/unload without restart: install, enable, disable and uninstall apply at once
+- [x] Owner test (2026-11-01): the example's "Invert selection" was a color filter.
+      Added native Select > Invert selection (Ctrl+Shift+I, soft edges kept, undoable)
+      and host command `invert_selection`; example renamed to "Invert colors", 1.1.0.
+- [x] Installed filters (API 1 packages, API 2 filter commands) are Filter menu items;
+      loose .rhai/.wasm files moved to Filter > Run filter from file
+- [ ] Update/version conflict handling (releases are free text, so no ordering yet)
+- [x] Limit tests for malformed API 2 manifests (size, depth, counts): all held
+      (`malformed_manifests_are_refused_at_their_limits_without_panicking`)
 
 ### 5. CSP and PSD import
 

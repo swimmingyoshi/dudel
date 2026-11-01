@@ -114,7 +114,7 @@ between Freehand, Rectangle and Ellipse outlines, with options to constrain
 proportions and draw from the center.
 
 Press **M** for Selection or **V** for Move. The tool property panel exposes their
-options. **Ctrl+D** deselects. If you enter a transform preview, finish with its
+options. **Ctrl+D** deselects and **Ctrl+Shift+I** inverts the selection. If you enter a transform preview, finish with its
 Apply action or cancel with Escape before continuing other editing operations.
 
 For paired features such as eyes, select **one** feature on the active layer,

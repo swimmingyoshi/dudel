@@ -662,6 +662,14 @@ impl Dudel {
             }
             if menu_item(
                 ui,
+                "Invert selection",
+                "Ctrl+Shift+I",
+                self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
+            ) {
+                self.invert_selection();
+            }
+            if menu_item(
+                ui,
                 if masked { "Clear mask" } else { "Clear pixels" },
                 "Delete",
                 true,
@@ -689,27 +697,30 @@ impl Dudel {
                 self.filter(include_str!("../plugins/grayscale.rhai"));
                 ui.close();
             }
+            self.extension_filters_ui(ui);
             ui.separator();
-            if ui.button("Run filter extension…").clicked() {
-                let dialog = rfd::AsyncFileDialog::new().add_filter("Rhai filter", &["rhai"]);
-                self.ask_open_file(dialog, |app, path| {
-                    match crate::read_bounded(&path, 32768) {
-                        Ok(source) => app.filter(&source),
-                        Err(e) => app.status = e,
-                    }
-                });
-                ui.close();
-            }
-            if ui.button("Run WASM filter…").clicked() {
-                let dialog = rfd::AsyncFileDialog::new().add_filter("WASM filter", &["wasm"]);
-                self.ask_open_file(dialog, |app, path| {
-                    match crate::wasm_filters::read_module(&path) {
+            ui.menu_button("Run filter from file", |ui| {
+                if ui.button("Rhai script (.rhai)…").clicked() {
+                    let dialog = rfd::AsyncFileDialog::new().add_filter("Rhai filter", &["rhai"]);
+                    self.ask_open_file(dialog, |app, path| {
+                        match crate::read_bounded(&path, 32768) {
+                            Ok(source) => app.filter(&source),
+                            Err(e) => app.status = e,
+                        }
+                    });
+                    ui.close();
+                }
+                if ui.button("WebAssembly module (.wasm)…").clicked() {
+                    let dialog = rfd::AsyncFileDialog::new().add_filter("WASM filter", &["wasm"]);
+                    self.ask_open_file(dialog, |app, path| match crate::wasm_filters::read_module(
+                        &path,
+                    ) {
                         Ok(bytes) => app.start_filter(crate::plugins::FilterProgram::Wasm(bytes)),
                         Err(error) => app.status = error,
-                    }
-                });
-                ui.close();
-            }
+                    });
+                    ui.close();
+                }
+            });
             if ui.button("Manage extensions…").clicked() {
                 self.extension_manager = true;
                 ui.close();
@@ -1000,7 +1011,7 @@ impl Dudel {
                         + ui.spacing().item_spacing.x
                         + ui.spacing().slider_width + ui.spacing().interact_size.x
                         + text_width("Snap", egui::TextStyle::Button)
-                        + text_width(&symmetry_label, egui::TextStyle::Button)
+                        + text_width("Symmetry", egui::TextStyle::Button)
                         + 4.0 * ui.spacing().button_padding.x + 18.0
                         + 8.0 * ui.spacing().item_spacing.x + 16.0;
                     let remaining = ui.available_width().min(ui.ctx().content_rect().right() - 8.0 - ui.next_widget_position().x);
@@ -1066,7 +1077,9 @@ impl Dudel {
                                 ui.visuals().text_color()
                             },
                         );
-                        let menu = egui::Button::new(&symmetry_label).selected(symmetry.active());
+                        // A fixed label: a mode name would widen the bar, and choosing
+                        // a mode could then collapse it and close this popup.
+                        let menu = egui::Button::new("Symmetry").selected(symmetry.active());
                         let content = |ui: &mut egui::Ui| {
                                 ui.set_width(260.0);
                                 let height=(ui.ctx().content_rect().height()-32.0).clamp(120.0,320.0);
@@ -1074,7 +1087,7 @@ impl Dudel {
                         };
                         let response = egui::containers::menu::MenuButton::from_button(menu).config(egui::containers::menu::MenuConfig::default().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)).ui(ui, content);
                         response.0
-                            .on_hover_text("Draw mirrored or radial copies of every stroke");
+                            .on_hover_text(format!("{symmetry_label}\nDraw mirrored or radial copies of every stroke"));
                         }
                     };
                     if compact {

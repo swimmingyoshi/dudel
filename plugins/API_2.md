@@ -4,7 +4,8 @@ API 2 adds brush presets, tool presets, application commands and custom panels
 to the existing sandboxed Rhai/WASM pixel filters. Install
 `example-studio-kit.dudelplugin` through **Filter > Manage extensions** to try all
 five contribution types. Brush and tool buttons appear in the tool rail. Open
-contributed panels from the manager or the Filter menu.
+contributed panels from the manager or the Filter menu. Filter commands are listed
+in the Filter menu with the built-in filters.
 
 ## Package contract
 
@@ -28,8 +29,8 @@ Each command has `id`, `label` and an `action` with one of these `type` values:
 | `wasm_filter` | `wasm`: byte array using the existing WASM ABI | `pixels.filter` |
 | `host` | `command`: supported application command | `commands` |
 
-Host commands: `undo`, `redo`, `new_layer`, `deselect`, `transform`, `fit_canvas`,
-`flip_view`. These call the application's normal action paths. Artwork edits
+Host commands: `undo`, `redo`, `new_layer`, `deselect`, `invert_selection`,
+`transform`, `fit_canvas`, `flip_view`. These call the application's normal action paths. Artwork edits
 participate in native undo and target permissions; view changes do not create
 artwork history. Filters retain cancellation, stale-result rejection and atomic
 publication from API 1.

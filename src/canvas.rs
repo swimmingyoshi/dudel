@@ -389,6 +389,9 @@ impl Dudel {
         if key(Modifiers::COMMAND, Key::O) {
             self.open();
         }
+        if key(command_shift, Key::I) {
+            self.invert_selection();
+        }
         if key(Modifiers::COMMAND, Key::A) {
             self.select_all();
         }
@@ -1620,6 +1623,7 @@ const SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl + C  /  Ctrl + X", "Copy / cut layer pixels"),
             ("Ctrl + V", "Paste image as a new layer"),
             ("Ctrl + A  /  Ctrl + D", "Select all / deselect"),
+            ("Ctrl + Shift + I", "Invert selection"),
             ("Delete", "Clear selection or layer"),
             ("Esc", "Cancel selection"),
         ],

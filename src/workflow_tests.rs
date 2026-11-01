@@ -3061,3 +3061,132 @@ fn layered_illustration_selection_move_undo_save_reopen_and_export_preserve_artw
     );
     assert!(!app.modified && app.path.as_ref() == Some(&project));
 }
+
+#[test]
+fn toolbar_symmetry_popup_stays_open_while_its_label_grows() {
+    // These widths fit the bar with "Symmetry" but not "Symmetry: Four-way";
+    // a label naming the mode collapsed the bar and closed the popup.
+    for width in [950.0, 1000.0, 1030.0, 1430.0, 1470.0] {
+        let mut w = Workspace::sized([width, 800.0]);
+        w.app.select_tool(crate::tools::Tool::Brush);
+        w.settle();
+        w.click(w.text("Symmetry"));
+        w.click(w.text("Four-way"));
+        assert!(egui::Popup::is_any_open(&w.ctx), "closed at {width}");
+        w.click(w.text("Layer symmetry override"));
+        w.click(w.text("Radial"));
+        assert!(egui::Popup::is_any_open(&w.ctx), "closed at {width}");
+        assert_eq!(w.app.active_symmetry().mode, crate::symmetry::Mode::Radial);
+    }
+}
+
+#[test]
+fn invert_selection_reverses_coverage_from_menu_shortcut_and_plugin() {
+    let mut w = Workspace::sized([1280., 800.]);
+    w.app.doc = crate::document::Document::new(4, 4);
+    w.app.invert_selection();
+    assert_eq!(w.app.status, "Nothing is selected to invert");
+    let rect = crate::selection::Selection {
+        left: 1,
+        top: 1,
+        right: 3,
+        bottom: 3,
+    };
+    w.app.set_selection(Some(rect));
+    w.app.flush_render_queue();
+    w.settle();
+    w.key(egui::Key::I, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    w.app.flush_render_queue();
+    assert!(
+        w.app.tool != crate::tools::Tool::Picker,
+        "Ctrl+Shift+I is not I"
+    );
+    let mask = w.app.doc.selection_mask.clone().unwrap();
+    for (x, y) in [(0, 0), (3, 3), (1, 1), (2, 2)] {
+        let inside = (1..3).contains(&x) && (1..3).contains(&y);
+        assert_eq!(mask.at(x, y), if inside { 0 } else { 255 }, "{x},{y}");
+    }
+    assert_eq!(
+        w.app.doc.selection,
+        Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 4,
+            bottom: 4
+        })
+    );
+    // Soft edges stay soft: coverage 64 becomes 191.
+    let mut coverage = vec![0; 16];
+    coverage[5] = 64;
+    w.app.dispatch_document_edit(
+        crate::document_edits::Edit::SelectionMask(Some(
+            crate::selection_mask::Mask::from_coverage(4, 4, coverage).unwrap(),
+        )),
+        "",
+        "",
+    );
+    w.app.flush_render_queue();
+    w.click(w.text("Select"));
+    w.click(w.text("Invert selection"));
+    w.app.flush_render_queue();
+    assert_eq!(w.app.doc.selection_mask.as_ref().unwrap().at(1, 1), 191);
+    assert_eq!(w.app.doc.selection_mask.as_ref().unwrap().at(0, 0), 255);
+    w.app.undo();
+    w.app.flush_render_queue();
+    assert_eq!(w.app.doc.selection_mask.as_ref().unwrap().at(1, 1), 64);
+    // Inverting everything leaves nothing selected.
+    w.app.select_all();
+    w.app.flush_render_queue();
+    w.app.extensions.push(crate::extensions::Installed {
+        package: serde_json::from_str(include_str!("../plugins/example-studio-kit.dudelplugin"))
+            .unwrap(),
+        enabled: true,
+    });
+    w.app
+        .run_extension_command("dudel-studio-kit", "invert-selection");
+    w.app.flush_render_queue();
+    assert!(w.app.doc.selection.is_none() && w.app.doc.selection_mask.is_none());
+}
+
+#[test]
+fn installed_filters_run_from_the_filter_menu() {
+    let mut w = Workspace::sized([1280., 800.]);
+    w.app.doc = crate::document::Document::new(1, 1);
+    w.app.doc.layers[0].pixels = vec![10, 30, 200, 255].into();
+    for (source, enabled) in [
+        (
+            include_str!("../plugins/example-wasm-invert.dudelplugin"),
+            true,
+        ),
+        (
+            include_str!("../plugins/example-studio-kit.dudelplugin"),
+            true,
+        ),
+        (include_str!("../plugins/example-invert.dudelplugin"), false),
+    ] {
+        w.app.extensions.push(crate::extensions::Installed {
+            package: serde_json::from_str(source).unwrap(),
+            enabled,
+        });
+    }
+    w.settle();
+    w.click(w.text("Filter"));
+    w.text("Invert colors");
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.text("Example invert")))
+            .is_err(),
+        "disabled packages are not listed"
+    );
+    w.click(w.text("WASM invert"));
+    assert!(!egui::Popup::is_any_open(&w.ctx), "the menu closes");
+    for _ in 0..200 {
+        if w.app.filter_job.is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        w.app.poll_filter(&w.ctx);
+    }
+    assert!(w.app.filter_job.is_none(), "{}", w.app.status);
+    w.app.flush_render_queue();
+    assert_eq!(&w.app.doc.layers[0].pixels[..], &[245, 225, 55, 255]);
+}

@@ -108,6 +108,7 @@ mod psd_import;
 mod psd_vector;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
+mod background;
 mod native_session;
 mod navigator;
 mod new_canvas;
@@ -705,6 +706,18 @@ impl Dudel {
             bottom: self.doc.height,
         }));
     }
+    /// Select everything outside the selection, keeping soft edges soft.
+    fn invert_selection(&mut self) {
+        if self.doc.selection.is_none() && self.doc.selection_mask.is_none() {
+            self.status = "Nothing is selected to invert".into();
+            return;
+        }
+        self.dispatch_document_edit(
+            document_edits::Edit::InvertSelection,
+            "Selection inverted",
+            "Selection unchanged",
+        );
+    }
     fn clear_selection_pixels(&mut self) {
         self.clear_pixels(false);
     }
@@ -947,7 +960,7 @@ impl Dudel {
         let selection = self.doc.selection;
         let mask = self.doc.selection_mask.clone();
         let width = self.doc.width;
-        let worker = std::thread::spawn(move || {
+        let worker = background::spawn(move || {
             match program {
                 plugins::FilterProgram::Rhai(source) => plugins::apply_filter_masked(
                     &mut layer,

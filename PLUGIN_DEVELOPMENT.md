@@ -51,7 +51,9 @@ and `plugins/example-wasm-invert.dudelplugin` for the exact calling convention.
 ## Compatibility
 
 The host rejects unsupported API versions and capabilities before installation.
-Replacing an installed ID asks the user and preserves its enabled state. Keep
+Installing asks the user first and lists what each declared capability allows;
+a replacement marks capabilities the installed release lacked and preserves its
+enabled state. Keep
 API 1 compatible; introduce a new negotiated version for future tool/document
 capabilities rather than granting existing packages more access. Plugin authors
 must specify their own distribution terms; Dudel's repository examples are GPLv3.

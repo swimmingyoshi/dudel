@@ -324,6 +324,17 @@ impl Dudel {
                             {
                                 self.set_selection(None);
                             }
+                            if ui
+                                .add_enabled(
+                                    self.doc.selection.is_some()
+                                        || self.doc.selection_mask.is_some(),
+                                    egui::Button::new("Invert"),
+                                )
+                                .on_hover_text("Select everything outside the selection (Ctrl+Shift+I)")
+                                .clicked()
+                            {
+                                self.invert_selection();
+                            }
                             if ui.button("Clear pixels").clicked() {
                                 self.clear_selection_pixels();
                             }

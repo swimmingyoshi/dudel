@@ -250,6 +250,11 @@ impl Mask {
     pub(crate) fn bounds(&self) -> Option<Selection> {
         self.bounds
     }
+    /// Every pixel's coverage reversed: unselected becomes fully selected.
+    pub(crate) fn inverted(&self, cancel: Option<&AtomicBool>) -> Result<Self, String> {
+        let coverage = self.coverage.iter().map(|value| 255 - value).collect();
+        Self::from_coverage_control(self.width, self.height, coverage, cancel)
+    }
     pub(crate) fn combine(
         &self,
         other: &Self,

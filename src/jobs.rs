@@ -2,7 +2,7 @@ use crate::{Dudel, document::Layer, egui, plugins};
 use std::sync::atomic::Ordering;
 
 pub struct FilterJob {
-    pub worker: std::thread::JoinHandle<Result<Layer, String>>,
+    pub worker: crate::background::Handle<Result<Layer, String>>,
     pub control: plugins::FilterControl,
     pub revision: u64,
     pub layer_index: usize,

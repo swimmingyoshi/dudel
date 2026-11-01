@@ -3,8 +3,8 @@
 For brush/tool contributions, commands and panels, see [Extension API 2](API_2.md).
 
 Open Filter → Manage extensions → Install and choose
-`example-invert.dudelplugin`. Enable it and select Run filter to apply it to the
-active layer. Undo reverses the committed result once. An active rectangle
+`example-invert.dudelplugin`. It appears in the Filter menu under its name while
+enabled; choose it (or Run filter in the manager) to apply it to the active layer. Undo reverses the committed result once. An active rectangle
 selection constrains the pixels supplied to the filter.
 
 A `.dudelplugin` is a UTF-8 JSON object containing the example's fields. `version`
@@ -33,5 +33,5 @@ replacement. Updates preserve enabled state and request confirmation for an
 existing ID. Disabling prevents new manager runs; it does not cancel a worker
 already running. Uninstall cancels pending filter work. Maximum 64 installed filters.
 
-Raw `.rhai` files remain supported by Filter → Run filter extension. This API
+Raw `.rhai` files remain supported by Filter → Run filter from file. This API
 covers Rhai pixel filters. WASM pixel packages use the parallel contract in WASM_SDK.md; brush/tool presets and UI contributions use API_2.md.

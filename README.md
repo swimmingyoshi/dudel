@@ -105,7 +105,7 @@ Then:
 | Fit canvas / actual pixels / flip view | **Ctrl+0** / **Ctrl+1** / **H** |
 | Fill, Lasso, Selection, Move, Picker | **G**, **L**, **M**, **V**, **I** |
 | New layer / duplicate layer | **Ctrl+Shift+N** / **Ctrl+J** |
-| Free transform / deselect | **Ctrl+T** / **Ctrl+D** |
+| Free transform / deselect / invert selection | **Ctrl+T** / **Ctrl+D** / **Ctrl+Shift+I** |
 | Pointer (move references, guides and rulers) | **O** |
 | Save / Save as / Open | **Ctrl+S** / **Ctrl+Shift+S** / **Ctrl+O** |
 | Next / previous tab, close tab | **Ctrl+Tab** / **Ctrl+Shift+Tab**, **Ctrl+W** |

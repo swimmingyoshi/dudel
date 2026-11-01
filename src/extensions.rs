@@ -99,7 +99,7 @@ impl Package {
         }
         Ok(())
     }
-    fn program(&self) -> crate::plugins::FilterProgram {
+    pub(crate) fn program(&self) -> crate::plugins::FilterProgram {
         if self.format == "dudel-wasm-extension" {
             crate::plugins::FilterProgram::Wasm(self.wasm.clone())
         } else {
@@ -107,6 +107,69 @@ impl Package {
         }
     }
 }
+/// What a declared capability lets a package do, as the install prompt and
+/// the manager describe it.
+pub(crate) fn capability_text(capability: &str) -> &'static str {
+    match capability {
+        "brushes" => "Add brushes",
+        "tools" => "Add presets of Dudel's tools",
+        "commands" => "Add commands for undo, redo, new layer, selections, transform and the view",
+        "pixels.filter" => "Change the active layer's pixels when you run one of its filters",
+        "ui.panels" => "Show panels with its buttons and brush, color and guide controls",
+        _ => "Unknown capability",
+    }
+}
+
+/// A capability's short name for the manager's one-line summary.
+fn capability_name(capability: &str) -> &str {
+    match capability {
+        "brushes" => "brushes",
+        "tools" => "tool presets",
+        "commands" => "commands",
+        "pixels.filter" => "layer filters",
+        "ui.panels" => "panels",
+        other => other,
+    }
+}
+
+/// The install prompt: who made the package and what it may do. A
+/// replacement marks capabilities the installed release did not have.
+fn install_prompt(package: &Package, installed: Option<&Package>) -> String {
+    let mut text = match installed {
+        Some(old) => format!(
+            "Replace ‘{}’ {} with release {} by {}?",
+            old.name, old.release, package.release, package.author
+        ),
+        None => format!(
+            "Install ‘{}’ {} by {}?",
+            package.name, package.release, package.author
+        ),
+    };
+    text.push_str(&format!(
+        "
+
+{}
+
+It can:",
+        package.description
+    ));
+    for capability in &package.capabilities {
+        let new = installed.is_some_and(|old| !old.capabilities.contains(capability));
+        text.push_str(&format!(
+            "
+• {}{}",
+            capability_text(capability),
+            if new { " (new)" } else { "" }
+        ));
+    }
+    text.push_str(
+        "
+
+Extensions run inside Dudel without access to your files or the network.",
+    );
+    text
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Installed {
     pub package: Package,
@@ -190,17 +253,17 @@ impl Dudel {
             if existing.is_none() && self.extensions.len() >= 64 {
                 return Err("Extension limit reached (64)".into());
             }
-            Ok((package, existing.map(|extension| extension.enabled)))
+            let text = install_prompt(&package, existing.map(|e| &e.package));
+            Ok((package, existing.map(|extension| extension.enabled), text))
         })();
         match result {
-            Ok((package, None)) => self.save_extension(package, true),
-            Ok((package, Some(enabled))) => {
-                let text = format!(
-                    "Replace ‘{}’ with release {} by {}?",
-                    package.name, package.release, package.author
-                );
-                self.confirm("Replace installed extension", text, "Replace", move |app| {
-                    app.save_extension(package, enabled)
+            Ok((package, enabled, text)) => {
+                let (title, action) = match enabled {
+                    Some(_) => ("Replace installed extension", "Replace"),
+                    None => ("Install extension", "Install"),
+                };
+                self.confirm(title, text, action, move |app| {
+                    app.save_extension(package, enabled.unwrap_or(true))
                 });
             }
             Err(error) => self.status = format!("Extension installation: {error}"),
@@ -233,7 +296,9 @@ if ui.button("Refresh").clicked() { self.load_extensions(); } });
                 ui.strong(&extension.package.name);
                 ui.label(format!("{} · {}", extension.package.release, extension.package.author));
                 ui.label(&extension.package.description);
-                ui.weak(format!("API {} · {}", extension.package.api, extension.package.capabilities.join(" · ")));
+                let short: Vec<_> = extension.package.capabilities.iter().map(|c| capability_name(c)).collect();
+                let full: Vec<_> = extension.package.capabilities.iter().map(|c| format!("• {}", capability_text(c))).collect();
+                ui.weak(format!("API {} · can use {}", extension.package.api, short.join(", "))).on_hover_text(full.join("\n"));
                 let mut enabled = extension.enabled;
                 ui.horizontal_wrapped(|ui| {
                     if ui.checkbox(&mut enabled, "Enabled").changed() {
@@ -321,6 +386,32 @@ mod tests {
         document.layers[0].pixels = vec![10, 30, 200, 128].into();
         crate::plugins::apply_filter(&mut document.layers[0], &package.source).unwrap();
         assert_eq!(document.layers[0].pixels, vec![245, 225, 55, 128]);
+    }
+    #[test]
+    fn installing_asks_first_and_lists_what_the_package_can_do() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/example-studio-kit.dudelplugin");
+        let mut app = Dudel::default();
+        app.install_extension_from(path.clone());
+        assert!(
+            app.dialogs.open(),
+            "nothing is installed before the owner agrees"
+        );
+        assert!(app.extensions.is_empty());
+        let package: Package =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let text = install_prompt(&package, None);
+        assert!(text.starts_with("Install ‘"));
+        for capability in &package.capabilities {
+            assert!(text.contains(capability_text(capability)), "{capability}");
+        }
+        assert!(!text.contains("(new)"));
+        let mut old = package.clone();
+        old.capabilities.retain(|c| c != "ui.panels");
+        let text = install_prompt(&package, Some(&old));
+        assert!(text.starts_with("Replace ‘"));
+        assert!(text.contains(&format!("{} (new)", capability_text("ui.panels"))));
+        assert_eq!(text.matches("(new)").count(), 1);
     }
     fn package() -> Package {
         Package {

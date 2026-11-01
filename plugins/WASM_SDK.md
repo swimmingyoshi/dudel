@@ -1,7 +1,9 @@
 # WASM pixel filter API 1
 
 Build the included module with `cargo run --example build_wasm_filter`, then
-choose Filter → Run WASM filter and select `plugins/example-wasm-invert.wasm`.
+choose Filter → Run filter from file → WebAssembly module and select
+`plugins/example-wasm-invert.wasm`. Installed WASM packages, such as
+`example-wasm-invert.dudelplugin`, appear in the Filter menu by name.
 
 Binary modules must export:
 

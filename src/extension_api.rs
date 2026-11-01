@@ -28,6 +28,11 @@ pub enum Action {
     WasmFilter { wasm: Vec<u8> },
     Host { command: HostCommand },
 }
+impl Action {
+    pub(crate) fn is_filter(&self) -> bool {
+        matches!(self, Self::Filter { .. } | Self::WasmFilter { .. })
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ToolPreset {
@@ -63,6 +68,7 @@ pub enum HostCommand {
     Redo,
     NewLayer,
     Deselect,
+    InvertSelection,
     Transform,
     FitCanvas,
     FlipView,
@@ -262,6 +268,7 @@ impl Dudel {
                 HostCommand::Redo => self.redo(),
                 HostCommand::NewLayer => self.new_layer(),
                 HostCommand::Deselect => self.set_selection(None),
+                HostCommand::InvertSelection => self.invert_selection(),
                 HostCommand::Transform => {
                     self.affine_settings.mirror = None;
                     self.toggle_free_transform();
@@ -305,24 +312,93 @@ impl Dudel {
                 )
             })
             .collect();
-        for (id, name, contributions) in packages {
+        let in_menu = package_id.is_none();
+        for (id, name, mut contributions) in packages {
+            if in_menu {
+                // The Filter menu lists filters with the built-in ones.
+                contributions.commands.retain(|c| !c.action.is_filter());
+                if contributions.commands.is_empty() && contributions.panels.is_empty() {
+                    continue;
+                }
+            }
             ui.push_id(&id, |ui| {
-                if package_id.is_none() {
+                if in_menu {
                     ui.strong(name);
                 }
                 ui.horizontal_wrapped(|ui| {
                     for command in contributions.commands {
                         if ui.button(&command.label).clicked() {
                             self.run_extension_command(&id, &command.id);
+                            if in_menu {
+                                ui.close();
+                            }
                         }
                     }
                     for panel in contributions.panels {
                         if ui.button(format!("{}…", panel.title)).clicked() {
                             self.extension_panels.insert(format!("{id}/{}", panel.id));
+                            if in_menu {
+                                ui.close();
+                            }
                         }
                     }
                 });
             });
+        }
+    }
+    /// Filter menu items for enabled extensions' filters: API 1 packages by
+    /// name, API 2 filter commands by label. Shows nothing when there are none.
+    pub(crate) fn extension_filters_ui(&mut self, ui: &mut egui::Ui) {
+        let mut filters = Vec::new();
+        for extension in self.extensions.iter().filter(|e| e.enabled) {
+            let package = &extension.package;
+            if package.api == 1 {
+                filters.push((
+                    package.id.clone(),
+                    None,
+                    package.name.clone(),
+                    package.name.clone(),
+                ));
+            }
+            for command in package
+                .contributes
+                .commands
+                .iter()
+                .filter(|c| c.action.is_filter())
+            {
+                filters.push((
+                    package.id.clone(),
+                    Some(command.id.clone()),
+                    command.label.clone(),
+                    package.name.clone(),
+                ));
+            }
+        }
+        if filters.is_empty() {
+            return;
+        }
+        ui.separator();
+        for (package, command, label, source) in filters {
+            let clicked = ui
+                .push_id((&package, &command), |ui| {
+                    ui.add_enabled(self.filter_job.is_none(), egui::Button::new(label))
+                })
+                .inner
+                .on_hover_text(format!("From the {source} extension"))
+                .clicked();
+            if clicked {
+                match command {
+                    Some(command) => self.run_extension_command(&package, &command),
+                    None => {
+                        if let Some(extension) =
+                            self.extensions.iter().find(|e| e.package.id == package)
+                        {
+                            self.start_filter(extension.package.program());
+                        }
+                    }
+                }
+                ui.close();
+            }
         }
     }
     pub(crate) fn extension_tools_ui(&mut self, ui: &mut egui::Ui, side: f32) {
@@ -466,6 +542,95 @@ mod tests {
             }
             assert!(p.validate().is_err(), "case {case}");
         }
+    }
+    #[test]
+    fn malformed_manifests_are_refused_at_their_limits_without_panicking() {
+        let host = |id: String| Command {
+            id,
+            label: "Undo".into(),
+            action: Action::Host {
+                command: HostCommand::Undo,
+            },
+        };
+        let mut p = package();
+        p.contributes.commands = (0..64).map(|i| host(format!("c{i}"))).collect();
+        p.contributes.panels.clear();
+        p.capabilities = vec!["commands".into()];
+        p.validate().unwrap();
+        p.contributes.commands.push(host("c64".into()));
+        assert!(p.validate().is_err(), "65 commands");
+
+        let mut p = package();
+        let panel = p.contributes.panels[0].clone();
+        p.contributes.panels = (0..8)
+            .map(|i| Panel {
+                id: format!("p{i}"),
+                ..panel.clone()
+            })
+            .collect();
+        p.validate().unwrap();
+        p.contributes.panels.push(Panel {
+            id: "p8".into(),
+            ..panel
+        });
+        assert!(p.validate().is_err(), "9 panels");
+
+        let mut p = package();
+        p.contributes.panels[0].widgets = vec![Widget::Separator; 64];
+        p.validate().unwrap();
+        p.contributes.panels[0].widgets.push(Widget::Separator);
+        assert!(p.validate().is_err(), "65 widgets");
+
+        let mut p = package();
+        let label = |text: String| vec![Widget::Label { text }];
+        p.contributes.panels[0].widgets = label("a".repeat(1000));
+        p.validate().unwrap();
+        p.contributes.panels[0].widgets = label("a".repeat(1001));
+        assert!(p.validate().is_err(), "long label");
+        p.contributes.panels[0].widgets = label("bell\u{7}".into());
+        assert!(p.validate().is_err(), "control character");
+
+        let mut p = package();
+        p.contributes.commands[0].id = "a".repeat(81);
+        assert!(p.validate().is_err(), "long command ID");
+        let mut p = package();
+        p.capabilities.push(p.capabilities[0].clone());
+        assert!(p.validate().is_err(), "duplicate capability");
+        let mut p = package();
+        p.contributes.commands[0].action = Action::Filter {
+            source: format!(
+                "fn filter(r, g, b, a) {{ [r, g, b, a] }} // {}",
+                "x".repeat(32768)
+            ),
+        };
+        p.capabilities.push("pixels.filter".into());
+        assert!(p.validate().is_err(), "oversized filter");
+
+        // Deep nesting, unknown fields and truncated, non-UTF-8 or oversized
+        // files are parse errors, not crashes.
+        let deep = format!(
+            r#"{{"commands":[{{"id":"x","label":"x","action":{}1{}}}]}}"#,
+            "[".repeat(100_000),
+            "]".repeat(100_000)
+        );
+        assert!(serde_json::from_str::<Contributions>(&deep).is_err());
+        assert!(serde_json::from_str::<Contributions>(r#"{"files":["C:/"]}"#).is_err());
+        let source = include_str!("../plugins/example-studio-kit.dudelplugin");
+        assert!(
+            serde_json::from_str::<crate::extensions::Package>(&source[..source.len() / 2])
+                .is_err()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.dudelplugin");
+        std::fs::write(&path, [0xff, 0xfe, b'{']).unwrap();
+        assert!(crate::extensions::check_package(&path).is_err());
+        let mut big = source.as_bytes().to_vec();
+        big.resize(5 * 1024 * 1024 + 1, b' ');
+        std::fs::write(&path, big).unwrap();
+        assert!(
+            crate::extensions::check_package(&path).is_err(),
+            "over 5 MiB"
+        );
     }
     #[test]
     fn brushes_tools_commands_and_disable_use_native_state_and_undo() {

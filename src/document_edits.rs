@@ -66,6 +66,7 @@ pub enum Edit {
         settings: crate::lasso_paint::Settings,
     },
     FeatherSelection(u8),
+    InvertSelection,
     Property {
         target: Target,
         property: Property,
@@ -310,7 +311,8 @@ impl Edit {
             | Self::SelectionPolygon { .. }
             | Self::SelectionWand { .. }
             | Self::SelectionCoverage { .. }
-            | Self::FeatherSelection(_) => Some("Selection"),
+            | Self::FeatherSelection(_)
+            | Self::InvertSelection => Some("Selection"),
             Self::Transform(_) | Self::TransformTarget { .. } if masked => Some("Transform"),
             _ => None,
         }
@@ -437,6 +439,14 @@ impl Edit {
                 doc.selection = mask.bounds();
                 doc.selection_mask = Some(mask);
                 outcome.changed = doc.selection_mask != source.selection_mask;
+                outcome.redraw = false;
+            }
+            Self::InvertSelection => {
+                let mask = current_selection(&doc, cancel)?.inverted(cancel)?;
+                doc.selection = mask.bounds();
+                doc.selection_mask = doc.selection.map(|_| mask);
+                outcome.changed = doc.selection != source.selection
+                    || doc.selection_mask != source.selection_mask;
                 outcome.redraw = false;
             }
             Self::SelectLayer(index) => {

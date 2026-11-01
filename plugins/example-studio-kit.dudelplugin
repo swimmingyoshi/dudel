@@ -5,8 +5,8 @@
   "id": "dudel-studio-kit",
   "name": "Studio kit",
   "author": "Dudel",
-  "release": "1.0.0",
-  "description": "An example brush, shape tool, selection tool and drawing panel.",
+  "release": "1.1.0",
+  "description": "An example brush, shape tool, selection tools, color filter and drawing panel.",
   "capabilities": [
     "brushes",
     "tools",
@@ -62,10 +62,18 @@
       },
       {
         "id": "invert",
-        "label": "Invert selection",
+        "label": "Invert colors",
         "action": {
           "type": "filter",
           "source": "fn filter(r,g,b,a) { [255-r,255-g,255-b,a] }"
+        }
+      },
+      {
+        "id": "invert-selection",
+        "label": "Invert selection",
+        "action": {
+          "type": "host",
+          "command": "invert_selection"
         }
       },
       {
@@ -123,6 +131,10 @@
           },
           {
             "type": "guide_lock"
+          },
+          {
+            "type": "button",
+            "command": "invert-selection"
           },
           {
             "type": "button",
