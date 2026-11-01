@@ -373,6 +373,27 @@ impl Effect {
         };
         reach.ceil() as usize + 2
     }
+    /// How far a change to the layer's pixels can change this effect's
+    /// drawing: its reach, and inside the layer the distances and blurs it
+    /// measures (a blur of `size` spreads about 1.2 times that).
+    fn influence(&self) -> usize {
+        let influence = match self.kind {
+            Kind::DropShadow { offset, size, .. } | Kind::InnerShadow { offset, size, .. } => {
+                3.0 * size + offset[0].abs().max(offset[1].abs())
+            }
+            Kind::OuterGlow { size, .. } | Kind::InnerGlow { size, .. } => 3.0 * size,
+            Kind::Stroke { size, .. } => size,
+            Kind::Bevel { size, soften, .. } => 3.0 * size + 2.0 * soften,
+            Kind::ColorOverlay | Kind::GradientOverlay => 0.0,
+        };
+        (influence.ceil() as usize + 4).max(self.reach())
+    }
+}
+
+/// Whether two effects draw the same pixels: blending and opacity are only
+/// applied when compositing.
+fn same_drawing(a: &Effect, b: &Effect) -> bool {
+    a.kind == b.kind && a.paint == b.paint
 }
 
 /// Draw effects as layers (Photoshop's Create Layers): those under `owner`,
@@ -388,52 +409,158 @@ pub(crate) fn draw(
     fill: u8,
     content: Option<&[f32]>,
     source: Option<&[f32]>,
-    [width, height]: [usize; 2],
+    size: [usize; 2],
     budget: &mut usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<[Vec<Layer>; 3], String> {
     let mut placed: [Vec<Layer>; 3] = Default::default();
-    let union = |a: [usize; 4], b: [usize; 4]| {
-        [
-            a[0].min(b[0]),
-            a[1].min(b[1]),
-            a[2].max(b[2]),
-            a[3].max(b[3]),
-        ]
+    let parts = draw_parts(effects, owner, fill, content, source, size, budget, cancel)?;
+    for (effect, part) in effects.iter().zip(parts) {
+        if let Some(mut layer) = part.layer {
+            dress(&mut layer, effect, owner, opacity, part.clip);
+            placed[part.place as usize].push(layer);
+        }
+    }
+    Ok(placed)
+}
+
+/// One effect's drawing, before compositing settings are applied.
+#[derive(Clone)]
+struct Part {
+    effect: Effect,
+    place: Place,
+    /// Clipped to the layer's own pixels.
+    clip: bool,
+    /// None when the effect draws nothing.
+    layer: Option<Layer>,
+}
+
+/// Name, visibility, blending and opacity of an effect's layer.
+fn dress(out: &mut Layer, effect: &Effect, owner: &Layer, opacity: f32, clip: bool) {
+    out.name = format!("{}'s {}", owner.name, effect.name());
+    out.visible = owner.visible;
+    out.blend = effect.blend;
+    out.clipped = clip || owner.clipped;
+    out.opacity = if clip {
+        effect.opacity
+    } else {
+        effect.opacity * opacity
     };
-    let covered = |plane: &[f32]| {
-        plane
+}
+
+/// The region effects reaching `reach` pixels around `owner`'s pixels (or
+/// around `plane`'s coverage) can draw in, if any.
+fn extent(
+    owner: &Layer,
+    plane: Option<&[f32]>,
+    [width, height]: [usize; 2],
+    reach: usize,
+) -> Option<[usize; 4]> {
+    let bounds = match plane {
+        Some(plane) => plane
             .iter()
             .enumerate()
             .filter(|(_, c)| **c > 0.0)
             .map(|(i, _)| [i % width, i / width, i % width + 1, i / width + 1])
-            .reduce(union)
-    };
-    let bounds = match (source, content) {
-        (Some(plane), _) | (None, Some(plane)) => covered(plane),
-        (None, None) => owner
+            .reduce(union),
+        None => owner
             .pixels
             .nonzero_tiles(width, height)
             .into_iter()
             .reduce(union),
-    };
-    let Some(bounds) = bounds else {
-        return Ok(placed);
-    };
-    let reach = effects.iter().map(|e| e.reach()).max().unwrap_or(0);
-    let rect = [
+    }?;
+    Some([
         bounds[0].saturating_sub(reach),
         bounds[1].saturating_sub(reach),
         (bounds[2] + reach).min(width),
         (bounds[3] + reach).min(height),
-    ];
+    ])
+}
+fn union(a: [usize; 4], b: [usize; 4]) -> [usize; 4] {
+    [
+        a[0].min(b[0]),
+        a[1].min(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]
+}
+fn area(rect: [usize; 4]) -> usize {
+    (rect[2] - rect[0]) * (rect[3] - rect[1])
+}
+
+/// Each effect drawn whole, in order.
+#[allow(clippy::too_many_arguments)]
+fn draw_parts(
+    effects: &[Effect],
+    owner: &Layer,
+    fill: u8,
+    content: Option<&[f32]>,
+    source: Option<&[f32]>,
+    size: [usize; 2],
+    budget: &mut usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<Vec<Part>, String> {
+    let empty = || {
+        effects
+            .iter()
+            .map(|effect| Part {
+                effect: effect.clone(),
+                place: effect.place(),
+                clip: false,
+                layer: None,
+            })
+            .collect()
+    };
+    let reach = effects.iter().map(|e| e.reach()).max().unwrap_or(0);
+    let Some(rect) = extent(owner, source.or(content), size, reach) else {
+        return Ok(empty());
+    };
+    let drawn = draw_rect(
+        effects, owner, fill, content, source, size, rect, None, budget, cancel,
+    )?;
+    let Some(drawn) = drawn else {
+        return Ok(empty());
+    };
+    Ok(effects
+        .iter()
+        .zip(drawn)
+        .map(|(effect, (place, clip, pixels))| {
+            let mut layer = Layer::raster(String::new(), size[0], size[1]);
+            layer.pixels.writer().write_region(size[0], rect, &pixels);
+            Part {
+                effect: effect.clone(),
+                place,
+                clip,
+                layer: Some(layer),
+            }
+        })
+        .collect())
+}
+
+/// An effect's RGBA over a region, where it goes and whether it is
+/// clipped to the layer.
+type Drawn = (Place, bool, Vec<u8>);
+/// Each effect's RGBA over `rect`, where it goes and whether it is clipped
+/// to the layer. `span` is the box gradients span; without it, it is
+/// measured, and nothing is drawn for a layer without coverage.
+#[allow(clippy::too_many_arguments)]
+fn draw_rect(
+    effects: &[Effect],
+    owner: &Layer,
+    fill: u8,
+    content: Option<&[f32]>,
+    source: Option<&[f32]>,
+    [width, height]: [usize; 2],
+    rect: [usize; 4],
+    span: Option<[f64; 4]>,
+    budget: &mut usize,
+    cancel: &impl Fn() -> bool,
+) -> Result<Option<Vec<Drawn>>, String> {
     let w = rect[2] - rect[0];
     let at = |i: usize| (rect[1] + i / w) * width + rect[0] + i % w;
     let mask = |i: usize| owner.mask_coverage(at(i), width);
     let content: Vec<f32> = match content {
-        Some(plane) => (0..w * (rect[3] - rect[1]))
-            .map(|i| plane[at(i)] * mask(i))
-            .collect(),
+        Some(plane) => (0..area(rect)).map(|i| plane[at(i)] * mask(i)).collect(),
         None => owner
             .pixels
             .region(width, rect)
@@ -452,32 +579,39 @@ pub(crate) fn draw(
             .collect(),
         None => content.clone(),
     };
-    // Gradients span the layer's visible pixels.
-    let mut span = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-    for (i, _) in values.iter().enumerate().filter(|(_, a)| **a > 0.0) {
-        let (x, y) = ((rect[0] + i % w) as f64, (rect[1] + i / w) as f64);
-        span = [
-            span[0].min(x),
-            span[1].min(y),
-            span[2].max(x + 1.0),
-            span[3].max(y + 1.0),
-        ];
-    }
-    if span[0] > span[2] {
-        return Ok(placed);
-    }
+    let span = match span {
+        Some(span) => span,
+        None => {
+            // Gradients span the layer's visible pixels.
+            let mut span = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+            for (i, _) in values.iter().enumerate().filter(|(_, a)| **a > 0.0) {
+                let (x, y) = ((rect[0] + i % w) as f64, (rect[1] + i / w) as f64);
+                span = [
+                    span[0].min(x),
+                    span[1].min(y),
+                    span[2].max(x + 1.0),
+                    span[3].max(y + 1.0),
+                ];
+            }
+            if span[0] > span[2] {
+                return Ok(None);
+            }
+            span
+        }
+    };
     let mut alpha = Alpha::new(rect, values);
     // Inner effects clip to the layer, unless that would apply its fill
     // opacity, the layer is clipped itself (clipping does not nest), or
     // its effects follow a shape rather than its pixels; then they carry
     // that alpha.
     let clip_inside = !owner.clipped && fill == 255 && source.is_none();
+    let mut drawn = Vec::with_capacity(effects.len());
     for effect in effects {
         if cancel() {
             return Err("Canceled".into());
         }
         *budget = budget
-            .checked_add(w * (rect[3] - rect[1]) * 4)
+            .checked_add(area(rect) * 4)
             .filter(|b| *b <= crate::document::MAX_PAYLOAD)
             .ok_or("Layer effects exceed the memory budget")?;
         let mut coverage = coverage(effect, &mut alpha, cancel)?;
@@ -485,11 +619,7 @@ pub(crate) fn draw(
         if place == Place::Below {
             effect.under(&mut coverage, &alpha.values, &visible);
         }
-        let mut out = Layer::raster(format!("{}'s {}", owner.name, effect.name()), width, height);
-        out.visible = owner.visible;
-        out.blend = effect.blend;
-        out.clipped = owner.clipped;
-        out.opacity = effect.opacity * opacity;
+        let mut clip = false;
         if place == Place::Inside {
             for (c, a) in coverage.iter_mut().zip(&alpha.values) {
                 *c *= if clip_inside {
@@ -499,41 +629,99 @@ pub(crate) fn draw(
                 };
             }
             if clip_inside {
-                out.clipped = true;
-                out.opacity = effect.opacity;
+                clip = true;
             } else if !owner.clipped {
                 place = Place::Above;
             }
         }
         let pixels = paint(effect, rect, &coverage, span, [width, height]);
-        out.pixels.writer().write_region(width, rect, &pixels);
-        placed[place as usize].push(out);
+        drawn.push((place, clip, pixels));
     }
-    Ok(placed)
+    Ok(Some(drawn))
+}
+
+/// The rows of `pixels` (RGBA over `from`) inside `to`.
+fn crop(pixels: &[u8], from: [usize; 4], to: [usize; 4]) -> Vec<u8> {
+    let w = from[2] - from[0];
+    let row = (to[2] - to[0]) * 4;
+    let mut out = Vec::with_capacity(row * (to[3] - to[1]));
+    for y in to[1]..to[3] {
+        let start = ((y - from[1]) * w + to[0] - from[0]) * 4;
+        out.extend_from_slice(&pixels[start..start + row]);
+    }
+    out
+}
+
+/// Where effects reaching `influence` pixels must be redrawn after the
+/// pixels in `changed` did: pairs of the region to update and the larger
+/// window to measure it in. Overlapping windows merge when that costs no
+/// more than measuring both.
+fn redraw_windows(
+    changed: &[[usize; 4]],
+    influence: usize,
+    [width, height]: [usize; 2],
+) -> Vec<([usize; 4], [usize; 4])> {
+    let grow = |r: [usize; 4], by: usize| {
+        [
+            r[0].saturating_sub(by),
+            r[1].saturating_sub(by),
+            (r[2] + by).min(width),
+            (r[3] + by).min(height),
+        ]
+    };
+    let overlap =
+        |a: [usize; 4], b: [usize; 4]| a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    let mut dirty: Vec<[usize; 4]> = changed.to_vec();
+    loop {
+        let mut merged = false;
+        'pairs: for i in 0..dirty.len() {
+            for j in i + 1..dirty.len() {
+                let (a, b) = (grow(dirty[i], 2 * influence), grow(dirty[j], 2 * influence));
+                if overlap(a, b) && area(union(a, b)) <= area(a) + area(b) {
+                    dirty[i] = union(dirty[i], dirty[j]);
+                    dirty.swap_remove(j);
+                    merged = true;
+                    break 'pairs;
+                }
+            }
+        }
+        if !merged {
+            break;
+        }
+    }
+    dirty
+        .into_iter()
+        .map(|d| (grow(d, influence), grow(d, 2 * influence)))
+        .collect()
 }
 
 /// Effect layers drawn for one layer, kept until the layer or its effects
-/// change. Clones share the cache, which holds a few layers by identity.
-/// All caches share one byte budget (`RETAINED_LIMIT`): the least recently
-/// used drawings anywhere are dropped first.
+/// change. Clones share the cache, which holds a few layers by identity and
+/// a few recent states of each, so undo finds its drawing ready. All caches
+/// share one byte budget (`RETAINED_LIMIT`): the least recently used
+/// drawings anywhere are dropped first.
 #[derive(Clone, Default)]
 pub(crate) struct Cache(Entries);
 type Entries = std::sync::Arc<std::sync::Mutex<Vec<Cached>>>;
 struct Cached {
-    /// Unique per drawing, so a display can tell it has not shown it yet.
+    /// Unique per drawing as shown, so a display can tell it has not shown
+    /// it yet; it changes when the same parts are shown differently.
     generation: u64,
+    /// The effects and look the drawing was last shown with.
+    shown: (Vec<Effect>, Look),
     /// Pixel bytes held by the drawing.
     bytes: usize,
     used: u64,
     id: crate::document::LayerId,
     pixels: crate::pixels::Pixels,
     mask: Option<crate::layer_mask::LayerMask>,
-    effects: Vec<Effect>,
-    look: (String, f32, bool, bool),
+    clipped: bool,
     size: [usize; 2],
-    layers: [Vec<Layer>; 3],
+    parts: Vec<Part>,
 }
-const CACHED_LAYERS: usize = 4;
+const CACHED_LAYERS: usize = 8;
+/// Drawings kept of one layer's recent states.
+const STATES_PER_LAYER: usize = 3;
 /// Effect drawings kept across every open document, in pixel bytes.
 pub(crate) const RETAINED_LIMIT: usize = 1 << 30;
 static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -592,14 +780,80 @@ fn evict(live: &[Entries], keep: u64, limit: usize) {
         entries.retain(|c| c.generation != generation);
     }
 }
+
+/// What besides pixels, mask and effects shows in a layer's drawing.
+type Look = (String, f32, bool);
+fn look(layer: &Layer) -> Look {
+    (layer.name.clone(), layer.opacity, layer.visible)
+}
+
+/// `effects` as layers from drawn `parts`, matched by what they draw.
+/// `loose` stands in an effect's earlier drawing at the same position (or
+/// nothing) when none matches, for a preview; otherwise that fails.
+fn assemble(
+    parts: &[Part],
+    effects: &[Effect],
+    layer: &Layer,
+    loose: bool,
+) -> Option<[Vec<Layer>; 3]> {
+    let mut used = vec![false; parts.len()];
+    let mut placed: [Vec<Layer>; 3] = Default::default();
+    for (index, effect) in effects.iter().enumerate() {
+        let found = (0..parts.len())
+            .find(|&k| !used[k] && same_drawing(&parts[k].effect, effect))
+            .or_else(|| (loose && index < parts.len() && !used[index]).then_some(index));
+        let Some(k) = found else {
+            if loose {
+                continue;
+            }
+            return None;
+        };
+        used[k] = true;
+        if let Some(drawn) = &parts[k].layer {
+            let mut drawn = drawn.clone();
+            dress(&mut drawn, effect, layer, layer.opacity, parts[k].clip);
+            placed[parts[k].place as usize].push(drawn);
+        }
+    }
+    Some(placed)
+}
+
+impl Cached {
+    /// Drawn from `layer`'s current pixels, mask and clipping.
+    fn matches(&self, layer: &Layer, size: [usize; 2]) -> bool {
+        self.id == layer.id
+            && self.size == size
+            && self.pixels.shares(&layer.pixels)
+            && crate::layer_mask::same_snapshot(&self.mask, &layer.mask)
+            && self.clipped == layer.clipped
+    }
+    /// Its layers as `effects` on `layer`, with the generation identifying
+    /// them: new whenever they are shown differently than last time.
+    fn show(
+        &mut self,
+        layer: &Layer,
+        effects: &[Effect],
+        loose: bool,
+    ) -> Option<([Vec<Layer>; 3], u64)> {
+        let layers = assemble(&self.parts, effects, layer, loose)?;
+        let shown = (effects.to_vec(), look(layer));
+        if self.shown != shown {
+            self.shown = shown;
+            self.generation = tick();
+        }
+        self.used = tick();
+        Some((layers, self.generation))
+    }
+}
+
 impl Cache {
     /// Forget `id`'s drawing, once its effects are gone or switched off.
     fn forget(&self, id: crate::document::LayerId) {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
         entries.retain(|c| c.id != id);
     }
-    /// The cached drawing of `layer` if it matches, or with `stale` any
-    /// drawing of it at this size (while painting).
+    /// The cached drawing of `layer` if it matches, or with `stale` its
+    /// most recent drawing at this size, standing in (while painting).
     fn lookup(
         &self,
         layer: &Layer,
@@ -608,12 +862,18 @@ impl Cache {
         stale: bool,
     ) -> Option<([Vec<Layer>; 3], u64)> {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let cached = entries
-            .iter_mut()
-            .filter(|c| c.id == layer.id && c.size == size)
-            .find(|c| stale || fresh(c, layer, effects, size))?;
-        cached.used = tick();
-        Some((cached.layers.clone(), cached.generation))
+        if stale {
+            entries
+                .iter_mut()
+                .filter(|c| c.id == layer.id && c.size == size)
+                .max_by_key(|c| c.used)?
+                .show(layer, effects, true)
+        } else {
+            entries
+                .iter_mut()
+                .filter(|c| c.matches(layer, size))
+                .find_map(|c| c.show(layer, effects, false))
+        }
     }
     /// The effect layers of `layer`, drawn now unless cached. `stale`
     /// accepts a cached drawing that no longer matches (while painting).
@@ -633,44 +893,45 @@ impl Cache {
         if stale && let Some(found) = self.lookup(layer, effects, size, true) {
             return Ok(found);
         }
-        let mut budget = 0;
-        let layers = draw(
-            effects,
-            layer,
-            layer.opacity,
-            255,
-            None,
-            None,
-            size,
-            &mut budget,
-            &cancel,
-        )?;
+        let parts = self.redraw(layer, effects, size, cancel)?;
         let generation = tick();
-        let bytes: usize = layers
+        let layers = assemble(&parts, effects, layer, false).expect("every effect was drawn");
+        let bytes: usize = parts
             .iter()
-            .flatten()
+            .filter_map(|p| p.layer.as_ref())
             .map(|l| l.pixels.payload_bound())
             .sum();
-        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        entries.retain(|c| c.id != layer.id);
         // A drawing larger than the whole budget is used once, not kept.
         if bytes > RETAINED_LIMIT {
             return Ok((layers, generation));
         }
-        if entries.len() >= CACHED_LAYERS {
-            entries.remove(0);
+        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        entries.retain(|c| !c.matches(layer, size));
+        // Keep a few recent states of this layer, and a few layers.
+        let mut states: Vec<u64> = entries
+            .iter()
+            .filter(|c| c.id == layer.id)
+            .map(|c| c.used)
+            .collect();
+        states.sort_unstable_by(|a, b| b.cmp(a));
+        if let Some(&oldest_kept) = states.get(STATES_PER_LAYER - 2) {
+            entries.retain(|c| c.id != layer.id || c.used >= oldest_kept);
+        }
+        while entries.len() >= CACHED_LAYERS {
+            let oldest = (0..entries.len()).min_by_key(|&i| entries[i].used).unwrap();
+            entries.remove(oldest);
         }
         entries.push(Cached {
             generation,
+            shown: (effects.to_vec(), look(layer)),
             bytes,
             used: generation,
             id: layer.id,
             pixels: layer.pixels.clone(),
             mask: layer.mask.clone(),
-            effects: effects.to_vec(),
-            look: look(layer),
+            clipped: layer.clipped,
             size,
-            layers: layers.clone(),
+            parts,
         });
         drop(entries);
         {
@@ -685,87 +946,145 @@ impl Cache {
         enforce_budget(generation);
         Ok((layers, generation))
     }
+    /// Draw `effects` for `layer`, reusing its most recent drawing: effects
+    /// drawn the same way are kept, and where only some pixels changed they
+    /// are redrawn just around those.
+    fn redraw(
+        &self,
+        layer: &Layer,
+        effects: &[Effect],
+        size: [usize; 2],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Vec<Part>, String> {
+        let mut budget = 0;
+        let base = {
+            let entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+            entries
+                .iter()
+                .filter(|c| {
+                    c.id == layer.id
+                        && c.size == size
+                        && c.clipped == layer.clipped
+                        && crate::layer_mask::same_snapshot(&c.mask, &layer.mask)
+                })
+                .max_by_key(|c| c.used)
+                .map(|c| (c.pixels.clone(), c.parts.clone()))
+        };
+        let mut parts: Vec<Option<Part>> = vec![None; effects.len()];
+        if let Some((pixels, base)) = base {
+            let changed = pixels.changed_regions(&layer.pixels, size[0], size[1]);
+            let mut used = vec![false; base.len()];
+            let mut update = Vec::new();
+            for (index, effect) in effects.iter().enumerate() {
+                let Some(k) =
+                    (0..base.len()).find(|&k| !used[k] && same_drawing(&base[k].effect, effect))
+                else {
+                    continue;
+                };
+                // Gradients span the whole layer, so they are redrawn whole.
+                let partial = base[k].layer.is_some() && matches!(effect.paint, Paint::Color(_));
+                if changed.is_empty() || partial {
+                    used[k] = true;
+                    parts[index] = Some(base[k].clone());
+                    if !changed.is_empty() {
+                        update.push(index);
+                    }
+                }
+            }
+            if !update.is_empty() {
+                let subset: Vec<Effect> = update.iter().map(|&i| effects[i].clone()).collect();
+                let influence = subset.iter().map(Effect::influence).max().unwrap_or(0);
+                let windows = redraw_windows(&changed, influence, size);
+                let whole = extent(layer, None, size, influence).map_or(0, area);
+                if windows
+                    .iter()
+                    .map(|(_, window)| area(*window))
+                    .sum::<usize>()
+                    * 2
+                    > whole
+                {
+                    // Changed nearly everywhere: drawing whole is cheaper.
+                    for &index in &update {
+                        parts[index] = None;
+                    }
+                } else {
+                    for (output, window) in windows {
+                        // The span only places gradients, which redraw whole.
+                        let drawn = draw_rect(
+                            &subset,
+                            layer,
+                            255,
+                            None,
+                            None,
+                            size,
+                            window,
+                            Some([0.0; 4]),
+                            &mut budget,
+                            &cancel,
+                        )?
+                        .expect("drawing with a span always draws");
+                        for (&index, (.., pixels)) in update.iter().zip(drawn) {
+                            let part = parts[index].as_mut().expect("kept above");
+                            part.layer
+                                .as_mut()
+                                .expect("kept above")
+                                .pixels
+                                .writer()
+                                .write_region(size[0], output, &crop(&pixels, window, output));
+                        }
+                    }
+                }
+            }
+        }
+        let missing: Vec<usize> = (0..effects.len()).filter(|&i| parts[i].is_none()).collect();
+        if !missing.is_empty() {
+            let subset: Vec<Effect> = missing.iter().map(|&i| effects[i].clone()).collect();
+            let drawn = draw_parts(&subset, layer, 255, None, None, size, &mut budget, &cancel)?;
+            for (index, part) in missing.into_iter().zip(drawn) {
+                parts[index] = Some(part);
+            }
+        }
+        Ok(parts.into_iter().map(|p| p.expect("drawn above")).collect())
+    }
 }
 
-/// What besides pixels, mask and effects changes a layer's drawing.
-fn look(layer: &Layer) -> (String, f32, bool, bool) {
-    (
-        layer.name.clone(),
-        layer.opacity,
-        layer.visible,
-        layer.clipped,
-    )
-}
-
-/// Whether `cached` was drawn from exactly this layer state.
-fn fresh(cached: &Cached, layer: &Layer, effects: &[Effect], size: [usize; 2]) -> bool {
-    cached.pixels.shares(&layer.pixels)
-        && crate::layer_mask::same_snapshot(&cached.mask, &layer.mask)
-        && cached.effects == effects
-        && cached.look == look(layer)
-        && cached.size == size
-}
-
-/// A drawing being made on a background worker, so each layer state is
-/// drawn once and a newer state cancels an outdated drawing.
+/// A drawing being made on a background worker, so each layer has at most
+/// one: a newer state waits for it and is drawn next, from it.
 struct InFlight {
     id: crate::document::LayerId,
     pixels: crate::pixels::Pixels,
-    mask: Option<crate::layer_mask::LayerMask>,
-    effects: Vec<Effect>,
-    look: (String, f32, bool, bool),
-    size: [usize; 2],
-    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 static IN_FLIGHT: std::sync::Mutex<Vec<InFlight>> = std::sync::Mutex::new(Vec::new());
 
 /// Called when a background drawing finishes, to show it.
 pub(crate) type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
 
-/// Draw `layer`'s effects on a background worker unless that state is
-/// already being drawn. Drawings of older states of the layer are canceled.
+/// Draw `layer`'s effects on a background worker unless one is already
+/// drawing this layer; it wakes the display when done, which then asks
+/// for the newest state. Keeping one at a time lets each drawing build on
+/// the last, so effects follow a stroke while it is painted.
 fn draw_in_background(layer: &Layer, effects: &[Effect], size: [usize; 2], wake: &Wake) {
-    use std::sync::atomic::Ordering;
     let mut in_flight = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
-    let same = |f: &InFlight| {
-        f.pixels.shares(&layer.pixels)
-            && crate::layer_mask::same_snapshot(&f.mask, &layer.mask)
-            && f.effects == effects
-            && f.look == look(layer)
-            && f.size == size
-    };
-    if in_flight.iter().any(|f| f.id == layer.id && same(f)) {
+    if in_flight.iter().any(|f| f.id == layer.id) {
         return;
     }
-    for outdated in in_flight.iter().filter(|f| f.id == layer.id) {
-        outdated.cancel.store(true, Ordering::Relaxed);
-    }
-    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pixels = layer.pixels.clone();
     in_flight.push(InFlight {
         id: layer.id,
-        pixels: layer.pixels.clone(),
-        mask: layer.mask.clone(),
-        effects: effects.to_vec(),
-        look: look(layer),
-        size,
-        cancel: cancel.clone(),
+        pixels: pixels.clone(),
     });
     drop(in_flight);
     let (layer, effects, wake) = (layer.clone(), effects.to_vec(), wake.clone());
     // The handle is not kept: the drawing lands in the layer's shared cache.
     let _ = crate::background::spawn(move || {
-        let drawn = layer
+        let _ = layer
             .effect_cache
-            .layers(&layer, &effects, size, false, &|| {
-                cancel.load(Ordering::Relaxed)
-            });
+            .layers(&layer, &effects, size, false, &|| false);
         IN_FLIGHT
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|f| !std::sync::Arc::ptr_eq(&f.cancel, &cancel));
-        if drawn.is_ok() {
-            wake();
-        }
+            .retain(|f| !(f.id == layer.id && f.pixels.shares(&pixels)));
+        wake();
     });
 }
 
@@ -798,25 +1117,16 @@ pub(crate) fn expand_tracked(
 /// drawing is not ready shows its previous drawing (or none yet) while a
 /// background worker draws it; `wake` runs when it is ready. The flag is
 /// true while any drawing is still on its way.
-pub(crate) fn expand_for_display(
-    doc: &Document,
-    gesture: bool,
-    wake: &Wake,
-) -> (Document, Vec<u64>, bool) {
+pub(crate) fn expand_for_display(doc: &Document, wake: &Wake) -> (Document, Vec<u64>, bool) {
     let mut waiting = false;
     let expanded = expand_with(doc, |layer, effects, size| {
         let cache = &layer.effect_cache;
         if let Some(found) = cache.lookup(layer, effects, size, false) {
             return Ok(Some(found));
         }
-        let previous = cache.lookup(layer, effects, size, true);
-        // While painting the layer changes every frame: keep the previous
-        // drawing and draw once the gesture ends, as before.
-        if !(gesture && previous.is_some()) {
-            draw_in_background(layer, effects, size, wake);
-            waiting = true;
-        }
-        Ok(previous)
+        draw_in_background(layer, effects, size, wake);
+        waiting = true;
+        Ok(cache.lookup(layer, effects, size, true))
     });
     let (doc, drawings) = expanded.expect("display expansion never draws, so never fails");
     (doc, drawings, waiting)
@@ -2397,7 +2707,7 @@ mod tests {
             .rgba_mut(6)
             .copy_from_slice(&[0, 0, 0, 255]);
         let start = std::time::Instant::now();
-        let (_, _, waiting) = expand_for_display(&doc, false, &wake);
+        let (_, _, waiting) = expand_for_display(&doc, &wake);
         let background = start.elapsed();
         eprintln!(
             "stroke end on {side}x{side}: blocking {blocking:?}, background {background:?} (waiting {waiting})"
@@ -2414,7 +2724,7 @@ mod tests {
         });
         let settle = |doc: &Document| {
             for _ in 0..500 {
-                let (shown, drawings, waiting) = expand_for_display(doc, false, &wake);
+                let (shown, drawings, waiting) = expand_for_display(doc, &wake);
                 if !waiting {
                     return (shown, drawings);
                 }
@@ -2424,7 +2734,7 @@ mod tests {
         };
         let mut doc = doc_with(vec![overlay()]);
         // Nothing drawn yet: the layer shows without effects until ready.
-        let (first, _, waiting) = expand_for_display(&doc, false, &wake);
+        let (first, _, waiting) = expand_for_display(&doc, &wake);
         assert!(waiting);
         assert_eq!(first.layers.len(), 1);
         let (ready, drawn) = settle(&doc);
@@ -2438,7 +2748,7 @@ mod tests {
             .writer()
             .rgba_mut(2)
             .copy_from_slice(&[255, 0, 0, 255]);
-        let (meanwhile, previous, waiting) = expand_for_display(&doc, false, &wake);
+        let (meanwhile, previous, waiting) = expand_for_display(&doc, &wake);
         if waiting {
             assert_eq!(previous, drawn);
             assert!(meanwhile.layers[1].pixels.shares(&ready.layers[1].pixels));
@@ -2446,15 +2756,100 @@ mod tests {
         let (updated, redrawn) = settle(&doc);
         assert_ne!(redrawn, drawn);
         assert_eq!(updated.layers[1].pixels.rgba(2), [0, 0, 255, 255]);
-        // While painting, the previous drawing stands in and nothing starts.
+        // Opacity and blending reuse the drawing: no wait.
+        doc.layers[0].effects[0].effect.opacity = 0.5;
+        let (faded, _, waiting) = expand_for_display(&doc, &wake);
+        assert!(!waiting);
+        assert!(faded.layers[1].pixels.shares(&updated.layers[1].pixels));
+        assert_eq!(faded.layers[1].opacity, 0.5);
+    }
+
+    /// Effects redrawn around changed pixels match drawing them whole.
+    #[test]
+    fn redrawing_around_changes_matches_drawing_whole() {
+        let side = 1000;
+        let mut doc = Document::new(side, side);
+        let paint = |doc: &mut Document, rect: [usize; 4], rgba: [u8; 4]| {
+            let mut writer = doc.layers[0].pixels.writer();
+            for y in rect[1]..rect[3] {
+                for x in rect[0]..rect[2] {
+                    writer.rgba_mut(y * side + x).copy_from_slice(&rgba);
+                }
+            }
+        };
+        paint(&mut doc, [20, 20, 120, 90], [200, 40, 40, 255]);
+        paint(&mut doc, [700, 700, 900, 900], [200, 40, 40, 160]);
+        let mut shadow = Effect::preset("Drop Shadow").unwrap();
+        shadow.kind = Kind::DropShadow {
+            offset: [6.0, 4.0],
+            spread: 0.2,
+            size: 9.0,
+            knockout: true,
+        };
+        let mut stroke = Effect::preset("Stroke").unwrap();
+        stroke.kind = Kind::Stroke {
+            size: 3.0,
+            position: Position::Center,
+        };
+        let mut glow = Effect::preset("Inner Glow").unwrap();
+        if let Kind::InnerGlow { size, .. } = &mut glow.kind {
+            *size = 7.0;
+        }
+        let mut bevel = Effect::bevel_presets(1);
+        if let Kind::Bevel { size, soften, .. } = &mut bevel[0].kind {
+            (*size, *soften) = (6.0, 2.0);
+        }
+        doc.layers[0].effects = [shadow, stroke, glow, bevel[0].clone()]
+            .into_iter()
+            .map(LayerEffect::new)
+            .collect();
+        let pixels = |doc: &Document| -> Vec<Vec<u8>> {
+            let layers = expand(doc, false, &|| false).unwrap().layers;
+            layers
+                .iter()
+                .map(|l| l.pixels.region(side, [0, 0, side, side]))
+                .collect()
+        };
+        let ids = |doc: &Document| -> Vec<_> {
+            let layers = expand(doc, false, &|| false).unwrap().layers;
+            layers.iter().map(|l| l.id).collect()
+        };
+        let drawn = ids(&doc);
+        // A stroke across one shape and an erased corner of the other.
+        paint(&mut doc, [100, 60, 170, 75], [10, 200, 10, 255]);
+        paint(&mut doc, [700, 700, 730, 730], [0, 0, 0, 0]);
+        let partial = pixels(&doc);
+        // Updated in place rather than drawn anew.
+        assert_eq!(ids(&doc), drawn);
+        doc.layers[0].effect_cache = Cache::default();
+        let whole = pixels(&doc);
+        assert_eq!(partial.len(), whole.len());
+        for (a, b) in partial.iter().zip(&whole) {
+            let worst = a
+                .iter()
+                .zip(b)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap_or(0);
+            assert!(worst <= 2, "differs by {worst}");
+        }
+    }
+
+    #[test]
+    fn undo_finds_the_previous_drawing_ready() {
+        let mut doc = doc_with(vec![overlay()]);
+        let before = doc.clone();
+        let (_, first) = expand_tracked(&doc, false, &|| false).unwrap();
         doc.layers[0]
             .pixels
             .writer()
-            .rgba_mut(3)
+            .rgba_mut(2)
             .copy_from_slice(&[255, 0, 0, 255]);
-        let (_, painting, waiting) = expand_for_display(&doc, true, &wake);
+        expand_tracked(&doc, false, &|| false).unwrap();
+        let wake: Wake = std::sync::Arc::new(|| {});
+        let (_, shown, waiting) = expand_for_display(&before, &wake);
         assert!(!waiting);
-        assert_eq!(painting, redrawn);
+        assert_eq!(shown, first);
     }
 
     #[test]

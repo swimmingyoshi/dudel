@@ -1640,7 +1640,9 @@ impl Dudel {
                     return;
                 }
                 if self.effects_waiting {
-                    ui.spinner();
+                    // Fixed size: the theme's touch-sized interact height
+                    // would grow the status row and shrink the canvas.
+                    ui.add(egui::Spinner::new().size(16.0));
                     ui.weak("Drawing layer effects…")
                         .on_hover_text("The previous drawing shows until the new one is ready");
                 }

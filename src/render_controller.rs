@@ -4,6 +4,9 @@
 use crate::{Dudel, render_queue::Progress, stroke_buffer::Settings};
 use std::time::{Duration, Instant};
 
+/// Queued dabs at which painting takes a larger share of each frame.
+const PAINT_CATCH_UP_DABS: usize = 3;
+
 pub struct EditFeedback {
     pub changed: &'static str,
     pub unchanged: &'static str,
@@ -939,7 +942,15 @@ impl Dudel {
         if had_work {
             self.performance.note_drawing();
         }
-        let deadline = started + Duration::from_millis(2);
+        // Painting gets 2 ms a frame, more while it trails the pen (large
+        // brushes), so strokes catch up instead of drawing in slowly.
+        let trailing = self.render_queue.queued_dabs(PAINT_CATCH_UP_DABS);
+        let budget = if trailing >= PAINT_CATCH_UP_DABS {
+            8
+        } else {
+            2
+        };
+        let deadline = started + Duration::from_millis(budget);
         let mut remaining = 4096;
         while self.render_queue.needs_work() && remaining > 0 && Instant::now() < deadline {
             match self.render_queue.advance_until(

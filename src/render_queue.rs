@@ -452,6 +452,15 @@ impl Queue {
                 .iter()
                 .any(|command| !matches!(command, Command::Snapshot(_)))
     }
+    /// Queued dabs not yet painted, counted up to `limit`: how far
+    /// painting trails the pen.
+    pub fn queued_dabs(&self, limit: usize) -> usize {
+        self.commands
+            .iter()
+            .filter(|c| matches!(c, Command::Dab { .. }))
+            .take(limit)
+            .count()
+    }
     pub fn needs_work(&self) -> bool {
         if self.prepared_done.is_some() {
             return true;
@@ -2942,6 +2951,99 @@ mod tests {
             time: Some(i as f64 * 0.01),
             distance: i as f64 * 3.0,
             ..Default::default()
+        }
+    }
+    #[test]
+    #[ignore = "timing probe; run with --release --ignored --nocapture"]
+    fn probe_large_brush_stroke() {
+        for (size, hardness) in [(100.0, 1.0), (300.0, 1.0), (300.0, 0.3), (300.0, 0.0)] {
+            let mut doc = Document::new(3000, 3000);
+            let mut history = History::new();
+            let mut queue = Queue::default();
+            let settings = Arc::new(Settings {
+                target: crate::paint_target::Target::Raster,
+                brush: crate::brush::Brush {
+                    size,
+                    hardness,
+                    pressure_size: false,
+                    ..Default::default()
+                },
+                color: [200, 40, 40],
+                erase: false,
+                layer: 0,
+                symmetry: Default::default(),
+            });
+            let id = queue.begin(settings.clone()).unwrap();
+            let dabs = 40;
+            let step = size * settings.brush.spacing.max(0.02);
+            for i in 0..dabs {
+                queue
+                    .dab(
+                        id,
+                        Sample {
+                            x: 400.0 + i as f32 * step,
+                            y: 1500.0,
+                            pressure: 1.0,
+                            time: Some(i as f64 * 0.01),
+                            distance: (i as f32 * step) as f64,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+            }
+            queue.end(id).unwrap();
+            let start = std::time::Instant::now();
+            while queue.needs_work() {
+                checked(&mut queue, &mut doc, &mut history, 64);
+            }
+            let total = start.elapsed();
+            let mut direct_doc = Document::new(3000, 3000);
+            let mut buffer = StrokeBuffer::default();
+            let started = std::time::Instant::now();
+            for i in 0..dabs {
+                direct_doc.dab_sample_buffered(
+                    Sample {
+                        x: 400.0 + i as f32 * step,
+                        y: 1500.0,
+                        pressure: 1.0,
+                        ..Default::default()
+                    },
+                    &settings.brush,
+                    settings.color,
+                    false,
+                    crate::symmetry::IDENTITY,
+                    Some(&mut buffer),
+                );
+            }
+            eprintln!(
+                "  direct paint {:.2} ms per dab",
+                started.elapsed().as_secs_f64() * 1000.0 / dabs as f64
+            );
+            let side = (size as usize).min(3000);
+            let started = std::time::Instant::now();
+            let mut sum = 0.0;
+            for y in 0..side {
+                for x in 0..side {
+                    let (u, v) = (
+                        (x as f32 / side as f32) * 2.0 - 1.0,
+                        (y as f32 / side as f32) * 2.0 - 1.0,
+                    );
+                    sum += crate::brush_edge::coverage_with_profile(
+                        u,
+                        v,
+                        size / 2.0,
+                        1.0,
+                        hardness,
+                        crate::brush::Tip::Round,
+                        Default::default(),
+                    );
+                }
+            }
+            eprintln!(
+                "size {size} hardness {hardness}: {:.2} ms per dab (spacing {step}px); coverage alone {:.2} ms ({sum:.0})",
+                total.as_secs_f64() * 1000.0 / dabs as f64,
+                started.elapsed().as_secs_f64() * 1000.0
+            );
         }
     }
     fn submit(queue: &mut Queue, settings: Arc<Settings>) -> StrokeId {

@@ -1306,16 +1306,14 @@ impl Dudel {
         let base = mask_view.as_ref().or(scene.as_ref()).unwrap_or(&self.doc);
         // Layer effects are drawn as extra layers. A layer whose drawing is
         // out of date shows its previous one while a background worker
-        // redraws it, so finishing a stroke on a huge layer never pauses;
-        // while painting, moving or transforming none is started.
-        let gesture = self.stroking || self.move_drag.is_some() || self.affine_preview.is_some();
+        // redraws around what changed, so effects follow a stroke and
+        // finishing one on a huge layer never pauses.
         let mut drawings = Vec::new();
         let expanded = if base.has_effects() {
             let repaint = ctx.clone();
             let wake: crate::layer_effects::Wake =
                 std::sync::Arc::new(move || repaint.request_repaint());
-            let (doc, used, waiting) =
-                crate::layer_effects::expand_for_display(base, gesture, &wake);
+            let (doc, used, waiting) = crate::layer_effects::expand_for_display(base, &wake);
             drawings = used;
             self.effects_waiting = waiting;
             Some(doc)

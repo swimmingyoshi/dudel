@@ -410,8 +410,19 @@ Stage B - native layer effects:
       Status bar shows "Drawing layer effects". Stroke end on a 4096^2 drop-shadow
       layer: 649 ms blocking -> 0.1 ms (`probe_stroke_end_time_with_a_drop_shadow`).
       Exports and thumbnails still draw synchronously.
-- [ ] Redraw only the region a stroke touched plus the effect's reach (would also
-      shorten the background drawing itself)
+- [x] Redraw only around what changed (2026-11-01, owner feedback: slow to appear,
+      undo slow, canvas twitch). Effects are cached per effect (`Part`), so opacity,
+      blend, visibility and name only re-dress cached layers; unchanged effects are
+      reused when one changes; changed pixels redraw each effect only within its
+      `influence` (`redraw_windows`, whole when that covers half the layer). Three
+      recent states per layer stay cached, so undo is instant. One background
+      drawing per layer, newest state next, so effects follow the stroke. 4096^2
+      drop shadow after a small edit: 649 ms -> 0.36 ms. The status spinner was
+      touch-sized and grew the bar (the twitch); now 16 px
+- [x] Large brushes: painting gets 8 ms a frame instead of 2 while 3+ dabs are
+      queued (`PAINT_CATCH_UP_DABS`), 4x the catch-up rate. A 300 px dab costs
+      ~3 ms (`probe_large_brush_stroke`): blend ~1.4, accumulate ~0.7, coverage
+      ~0.5. Next: paint dab rows in parallel bands
 - [ ] Effects on folders natively; fill opacity; satin; pattern effects;
       gradient editor beyond the two end colors and angle
 - [ ] Effect-layer memory is not yet counted in the memory panel
