@@ -3234,3 +3234,24 @@ fn new_canvas_saves_presets_and_remembers_recent_sizes() {
     let prefs = prefs.sanitized();
     assert!(prefs.presets.is_empty() && prefs.recent.is_empty());
 }
+
+#[test]
+fn settings_search_finds_settings_across_pages_by_keyword() {
+    let mut w = Workspace::sized([1280., 800.]);
+    w.app.settings_open = true;
+    w.settle();
+    w.text("Show workspace panels");
+    w.click(w.text("Search settings"));
+    w.frame(vec![egui::Event::Text("wacom".into())]);
+    w.settle();
+    w.text("Use native pen input");
+    let hidden = |w: &Workspace, text: &str| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.text(text))).is_err()
+    };
+    assert!(hidden(&w, "Show workspace panels"));
+    assert!(hidden(&w, "Reset this page…"));
+    w.click(w.text("✕"));
+    w.text("Show workspace panels");
+    w.click(w.text("Reset this page…"));
+    assert!(w.app.dialogs.open(), "resetting asks first");
+}

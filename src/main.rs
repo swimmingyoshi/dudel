@@ -334,6 +334,8 @@ struct Dudel {
     display_window: bool,
     settings_open: bool,
     settings_section: usize,
+    /// Settings window search text; not saved.
+    settings_search: String,
     /// Library folder and per-kind file locations for dialogs.
     locations: locations::Locations,
     storage_window: bool,
@@ -564,6 +566,7 @@ impl Default for Dudel {
             display_window: false,
             settings_open: false,
             settings_section: 0,
+            settings_search: String::new(),
             locations: Default::default(),
             storage_window: false,
             preview: Default::default(),

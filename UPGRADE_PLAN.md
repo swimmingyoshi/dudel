@@ -285,7 +285,9 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       "Save as preset" names the size and DPI (12 max, right-click removes); the last
       5 created sizes show under Recent; both persist in preferences (`new_canvas`).
       Print size sits beside DPI (cm, inches on hover). `--capture-new-canvas-presets`.
-- [ ] Settings: search, reset-to-default per page
+- [x] Settings: search, reset-to-default per page (2026-11-01). Search matches labels
+      and keywords across pages ("wacom", "vsync", "plugins"); each page has a confirmed
+      "Reset this page" that leaves other pages alone.
 - [ ] Screenshot pass at 100% / 150% / 200% scale before and after
 
 ### 7. Layer effects (owner goal, 2026-10-29)
