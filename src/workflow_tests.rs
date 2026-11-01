@@ -2424,7 +2424,9 @@ fn stroke_options_and_symmetry_remain_usable_in_minimum_scaled_viewport() {
     for _ in 0..20 {
         w.frame(vec![]);
     }
-    let anchor = w.text("Copies");
+    // Copies now sits at the popup's bottom edge; scroll over a mode button.
+    w.text("Copies");
+    let anchor = w.text("Radial");
     w.frame(vec![
         egui::Event::PointerMoved(anchor),
         egui::Event::MouseWheel {

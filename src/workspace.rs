@@ -1081,11 +1081,12 @@ impl Dudel {
                         // a mode could then collapse it and close this popup.
                         let menu = egui::Button::new("Symmetry").selected(symmetry.active());
                         let content = |ui: &mut egui::Ui| {
-                                ui.set_width(260.0);
-                                let height=(ui.ctx().content_rect().height()-32.0).clamp(120.0,320.0);
-                                egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height).show(ui, |ui| self.symmetry_ui(ui));
+                                ui.set_width(290.0);
+                                let height=(ui.ctx().content_rect().height()-40.0).clamp(120.0,560.0);
+                                egui::ScrollArea::vertical().max_height(height).show(ui, |ui| self.symmetry_ui(ui));
                         };
                         let response = egui::containers::menu::MenuButton::from_button(menu).config(egui::containers::menu::MenuConfig::default().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)).ui(ui, content);
+                        self.open_capture_popup(&response.0, crate::capture::Popup::Symmetry);
                         response.0
                             .on_hover_text(format!("{symmetry_label}\nDraw mirrored or radial copies of every stroke"));
                         }

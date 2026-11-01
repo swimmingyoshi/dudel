@@ -1783,6 +1783,8 @@ fn main() -> eframe::Result {
         Some("--capture-mask-coverage") => Some(capture::Popup::Color),
         Some("--capture-long-toolbar-options") => Some(capture::Popup::StrokeOptions),
         Some("--capture-long-toolbar-brushes") => Some(capture::Popup::Brushes),
+        Some("--capture-symmetry") => Some(capture::Popup::Symmetry),
+        Some("--capture-layer-guides") => Some(capture::Popup::Guides),
         _ => None,
     };
     let capture = if mode.as_deref() == Some("--capture-ui")

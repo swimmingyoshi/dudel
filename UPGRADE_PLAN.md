@@ -276,7 +276,10 @@ Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE
       pages (`src/settings_ui.rs`), replacing the Settings menu
 - [x] New canvas: live size/proportion preview, portrait/landscape/HD/A4 presets,
       swap orientation (`src/new_canvas.rs`)
-- [ ] Symmetry/guides popups: layout, grouping, spacing, icons
+- [x] Symmetry/guides popups: layout, grouping, spacing (2026-11-01): Symmetry and
+      Guides sections, modes in an even 3-column grid, labels left of sliders, framed
+      buttons in the toolbar menu too, popup up to 560 px tall. Captures:
+      `--capture-symmetry`, `--capture-layer-guides` now open the popups. Icons not done.
 - [ ] Other popups and dialogs: consistent padding, headers, button order
 - [ ] New canvas: custom preset save, DPI/print size, recent sizes
 - [ ] Settings: search, reset-to-default per page

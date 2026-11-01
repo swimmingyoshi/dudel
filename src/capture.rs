@@ -55,6 +55,8 @@ pub enum Popup {
     StrokeOptions,
     ViewMenu,
     FileMenu,
+    Symmetry,
+    Guides,
 }
 
 pub struct Capture {
@@ -70,12 +72,20 @@ pub struct Capture {
 }
 impl Dudel {
     pub(crate) fn open_capture_popup(&self, response: &egui::Response, popup: Popup) {
+        self.open_capture_popup_id(
+            &response.ctx,
+            egui::Popup::default_response_id(response),
+            popup,
+        );
+    }
+    /// For popups shown under a fixed ID rather than their button's.
+    pub(crate) fn open_capture_popup_id(&self, ctx: &egui::Context, id: egui::Id, popup: Popup) {
         if self
             .capture
             .as_ref()
             .is_some_and(|capture| capture.frames <= 2 && capture.popup == Some(popup))
         {
-            egui::Popup::open_id(&response.ctx, egui::Popup::default_response_id(response));
+            egui::Popup::open_id(ctx, id);
         }
     }
     pub(crate) fn capture_frame(&mut self, ctx: &egui::Context) {
