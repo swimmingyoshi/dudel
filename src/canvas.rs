@@ -1304,22 +1304,23 @@ impl Dudel {
         let scene = self.reference_layers.display_document(&self.doc);
         let mask_view = self.mask_view_document();
         let base = mask_view.as_ref().or(scene.as_ref()).unwrap_or(&self.doc);
-        // Layer effects are drawn as extra layers; while painting, moving or
-        // transforming, the last drawing stands in until the gesture ends.
+        // Layer effects are drawn as extra layers. A layer whose drawing is
+        // out of date shows its previous one while a background worker
+        // redraws it, so finishing a stroke on a huge layer never pauses;
+        // while painting, moving or transforming none is started.
         let gesture = self.stroking || self.move_drag.is_some() || self.affine_preview.is_some();
         let mut drawings = Vec::new();
         let expanded = if base.has_effects() {
-            match crate::layer_effects::expand_tracked(base, gesture, &|| false) {
-                Ok((doc, used)) => {
-                    drawings = used;
-                    Some(doc)
-                }
-                Err(error) => {
-                    self.status = error;
-                    None
-                }
-            }
+            let repaint = ctx.clone();
+            let wake: crate::layer_effects::Wake =
+                std::sync::Arc::new(move || repaint.request_repaint());
+            let (doc, used, waiting) =
+                crate::layer_effects::expand_for_display(base, gesture, &wake);
+            drawings = used;
+            self.effects_waiting = waiting;
+            Some(doc)
         } else {
+            self.effects_waiting = false;
             None
         };
         let damage = self.dirty_region.take();

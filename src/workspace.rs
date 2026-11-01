@@ -1639,6 +1639,11 @@ impl Dudel {
                 if busy {
                     return;
                 }
+                if self.effects_waiting {
+                    ui.spinner();
+                    ui.weak("Drawing layer effects…")
+                        .on_hover_text("The previous drawing shows until the new one is ready");
+                }
                 if self.history.over_budget() {
                     let text = format!(
                         "Large edit: history is above its {} MiB budget",

@@ -403,9 +403,15 @@ Stage B - native layer effects:
       mask on canvas / Alt+click the mask thumbnail shows the mask in grays
       (black layer under a white layer carrying the mask, so only touched
       tiles redraw). `--capture-layer-effects` screenshots all of it
-- [ ] Draw effects in the background (show the previous drawing until ready)
-      so huge layers never pause after a stroke; or redraw only the region a
-      stroke touched plus the effect's reach
+- [x] Draw effects in the background (2026-11-01): the canvas uses
+      `layer_effects::expand_for_display`; an out-of-date layer shows its previous
+      drawing while `background::spawn` redraws it (one per layer state; newer states
+      cancel older), then repaints. The cache no longer holds its lock while drawing.
+      Status bar shows "Drawing layer effects". Stroke end on a 4096^2 drop-shadow
+      layer: 649 ms blocking -> 0.1 ms (`probe_stroke_end_time_with_a_drop_shadow`).
+      Exports and thumbnails still draw synchronously.
+- [ ] Redraw only the region a stroke touched plus the effect's reach (would also
+      shorten the background drawing itself)
 - [ ] Effects on folders natively; fill opacity; satin; pattern effects;
       gradient editor beyond the two end colors and angle
 - [ ] Effect-layer memory is not yet counted in the memory panel

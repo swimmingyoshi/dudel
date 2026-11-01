@@ -336,6 +336,8 @@ struct Dudel {
     settings_section: usize,
     /// Settings window search text; not saved.
     settings_search: String,
+    /// Layer effect drawings still being made in the background.
+    effects_waiting: bool,
     /// Library folder and per-kind file locations for dialogs.
     locations: locations::Locations,
     storage_window: bool,
@@ -567,6 +569,7 @@ impl Default for Dudel {
             settings_open: false,
             settings_section: 0,
             settings_search: String::new(),
+            effects_waiting: false,
             locations: Default::default(),
             storage_window: false,
             preview: Default::default(),

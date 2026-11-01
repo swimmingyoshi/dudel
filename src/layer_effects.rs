@@ -598,8 +598,27 @@ impl Cache {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
         entries.retain(|c| c.id != id);
     }
+    /// The cached drawing of `layer` if it matches, or with `stale` any
+    /// drawing of it at this size (while painting).
+    fn lookup(
+        &self,
+        layer: &Layer,
+        effects: &[Effect],
+        size: [usize; 2],
+        stale: bool,
+    ) -> Option<([Vec<Layer>; 3], u64)> {
+        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let cached = entries
+            .iter_mut()
+            .filter(|c| c.id == layer.id && c.size == size)
+            .find(|c| stale || fresh(c, layer, effects, size))?;
+        cached.used = tick();
+        Some((cached.layers.clone(), cached.generation))
+    }
     /// The effect layers of `layer`, drawn now unless cached. `stale`
     /// accepts a cached drawing that no longer matches (while painting).
+    /// Drawing happens without holding the cache, so a canvas reading it
+    /// meanwhile never waits for a background drawing.
     fn layers(
         &self,
         layer: &Layer,
@@ -608,26 +627,11 @@ impl Cache {
         stale: bool,
         cancel: &dyn Fn() -> bool,
     ) -> Result<([Vec<Layer>; 3], u64), String> {
-        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let look = (
-            layer.name.clone(),
-            layer.opacity,
-            layer.visible,
-            layer.clipped,
-        );
-        let fresh = |c: &Cached| {
-            c.pixels.shares(&layer.pixels)
-                && crate::layer_mask::same_snapshot(&c.mask, &layer.mask)
-                && c.effects == effects
-                && c.look == look
-                && c.size == size
-        };
-        if let Some(cached) = entries
-            .iter_mut()
-            .find(|c| c.id == layer.id && (fresh(c) || (stale && c.size == size)))
-        {
-            cached.used = tick();
-            return Ok((cached.layers.clone(), cached.generation));
+        if let Some(found) = self.lookup(layer, effects, size, false) {
+            return Ok(found);
+        }
+        if stale && let Some(found) = self.lookup(layer, effects, size, true) {
+            return Ok(found);
         }
         let mut budget = 0;
         let layers = draw(
@@ -647,6 +651,7 @@ impl Cache {
             .flatten()
             .map(|l| l.pixels.payload_bound())
             .sum();
+        let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
         entries.retain(|c| c.id != layer.id);
         // A drawing larger than the whole budget is used once, not kept.
         if bytes > RETAINED_LIMIT {
@@ -663,7 +668,7 @@ impl Cache {
             pixels: layer.pixels.clone(),
             mask: layer.mask.clone(),
             effects: effects.to_vec(),
-            look,
+            look: look(layer),
             size,
             layers: layers.clone(),
         });
@@ -681,6 +686,89 @@ impl Cache {
         Ok((layers, generation))
     }
 }
+
+/// What besides pixels, mask and effects changes a layer's drawing.
+fn look(layer: &Layer) -> (String, f32, bool, bool) {
+    (
+        layer.name.clone(),
+        layer.opacity,
+        layer.visible,
+        layer.clipped,
+    )
+}
+
+/// Whether `cached` was drawn from exactly this layer state.
+fn fresh(cached: &Cached, layer: &Layer, effects: &[Effect], size: [usize; 2]) -> bool {
+    cached.pixels.shares(&layer.pixels)
+        && crate::layer_mask::same_snapshot(&cached.mask, &layer.mask)
+        && cached.effects == effects
+        && cached.look == look(layer)
+        && cached.size == size
+}
+
+/// A drawing being made on a background worker, so each layer state is
+/// drawn once and a newer state cancels an outdated drawing.
+struct InFlight {
+    id: crate::document::LayerId,
+    pixels: crate::pixels::Pixels,
+    mask: Option<crate::layer_mask::LayerMask>,
+    effects: Vec<Effect>,
+    look: (String, f32, bool, bool),
+    size: [usize; 2],
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+static IN_FLIGHT: std::sync::Mutex<Vec<InFlight>> = std::sync::Mutex::new(Vec::new());
+
+/// Called when a background drawing finishes, to show it.
+pub(crate) type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// Draw `layer`'s effects on a background worker unless that state is
+/// already being drawn. Drawings of older states of the layer are canceled.
+fn draw_in_background(layer: &Layer, effects: &[Effect], size: [usize; 2], wake: &Wake) {
+    use std::sync::atomic::Ordering;
+    let mut in_flight = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+    let same = |f: &InFlight| {
+        f.pixels.shares(&layer.pixels)
+            && crate::layer_mask::same_snapshot(&f.mask, &layer.mask)
+            && f.effects == effects
+            && f.look == look(layer)
+            && f.size == size
+    };
+    if in_flight.iter().any(|f| f.id == layer.id && same(f)) {
+        return;
+    }
+    for outdated in in_flight.iter().filter(|f| f.id == layer.id) {
+        outdated.cancel.store(true, Ordering::Relaxed);
+    }
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    in_flight.push(InFlight {
+        id: layer.id,
+        pixels: layer.pixels.clone(),
+        mask: layer.mask.clone(),
+        effects: effects.to_vec(),
+        look: look(layer),
+        size,
+        cancel: cancel.clone(),
+    });
+    drop(in_flight);
+    let (layer, effects, wake) = (layer.clone(), effects.to_vec(), wake.clone());
+    // The handle is not kept: the drawing lands in the layer's shared cache.
+    let _ = crate::background::spawn(move || {
+        let drawn = layer
+            .effect_cache
+            .layers(&layer, &effects, size, false, &|| {
+                cancel.load(Ordering::Relaxed)
+            });
+        IN_FLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|f| !std::sync::Arc::ptr_eq(&f.cancel, &cancel));
+        if drawn.is_ok() {
+            wake();
+        }
+    });
+}
+
 /// The document with each layer's enabled effects drawn as layers around
 /// it, as Photoshop's Create Layers would: what the compositor draws.
 /// Effects on folders are not drawn. `stale` reuses drawings made before
@@ -698,6 +786,48 @@ pub(crate) fn expand_tracked(
     doc: &Document,
     stale: bool,
     cancel: &dyn Fn() -> bool,
+) -> Result<(Document, Vec<u64>), String> {
+    expand_with(doc, |layer, effects, size| {
+        layer
+            .effect_cache
+            .layers(layer, effects, size, stale, cancel)
+            .map(Some)
+    })
+}
+/// For the canvas: `expand_tracked` without waiting. A layer whose current
+/// drawing is not ready shows its previous drawing (or none yet) while a
+/// background worker draws it; `wake` runs when it is ready. The flag is
+/// true while any drawing is still on its way.
+pub(crate) fn expand_for_display(
+    doc: &Document,
+    gesture: bool,
+    wake: &Wake,
+) -> (Document, Vec<u64>, bool) {
+    let mut waiting = false;
+    let expanded = expand_with(doc, |layer, effects, size| {
+        let cache = &layer.effect_cache;
+        if let Some(found) = cache.lookup(layer, effects, size, false) {
+            return Ok(Some(found));
+        }
+        let previous = cache.lookup(layer, effects, size, true);
+        // While painting the layer changes every frame: keep the previous
+        // drawing and draw once the gesture ends, as before.
+        if !(gesture && previous.is_some()) {
+            draw_in_background(layer, effects, size, wake);
+            waiting = true;
+        }
+        Ok(previous)
+    });
+    let (doc, drawings) = expanded.expect("display expansion never draws, so never fails");
+    (doc, drawings, waiting)
+}
+fn expand_with(
+    doc: &Document,
+    mut drawing: impl FnMut(
+        &Layer,
+        &[Effect],
+        [usize; 2],
+    ) -> Result<Option<([Vec<Layer>; 3], u64)>, String>,
 ) -> Result<(Document, Vec<u64>), String> {
     let mut drawings = Vec::new();
     let mut out = doc.clone();
@@ -719,15 +849,13 @@ pub(crate) fn expand_tracked(
             layer.effect_cache.forget(layer.id);
             Default::default()
         } else {
-            let (layers, fresh) = layer.effect_cache.layers(
-                layer,
-                &effects,
-                [doc.width, doc.height],
-                stale,
-                cancel,
-            )?;
-            drawings.push(fresh);
-            layers
+            match drawing(layer, &effects, [doc.width, doc.height])? {
+                Some((layers, generation)) => {
+                    drawings.push(generation);
+                    layers
+                }
+                None => Default::default(),
+            }
         };
         let depth = layer.depth;
         let at_depth = move |mut l: Layer| {
@@ -2237,6 +2365,96 @@ mod tests {
             .copy_from_slice(&[255, 0, 0, 255]);
         let stale = expand(&doc, true, &|| false).unwrap();
         assert!(stale.layers[1].pixels.shares(&changed.layers[1].pixels));
+    }
+
+    #[test]
+    #[ignore = "timing probe; run with --release --ignored --nocapture"]
+    fn probe_stroke_end_time_with_a_drop_shadow() {
+        let side = 4096;
+        let mut doc = Document::new(side, side);
+        {
+            let mut writer = doc.layers[0].pixels.writer();
+            for i in 0..side * side {
+                if (i % side) % 7 != 0 {
+                    writer.rgba_mut(i).copy_from_slice(&[200, 40, 40, 255]);
+                }
+            }
+        }
+        doc.layers[0].effects = vec![LayerEffect::new(Effect::preset("Drop Shadow").unwrap())];
+        let wake: Wake = std::sync::Arc::new(|| {});
+        expand(&doc, false, &|| false).unwrap();
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(5)
+            .copy_from_slice(&[0, 0, 0, 255]);
+        let start = std::time::Instant::now();
+        expand(&doc.clone(), false, &|| false).unwrap();
+        let blocking = start.elapsed();
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(6)
+            .copy_from_slice(&[0, 0, 0, 255]);
+        let start = std::time::Instant::now();
+        let (_, _, waiting) = expand_for_display(&doc, false, &wake);
+        let background = start.elapsed();
+        eprintln!(
+            "stroke end on {side}x{side}: blocking {blocking:?}, background {background:?} (waiting {waiting})"
+        );
+    }
+
+    #[test]
+    fn the_canvas_shows_ready_drawings_and_draws_the_rest_in_the_background() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let woken = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = woken.clone();
+        let wake: Wake = std::sync::Arc::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        let settle = |doc: &Document| {
+            for _ in 0..500 {
+                let (shown, drawings, waiting) = expand_for_display(doc, false, &wake);
+                if !waiting {
+                    return (shown, drawings);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            panic!("background drawing never finished");
+        };
+        let mut doc = doc_with(vec![overlay()]);
+        // Nothing drawn yet: the layer shows without effects until ready.
+        let (first, _, waiting) = expand_for_display(&doc, false, &wake);
+        assert!(waiting);
+        assert_eq!(first.layers.len(), 1);
+        let (ready, drawn) = settle(&doc);
+        assert!(woken.load(Ordering::Relaxed) >= 1);
+        let direct = expand(&doc, false, &|| false).unwrap();
+        assert_eq!(ready.layers.len(), direct.layers.len());
+        assert!(ready.layers[1].pixels.shares(&direct.layers[1].pixels));
+        // A changed layer keeps its previous drawing on screen meanwhile.
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(2)
+            .copy_from_slice(&[255, 0, 0, 255]);
+        let (meanwhile, previous, waiting) = expand_for_display(&doc, false, &wake);
+        if waiting {
+            assert_eq!(previous, drawn);
+            assert!(meanwhile.layers[1].pixels.shares(&ready.layers[1].pixels));
+        }
+        let (updated, redrawn) = settle(&doc);
+        assert_ne!(redrawn, drawn);
+        assert_eq!(updated.layers[1].pixels.rgba(2), [0, 0, 255, 255]);
+        // While painting, the previous drawing stands in and nothing starts.
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(3)
+            .copy_from_slice(&[255, 0, 0, 255]);
+        let (_, painting, waiting) = expand_for_display(&doc, true, &wake);
+        assert!(!waiting);
+        assert_eq!(painting, redrawn);
     }
 
     #[test]
