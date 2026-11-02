@@ -699,10 +699,22 @@ fn redraw_windows(
 /// change. Clones share the cache, which holds a few layers by identity and
 /// a few recent states of each, so undo finds its drawing ready. All caches
 /// share one byte budget (`RETAINED_LIMIT`): the least recently used
-/// drawings anywhere are dropped first.
+/// drawings anywhere are dropped first. A folder's cache also keeps its
+/// composited contents, which its effects follow.
 #[derive(Clone, Default)]
-pub(crate) struct Cache(Entries);
+pub(crate) struct Cache(Entries, Contents);
 type Entries = std::sync::Arc<std::sync::Mutex<Vec<Cached>>>;
+type Contents = std::sync::Arc<std::sync::Mutex<Vec<Content>>>;
+/// A folder's contents composited (straight RGBA): what its effects follow,
+/// as a layer's effects follow its pixels. The same contents keep the same
+/// pixels, so drawings of them are found again and redrawn only around what
+/// changed.
+struct Content {
+    /// The layers composited, depths relative to the folder, without caches.
+    children: Vec<Layer>,
+    pixels: crate::pixels::Pixels,
+    used: u64,
+}
 struct Cached {
     /// Unique per drawing as shown, so a display can tell it has not shown
     /// it yet; it changes when the same parts are shown differently.
@@ -787,6 +799,34 @@ fn look(layer: &Layer) -> Look {
     (layer.name.clone(), layer.opacity, layer.visible)
 }
 
+/// Whether two folder contents composite alike wherever their pixels do:
+/// the same layers, settings and masks (depths may be shifted alike).
+fn same_children(a: &[Layer], b: &[Layer]) -> bool {
+    let shift = |l: &[Layer]| l.iter().map(|l| l.depth).min().unwrap_or(0);
+    let (sa, sb) = (shift(a), shift(b));
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(a, b)| {
+            a.depth - sa == b.depth - sb
+                && a.visible == b.visible
+                && a.opacity == b.opacity
+                && a.csp_byte_opacity == b.csp_byte_opacity
+                && a.blend == b.blend
+                && a.clipped == b.clipped
+                && a.folder == b.folder
+                && a.adjustment == b.adjustment
+                && a.display_key() == b.display_key()
+                && crate::layer_mask::same_snapshot(&a.mask, &b.mask)
+        })
+}
+
+/// A folder as the owner of its effects: a layer whose pixels are its
+/// composited `children`.
+fn with_content(folder: &Layer, pixels: crate::pixels::Pixels) -> Layer {
+    let mut owner = folder.clone();
+    owner.pixels = pixels;
+    owner
+}
+
 /// `effects` as layers from drawn `parts`, matched by what they draw.
 /// `loose` stands in an effect's earlier drawing at the same position (or
 /// nothing) when none matches, for a preview; otherwise that fails.
@@ -860,11 +900,102 @@ impl Cache {
         {
             layer.pixels.visit_allocations(&mut visit);
         }
+        let contents = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        for content in contents.iter() {
+            content.pixels.visit_allocations(&mut visit);
+        }
     }
     /// Forget `id`'s drawing, once its effects are gone or switched off.
     fn forget(&self, id: crate::document::LayerId) {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
         entries.retain(|c| c.id != id);
+        drop(entries);
+        self.1.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+    /// The composited contents of a folder holding `children`, if kept.
+    fn content_ready(&self, children: &[Layer]) -> Option<crate::pixels::Pixels> {
+        let mut contents = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        let found = contents.iter_mut().find(|c| {
+            same_children(&c.children, children)
+                && c.children
+                    .iter()
+                    .zip(children)
+                    .all(|(a, b)| a.pixels.shares(&b.pixels))
+        })?;
+        found.used = tick();
+        Some(found.pixels.clone())
+    }
+    /// The composited contents of a folder holding `children` (depths as in
+    /// the document, inside a folder at `depth`): kept, updated from the
+    /// last kept where only pixels changed, or composited whole.
+    fn content(
+        &self,
+        children: &[Layer],
+        depth: u8,
+        [width, height]: [usize; 2],
+    ) -> crate::pixels::Pixels {
+        if let Some(pixels) = self.content_ready(children) {
+            return pixels;
+        }
+        let base = {
+            let contents = self.1.lock().unwrap_or_else(|e| e.into_inner());
+            contents
+                .iter()
+                .filter(|c| same_children(&c.children, children))
+                .max_by_key(|c| c.used)
+                .map(|c| (c.children.clone(), c.pixels.clone()))
+        };
+        let mut stack = Document::new(1, 1);
+        (stack.width, stack.height) = (width, height);
+        stack.selection = None;
+        stack.layers = children
+            .iter()
+            .map(|child| {
+                let mut child = child.clone();
+                child.depth -= depth + 1;
+                child.effect_cache = Cache::default();
+                child
+            })
+            .collect();
+        stack.active = 0;
+        let pixels = match base {
+            Some((old, mut pixels)) => {
+                let changed: Vec<[usize; 4]> = old
+                    .iter()
+                    .zip(children)
+                    .flat_map(|(a, b)| a.pixels.changed_regions(&b.pixels, width, height))
+                    .collect();
+                for (rect, _) in redraw_windows(&changed, 0, [width, height]) {
+                    let rgba = stack.composite_display_region(rect, true);
+                    pixels.writer().write_region(width, rect, &rgba);
+                }
+                pixels
+            }
+            None => {
+                let mut pixels = crate::pixels::Pixels::sparse(width, height);
+                if !stack.layers.is_empty() {
+                    pixels.writer().write_region(
+                        width,
+                        [0, 0, width, height],
+                        &stack.composite_transparent(),
+                    );
+                }
+                pixels
+            }
+        };
+        let mut contents = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        while contents.len() >= STATES_PER_LAYER {
+            let oldest = (0..contents.len())
+                .min_by_key(|&i| contents[i].used)
+                .unwrap();
+            contents.remove(oldest);
+        }
+        contents.push(Content {
+            children: stack.layers,
+            pixels: pixels.clone(),
+            used: tick(),
+        });
+        pixels
     }
     /// The cached drawing of `layer` if it matches, or with `stale` its
     /// most recent drawing at this size, standing in (while painting).
@@ -1077,7 +1208,13 @@ pub(crate) type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
 /// drawing this layer; it wakes the display when done, which then asks
 /// for the newest state. Keeping one at a time lets each drawing build on
 /// the last, so effects follow a stroke while it is painted.
-fn draw_in_background(layer: &Layer, effects: &[Effect], size: [usize; 2], wake: &Wake) {
+fn draw_in_background(
+    layer: &Layer,
+    effects: &[Effect],
+    size: [usize; 2],
+    children: Option<&[Layer]>,
+    wake: &Wake,
+) {
     let mut in_flight = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
     if in_flight.iter().any(|f| f.id == layer.id) {
         return;
@@ -1089,11 +1226,17 @@ fn draw_in_background(layer: &Layer, effects: &[Effect], size: [usize; 2], wake:
     });
     drop(in_flight);
     let (layer, effects, wake) = (layer.clone(), effects.to_vec(), wake.clone());
+    let children = children.map(<[Layer]>::to_vec);
     // The handle is not kept: the drawing lands in the layer's shared cache.
     let _ = crate::background::spawn(move || {
-        let _ = layer
+        let owner = children.map(|children| {
+            let content = layer.effect_cache.content(&children, layer.depth, size);
+            with_content(&layer, content)
+        });
+        let owner = owner.as_ref().unwrap_or(&layer);
+        let _ = owner
             .effect_cache
-            .layers(&layer, &effects, size, false, &|| false);
+            .layers(owner, &effects, size, false, &|| false);
         IN_FLIGHT
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1103,9 +1246,10 @@ fn draw_in_background(layer: &Layer, effects: &[Effect], size: [usize; 2], wake:
 }
 
 /// The document with each layer's enabled effects drawn as layers around
-/// it, as Photoshop's Create Layers would: what the compositor draws.
-/// Effects on folders are not drawn. `stale` reuses drawings made before
-/// the layer last changed, for a fast preview while painting.
+/// it, as Photoshop's Create Layers would: what the compositor draws. A
+/// folder's effects follow its composited contents; those under it go
+/// beneath its contents. `stale` reuses drawings made before the layer
+/// last changed, for a fast preview while painting.
 pub(crate) fn expand(
     doc: &Document,
     stale: bool,
@@ -1120,10 +1264,15 @@ pub(crate) fn expand_tracked(
     stale: bool,
     cancel: &dyn Fn() -> bool,
 ) -> Result<(Document, Vec<u64>), String> {
-    expand_with(doc, |layer, effects, size| {
-        layer
+    expand_with(doc, |layer, effects, size, children| {
+        let owner = children.map(|children| {
+            let content = layer.effect_cache.content(children, layer.depth, size);
+            with_content(layer, content)
+        });
+        let owner = owner.as_ref().unwrap_or(layer);
+        owner
             .effect_cache
-            .layers(layer, effects, size, stale, cancel)
+            .layers(owner, effects, size, stale, cancel)
             .map(Some)
     })
 }
@@ -1133,12 +1282,20 @@ pub(crate) fn expand_tracked(
 /// true while any drawing is still on its way.
 pub(crate) fn expand_for_display(doc: &Document, wake: &Wake) -> (Document, Vec<u64>, bool) {
     let mut waiting = false;
-    let expanded = expand_with(doc, |layer, effects, size| {
+    let expanded = expand_with(doc, |layer, effects, size, children| {
         let cache = &layer.effect_cache;
-        if let Some(found) = cache.lookup(layer, effects, size, false) {
+        let owner = match children {
+            Some(children) => cache
+                .content_ready(children)
+                .map(|content| with_content(layer, content)),
+            None => Some(layer.clone()),
+        };
+        if let Some(owner) = &owner
+            && let Some(found) = cache.lookup(owner, effects, size, false)
+        {
             return Ok(Some(found));
         }
-        draw_in_background(layer, effects, size, wake);
+        draw_in_background(layer, effects, size, children, wake);
         waiting = true;
         Ok(cache.lookup(layer, effects, size, true))
     });
@@ -1151,6 +1308,7 @@ fn expand_with(
         &Layer,
         &[Effect],
         [usize; 2],
+        Option<&[Layer]>,
     ) -> Result<Option<([Vec<Layer>; 3], u64)>, String>,
 ) -> Result<(Document, Vec<u64>), String> {
     let mut drawings = Vec::new();
@@ -1169,11 +1327,23 @@ fn expand_with(
             .filter(|e| e.enabled)
             .map(|e| e.effect.clone())
             .collect();
-        let [below, inside, above] = if layer.folder || effects.is_empty() {
+        // A folder's contents are the deeper entries just before it.
+        let start = layer.folder.then(|| {
+            let mut start = out.layers.len();
+            while start > 0 && out.layers[start - 1].depth > layer.depth {
+                start -= 1;
+            }
+            start
+        });
+        let [below, inside, above] = if effects.is_empty() {
             layer.effect_cache.forget(layer.id);
             Default::default()
+        } else if layer.folder && !layer.visible {
+            // Nothing shows; skip compositing the contents.
+            Default::default()
         } else {
-            match drawing(layer, &effects, [doc.width, doc.height])? {
+            let children = start.map(|start| &out.layers[start..]);
+            match drawing(layer, &effects, [doc.width, doc.height], children)? {
                 Some((layers, generation)) => {
                     drawings.push(generation);
                     layers
@@ -1186,7 +1356,16 @@ fn expand_with(
             l.depth = depth;
             l
         };
-        out.layers.extend(below.into_iter().map(at_depth));
+        let below: Vec<Layer> = below.into_iter().map(at_depth).collect();
+        match start {
+            Some(start) => {
+                if doc.active < index && out.active >= start {
+                    out.active += below.len();
+                }
+                out.layers.splice(start..start, below);
+            }
+            None => out.layers.extend(below),
+        }
         if index == doc.active {
             out.active = out.layers.len();
         }
@@ -2959,12 +3138,155 @@ mod tests {
             *size = f64::NAN;
         }
         assert!(bad.validate().is_err());
-        let mut folder = doc.clone();
-        folder.layers[0].folder = true;
-        assert!(folder.validate_metadata().is_err());
         let mut many = doc;
         many.layers[0].effects = vec![overlay(); crate::document::MAX_EFFECTS + 1];
         assert!(many.validate().is_err());
+    }
+
+    /// Two layers in a folder carrying a drop shadow and an overlay.
+    fn folder_doc() -> Document {
+        let (w, h) = (600, 200);
+        let mut doc = Document::new(w, h);
+        let square = |name: &str, x0: usize, color: [u8; 4]| {
+            let mut layer = Layer::raster(name.into(), w, h);
+            layer.depth = 1;
+            let mut writer = layer.pixels.writer();
+            for y in 40..90 {
+                for x in x0..x0 + 50 {
+                    writer.rgba_mut(y * w + x).copy_from_slice(&color);
+                }
+            }
+            layer
+        };
+        let mut folder = Layer::new_folder("F".into());
+        folder.effects = vec![
+            LayerEffect::new(Effect::preset("Drop Shadow").unwrap()),
+            overlay(),
+        ];
+        doc.layers = vec![
+            square("A", 40, [255, 0, 0, 255]),
+            square("B", 400, [0, 255, 0, 128]),
+            folder,
+        ];
+        doc.active = 0;
+        doc.validate().unwrap();
+        doc
+    }
+    fn fresh(doc: &Document) -> Document {
+        let mut fresh = doc.clone();
+        for layer in &mut fresh.layers {
+            layer.effect_cache = Cache::default();
+        }
+        expand(&fresh, false, &|| false).unwrap()
+    }
+    fn close(a: &[u8], b: &[u8]) -> bool {
+        a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.abs_diff(*b) <= 2)
+    }
+
+    #[test]
+    fn folder_effects_follow_contents_and_update_around_changes() {
+        let mut doc = folder_doc();
+        let expanded = expand(&doc, false, &|| false).unwrap();
+        let stack: Vec<_> = expanded
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.depth, l.clipped))
+            .collect();
+        assert_eq!(
+            stack,
+            [
+                ("F's Drop Shadow", 0, false),
+                ("A", 1, false),
+                ("B", 1, false),
+                ("F", 0, false),
+                ("F's Color Overlay", 0, true),
+            ]
+        );
+        assert_eq!(expanded.layers[expanded.active].name, "A");
+        let rendered = expanded.composite_transparent();
+        let at = |x: usize, y: usize| &rendered[(y * 600 + x) * 4..][..4];
+        // The overlay recolors both layers; the shadow falls beside them.
+        assert_eq!(at(60, 60), [0, 0, 255, 255]);
+        // B is half transparent: blue, over the shadow beneath it.
+        assert!(at(420, 60)[..2] == [0, 0] && at(420, 60)[2] > 0);
+        assert!(at(92, 93)[3] > 0 && at(20, 20)[3] == 0);
+        // A change inside the folder updates its contents around the change
+        // only, and matches drawing everything afresh.
+        let cache = doc.layers[2].effect_cache.clone();
+        let content = || cache.1.lock().unwrap().last().unwrap().pixels.clone();
+        let before = content();
+        doc.layers[1]
+            .pixels
+            .writer()
+            .rgba_mut(150 * 600 + 500)
+            .copy_from_slice(&[0, 0, 0, 255]);
+        let updated = expand(&doc, false, &|| false).unwrap();
+        let after = content();
+        assert!(after.shares_tile(&before, 0) && !after.shares_tile(&before, 1));
+        assert!(close(
+            &updated.composite_transparent(),
+            &fresh(&doc).composite_transparent()
+        ));
+        // A hidden folder draws nothing, and showing it again is ready.
+        doc.layers[2].visible = false;
+        assert_eq!(expand(&doc, false, &|| false).unwrap().layers.len(), 3);
+    }
+
+    #[test]
+    fn folder_effects_draw_in_the_background_on_the_canvas() {
+        let wake: Wake = std::sync::Arc::new(|| {});
+        let settle = |doc: &Document| {
+            for _ in 0..1000 {
+                let (shown, _, waiting) = expand_for_display(doc, &wake);
+                if !waiting {
+                    return shown;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            panic!("background drawing never finished");
+        };
+        let mut doc = folder_doc();
+        let (first, _, waiting) = expand_for_display(&doc, &wake);
+        assert!(waiting);
+        assert_eq!(first.layers.len(), 3);
+        let shown = settle(&doc);
+        assert!(close(
+            &shown.composite_transparent(),
+            &fresh(&doc).composite_transparent()
+        ));
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(150 * 600 + 100)
+            .copy_from_slice(&[0, 0, 0, 255]);
+        let shown = settle(&doc);
+        assert!(close(
+            &shown.composite_transparent(),
+            &fresh(&doc).composite_transparent()
+        ));
+    }
+
+    #[test]
+    fn merging_a_folder_keeps_its_effects_and_look() {
+        let mut doc = folder_doc();
+        let before = doc.composite_transparent();
+        doc.active = 2;
+        doc.merge_folder().unwrap();
+        assert_eq!(doc.layers.len(), 1);
+        assert_eq!(doc.layers[0].effects.len(), 2);
+        assert!(close(&doc.composite_transparent(), &before));
+    }
+
+    #[test]
+    fn folder_effects_survive_saving() {
+        let doc = folder_doc();
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        assert_eq!(loaded.layers[2].effects, doc.layers[2].effects);
+        assert_eq!(loaded.composite_transparent(), doc.composite_transparent());
     }
 
     #[test]

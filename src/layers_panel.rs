@@ -427,7 +427,7 @@ impl Dudel {
                 Icon::Effects,
                 action_size,
                 self.effects_window_open,
-                target_ready && !folder,
+                target_ready,
             )
             .on_hover_text("Layer effects: shadows, glows, strokes, overlays, bevels")
             .clicked()

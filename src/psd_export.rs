@@ -69,11 +69,7 @@ pub(crate) fn written(
     let mut styles = Vec::new();
     let mut drawn = doc.clone();
     if effects == Effects::Editable {
-        for layer in drawn
-            .layers
-            .iter_mut()
-            .filter(|l| !l.folder && !l.effects.is_empty())
-        {
+        for layer in drawn.layers.iter_mut().filter(|l| !l.effects.is_empty()) {
             if let Some(style) = crate::layer_effects::to_psd(&layer.effects) {
                 styles.push((layer.id, style));
                 layer.effects.clear();
@@ -115,7 +111,7 @@ pub(crate) fn notes(doc: &Document, effects: Effects) -> Vec<String> {
             list(&approximated)
         ));
     }
-    let has_effects = |l: &Layer| !l.folder && l.effects.iter().any(|e| e.enabled);
+    let has_effects = |l: &Layer| l.effects.iter().any(|e| e.enabled);
     let drawn = match effects {
         Effects::AsLayers => names(&has_effects),
         Effects::Editable => {
@@ -816,6 +812,31 @@ mod tests {
             );
             assert!((a.effect.opacity - b.effect.opacity).abs() < 1e-4);
         }
+        let (x, y) = (doc.composite(), back.composite());
+        let worst = x.iter().zip(&y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
+        assert!(worst <= 1, "renders differ by {worst}");
+    }
+
+    #[test]
+    fn folder_effects_stay_editable_through_a_round_trip() {
+        use crate::layer_effects::{Effect, LayerEffect};
+        let (w, h) = (64, 64);
+        let mut doc = Document::new(w, h);
+        doc.layers[0].depth = 1;
+        paint(&mut doc.layers[0], w, [16, 16, 40, 40], [200, 30, 30, 255]);
+        let mut folder = Layer::new_folder("Group".into());
+        folder.effects = ["Drop Shadow", "Stroke"]
+            .iter()
+            .map(|p| LayerEffect::new(Effect::preset(p).unwrap()))
+            .collect();
+        doc.layers.push(folder);
+        doc.validate().unwrap();
+        assert!(notes(&doc, Effects::Editable).is_empty());
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(back.layers.len(), 2, "effects stay on the folder");
+        assert!(back.layers[1].folder);
+        assert_eq!(back.layers[1].effects.len(), 2);
         let (x, y) = (doc.composite(), back.composite());
         let worst = x.iter().zip(&y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
         assert!(worst <= 1, "renders differ by {worst}");

@@ -64,10 +64,6 @@ impl Dudel {
             return;
         };
         ui.strong(&layer.name);
-        if layer.folder {
-            ui.label("Effects apply to layers, not folders.");
-            return;
-        }
         // Build on what the user last set, even before the render queue has
         // published it: the open gesture's draft, then the last list sent.
         let original = self

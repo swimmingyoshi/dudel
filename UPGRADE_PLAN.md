@@ -427,8 +427,16 @@ Stage B - native layer effects:
       band owning its tile rows and stroke blocks; the queue paints such a dab
       as one unit. The pool wakes helpers together and lingers 50 us. 300 px:
       ~3 -> ~1 ms per dab; 100 px: 0.58 -> 0.18 ms
-- [ ] Effects on folders natively; fill opacity; satin; pattern effects;
-      gradient editor beyond the two end colors and angle
+- [x] Effects on folders natively (2026-11-02): they follow the folder's
+      composited contents (children with their own effects), kept per
+      folder and recomposited only where children's pixels changed, so the
+      effect cache redraws around changes as for layers. Under-effects go
+      beneath the contents, inner ones clip to the folder; hidden folders
+      skip drawing. Canvas draws them in the background; PSD import keeps
+      them native (fill 255), export writes them as styles; Merge folder
+      keeps them on the merged layer
+- [ ] Fill opacity; satin; pattern effects; gradient editor beyond the two
+      end colors and angle
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total

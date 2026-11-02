@@ -1206,7 +1206,21 @@ fn layers(
         }
         if record.group != 0 {
             let start = starts.pop().ok_or("PSD group nesting exceeds limits")?;
-            if !record.effects.list.is_empty() {
+            let native: Vec<_> = record
+                .effects
+                .list
+                .iter()
+                .cloned()
+                .map(crate::layer_effects::LayerEffect::new)
+                .collect();
+            if !native.is_empty()
+                && record.fill == 255
+                && native.len() <= crate::document::MAX_EFFECTS
+                && native.iter().all(|e| e.validate().is_ok())
+            {
+                // Native folder effects follow its contents as Photoshop's do.
+                record.layer.effects = native;
+            } else if !record.effects.list.is_empty() {
                 // A folder's effects follow its composited contents.
                 let mut contents = Document::new(width, height);
                 contents.layers = result[start..].to_vec();
@@ -2489,7 +2503,11 @@ mod tests {
             },
         ]);
         let imported = parse(&file, &|| false).unwrap();
-        let doc = &imported.document;
+        // The folder keeps its effects, drawn as Photoshop's Create Layers
+        // would draw them.
+        let folder = imported.document.layers.last().unwrap();
+        assert!(folder.folder && folder.effects.len() == 2);
+        let doc = &crate::layer_effects::expand(&imported.document, false, &|| false).unwrap();
         let stack: Vec<_> = doc
             .layers
             .iter()

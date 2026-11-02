@@ -125,6 +125,8 @@ impl Document {
         merged.clipped = header.clipped;
         merged.depth = depth;
         merged.mask = header.mask.clone();
+        // Effects follow the folder's composite, which these pixels now are.
+        merged.effects = header.effects.clone();
         merged.pixels = if contents.layers.is_empty() {
             vec![0; self.width * self.height * 4].into()
         } else {

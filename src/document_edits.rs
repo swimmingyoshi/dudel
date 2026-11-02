@@ -839,12 +839,7 @@ fn apply_property(layer: &mut Layer, property: &Property) -> Result<bool, String
             }
             set!(collapsed, *value)
         }
-        Property::Effects(effects) => {
-            if layer.folder && !effects.is_empty() {
-                return Err("Effects apply only to layers, not folders".into());
-            }
-            set!(effects, effects.clone())
-        }
+        Property::Effects(effects) => set!(effects, effects.clone()),
         Property::Adjustment(adjustment) => {
             if layer.adjustment.is_none() {
                 return Err("Only adjustment layers have adjustment settings".into());
