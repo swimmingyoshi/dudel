@@ -151,6 +151,7 @@ fn can_overlay(doc: &crate::document::Document) -> bool {
         && layer.depth == 0
         && layer.visible
         && layer.opacity == 1.0
+        && layer.fill == 1.0
         && !layer.csp_byte_opacity
         && !layer.clipped
         && layer.blend == crate::blend::BlendMode::Normal

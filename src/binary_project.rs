@@ -44,6 +44,8 @@ struct LayerMetadata<'a> {
     mask: Option<MaskMetadata>,
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     effects: &'a [crate::layer_effects::LayerEffect],
+    #[serde(skip_serializing_if = "is_full")]
+    fill: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     adjustment: Option<&'a crate::adjustment::Adjustment>,
     pixels: [u8; 0],
@@ -55,6 +57,9 @@ struct MaskMetadata {
 }
 fn is_zero(value: &u8) -> bool {
     *value == 0
+}
+fn is_full(value: &f32) -> bool {
+    *value == 1.0
 }
 pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
     doc.validate()?;
@@ -85,6 +90,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
                     linked: m.linked,
                 }),
                 effects: &layer.effects,
+                fill: layer.fill,
                 adjustment: layer.adjustment.as_ref(),
                 pixels: [],
             })

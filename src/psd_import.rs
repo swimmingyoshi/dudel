@@ -383,6 +383,23 @@ struct Record {
     dropped: bool,
 }
 
+/// Whether Photoshop's fill opacity acts differently from opacity in this
+/// blend mode (Dudel draws fill as opacity).
+pub(crate) fn fill_differs(blend: crate::blend::BlendMode) -> bool {
+    use crate::blend::BlendMode::*;
+    matches!(
+        blend,
+        ColorBurn
+            | LinearBurn
+            | ColorDodge
+            | LinearDodge
+            | VividLight
+            | LinearLight
+            | HardMix
+            | Difference
+    )
+}
+
 /// Draw a layer's effects as layers (Photoshop's Create Layers), from its
 /// final pixels and mask.
 fn effect_layers(
@@ -394,15 +411,14 @@ fn effect_layers(
 ) -> Result<(), String> {
     let effects = std::mem::take(&mut record.effects.list);
     let source = record.source.take();
-    // Effects that follow the layer's own pixels stay editable on it;
-    // shape outlines and fill opacity have no native form, so those bake.
+    // Effects that follow the layer's own pixels stay editable on it, with
+    // its fill; shape outlines have no native form, so those bake.
     let native: Vec<_> = effects
         .iter()
         .cloned()
         .map(crate::layer_effects::LayerEffect::new)
         .collect();
     if source.is_none()
-        && record.fill == 255
         && native.len() <= crate::document::MAX_EFFECTS
         && native.iter().all(|e| e.validate().is_ok())
     {
@@ -903,22 +919,15 @@ fn layers(
             return Err("PSD layer pixels are marked irrelevant to its appearance".into());
         }
         if fill != 255 {
-            use crate::blend::BlendMode::*;
-            // These modes treat fill opacity differently from opacity.
-            if matches!(
-                layer.blend,
-                ColorBurn
-                    | LinearBurn
-                    | ColorDodge
-                    | LinearDodge
-                    | VividLight
-                    | LinearLight
-                    | HardMix
-                    | Difference
-            ) {
+            if fill_differs(layer.blend) {
                 return Err("PSD fill opacity on this blend mode needs the saved composite".into());
             }
-            layer.opacity *= f32::from(fill) / 255.0;
+            if group == 0 {
+                layer.fill = f32::from(fill) / 255.0;
+            } else {
+                // Folders have no fill of their own; it fades the whole group.
+                layer.opacity *= f32::from(fill) / 255.0;
+            }
         }
         if group == 3 {
             effects.list.clear();
@@ -1291,7 +1300,7 @@ fn reversed_matches_better(doc: &Document, saved: &[u8]) -> bool {
     let error = |doc: &Document| -> u64 {
         // Compare the same appearance the imported document will render.
         // Expand once per candidate rather than once per sampled pixel.
-        let expanded = if doc.has_effects() {
+        let expanded = if doc.needs_expansion() {
             crate::layer_effects::expand(doc, false, &|| false).ok()
         } else {
             None
@@ -2312,7 +2321,8 @@ mod tests {
         let imported = parse(&file, &|| false).unwrap();
         let text = &imported.document.layers[0];
         assert_eq!(text.pixels.rgba(0), [9, 9, 9, 255]);
-        assert!((text.opacity - 128.0 / 255.0).abs() < 1e-6);
+        assert_eq!(text.opacity, 1.0);
+        assert!((text.fill - 128.0 / 255.0).abs() < 1e-6);
         assert!(
             imported.notes.iter().any(|n| n
                 == "Text layers imported as pixels (their text cannot be edited here): “Title”.")

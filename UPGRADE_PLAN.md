@@ -435,8 +435,15 @@ Stage B - native layer effects:
       skip drawing. Canvas draws them in the background; PSD import keeps
       them native (fill 255), export writes them as styles; Merge folder
       keeps them on the merged layer
-- [ ] Fill opacity; satin; pattern effects; gradient editor beyond the two
-      end colors and angle
+- [x] Fill opacity (2026-11-02): `Layer.fill` fades a layer's own pixels,
+      not its effects. Folded into opacity when the document is expanded
+      (`needs_expansion`), so the compositor is unchanged; effects draw with
+      it (shadow knockout, inner effects carry its alpha). Fill slider in
+      the Layer Effects window (`Property::Fill`, same gesture as effects).
+      Saved in projects and packages; PSD `iOpa` read and written natively,
+      except the eight modes where Photoshop draws fill differently
+- [ ] Satin; pattern effects; gradient editor beyond the two end colors
+      and angle
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total

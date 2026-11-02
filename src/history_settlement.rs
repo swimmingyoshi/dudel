@@ -44,6 +44,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && a.visible == b.visible
                 && a.opacity == b.opacity
                 && a.csp_byte_opacity == b.csp_byte_opacity
+                && a.fill == b.fill
                 && a.blend == b.blend
                 && a.clipped == b.clipped
                 && a.locked == b.locked

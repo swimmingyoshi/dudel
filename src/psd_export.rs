@@ -78,12 +78,19 @@ pub(crate) fn written(
     }
     let mut expanded = crate::layer_effects::expand(&drawn, false, cancel)?;
     // Keep the effects on the layers that carry them as styles, so a reader
-    // of this document sees what the file says.
+    // of this document sees what the file says. Fill opacity is written as
+    // Photoshop's fill, except in modes where Photoshop draws fill
+    // differently; there it stays folded into opacity.
     for layer in &mut expanded.layers {
-        if styles.iter().any(|(id, _)| *id == layer.id)
-            && let Some(source) = doc.layers.iter().find(|l| l.id == layer.id)
-        {
+        let Some(source) = doc.layers.iter().find(|l| l.id == layer.id) else {
+            continue;
+        };
+        if styles.iter().any(|(id, _)| *id == layer.id) {
             layer.effects = source.effects.clone();
+        }
+        if source.fill != 1.0 && !crate::psd_import::fill_differs(source.blend) {
+            layer.opacity = source.opacity;
+            layer.fill = source.fill;
         }
     }
     Ok((expanded, styles))
@@ -358,6 +365,10 @@ impl Writer<'_> {
         // Image and position locks, and transparency.
         let locks = if layer.locked { 2 | 4 } else { 0 } | u32::from(layer.alpha_locked);
         tagged(&mut extra, b"lspf", &locks.to_be_bytes());
+        if layer.fill != 1.0 {
+            let fill = (layer.fill.clamp(0.0, 1.0) * 255.0).round() as u8;
+            tagged(&mut extra, b"iOpa", &[fill, 0, 0, 0]);
+        }
         self.records.extend((extra.len() as u32).to_be_bytes());
         self.records.extend(extra);
         for (_, data) in channels {
@@ -840,6 +851,30 @@ mod tests {
         let (x, y) = (doc.composite(), back.composite());
         let worst = x.iter().zip(&y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
         assert!(worst <= 1, "renders differ by {worst}");
+    }
+
+    #[test]
+    fn fill_opacity_survives_a_round_trip() {
+        use crate::layer_effects::{Effect, LayerEffect};
+        let (w, h) = (48, 48);
+        let mut doc = Document::new(w, h);
+        paint(&mut doc.layers[0], w, [0, 0, w, h], [240, 240, 240, 255]);
+        let mut shape = Layer::raster("Shape".into(), w, h);
+        paint(&mut shape, w, [12, 12, 36, 36], [40, 120, 200, 255]);
+        shape.opacity = 0.8;
+        shape.fill = 0.4;
+        shape.effects = vec![LayerEffect::new(Effect::preset("Stroke").unwrap())];
+        doc.layers.push(shape);
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(back.layers.len(), 2);
+        let layer = &back.layers[1];
+        assert!((layer.opacity - 0.8).abs() < 1.0 / 255.0);
+        assert!((layer.fill - 0.4).abs() < 1.0 / 255.0);
+        assert_eq!(layer.effects.len(), 1);
+        let (x, y) = (doc.composite(), back.composite());
+        let worst = x.iter().zip(&y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
+        assert!(worst <= 2, "renders differ by {worst}");
     }
 
     #[test]

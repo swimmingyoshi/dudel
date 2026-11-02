@@ -25,7 +25,7 @@ pub(crate) fn magic(doc: &Document) -> &'static [u8] {
     if doc
         .layers
         .iter()
-        .any(|l| !l.effects.is_empty() || l.adjustment.is_some())
+        .any(|l| !l.effects.is_empty() || l.adjustment.is_some() || l.fill != 1.0)
     {
         STYLE_MAGIC
     } else if doc.version == 2 {

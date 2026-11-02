@@ -381,6 +381,8 @@ impl Document {
         // contributed to this raster.
         self.layers[lower].mask = None;
         self.layers[lower].effects.clear();
+        // The lower layer's fill opacity is in the merged pixels too.
+        self.layers[lower].fill = 1.0;
         self.layers.remove(upper);
         self.active = lower;
         Ok(())

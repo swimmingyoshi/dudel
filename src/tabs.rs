@@ -154,7 +154,7 @@ project_session! {
     effects_edit: Option<crate::effects_panel::Edit>,
     adjustment_edit: Option<crate::adjustment_panel::Edit>,
     adjustment_sent: Option<(crate::document::LayerId, crate::adjustment::Settings)>,
-    effects_sent: Option<(crate::document::LayerId, Vec<crate::layer_effects::LayerEffect>)>,
+    effects_sent: Option<(crate::document::LayerId, crate::effects_panel::Style)>,
     effects_shown: Vec<u64>,
     mask_view_shown: bool,
     import_report: crate::import_report::ImportReport,

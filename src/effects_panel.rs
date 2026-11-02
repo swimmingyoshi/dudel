@@ -1,21 +1,37 @@
 //! The Layer Effects window: add, switch off, reorder, remove and adjust a
-//! layer's effects. Changes apply live; a drag becomes one undo step when the
-//! pointer is released, like the opacity slider.
+//! layer's effects, and set its fill opacity. Changes apply live; a drag
+//! becomes one undo step when the pointer is released, like the opacity
+//! slider.
 use crate::{
     Dudel, egui,
     layer_effects::{BevelStyle, Effect, Kind, LayerEffect, Paint, Position, Technique},
 };
 
-/// An effects change being dragged: the list before it, to tell whether it
+/// What the window edits on a layer: its effects and its fill opacity.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Style {
+    pub effects: Vec<LayerEffect>,
+    pub fill: f32,
+}
+impl Style {
+    fn of(layer: &crate::document::Layer) -> Self {
+        Self {
+            effects: layer.effects.clone(),
+            fill: layer.fill,
+        }
+    }
+}
+
+/// A style change being dragged: the style before it, to tell whether it
 /// changed anything and whether the project was modified before.
 pub(crate) struct Edit {
     target: crate::document::LayerId,
-    original: Vec<LayerEffect>,
+    original: Style,
     modified: bool,
     /// While the render queue is busy the document is not edited directly:
-    /// the gesture's latest list waits here and is sent as one edit when the
-    /// pointer lifts.
-    queued: Option<Vec<LayerEffect>>,
+    /// the gesture's latest style waits here and is sent as one edit when
+    /// the pointer lifts.
+    queued: Option<Style>,
 }
 
 impl Dudel {
@@ -75,10 +91,17 @@ impl Dudel {
                 self.effects_sent
                     .as_ref()
                     .filter(|(sent, _)| *sent == target)
-                    .map(|(_, effects)| effects.clone())
+                    .map(|(_, style)| style.clone())
             })
-            .unwrap_or_else(|| layer.effects.clone());
-        let mut effects = original.clone();
+            .unwrap_or_else(|| Style::of(layer));
+        let mut fill = original.fill;
+        if !layer.folder {
+            let mut value = f64::from(fill);
+            percent(ui, "Fill", &mut value);
+            fill = value as f32;
+            ui.small("Fades the layer's own pixels; its effects keep their opacity.");
+        }
+        let mut effects = original.effects.clone();
         ui.menu_button("Add effect", |ui| {
             for name in crate::layer_effects::PRESETS {
                 let needed = if name == "Bevel and Emboss" { 2 } else { 1 };
@@ -152,26 +175,30 @@ impl Dudel {
         if let Some(index) = swap {
             effects.swap(index, index + 1);
         }
-        sync_bevel_halves(&original, &mut effects);
-        if effects != original {
-            self.apply_effects(target, original, effects);
+        sync_bevel_halves(&original.effects, &mut effects);
+        let style = Style { effects, fill };
+        if style != original {
+            self.apply_style(target, original, style);
         }
     }
 
-    /// Apply a changed effect list: live under one gesture when possible,
-    /// otherwise as a queued property edit once the pointer is released.
-    pub(crate) fn apply_effects(
+    /// Apply a changed style: live under one gesture when possible,
+    /// otherwise as queued property edits once the pointer is released.
+    pub(crate) fn apply_style(
         &mut self,
         target: crate::document::LayerId,
-        original: Vec<LayerEffect>,
-        effects: Vec<LayerEffect>,
+        original: Style,
+        style: Style,
     ) {
-        if effects.len() > crate::document::MAX_EFFECTS {
+        if style.effects.len() > crate::document::MAX_EFFECTS {
             self.status = "Too many layer effects".into();
             return;
         }
-        if let Err(error) = effects.iter().try_for_each(LayerEffect::validate) {
+        if let Err(error) = style.effects.iter().try_for_each(LayerEffect::validate) {
             self.status = error;
+            return;
+        }
+        if !(0.0..=1.0).contains(&style.fill) {
             return;
         }
         if self.effects_edit.as_ref().is_some_and(|edit| {
@@ -181,13 +208,13 @@ impl Dudel {
         }
         if self.render_queue.busy() {
             match &mut self.effects_edit {
-                Some(edit) => edit.queued = Some(effects),
+                Some(edit) => edit.queued = Some(style),
                 None => {
                     self.effects_edit = Some(Edit {
                         target,
                         original,
                         modified: self.modified,
-                        queued: Some(effects),
+                        queued: Some(style),
                     });
                 }
             }
@@ -202,12 +229,16 @@ impl Dudel {
             self.history.begin_gesture_checkpoint(&self.doc);
             self.effects_edit = Some(Edit {
                 target,
-                original: self.doc.layers[index].effects.clone(),
+                original: Style::of(&self.doc.layers[index]),
                 modified: self.modified,
                 queued: None,
             });
         }
-        self.doc.layers[index].effects = effects;
+        let layer = &mut self.doc.layers[index];
+        layer.effects = style.effects;
+        if !layer.folder {
+            layer.fill = style.fill;
+        }
         self.changed();
     }
 
@@ -216,12 +247,20 @@ impl Dudel {
             return;
         };
         if let Some(queued) = edit.queued {
-            // One queued edit per gesture, after the pointer lifts.
-            if queued != edit.original {
+            // One queued edit per changed setting, after the pointer lifts.
+            if queued.effects != edit.original.effects {
                 self.set_canvas_property(
                     edit.target,
-                    crate::document_edits::Property::Effects(queued.clone()),
+                    crate::document_edits::Property::Effects(queued.effects.clone()),
                 );
+            }
+            if queued.fill != edit.original.fill {
+                self.set_canvas_property(
+                    edit.target,
+                    crate::document_edits::Property::Fill(queued.fill),
+                );
+            }
+            if queued != edit.original {
                 self.effects_sent = Some((edit.target, queued));
             }
             return;
@@ -231,7 +270,7 @@ impl Dudel {
             .layers
             .iter()
             .find(|l| l.id == edit.target)
-            .is_none_or(|l| l.effects == edit.original);
+            .is_none_or(|l| Style::of(l) == edit.original);
         if unchanged {
             self.history.discard_pending_checkpoint(&self.doc);
             self.modified = edit.modified;
@@ -572,8 +611,9 @@ mod tests {
             LayerEffect::new(effect)
         };
         // A drag through three values while rendering is busy.
+        let style = |effects| Style { effects, fill: 1.0 };
         for opacity in [0.2, 0.4, 0.6] {
-            app.apply_effects(target, Vec::new(), vec![overlay(opacity)]);
+            app.apply_style(target, style(Vec::new()), style(vec![overlay(opacity)]));
         }
         assert!(
             app.doc.layers[0].effects.is_empty(),
@@ -581,7 +621,7 @@ mod tests {
         );
         app.finish_effects_edit();
         // The next change starts from what was sent, not the stale document.
-        assert_eq!(app.effects_sent, Some((target, vec![overlay(0.6)])));
+        assert_eq!(app.effects_sent, Some((target, style(vec![overlay(0.6)]))));
         app.flush_render_queue();
         assert_eq!(app.doc.layers[0].effects, vec![overlay(0.6)]);
         // One undo step for the whole drag.
@@ -599,10 +639,13 @@ mod tests {
         let target = app.doc.layers[0].id;
         let effect = LayerEffect::new(Effect::preset("Color Overlay").unwrap());
         app.doc.layers[0].effects = vec![effect.clone(); crate::document::MAX_EFFECTS];
-        app.apply_effects(
+        app.apply_style(
             target,
-            app.doc.layers[0].effects.clone(),
-            vec![effect; crate::document::MAX_EFFECTS + 1],
+            Style::of(&app.doc.layers[0]),
+            Style {
+                effects: vec![effect; crate::document::MAX_EFFECTS + 1],
+                fill: 1.0,
+            },
         );
         app.finish_effects_edit();
         assert!(

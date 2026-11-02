@@ -137,6 +137,10 @@ pub struct Layer {
     /// Native/legacy layers retain continuous opacity by default.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub csp_byte_opacity: bool,
+    /// Photoshop's fill opacity: fades the layer's own pixels like opacity,
+    /// but not its effects. Applied when the document is expanded.
+    #[serde(default = "full_fill", skip_serializing_if = "is_full_fill")]
+    pub fill: f32,
     #[serde(default)]
     pub blend: crate::blend::BlendMode,
     #[serde(default)]
@@ -219,6 +223,13 @@ pub(crate) fn validate_folder_depths(
     Ok(())
 }
 
+fn full_fill() -> f32 {
+    1.0
+}
+fn is_full_fill(fill: &f32) -> bool {
+    *fill == 1.0
+}
+
 impl Default for Layer {
     fn default() -> Self {
         Self {
@@ -227,6 +238,7 @@ impl Default for Layer {
             visible: true,
             opacity: 1.0,
             csp_byte_opacity: false,
+            fill: 1.0,
             blend: crate::blend::BlendMode::Normal,
             clipped: false,
             locked: false,
@@ -681,9 +693,10 @@ impl Document {
         }
         Ok(())
     }
-    /// Whether compositing draws layer effects.
-    pub(crate) fn has_effects(&self) -> bool {
-        self.layers.iter().any(Layer::has_effects)
+    /// Whether compositing goes through `layer_effects::expand`: some layer
+    /// draws effects or has fill opacity.
+    pub(crate) fn needs_expansion(&self) -> bool {
+        self.layers.iter().any(|l| l.has_effects() || l.fill != 1.0)
     }
     pub fn validate_metadata(&self) -> Result<(), String> {
         validate_dpi(self.dpi)?;
@@ -722,6 +735,7 @@ impl Document {
                 || (layer.folder && layer.csp_byte_opacity)
                 || !layer.opacity.is_finite()
                 || !(0.0..=1.0).contains(&layer.opacity)
+                || !(0.0..=1.0).contains(&layer.fill)
             {
                 return Err("Invalid layer data".into());
             }
@@ -1100,7 +1114,7 @@ impl Document {
         check: impl Fn() -> Result<(), String> + Sync,
     ) -> Result<Vec<u8>, String> {
         check()?;
-        if self.has_effects() {
+        if self.needs_expansion() {
             let expanded = crate::layer_effects::expand(self, false, &|| check().is_err())?;
             return expanded.composite_grid(rect, step, transparent, check);
         }
@@ -1308,7 +1322,7 @@ impl Document {
         if x >= self.width || y >= self.height {
             return None;
         }
-        if self.has_effects() {
+        if self.needs_expansion() {
             return crate::layer_effects::expand(self, false, &|| false)
                 .ok()?
                 .pick_color(x, y);
@@ -2095,6 +2109,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.visible != b.visible
             || a.opacity != b.opacity
             || a.csp_byte_opacity != b.csp_byte_opacity
+            || a.fill != b.fill
             || a.blend != b.blend
             || a.clipped != b.clipped
             || a.locked != b.locked

@@ -1965,7 +1965,7 @@ mod tests {
         doc.layers[1].opacity = 0.5;
         assert_eq!(&pixels(&doc)[..4], &[128, 128, 128, 255]);
         doc.layers[1].opacity = 1.0;
-        assert!(!doc.has_effects() && doc.layers[1].has_display_payload([2, 0, 3, 1]));
+        assert!(!doc.needs_expansion() && doc.layers[1].has_display_payload([2, 0, 3, 1]));
         // Clipped, it only recolors its base.
         let mut clipped = crate::document::Document::new(3, 1);
         clipped.layers[0]

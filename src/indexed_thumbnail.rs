@@ -40,7 +40,7 @@ pub(crate) fn encode(doc: &Document, cancel: &impl Fn() -> bool) -> Result<Vec<u
         return Err("Indexed thumbnail source pixel geometry differs".into());
     }
     let dimensions = size([doc.width, doc.height])?;
-    let expanded = if doc.has_effects() {
+    let expanded = if doc.needs_expansion() {
         Some(crate::layer_effects::expand(doc, false, cancel)?)
     } else {
         None

@@ -1309,7 +1309,7 @@ impl Dudel {
         // redraws around what changed, so effects follow a stroke and
         // finishing one on a huge layer never pauses.
         let mut drawings = Vec::new();
-        let expanded = if base.has_effects() {
+        let expanded = if base.needs_expansion() {
             let repaint = ctx.clone();
             let wake: crate::layer_effects::Wake =
                 std::sync::Arc::new(move || repaint.request_repaint());

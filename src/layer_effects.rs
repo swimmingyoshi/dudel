@@ -728,6 +728,9 @@ struct Cached {
     pixels: crate::pixels::Pixels,
     mask: Option<crate::layer_mask::LayerMask>,
     clipped: bool,
+    /// The layer's fill opacity as a byte: it knocks out shadows and decides
+    /// whether inner effects clip to the layer.
+    fill: u8,
     size: [usize; 2],
     parts: Vec<Part>,
 }
@@ -793,6 +796,11 @@ fn evict(live: &[Entries], keep: u64, limit: usize) {
     }
 }
 
+/// A layer's fill opacity as the byte effects are drawn with.
+fn fill_byte(layer: &Layer) -> u8 {
+    (layer.fill.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
 /// What besides pixels, mask and effects shows in a layer's drawing.
 type Look = (String, f32, bool);
 fn look(layer: &Layer) -> Look {
@@ -810,6 +818,7 @@ fn same_children(a: &[Layer], b: &[Layer]) -> bool {
                 && a.visible == b.visible
                 && a.opacity == b.opacity
                 && a.csp_byte_opacity == b.csp_byte_opacity
+                && a.fill == b.fill
                 && a.blend == b.blend
                 && a.clipped == b.clipped
                 && a.folder == b.folder
@@ -866,6 +875,7 @@ impl Cached {
             && self.pixels.shares(&layer.pixels)
             && crate::layer_mask::same_snapshot(&self.mask, &layer.mask)
             && self.clipped == layer.clipped
+            && self.fill == fill_byte(layer)
     }
     /// Its layers as `effects` on `layer`, with the generation identifying
     /// them: new whenever they are shown differently than last time.
@@ -1075,6 +1085,7 @@ impl Cache {
             pixels: layer.pixels.clone(),
             mask: layer.mask.clone(),
             clipped: layer.clipped,
+            fill: fill_byte(layer),
             size,
             parts,
         });
@@ -1110,6 +1121,7 @@ impl Cache {
                     c.id == layer.id
                         && c.size == size
                         && c.clipped == layer.clipped
+                        && c.fill == fill_byte(layer)
                         && crate::layer_mask::same_snapshot(&c.mask, &layer.mask)
                 })
                 .max_by_key(|c| c.used)
@@ -1158,7 +1170,7 @@ impl Cache {
                         let drawn = draw_rect(
                             &subset,
                             layer,
-                            255,
+                            fill_byte(layer),
                             None,
                             None,
                             size,
@@ -1184,7 +1196,16 @@ impl Cache {
         let missing: Vec<usize> = (0..effects.len()).filter(|&i| parts[i].is_none()).collect();
         if !missing.is_empty() {
             let subset: Vec<Effect> = missing.iter().map(|&i| effects[i].clone()).collect();
-            let drawn = draw_parts(&subset, layer, 255, None, None, size, &mut budget, &cancel)?;
+            let drawn = draw_parts(
+                &subset,
+                layer,
+                fill_byte(layer),
+                None,
+                None,
+                size,
+                &mut budget,
+                &cancel,
+            )?;
             for (index, part) in missing.into_iter().zip(drawn) {
                 parts[index] = Some(part);
             }
@@ -1371,6 +1392,9 @@ fn expand_with(
         }
         let mut owner = layer.clone();
         owner.effects.clear();
+        // Fill fades the layer's own pixels, not its effects.
+        owner.opacity *= owner.fill;
+        owner.fill = 1.0;
         out.layers.push(owner);
         out.layers.extend(inside.into_iter().map(at_depth));
         if !above.is_empty() {
@@ -2834,7 +2858,7 @@ mod tests {
             LayerEffect::new(effect)
         };
         let mut doc = doc_with(vec![overlay(), stroke(Position::Outside)]);
-        assert!(doc.has_effects());
+        assert!(doc.needs_expansion());
         let pixels = doc.composite_transparent();
         // Overlay recolors the layer; the outside stroke rings it.
         assert_eq!(&pixels[4..8], &[0, 0, 255, 255]);
@@ -3287,6 +3311,45 @@ mod tests {
         let loaded = crate::storage::load_project(file.path()).unwrap();
         assert_eq!(loaded.layers[2].effects, doc.layers[2].effects);
         assert_eq!(loaded.composite_transparent(), doc.composite_transparent());
+    }
+
+    #[test]
+    fn fill_fades_the_layer_but_not_its_effects() {
+        // At no fill only the overlay shows, at full strength.
+        let mut doc = doc_with(vec![overlay()]);
+        doc.layers[0].fill = 0.0;
+        assert!(doc.needs_expansion());
+        assert_eq!(&doc.composite_transparent()[4..8], &[0, 0, 255, 255]);
+        // Without effects fill works like opacity.
+        let mut plain = doc_with(Vec::new());
+        plain.layers[0].fill = 0.5;
+        let alpha = plain.composite_transparent()[7];
+        assert!((127..=128).contains(&alpha), "{alpha}");
+        // Saved and reopened.
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&doc, &mut bytes).unwrap();
+        assert!(bytes.starts_with(crate::tile_project::STYLE_MAGIC));
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        assert_eq!(loaded.layers[0].fill, 0.0);
+        // Edited as a layer property; folders have none, nor out-of-range values.
+        use crate::document_edits::{Edit, Property, Target};
+        let fill = |doc: &Document, index: usize, value: f32| {
+            Edit::Property {
+                target: Target::Identity(doc.layers[index].id),
+                property: Property::Fill(value),
+            }
+            .prepare(doc)
+            .map(|(updated, _)| updated.layers[index].fill)
+        };
+        assert_eq!(fill(&doc, 0, 0.25), Ok(0.25));
+        assert!(fill(&doc, 0, 1.5).is_err());
+        let folders = folder_doc();
+        assert!(fill(&folders, 2, 0.5).is_err());
+        let mut bad = doc.clone();
+        bad.layers[0].fill = f32::NAN;
+        assert!(bad.validate().is_err());
     }
 
     #[test]

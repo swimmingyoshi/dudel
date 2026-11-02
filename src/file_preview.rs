@@ -65,7 +65,7 @@ fn render(doc: &Document) -> Option<(usize, usize, Vec<u8>)> {
     if doc.width == 0 || doc.height == 0 {
         return None;
     }
-    let expanded = if doc.has_effects() {
+    let expanded = if doc.needs_expansion() {
         Some(crate::layer_effects::expand(doc, false, &|| false).ok()?)
     } else {
         None

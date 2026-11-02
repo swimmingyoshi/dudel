@@ -66,6 +66,8 @@ pub struct LayerEntry {
     pub collapsed: bool,
     #[serde(default)]
     pub csp_byte_opacity: bool,
+    #[serde(default = "full")]
+    pub fill: f32,
     #[serde(default = "visible")]
     pub mask_enabled: bool,
     #[serde(default = "visible")]
@@ -212,6 +214,7 @@ pub(crate) fn write(
                 alpha_locked: layer.alpha_locked,
                 collapsed: layer.collapsed,
                 csp_byte_opacity: layer.csp_byte_opacity,
+                fill: layer.fill,
                 mask_enabled: layer.mask.as_ref().is_none_or(|m| m.enabled),
                 mask_linked: layer.mask.as_ref().is_none_or(|m| m.linked),
                 image: None,
@@ -483,6 +486,9 @@ fn rebuild<R: Read + Seek>(
         layer.alpha_locked = entry.alpha_locked;
         layer.collapsed = entry.collapsed;
         layer.csp_byte_opacity = entry.csp_byte_opacity;
+        if !entry.folder {
+            layer.fill = entry.fill.clamp(0.0, 1.0);
+        }
         if !entry.folder {
             let image = entry
                 .image

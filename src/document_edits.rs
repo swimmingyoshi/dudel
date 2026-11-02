@@ -19,6 +19,8 @@ pub enum Property {
     Name(String),
     Visible(bool),
     Opacity(f32),
+    /// Fill opacity: the layer's own pixels, not its effects.
+    Fill(f32),
     Blend(crate::blend::BlendMode),
     Clipped(bool),
     Locked(bool),
@@ -272,6 +274,12 @@ impl Edit {
                 ..
             } if !value.is_finite() || !(0.0..=1.0).contains(value) => {
                 Err("Opacity must be finite and between zero and one".into())
+            }
+            Self::Property {
+                property: Property::Fill(value),
+                ..
+            } if !value.is_finite() || !(0.0..=1.0).contains(value) => {
+                Err("Fill must be finite and between zero and one".into())
             }
             Self::Property {
                 property: Property::Adjustment(adjustment),
@@ -829,6 +837,12 @@ fn apply_property(layer: &mut Layer, property: &Property) -> Result<bool, String
         }
         Property::Visible(value) => set!(visible, *value),
         Property::Opacity(value) => set!(opacity, *value),
+        Property::Fill(value) => {
+            if layer.folder {
+                return Err("Fill applies to layers, not folders".into());
+            }
+            set!(fill, *value)
+        }
         Property::Blend(value) => set!(blend, *value),
         Property::Clipped(value) => set!(clipped, *value),
         Property::Locked(value) => set!(locked, *value),

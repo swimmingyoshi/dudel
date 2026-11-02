@@ -289,7 +289,7 @@ struct Dudel {
     adjustment_window_open: bool,
     /// The effects list last sent through the busy render queue, which the
     /// window builds on until the queue has published it.
-    effects_sent: Option<(document::LayerId, Vec<layer_effects::LayerEffect>)>,
+    effects_sent: Option<(document::LayerId, effects_panel::Style)>,
     effects_window_open: bool,
     /// Show the targeted layer mask on the canvas instead of the artwork.
     mask_view: bool,
