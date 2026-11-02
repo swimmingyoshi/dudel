@@ -442,7 +442,23 @@ pub(crate) fn encode(
     info.extend(std::iter::repeat_n(0, (4 - info.len() % 4) % 4));
     let too_large = || "This document is too large for a PSD file".to_string();
     let info_len = u32::try_from(info.len()).map_err(|_| too_large())?;
-    let layers_len = info_len.checked_add(8).ok_or_else(too_large)?;
+    // The patterns layer styles paint with, which they name by id.
+    let mut global = Vec::new();
+    let patterns = crate::layer_effects::patterns_in(&doc.layers);
+    if !patterns.is_empty() {
+        let block = crate::pattern::write_psd(&patterns);
+        global.extend(b"8BIMPatt");
+        global.extend(
+            u32::try_from(block.len())
+                .map_err(|_| too_large())?
+                .to_be_bytes(),
+        );
+        global.extend(block);
+    }
+    let layers_len = u32::try_from(global.len())
+        .ok()
+        .and_then(|g| info_len.checked_add(8)?.checked_add(g))
+        .ok_or_else(too_large)?;
 
     let mut out = Vec::with_capacity(info.len() + composite.len() / 2);
     out.extend(b"8BPS");
@@ -471,6 +487,7 @@ pub(crate) fn encode(
     out.extend(info_len.to_be_bytes());
     out.extend(info);
     out.extend(0u32.to_be_bytes()); // no global layer mask
+    out.extend(global);
     check()?;
     let row = width * 4;
     let merged = planes(

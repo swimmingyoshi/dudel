@@ -104,6 +104,7 @@ mod move_preview;
 mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
+mod pattern;
 mod psd_export;
 mod psd_import;
 mod psd_vector;

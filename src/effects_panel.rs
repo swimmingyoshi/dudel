@@ -357,6 +357,28 @@ fn percent(ui: &mut egui::Ui, label: &str, value: &mut f64) {
         *value = p / 100.0;
     }
 }
+/// A picture the user picks, as a pattern.
+fn pick_pattern() -> Option<crate::pattern::Pattern> {
+    let path = rfd::FileDialog::new()
+        .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "gif"])
+        .pick_file()?;
+    let image = image::open(&path).ok()?.into_rgba8();
+    let (w, h) = (image.width() as usize, image.height() as usize);
+    if w > crate::pattern::MAX_SIDE || h > crate::pattern::MAX_SIDE {
+        return None;
+    }
+    let name = path
+        .file_stem()
+        .map_or_else(|| "Pattern".into(), |s| s.to_string_lossy().into_owned());
+    // A fresh id, so it never stands in for a different pattern in a PSD.
+    let id = format!("dudel-{:016x}", {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        image.as_raw().hash(&mut hasher);
+        hasher.finish()
+    });
+    crate::pattern::Pattern::new(name, id, w, h, image.into_raw()).ok()
+}
 fn angle(ui: &mut egui::Ui, label: &str, value: &mut f64) {
     crate::workspace::labeled_slider(
         ui,
@@ -395,6 +417,33 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
             let mut value = gradient.angle();
             angle(ui, "Angle", &mut value);
             gradient.set_angle(value);
+        }
+        Paint::Pattern(paint) => {
+            ui.horizontal(|ui| {
+                ui.label("Pattern");
+                ui.label(egui::RichText::new(&paint.pattern.name).strong());
+                if ui
+                    .button("Load image…")
+                    .on_hover_text("Use a picture as the pattern (up to 1024 px a side)")
+                    .clicked()
+                    && let Some(pattern) = pick_pattern()
+                {
+                    paint.pattern = pattern;
+                }
+            });
+            let mut scale = paint.scale * 100.0;
+            if crate::workspace::labeled_slider(
+                ui,
+                "Scale",
+                egui::Slider::new(&mut scale, 1.0..=1000.0)
+                    .logarithmic(true)
+                    .suffix("%")
+                    .integer(),
+            )
+            .changed()
+            {
+                paint.scale = (scale / 100.0).clamp(0.01, 10.0);
+            }
         }
     }
     match &mut effect.kind {
@@ -447,7 +496,7 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
                 ui.checkbox(precise, "Precise");
             });
         }
-        Kind::ColorOverlay | Kind::GradientOverlay => {}
+        Kind::ColorOverlay | Kind::GradientOverlay | Kind::PatternOverlay => {}
         Kind::Satin {
             offset,
             size,

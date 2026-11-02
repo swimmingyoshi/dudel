@@ -190,6 +190,12 @@ fn decode(
     Ok(out)
 }
 
+/// One 8-bit channel of `width` x `height`: a compression code, then raw,
+/// RLE or ZIP rows (as in layer channels and pattern blocks).
+pub(crate) fn decode_plane(data: &[u8], width: usize, height: usize) -> Result<Vec<u8>, String> {
+    decode(data, width, height, 1, 8, false, &|| false)
+}
+
 #[derive(Clone, Copy)]
 enum ColorMode {
     Gray,
@@ -627,6 +633,7 @@ fn layers(
     depth: u16,
     colors: &Colors,
     global_angle: f64,
+    patterns: &[crate::pattern::Pattern],
     big: bool,
     cancel: &impl Fn() -> bool,
 ) -> Result<(Document, Order, Messages), String> {
@@ -848,7 +855,11 @@ fn layers(
                         .iter()
                         .position(|k| *k == key)
                         .unwrap();
-                    effects[slot] = Some(crate::layer_effects::parse(value.0, global_angle)?);
+                    effects[slot] = Some(crate::layer_effects::parse(
+                        value.0,
+                        global_angle,
+                        patterns,
+                    )?);
                 }
                 // The pre-CS effects block, which Photoshop still writes next
                 // to the descriptor form.
@@ -1476,6 +1487,37 @@ fn high_depth_layers(data: &[u8], depth: u16, big: bool) -> Result<Option<Reader
     }
     Ok(None)
 }
+/// The patterns in the document-wide blocks after the layer records, which
+/// pattern effects name by id. Blocks that cannot be read give none.
+fn global_patterns(data: &[u8], big: bool) -> Vec<crate::pattern::Pattern> {
+    let mut reader = Reader(data);
+    if reader.section_wide(big).is_err() {
+        return Vec::new();
+    }
+    if !reader.0.starts_with(b"8BIM") && !reader.0.starts_with(b"8B64") && reader.section().is_err()
+    {
+        return Vec::new();
+    }
+    let mut patterns = Vec::new();
+    while reader.0.len() >= 12 {
+        let (Ok(signature), Ok(key)) = (reader.take(4), reader.take(4)) else {
+            break;
+        };
+        if signature != b"8BIM" && signature != b"8B64" {
+            break;
+        }
+        let Ok(value) = reader.section_wide(wide_key(big, key)) else {
+            break;
+        };
+        if matches!(key, b"Patt" | b"Pat2" | b"Pat3") {
+            patterns.extend(crate::pattern::read_psd(value.0));
+        }
+        if reader.take((4 - value.0.len() % 4) % 4).is_err() {
+            break;
+        }
+    }
+    patterns
+}
 fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<Imported, String> {
     check(cancel)?;
     let mut reader = Reader(data);
@@ -1639,6 +1681,7 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             depth,
             &colors,
             global_angle,
+            &global_patterns(layer_data.0, big),
             big,
             cancel,
         ) {

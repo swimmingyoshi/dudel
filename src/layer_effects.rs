@@ -24,6 +24,30 @@ pub(crate) enum Place {
 pub(crate) enum Paint {
     Color([u8; 3]),
     Gradient(Gradient),
+    Pattern(PatternPaint),
+}
+/// A pattern repeated from the canvas origin moved by `phase`, at `scale`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PatternPaint {
+    pub pattern: crate::pattern::Pattern,
+    pub scale: f64,
+    pub phase: [f64; 2],
+}
+impl PatternPaint {
+    fn new(pattern: crate::pattern::Pattern) -> Self {
+        Self {
+            pattern,
+            scale: 1.0,
+            phase: [0.0; 2],
+        }
+    }
+    /// The color at canvas pixel (`x`, `y`).
+    fn at(&self, x: usize, y: usize) -> [u8; 4] {
+        self.pattern.sample(
+            (x as f64 + 0.5 - self.phase[0]) / self.scale,
+            (y as f64 + 0.5 - self.phase[1]) / self.scale,
+        )
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Position {
@@ -48,6 +72,7 @@ pub(crate) enum Kind {
     },
     GradientOverlay,
     ColorOverlay,
+    PatternOverlay,
     InnerGlow {
         choke: f64,
         size: f64,
@@ -158,7 +183,7 @@ impl LayerEffect {
                 range,
                 ..
             } => unit(spread) && size(s) && range.is_finite() && (0.01..=1.0).contains(&range),
-            Kind::GradientOverlay | Kind::ColorOverlay => true,
+            Kind::GradientOverlay | Kind::ColorOverlay | Kind::PatternOverlay => true,
             Kind::Stroke { size: s, .. } => size(s),
             Kind::Satin {
                 offset, size: s, ..
@@ -180,8 +205,22 @@ impl LayerEffect {
         if !ok || !(0.0..=1.0).contains(&effect.opacity) {
             return Err("Invalid layer effect settings".into());
         }
-        if let Paint::Gradient(gradient) = &effect.paint {
-            gradient.validate()?;
+        match &effect.paint {
+            Paint::Gradient(gradient) => gradient.validate()?,
+            Paint::Pattern(paint) => {
+                paint.pattern.validate()?;
+                if !(0.01..=10.0).contains(&paint.scale)
+                    || paint.phase.iter().any(|v| !v.is_finite() || v.abs() > 1e6)
+                {
+                    return Err("Invalid layer effect settings".into());
+                }
+            }
+            Paint::Color(_) => {}
+        }
+        if matches!(effect.kind, Kind::PatternOverlay) != matches!(effect.paint, Paint::Pattern(_))
+            && !matches!(effect.kind, Kind::Stroke { .. })
+        {
+            return Err("Invalid layer effect settings".into());
         }
         Ok(())
     }
@@ -271,6 +310,12 @@ impl Effect {
                 BlendMode::Normal,
                 1.0,
             ),
+            "Pattern Overlay" => (
+                Kind::PatternOverlay,
+                Paint::Pattern(PatternPaint::new(crate::pattern::Pattern::default_dots())),
+                BlendMode::Normal,
+                1.0,
+            ),
             "Satin" => (
                 Kind::Satin {
                     offset: offset(19.0, 11.0),
@@ -315,12 +360,13 @@ impl Effect {
     }
 }
 /// Names offered when adding an effect.
-pub(crate) const PRESETS: [&str; 9] = [
+pub(crate) const PRESETS: [&str; 10] = [
     "Drop Shadow",
     "Outer Glow",
     "Stroke",
     "Color Overlay",
     "Gradient Overlay",
+    "Pattern Overlay",
     "Inner Shadow",
     "Inner Glow",
     "Satin",
@@ -342,6 +388,7 @@ impl Effect {
             Kind::OuterGlow { .. } => "Outer Glow",
             Kind::GradientOverlay => "Gradient Overlay",
             Kind::ColorOverlay => "Color Overlay",
+            Kind::PatternOverlay => "Pattern Overlay",
             Kind::InnerGlow { .. } => "Inner Glow",
             Kind::InnerShadow { .. } => "Inner Shadow",
             Kind::Stroke { .. } => "Stroke",
@@ -376,13 +423,14 @@ impl Effect {
         match self.kind {
             Kind::DropShadow { .. } => 0,
             Kind::OuterGlow { .. } => 1,
-            Kind::GradientOverlay => 2,
-            Kind::ColorOverlay => 3,
-            Kind::Satin { .. } => 4,
-            Kind::InnerGlow { .. } => 5,
-            Kind::InnerShadow { .. } => 6,
-            Kind::Stroke { .. } => 7,
-            Kind::Bevel { .. } => 8,
+            Kind::PatternOverlay => 2,
+            Kind::GradientOverlay => 3,
+            Kind::ColorOverlay => 4,
+            Kind::Satin { .. } => 5,
+            Kind::InnerGlow { .. } => 6,
+            Kind::InnerShadow { .. } => 7,
+            Kind::Stroke { .. } => 8,
+            Kind::Bevel { .. } => 9,
         }
     }
     /// How far beyond the layer's pixels the effect can reach.
@@ -409,7 +457,7 @@ impl Effect {
             Kind::OuterGlow { size, .. } | Kind::InnerGlow { size, .. } => 3.0 * size,
             Kind::Stroke { size, .. } => size,
             Kind::Bevel { size, soften, .. } => 3.0 * size + 2.0 * soften,
-            Kind::ColorOverlay | Kind::GradientOverlay => 0.0,
+            Kind::ColorOverlay | Kind::GradientOverlay | Kind::PatternOverlay => 0.0,
         };
         (influence.ceil() as usize + 4).max(self.reach())
     }
@@ -1164,7 +1212,8 @@ impl Cache {
                     continue;
                 };
                 // Gradients span the whole layer, so they are redrawn whole.
-                let partial = base[k].layer.is_some() && matches!(effect.paint, Paint::Color(_));
+                let partial =
+                    base[k].layer.is_some() && !matches!(effect.paint, Paint::Gradient(_));
                 if changed.is_empty() || partial {
                     used[k] = true;
                     parts[index] = Some(base[k].clone());
@@ -1436,7 +1485,11 @@ const MAX_SIZE: f64 = 1000.0;
 
 /// `lfx2`/`lfxs`/`lmfx`: a version word, then a versioned descriptor.
 /// `global_angle` is the document's light angle in degrees.
-pub(crate) fn parse(data: &[u8], global_angle: f64) -> Result<Effects, String> {
+pub(crate) fn parse(
+    data: &[u8],
+    global_angle: f64,
+    patterns: &[crate::pattern::Pattern],
+) -> Result<Effects, String> {
     let settings = crate::psd_vector::versioned(data.get(4..).ok_or("Truncated PSD effects")?)?;
     let mut effects = Effects::default();
     if settings.flag("masterFXSwitch") == Some(false) {
@@ -1476,7 +1529,7 @@ pub(crate) fn parse(data: &[u8], global_angle: f64) -> Result<Effects, String> {
                 }
                 continue;
             }
-            match read(effect, global_angle, &mut effects.approximated) {
+            match read(effect, global_angle, &mut effects.approximated, patterns) {
                 Ok(Some(effect)) => effects.list.push(effect),
                 Ok(None) => {}
                 Err(skipped) => effects.skipped.push(skipped),
@@ -1581,7 +1634,7 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
         items.push(("Md  ", enumerated("BlnM", blend_name(effect.blend)?)));
         let color = match &effect.paint {
             Paint::Color(c) => Some(*c),
-            Paint::Gradient(_) => None,
+            Paint::Gradient(_) | Paint::Pattern(_) => None,
         };
         let opacity = ("Opct", percent(f64::from(effect.opacity)));
         let (key, class) = match effect.kind {
@@ -1674,6 +1727,15 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
                 ]);
                 ("ChFX", "ChFX")
             }
+            Kind::PatternOverlay => {
+                let Paint::Pattern(paint) = &effect.paint else {
+                    return None;
+                };
+                items.push(opacity);
+                items.extend(pattern_items(paint));
+                add("patternFill", descriptor("patternFill", items));
+                continue;
+            }
             Kind::GradientOverlay => {
                 let Paint::Gradient(gradient) = &effect.paint else {
                     return None;
@@ -1695,7 +1757,14 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
                     ("Styl", enumerated("FStl", style)),
                     (
                         "PntT",
-                        enumerated("FrFl", if color.is_some() { "SClr" } else { "GrFl" }),
+                        enumerated(
+                            "FrFl",
+                            match effect.paint {
+                                Paint::Color(_) => "SClr",
+                                Paint::Gradient(_) => "GrFl",
+                                Paint::Pattern(_) => "Ptrn",
+                            },
+                        ),
                     ),
                     opacity,
                     ("Sz  ", pixels(size)),
@@ -1705,6 +1774,9 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
                 match &effect.paint {
                     Paint::Color(c) => descriptor.items.push(("Clr ".into(), rgb(*c))),
                     Paint::Gradient(gradient) => descriptor.items.extend(gradient.psd_items()),
+                    Paint::Pattern(paint) => descriptor
+                        .items
+                        .extend(pattern_items(paint).into_iter().map(|(k, v)| (k.into(), v))),
                 }
                 add("frameFXMulti", descriptor);
                 continue;
@@ -1840,6 +1912,49 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
     }));
     Some(out)
 }
+/// A pattern effect's pattern (named by id, written with the file's
+/// patterns), scale and phase.
+fn pattern_items(paint: &PatternPaint) -> Vec<(&'static str, Value)> {
+    let number = |v: f64| Value::Number(v);
+    vec![
+        (
+            "Ptrn",
+            Value::Object(descriptor(
+                "Ptrn",
+                vec![
+                    ("Nm  ", Value::Text(format!("{}\0", paint.pattern.name))),
+                    ("Idnt", Value::Text(format!("{}\0", paint.pattern.id))),
+                ],
+            )),
+        ),
+        ("Scl ", Value::Unit("#Prc".into(), paint.scale * 100.0)),
+        ("Algn", Value::Bool(true)),
+        (
+            "phase",
+            Value::Object(descriptor(
+                "Pnt ",
+                vec![
+                    ("Hrzn", number(paint.phase[0])),
+                    ("Vrtc", number(paint.phase[1])),
+                ],
+            )),
+        ),
+    ]
+}
+/// The patterns `layers`' effects paint with, once each.
+pub(crate) fn patterns_in<'a>(
+    layers: impl IntoIterator<Item = &'a Layer>,
+) -> Vec<&'a crate::pattern::Pattern> {
+    let mut patterns: Vec<&crate::pattern::Pattern> = Vec::new();
+    for effect in layers.into_iter().flat_map(|l| &l.effects) {
+        if let Paint::Pattern(paint) = &effect.effect.paint
+            && !patterns.iter().any(|p| p.id == paint.pattern.id)
+        {
+            patterns.push(&paint.pattern);
+        }
+    }
+    patterns
+}
 fn descriptor(class: &str, items: Vec<(&str, Value)>) -> Descriptor {
     Descriptor {
         class: class.into(),
@@ -1849,10 +1964,43 @@ fn descriptor(class: &str, items: Vec<(&str, Value)>) -> Descriptor {
 
 /// One enabled effect. `Ok(None)` for keys that are not effects; `Err`
 /// names an effect that cannot be drawn.
+/// A pattern effect's paint: the file's pattern it names, with its scale
+/// and phase.
+fn pattern_paint(
+    effect: &Descriptor,
+    patterns: &[crate::pattern::Pattern],
+) -> Result<PatternPaint, String> {
+    let named = effect.object("Ptrn").ok_or("no pattern")?;
+    let id = named.text("Idnt").ok_or("no pattern id")?;
+    let pattern = patterns
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or("its pattern is not in the file")?;
+    let phase = effect
+        .object("phase")
+        .map(|p| [p.number("Hrzn"), p.number("Vrtc")].map(|v| v.unwrap_or(0.0)))
+        .unwrap_or_default();
+    let paint = PatternPaint {
+        pattern: pattern.clone(),
+        scale: effect
+            .number("Scl ")
+            .map_or(1.0, |v| v / 100.0)
+            .clamp(0.01, 10.0),
+        phase: phase.map(|v| {
+            if v.is_finite() {
+                v.clamp(-1e6, 1e6)
+            } else {
+                0.0
+            }
+        }),
+    };
+    Ok(paint)
+}
 fn read(
     effect: &Descriptor,
     global_angle: f64,
     approximated: &mut Vec<String>,
+    patterns: &[crate::pattern::Pattern],
 ) -> Result<Option<Effect>, String> {
     let pixels = |key: &str| {
         effect
@@ -1888,7 +2036,7 @@ fn read(
         "GrFl" => "gradient overlay",
         "FrFX" => "stroke",
         "ChFX" => "satin",
-        "patternFill" => return Err("pattern overlay".into()),
+        "patternFill" => "pattern overlay",
         _ => return Ok(None),
     };
     let blend = blend(effect.enumerated("Md  ").unwrap_or("Nrml")).ok_or(format!(
@@ -1940,6 +2088,7 @@ fn read(
         },
         "color overlay" => Kind::ColorOverlay,
         "gradient overlay" => Kind::GradientOverlay,
+        "pattern overlay" => Kind::PatternOverlay,
         "satin" => Kind::Satin {
             offset: offset(),
             size,
@@ -1958,7 +2107,9 @@ fn read(
         ("gradient overlay", _) | ("stroke", Some("GrFl")) => Paint::Gradient(
             crate::psd_vector::gradient(effect).map_err(|e| format!("{name}: {e}"))?,
         ),
-        ("stroke", Some("Ptrn")) => return Err("pattern stroke".into()),
+        ("pattern overlay", _) | ("stroke", Some("Ptrn")) => {
+            Paint::Pattern(pattern_paint(effect, patterns).map_err(|e| format!("{name}: {e}"))?)
+        }
         _ => paint().map_err(|e| format!("{name}: {e}"))?,
     };
     Ok(Some(Effect {
@@ -2595,7 +2746,7 @@ pub(crate) fn coverage(
                 glow
             }
         }
-        Kind::ColorOverlay | Kind::GradientOverlay => vec![1.0; w * h],
+        Kind::ColorOverlay | Kind::GradientOverlay | Kind::PatternOverlay => vec![1.0; w * h],
         Kind::Satin {
             offset,
             size,
@@ -2714,15 +2865,17 @@ pub(crate) fn paint(
     let mut pixels = vec![0; coverage.len() * 4];
     let gradient = match &effect.paint {
         Paint::Gradient(g) => Some(g.painter(bounds, canvas)),
-        Paint::Color(_) => None,
+        Paint::Color(_) | Paint::Pattern(_) => None,
     };
     for (i, (&c, out)) in coverage.iter().zip(pixels.chunks_exact_mut(4)).enumerate() {
         if c <= 0.0 {
             continue;
         }
+        let (x, y) = (rect[0] + i % w, rect[1] + i / w);
         let [r, g, b, a] = match (&effect.paint, &gradient) {
-            (_, Some(painter)) => painter(rect[0] + i % w, rect[1] + i / w),
+            (_, Some(painter)) => painter(x, y),
             (Paint::Color(color), _) => [color[0], color[1], color[2], 255],
+            (Paint::Pattern(pattern), _) => pattern.at(x, y),
             _ => unreachable!(),
         };
         let alpha = (c.min(1.0) * f32::from(a)).round() as u8;
@@ -3023,6 +3176,13 @@ mod tests {
         assert!(waiting);
         assert_eq!(first.layers.len(), 1);
         let (ready, drawn) = settle(&doc);
+        // The drawing is stored just before the worker wakes the display.
+        for _ in 0..500 {
+            if woken.load(Ordering::Relaxed) >= 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
         assert!(woken.load(Ordering::Relaxed) >= 1);
         let direct = expand(&doc, false, &|| false).unwrap();
         assert_eq!(ready.layers.len(), direct.layers.len());
@@ -3233,6 +3393,32 @@ mod tests {
         let mut many = doc;
         many.layers[0].effects = vec![overlay(); crate::document::MAX_EFFECTS + 1];
         assert!(many.validate().is_err());
+    }
+
+    #[test]
+    fn pattern_overlay_repeats_its_pattern_inside_the_layer() {
+        let pattern = crate::pattern::Pattern::new(
+            "Two".into(),
+            "two".into(),
+            2,
+            1,
+            vec![255, 0, 0, 255, 0, 0, 255, 255],
+        )
+        .unwrap();
+        let mut effect = Effect::preset("Pattern Overlay").unwrap();
+        effect.paint = Paint::Pattern(PatternPaint::new(pattern));
+        let doc = doc_with(vec![LayerEffect::new(effect)]);
+        let pixels = doc.composite_transparent();
+        // The layer covers pixel 1, where the pattern (from the canvas
+        // origin) is blue; nothing is drawn beside it.
+        assert_eq!(&pixels[4..8], &[0, 0, 255, 255]);
+        assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        assert_eq!(loaded.layers[0].effects, doc.layers[0].effects);
     }
 
     #[test]
@@ -3607,8 +3793,12 @@ mod tests {
         };
         let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
         data.extend(crate::psd_vector::encode(&settings));
-        let mut effects = parse(&data, 90.0).unwrap();
-        assert_eq!(effects.skipped, vec!["pattern overlay".to_string()]);
+        let mut effects = parse(&data, 90.0, &[]).unwrap();
+        // A pattern overlay whose pattern the file lacks cannot be drawn.
+        assert_eq!(
+            effects.skipped,
+            vec!["pattern overlay: no pattern".to_string()]
+        );
         assert_eq!(effects.list.len(), 3);
         let Kind::Satin {
             offset,

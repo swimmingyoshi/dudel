@@ -446,7 +446,15 @@ Stage B - native layer effects:
       -offset)|, inverted by default, clipped inside; in the Add effect menu,
       read from and written to PSD (`ChFX`); contours other than linear are
       noted as approximated
-- [ ] Pattern effects; gradient editor beyond the two end colors and angle
+- [x] Pattern Overlay and pattern strokes (2026-11-02): `Paint::Pattern`
+      (tile, scale, phase from the canvas origin), bilinear and premultiplied;
+      `pattern.rs` keeps tiles up to 1024 px, saved in projects as base64 PNG.
+      PSD: the global pattern table (`Patt`/`Pat2`/`Pat3`, RGB/gray, raw/RLE)
+      is read and effects find patterns by id; export writes `Patt` and
+      `patternFill`. ag-psd's pattern case decodes exactly and renders within
+      3.2 levels mean of Photoshop's composite. New overlays start with gray
+      dots; Load image… picks a picture. Bevel textures are still skipped
+- [ ] Gradient editor beyond the two end colors and angle
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total
