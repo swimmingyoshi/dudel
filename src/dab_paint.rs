@@ -69,6 +69,20 @@ impl Copies {
             self.peak_payload = self.peak_payload.max(self.payload_capacity_bytes());
         }
         let (raster, row) = self.raster.as_mut().unwrap();
+        // One row at a time keeps slices short; a large live raster dab is
+        // painted whole, split across cores.
+        let last = if !prefix
+            && settings.target.is_raster()
+            && raster.left <= raster.right
+            && *row <= raster.bottom
+            && crate::dab_bands::worthwhile(
+                (raster.right - raster.left + 1) as usize,
+                (raster.bottom - *row + 1) as usize,
+            ) {
+            raster.bottom
+        } else {
+            *row
+        };
         buffer.prefix_pass = prefix;
         doc.paint_dab_rows(
             raster,
@@ -77,7 +91,7 @@ impl Copies {
             settings.erase,
             Some(buffer),
             *row,
-            *row,
+            last,
         );
         buffer.prefix_pass = false;
         if !prefix && raster.left <= raster.right && *row <= raster.bottom {
@@ -85,10 +99,10 @@ impl Copies {
                 raster.left as usize,
                 *row as usize,
                 raster.right as usize + 1,
-                *row as usize + 1,
+                last as usize + 1,
             ]);
         }
-        *row += 1;
+        *row = last + 1;
         if *row > raster.bottom {
             self.raster = None;
             self.at += 1;
@@ -503,5 +517,61 @@ mod tests {
             assert!(history.can_redo());
             assert!(history.redo(&mut doc));
         }
+    }
+    #[test]
+    fn large_dabs_painted_whole_match_synchronous_painting() {
+        let mut sliced = Document::new(620, 590);
+        let mut expected = sliced.clone();
+        let settings = Arc::new(Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: crate::brush::Brush {
+                size: 280.0,
+                hardness: 0.4,
+                flow: 0.3,
+                taper_out: 120.0,
+                ..Default::default()
+            },
+            color: [30, 140, 220],
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        });
+        let (mut buffer, mut reference) = (StrokeBuffer::default(), StrokeBuffer::default());
+        let mut display = sliced.layers[0].pixels.as_slice().to_vec();
+        for i in 0..12 {
+            let sample = Sample {
+                x: 150.0 + i as f32 * 30.0,
+                y: 300.0 + (i as f32).sin() * 40.0,
+                pressure: 0.7 + (i % 3) as f32 * 0.1,
+                pressure_known: true,
+                distance: i as f64 * 30.0,
+                ..Default::default()
+            };
+            reference.paint(&mut expected, sample, &settings);
+            let mut cursor = buffer.begin_dab(&sliced, sample, settings.clone()).unwrap();
+            loop {
+                let step = cursor.step(&mut buffer, &mut sliced, 1).unwrap();
+                for &[left, top, right, bottom] in step.changed_region.rects() {
+                    for y in top..bottom {
+                        for x in left..right {
+                            let index = y * sliced.width + x;
+                            display[index * 4..index * 4 + 4]
+                                .copy_from_slice(&sliced.layers[0].pixels.rgba(index));
+                        }
+                    }
+                }
+                if step.complete {
+                    break;
+                }
+            }
+            assert_eq!(
+                sliced.layers[0].pixels, expected.layers[0].pixels,
+                "dab {i}"
+            );
+            assert_eq!(display, sliced.layers[0].pixels.as_slice(), "dab {i}");
+        }
+        buffer.finish_tail(&mut sliced, &settings);
+        reference.finish_tail(&mut expected, &settings);
+        assert_eq!(sliced.layers[0].pixels, expected.layers[0].pixels);
     }
 }

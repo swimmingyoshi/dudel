@@ -838,6 +838,56 @@ impl Pixels {
             })
         }
     }
+    pub(crate) fn is_tiled(&self) -> bool {
+        self.0.tiles.is_some()
+    }
+    /// Separate mutable rows of tiles for bands of `band` rows (a divisor of
+    /// the tile side): `bands` are band indices and `columns` tile columns,
+    /// indexed `[band][column]`, each slice `band` tile rows of the tile.
+    /// Tiles `needed(band, column)` are created; other absent tiles are `None`.
+    pub(crate) fn band_tiles(
+        &mut self,
+        band: usize,
+        bands: std::ops::Range<usize>,
+        columns: std::ops::Range<usize>,
+        needed: impl Fn(usize, usize) -> bool,
+    ) -> Vec<Vec<Option<&mut [u8]>>> {
+        assert!(band > 0 && SIDE.is_multiple_of(band));
+        let per_tile = SIDE / band;
+        let storage = Arc::make_mut(&mut self.0);
+        storage.cache.take();
+        let tiles = storage.tiles.as_mut().expect("band painting needs tiles");
+        let mut places = vec![false; tiles.blocks.len()];
+        for tile_row in bands.start / per_tile..bands.end.div_ceil(per_tile) {
+            for column in columns.clone() {
+                let index = tile_row * tiles.columns + column;
+                let rows = (tile_row * per_tile).max(bands.start)
+                    ..((tile_row + 1) * per_tile).min(bands.end);
+                if rows.clone().any(|b| needed(b, column)) {
+                    tiles.blocks[index].get_or_insert_with(|| Arc::new(vec![0; SIDE * SIDE * 4]));
+                }
+                places[index] = true;
+            }
+        }
+        let mut out: Vec<Vec<Option<&mut [u8]>>> = bands
+            .clone()
+            .map(|_| columns.clone().map(|_| None).collect())
+            .collect();
+        let width = tiles.columns;
+        for (index, (block, place)) in tiles.blocks.iter_mut().zip(places).enumerate() {
+            let Some(bytes) = block.as_mut().filter(|_| place) else {
+                continue;
+            };
+            let (tile_row, column) = (index / width, index % width);
+            for (part, rows) in Arc::make_mut(bytes).chunks_mut(band * SIDE * 4).enumerate() {
+                let b = tile_row * per_tile + part;
+                if bands.contains(&b) {
+                    out[b - bands.start][column - columns.start] = Some(rows);
+                }
+            }
+        }
+        out
+    }
     pub fn rgba(&self, index: usize) -> [u8; 4] {
         self.0.flat.as_ref().map_or_else(
             || self.0.tiles.as_ref().unwrap().rgba(index),

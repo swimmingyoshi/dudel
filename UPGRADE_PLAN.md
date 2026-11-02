@@ -422,7 +422,11 @@ Stage B - native layer effects:
 - [x] Large brushes: painting gets 8 ms a frame instead of 2 while 3+ dabs are
       queued (`PAINT_CATCH_UP_DABS`), 4x the catch-up rate. A 300 px dab costs
       ~3 ms (`probe_large_brush_stroke`): blend ~1.4, accumulate ~0.7, coverage
-      ~0.5. Next: paint dab rows in parallel bands
+      ~0.5 (the full per-pixel coverage, with grain and flow, ~1.5).
+      Large dabs now paint in 32-row bands across cores (`dab_bands`), each
+      band owning its tile rows and stroke blocks; the queue paints such a dab
+      as one unit. The pool wakes helpers together and lingers 50 us. 300 px:
+      ~3 -> ~1 ms per dab; 100 px: 0.58 -> 0.18 ms
 - [ ] Effects on folders natively; fill opacity; satin; pattern effects;
       gradient editor beyond the two end colors and angle
 - [ ] Effect-layer memory is not yet counted in the memory panel

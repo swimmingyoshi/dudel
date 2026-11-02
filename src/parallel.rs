@@ -5,14 +5,25 @@
 //! record in the process heap. Display refreshes composited row bands on new
 //! scoped threads thousands of times per minute, which grew memory steadily.
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Condvar, Mutex, OnceLock, mpsc};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
 
+/// Tasks wait in one queue that every idle helper watches, so a call wakes
+/// all the helpers it needs at once instead of each waking the next.
 struct Pool {
-    sender: Mutex<mpsc::Sender<Task>>,
+    queue: Mutex<std::collections::VecDeque<Task>>,
+    ready: Condvar,
+    /// Queued tasks, readable without the lock while a helper spins.
+    pending: std::sync::atomic::AtomicUsize,
     threads: usize,
 }
+
+/// How long a helper keeps looking for work after a task before sleeping.
+/// Calls often come in quick succession (a dab's coverage, then its paint),
+/// and waking a sleeping core takes longer than this.
+const LINGER: std::time::Duration = std::time::Duration::from_micros(50);
 
 fn pool() -> Option<&'static Pool> {
     static POOL: OnceLock<Option<Pool>> = OnceLock::new();
@@ -21,30 +32,38 @@ fn pool() -> Option<&'static Pool> {
         let threads = std::thread::available_parallelism()
             .map_or(1, |n| n.get().min(16))
             .saturating_sub(1);
-        if threads == 0 {
-            return None;
-        }
-        let (sender, receiver) = mpsc::channel::<Task>();
-        let receiver = Arc::new(Mutex::new(receiver));
         let mut started = 0;
         for index in 0..threads {
-            let receiver = receiver.clone();
+            // Helpers wait here until the pool below is stored.
             let spawned = std::thread::Builder::new()
                 .name(format!("dudel-band-{index}"))
-                .spawn(move || {
+                .spawn(|| {
+                    let Some(pool) = pool() else { return };
                     loop {
-                        let task = receiver.lock().unwrap_or_else(|e| e.into_inner()).recv();
-                        match task {
-                            Ok(task) => task(),
-                            Err(_) => return,
+                        let linger = std::time::Instant::now();
+                        while pool.pending.load(Ordering::Relaxed) == 0 && linger.elapsed() < LINGER
+                        {
+                            std::hint::spin_loop();
                         }
+                        let mut queue = pool.queue.lock().unwrap_or_else(|e| e.into_inner());
+                        let task = loop {
+                            if let Some(task) = queue.pop_front() {
+                                pool.pending.fetch_sub(1, Ordering::Relaxed);
+                                break task;
+                            }
+                            queue = pool.ready.wait(queue).unwrap_or_else(|e| e.into_inner());
+                        };
+                        drop(queue);
+                        task();
                     }
                 });
             // Spawn failure only reduces throughput; the caller still works.
             started += usize::from(spawned.is_ok());
         }
         (started > 0).then(|| Pool {
-            sender: Mutex::new(sender),
+            queue: Mutex::new(std::collections::VecDeque::new()),
+            ready: Condvar::new(),
+            pending: Default::default(),
             threads: started,
         })
     })
@@ -62,6 +81,8 @@ struct Progress {
 struct Shared {
     progress: Mutex<Progress>,
     done: Condvar,
+    /// Helpers inside `work`, readable without the lock while the caller spins.
+    running: std::sync::atomic::AtomicUsize,
 }
 
 /// Run `job(index)` for every index in `0..count` on the calling thread and the
@@ -75,7 +96,6 @@ pub(crate) fn run<R: Send>(
         (0..count).map(|_| Mutex::new(None)).collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let work = || {
-        use std::sync::atomic::Ordering;
         loop {
             let index = next.fetch_add(1, Ordering::Relaxed);
             if index >= count {
@@ -95,30 +115,40 @@ pub(crate) fn run<R: Send>(
         // finished before these borrows end, and `work` never unwinds. Helpers
         // that start after closing return without touching borrowed data.
         let work: &'static (dyn Fn() + Sync) = unsafe { std::mem::transmute(work) };
-        let sender = pool.sender.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = pool.queue.lock().unwrap_or_else(|e| e.into_inner());
         for _ in 0..helpers {
             let shared = shared.clone();
-            let task: Task = Box::new(move || {
+            queue.push_back(Box::new(move || {
                 {
                     let mut progress = shared.progress.lock().unwrap_or_else(|e| e.into_inner());
                     if progress.closed {
                         return;
                     }
                     progress.started += 1;
+                    shared.running.fetch_add(1, Ordering::Relaxed);
                 }
                 work();
                 let mut progress = shared.progress.lock().unwrap_or_else(|e| e.into_inner());
                 progress.finished += 1;
+                shared.running.fetch_sub(1, Ordering::Release);
                 shared.done.notify_all();
-            });
-            if sender.send(task).is_err() {
-                break;
-            }
+            }));
+        }
+        pool.pending.fetch_add(helpers, Ordering::Relaxed);
+        drop(queue);
+        for _ in 0..helpers {
+            pool.ready.notify_one();
         }
     }
     // The caller always participates, so queued helpers that never start
     // (for example, when called from a busy pool thread) cannot block it.
     work();
+    // Helpers usually finish within moments of the caller; waiting for them
+    // without sleeping avoids a wake-up that costs more than the wait.
+    let linger = std::time::Instant::now();
+    while shared.running.load(Ordering::Acquire) > 0 && linger.elapsed() < LINGER * 4 {
+        std::hint::spin_loop();
+    }
     let mut progress = shared.progress.lock().unwrap_or_else(|e| e.into_inner());
     progress.closed = true;
     while progress.finished < progress.started {
@@ -206,5 +236,31 @@ mod tests {
                     .as_deref()
                     .is_some_and(|name| name.starts_with("dudel-band-"))
         }));
+    }
+    #[test]
+    #[ignore]
+    fn probe_short_job_latency() {
+        let spin = |micros: u64| {
+            let start = std::time::Instant::now();
+            while start.elapsed().as_micros() < micros as u128 {
+                std::hint::spin_loop();
+            }
+        };
+        run(4, |_| ());
+        for gap in [0u64, 2000] {
+            let mut total = 0.0;
+            for _ in 0..50 {
+                if gap > 0 {
+                    std::thread::sleep(std::time::Duration::from_micros(gap));
+                }
+                let start = std::time::Instant::now();
+                run(10, |_| spin(50));
+                total += start.elapsed().as_secs_f64() * 1e6;
+            }
+            eprintln!(
+                "gap {gap} us: 10 x 50 us jobs took {:.0} us on average",
+                total / 50.0
+            );
+        }
     }
 }

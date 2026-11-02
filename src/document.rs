@@ -1750,6 +1750,107 @@ impl Document {
         if left > right || top > bottom {
             return;
         }
+        let selection_mask = &self.selection_mask;
+        // The dab's alpha and coverage ceiling at a pixel, if it paints there.
+        let coverage_at = |px: i32, py: i32| -> Option<(f32, f32)> {
+            let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
+            let (dx, dy) = (map[0] * dx + map[1] * dy, map[2] * dx + map[3] * dy);
+            let u = (dx * cos + dy * sin) / radius;
+            let v = (-dx * sin + dy * cos) / (radius * brush.aspect);
+            if brush.tip == crate::brush::Tip::Image && u.abs().max(v.abs()) >= 1.0 {
+                return None;
+            }
+            let coverage = if brush.tip == crate::brush::Tip::Image {
+                brush
+                    .image
+                    .as_ref()
+                    .map_or(0.0, |image| image.coverage(u, v))
+            } else if radius <= 1.0 {
+                let mut sum = 0.0;
+                for sy in 0..8 {
+                    for sx in 0..8 {
+                        let ox = (sx as f32 + 0.5) / 8.0 - 0.5;
+                        let oy = (sy as f32 + 0.5) / 8.0 - 0.5;
+                        let mx = map[0] * ox + map[1] * oy;
+                        let my = map[2] * ox + map[3] * oy;
+                        let su = u + (mx * cos + my * sin) / radius;
+                        let sv = v + (-mx * sin + my * cos) / (radius * brush.aspect);
+                        let d = if brush.tip == crate::brush::Tip::Round {
+                            (su * su + sv * sv).sqrt()
+                        } else {
+                            su.abs().max(sv.abs())
+                        };
+                        if d < 1.0 {
+                            sum += crate::brush_edge::interior(
+                                d,
+                                brush.hardness,
+                                brush.softness_profile,
+                                0.001,
+                            );
+                        }
+                    }
+                }
+                sum / 64.0
+            } else {
+                crate::brush_edge::coverage_with_profile(
+                    u,
+                    v,
+                    radius,
+                    brush.aspect,
+                    brush.hardness,
+                    brush.tip,
+                    brush.softness_profile,
+                )
+            };
+            if coverage <= 0.0 {
+                return None;
+            }
+            let mut a = opacity * coverage * brush.grain_coverage(px as usize, py as usize);
+            if let Some(ratio) = interval_ratio {
+                a = brush.opacity
+                    * flow_lookup.as_ref().map_or_else(
+                        || crate::brush_edge::compensated_delivery(a / brush.opacity, ratio),
+                        |lookup| lookup.evaluate(a / opacity),
+                    );
+            }
+            if a <= 0.0 {
+                return None;
+            }
+            let selected = selection_mask
+                .as_ref()
+                .map_or(1.0, |m| f32::from(m.at(px as usize, py as usize)) / 255.0);
+            if selected == 0.0 {
+                return None;
+            }
+            Some((a * selected, brush.opacity * selected))
+        };
+        // Large dabs on raster tiles blend in row bands across cores.
+        if !prefix_pass
+            && target.is_raster()
+            && layer.pixels.is_tiled()
+            && let Some(buffer) = buffer.as_deref_mut()
+            && crate::dab_bands::worthwhile(
+                (right - left + 1) as usize,
+                (bottom - top + 1) as usize,
+            )
+        {
+            crate::dab_bands::paint(
+                &mut layer.pixels,
+                buffer,
+                active,
+                [
+                    left as usize,
+                    top as usize,
+                    right as usize + 1,
+                    bottom as usize + 1,
+                ],
+                |px, py| coverage_at(px as i32, py as i32),
+                color,
+                erase,
+                alpha_locked,
+            );
+            return;
+        }
         let mut writer = (!prefix_pass).then(|| target.writer(layer, self.width));
         let scalar_writes = writer
             .as_ref()
@@ -1766,112 +1867,26 @@ impl Document {
                     delivery[..count * 2].fill(0.0);
                 }
                 for px in chunk_left..=chunk_right {
-                    let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
-                    let (dx, dy) = (map[0] * dx + map[1] * dy, map[2] * dx + map[3] * dy);
-                    let u = (dx * cos + dy * sin) / radius;
-                    let v = (-dx * sin + dy * cos) / (radius * brush.aspect);
-                    if brush.tip == crate::brush::Tip::Image && u.abs().max(v.abs()) >= 1.0 {
+                    let Some((mut a, ceiling)) = coverage_at(px, py) else {
                         continue;
-                    }
-                    let coverage = if brush.tip == crate::brush::Tip::Image {
-                        brush
-                            .image
-                            .as_ref()
-                            .map_or(0.0, |image| image.coverage(u, v))
-                    } else if radius <= 1.0 {
-                        let mut sum = 0.0;
-                        for sy in 0..8 {
-                            for sx in 0..8 {
-                                let ox = (sx as f32 + 0.5) / 8.0 - 0.5;
-                                let oy = (sy as f32 + 0.5) / 8.0 - 0.5;
-                                let mx = map[0] * ox + map[1] * oy;
-                                let my = map[2] * ox + map[3] * oy;
-                                let su = u + (mx * cos + my * sin) / radius;
-                                let sv = v + (-mx * sin + my * cos) / (radius * brush.aspect);
-                                let d = if brush.tip == crate::brush::Tip::Round {
-                                    (su * su + sv * sv).sqrt()
-                                } else {
-                                    su.abs().max(sv.abs())
-                                };
-                                if d < 1.0 {
-                                    sum += crate::brush_edge::interior(
-                                        d,
-                                        brush.hardness,
-                                        brush.softness_profile,
-                                        0.001,
-                                    );
-                                }
-                            }
-                        }
-                        sum / 64.0
-                    } else {
-                        crate::brush_edge::coverage_with_profile(
-                            u,
-                            v,
-                            radius,
-                            brush.aspect,
-                            brush.hardness,
-                            brush.tip,
-                            brush.softness_profile,
-                        )
                     };
-                    if coverage <= 0.0 {
-                        continue;
-                    }
-                    let mut a = opacity * coverage * brush.grain_coverage(px as usize, py as usize);
-                    if let Some(ratio) = interval_ratio {
-                        a = brush.opacity
-                            * flow_lookup.as_ref().map_or_else(
-                                || {
-                                    crate::brush_edge::compensated_delivery(
-                                        a / brush.opacity,
-                                        ratio,
-                                    )
-                                },
-                                |lookup| lookup.evaluate(a / opacity),
-                            );
-                    }
-                    if a <= 0.0 {
-                        continue;
-                    }
                     let (px, py) = (px as usize, py as usize);
-                    let selected = self
-                        .selection_mask
-                        .as_ref()
-                        .map_or(1.0, |m| f32::from(m.at(px, py)) / 255.0);
-                    if selected == 0.0 {
-                        continue;
-                    }
-                    a *= selected;
                     if prefix_pass {
                         if let Some(buffer) = buffer.as_deref_mut() {
-                            buffer.commit_coverage_at(
-                                self.active,
-                                px,
-                                py,
-                                a,
-                                brush.opacity * selected,
-                            );
+                            buffer.commit_coverage_at(self.active, px, py, a, ceiling);
                         }
                         continue;
                     }
                     if scalar_writes {
                         writer.as_mut().unwrap().edit(px, py, |pixels| {
                             if let Some(buffer) = buffer.as_deref_mut() {
-                                a = buffer.accumulate_at(
-                                    active,
-                                    px,
-                                    py,
-                                    pixels,
-                                    a,
-                                    brush.opacity * selected,
-                                );
+                                a = buffer.accumulate_at(active, px, py, pixels, a, ceiling);
                             }
                             paint_pixel(pixels, a, color, erase, alpha_locked);
                         });
                     } else {
                         delivery[(px - chunk_left as usize) * 2] = a;
-                        delivery[(px - chunk_left as usize) * 2 + 1] = brush.opacity * selected;
+                        delivery[(px - chunk_left as usize) * 2 + 1] = ceiling;
                     }
                 }
                 if prefix_pass || scalar_writes {

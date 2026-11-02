@@ -5,7 +5,9 @@ mod tail_replay;
 pub use dab_paint::DabPaint;
 use std::collections::{HashMap, HashSet, VecDeque};
 pub use tail_replay::{TailReplay, TailStep};
-type PixelState = ([u8; 4], f32);
+/// A touched pixel's original value and the stroke's coverage there
+/// (negative until the stroke first reaches it).
+pub(crate) type PixelState = ([u8; 4], f32);
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
@@ -870,25 +872,76 @@ impl StrokeBuffer {
         {
             block
         } else {
-            let block = *self.indices.entry(key).or_insert_with(|| {
-                let index = self.blocks.len();
-                self.blocks
-                    .push(vec![([0; 4], -1.0); 32 * 32].into_boxed_slice());
-                self.prefix.push(None);
-                index
-            });
+            let block = self.block(key);
             self.cached = Some((key, block));
             block
         };
-        let entry = &mut self.blocks[block][(y % 32) * 32 + x % 32];
-        if entry.1 < 0.0 {
-            *entry = (pixel.try_into().unwrap(), 0.0);
-        }
-        let delivery = (dab_alpha / ceiling.max(f32::MIN_POSITIVE)).clamp(0.0, 1.0);
-        entry.1 += delivery * (1.0 - entry.1);
-        pixel.copy_from_slice(&entry.0);
-        entry.1 * ceiling
+        accumulate(
+            &mut self.blocks[block][(y % 32) * 32 + x % 32],
+            pixel,
+            dab_alpha,
+            ceiling,
+        )
     }
+    /// The index of the coverage block for `key`, created untouched if new.
+    fn block(&mut self, key: (usize, usize, usize)) -> usize {
+        *self.indices.entry(key).or_insert_with(|| {
+            let index = self.blocks.len();
+            self.blocks
+                .push(vec![([0; 4], -1.0); 32 * 32].into_boxed_slice());
+            self.prefix.push(None);
+            index
+        })
+    }
+    /// Make sure the 32 px block at (`bx`, `by`) of `layer` exists.
+    pub(crate) fn touch_block(&mut self, layer: usize, bx: usize, by: usize) {
+        self.block((layer, bx, by));
+    }
+    /// Separate mutable access to the existing blocks of `layer` in block rows
+    /// `rows` and columns `columns`, indexed `[row][column]`, so row bands can
+    /// accumulate on different threads.
+    pub(crate) fn band_blocks(
+        &mut self,
+        layer: usize,
+        rows: std::ops::Range<usize>,
+        columns: std::ops::Range<usize>,
+    ) -> Vec<Vec<Option<&mut [PixelState]>>> {
+        let mut places = vec![None; self.blocks.len()];
+        for by in rows.clone() {
+            for bx in columns.clone() {
+                if let Some(&block) = self.indices.get(&(layer, bx, by)) {
+                    places[block] = Some((by - rows.start, bx - columns.start));
+                }
+            }
+        }
+        let mut bands: Vec<Vec<Option<&mut [PixelState]>>> = rows
+            .map(|_| columns.clone().map(|_| None).collect())
+            .collect();
+        for (block, place) in self.blocks.iter_mut().zip(places) {
+            if let Some((row, column)) = place {
+                bands[row][column] = Some(&mut block[..]);
+            }
+        }
+        bands
+    }
+}
+
+/// Add one dab's delivery to a pixel's stroke coverage, recording the original
+/// pixel the first time and restoring it into `pixel`. Returns the alpha to
+/// paint over that original.
+pub(crate) fn accumulate(
+    entry: &mut PixelState,
+    pixel: &mut [u8],
+    dab_alpha: f32,
+    ceiling: f32,
+) -> f32 {
+    if entry.1 < 0.0 {
+        *entry = (pixel.try_into().unwrap(), 0.0);
+    }
+    let delivery = (dab_alpha / ceiling.max(f32::MIN_POSITIVE)).clamp(0.0, 1.0);
+    entry.1 += delivery * (1.0 - entry.1);
+    pixel.copy_from_slice(&entry.0);
+    entry.1 * ceiling
 }
 
 #[cfg(test)]
