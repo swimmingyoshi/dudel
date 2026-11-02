@@ -454,7 +454,10 @@ Stage B - native layer effects:
       `patternFill`. ag-psd's pattern case decodes exactly and renders within
       3.2 levels mean of Photoshop's composite. New overlays start with gray
       dots; Load image… picks a picture. Bevel textures are still skipped
-- [ ] Gradient editor beyond the two end colors and angle
+- [x] Gradient editor (2026-11-02): preview bar over a checkerboard, style
+      (linear, radial, angle, reflected, diamond), reverse, align with layer,
+      angle, scale, and color and opacity stops (add at the widest gap,
+      move, recolor, remove); edits survive PSD as before
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total

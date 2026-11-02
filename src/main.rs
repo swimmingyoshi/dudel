@@ -2200,11 +2200,16 @@ fn main() -> eframe::Result {
                     // A masked layer with effects, their window open and the
                     // mask shown on the canvas.
                     let mask = app.doc.layers[0].mask.as_ref().unwrap().id;
-                    app.doc.layers[0].effects = ["Drop Shadow", "Stroke"]
-                        .into_iter()
-                        .filter_map(layer_effects::Effect::preset)
-                        .map(layer_effects::LayerEffect::new)
-                        .collect();
+                    app.doc.layers[0].effects = [
+                        "Drop Shadow",
+                        "Stroke",
+                        "Gradient Overlay",
+                        "Pattern Overlay",
+                    ]
+                    .into_iter()
+                    .filter_map(layer_effects::Effect::preset)
+                    .map(layer_effects::LayerEffect::new)
+                    .collect();
                     app.mask_focus = Some((app.doc.layers[0].id, mask));
                     app.mask_view = true;
                     app.effects_window_open = true;

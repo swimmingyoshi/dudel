@@ -3422,6 +3422,28 @@ mod tests {
     }
 
     #[test]
+    fn gradient_stops_edit_in_location_order_and_survive_psd() {
+        let mut gradient = Gradient::between([0; 3], [255; 3], 90.0);
+        gradient.set_color_stops(&[(1.0, [255; 3]), (0.0, [0; 3]), (0.5, [255, 0, 0])]);
+        assert_eq!(gradient.color_stops()[1], (0.5, [255, 0, 0]));
+        assert_eq!(gradient.sample(0.5), [255, 0, 0, 255]);
+        gradient.set_opacity_stops(&[(1.0, 0.0), (0.0, 1.0)]);
+        assert_eq!(gradient.sample(1.0)[3], 0);
+        gradient.set_style(1);
+        gradient.set_reverse(true);
+        gradient.set_scale(0.5);
+        gradient.validate().unwrap();
+        let back = crate::psd_vector::gradient(&Descriptor {
+            class: "GrFl".into(),
+            items: gradient.psd_items(),
+        })
+        .unwrap();
+        assert_eq!(back.color_stops(), gradient.color_stops());
+        assert_eq!(back.opacity_stops(), gradient.opacity_stops());
+        assert_eq!((back.style(), back.reverse(), back.scale()), (1, true, 0.5));
+    }
+
+    #[test]
     fn satin_shades_where_moved_copies_differ() {
         let mut effect = Effect::preset("Satin").unwrap();
         effect.kind = Kind::Satin {

@@ -357,6 +357,160 @@ fn percent(ui: &mut egui::Ui, label: &str, value: &mut f64) {
         *value = p / 100.0;
     }
 }
+/// A gradient's ramp as a bar, its style and placement, and its color and
+/// opacity stops.
+fn gradient_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient) {
+    use crate::psd_vector::Gradient;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().min(280.0), 18.0),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    // Over a checkerboard, so transparent parts read as such.
+    for i in 0..(rect.width() / 6.0).ceil() as usize {
+        for j in 0..3 {
+            let shade = if (i + j) % 2 == 0 { 200 } else { 245 };
+            let cell = egui::Rect::from_min_size(
+                rect.min + egui::vec2(i as f32 * 6.0, j as f32 * 6.0),
+                egui::vec2(6.0, 6.0),
+            )
+            .intersect(rect);
+            painter.rect_filled(cell, 0.0, egui::Color32::from_gray(shade));
+        }
+    }
+    let slices = 64;
+    for i in 0..slices {
+        let t = (i as f64 + 0.5) / slices as f64;
+        let [r, g, b, a] = gradient.sample(if gradient.reverse() { 1.0 - t } else { t });
+        let x0 = rect.left() + rect.width() * i as f32 / slices as f32;
+        let x1 = rect.left() + rect.width() * (i + 1) as f32 / slices as f32;
+        painter.rect_filled(
+            egui::Rect::from_x_y_ranges(x0..=x1 + 0.5, rect.y_range()),
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+        );
+    }
+    ui.horizontal(|ui| {
+        let mut style = gradient.style();
+        egui::ComboBox::from_id_salt("gradient style")
+            .selected_text(Gradient::STYLES[style])
+            .show_ui(ui, |ui| {
+                for (index, name) in Gradient::STYLES.iter().enumerate() {
+                    ui.selectable_value(&mut style, index, *name);
+                }
+            });
+        gradient.set_style(style);
+        let mut reverse = gradient.reverse();
+        ui.checkbox(&mut reverse, "Reverse");
+        gradient.set_reverse(reverse);
+        let mut aligned = gradient.aligned();
+        ui.checkbox(&mut aligned, "Align with layer");
+        gradient.set_aligned(aligned);
+    });
+    let mut value = gradient.angle();
+    angle(ui, "Angle", &mut value);
+    gradient.set_angle(value);
+    let mut scale = gradient.scale() * 100.0;
+    if crate::workspace::labeled_slider(
+        ui,
+        "Scale",
+        egui::Slider::new(&mut scale, 10.0..=150.0)
+            .suffix("%")
+            .integer(),
+    )
+    .changed()
+    {
+        gradient.set_scale(scale / 100.0);
+    }
+    let mut colors = gradient.color_stops();
+    let mut opacities = gradient.opacity_stops();
+    egui::CollapsingHeader::new(format!("Color stops ({})", colors.len()))
+        .id_salt("color stops")
+        .show(ui, |ui| {
+            let mut remove = None;
+            let count = colors.len();
+            for (index, (at, color)) in colors.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    ui.horizontal(|ui| {
+                        egui::color_picker::color_edit_button_srgb(ui, color);
+                        let mut location = *at * 100.0;
+                        ui.add(
+                            egui::Slider::new(&mut location, 0.0..=100.0)
+                                .suffix("%")
+                                .integer(),
+                        );
+                        *at = location / 100.0;
+                        if ui
+                            .add_enabled(count > 2, egui::Button::new("✕"))
+                            .on_hover_text("Remove stop")
+                            .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
+                });
+            }
+            if let Some(index) = remove {
+                colors.remove(index);
+            }
+            if ui.button("Add color stop").clicked() {
+                let at = widest_gap(colors.iter().map(|c| c.0));
+                let [r, g, b, _] = gradient.sample(at);
+                colors.push((at, [r, g, b]));
+            }
+        });
+    egui::CollapsingHeader::new(format!("Opacity stops ({})", opacities.len()))
+        .id_salt("opacity stops")
+        .show(ui, |ui| {
+            let mut remove = None;
+            let count = opacities.len();
+            for (index, (at, opacity)) in opacities.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    ui.horizontal(|ui| {
+                        let mut value = *opacity * 100.0;
+                        ui.add(
+                            egui::Slider::new(&mut value, 0.0..=100.0)
+                                .suffix("% opaque")
+                                .integer(),
+                        );
+                        *opacity = value / 100.0;
+                        let mut location = *at * 100.0;
+                        ui.add(
+                            egui::Slider::new(&mut location, 0.0..=100.0)
+                                .suffix("%")
+                                .integer(),
+                        );
+                        *at = location / 100.0;
+                        if ui
+                            .add_enabled(count > 1, egui::Button::new("✕"))
+                            .on_hover_text("Remove stop")
+                            .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
+                });
+            }
+            if let Some(index) = remove {
+                opacities.remove(index);
+            }
+            if ui.button("Add opacity stop").clicked() {
+                let at = widest_gap(opacities.iter().map(|o| o.0));
+                opacities.push((at, f64::from(gradient.sample(at)[3]) / 255.0));
+            }
+        });
+    gradient.set_color_stops(&colors);
+    gradient.set_opacity_stops(&opacities);
+}
+/// The middle of the widest gap between stop locations (or the ends).
+fn widest_gap(locations: impl Iterator<Item = f64>) -> f64 {
+    let mut points: Vec<f64> = locations.chain([0.0, 1.0]).collect();
+    points.sort_by(f64::total_cmp);
+    points
+        .windows(2)
+        .max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0])))
+        .map_or(0.5, |w| (w[0] + w[1]) / 2.0)
+}
 /// A picture the user picks, as a pattern.
 fn pick_pattern() -> Option<crate::pattern::Pattern> {
     let path = rfd::FileDialog::new()
@@ -404,20 +558,7 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
                 egui::color_picker::color_edit_button_srgb(ui, color);
             });
         }
-        Paint::Gradient(gradient) => {
-            ui.horizontal(|ui| {
-                ui.label("Gradient");
-                let [mut start, mut end] = gradient.ends();
-                let a = egui::color_picker::color_edit_button_srgb(ui, &mut start).changed();
-                let b = egui::color_picker::color_edit_button_srgb(ui, &mut end).changed();
-                if a || b {
-                    gradient.set_ends([start, end]);
-                }
-            });
-            let mut value = gradient.angle();
-            angle(ui, "Angle", &mut value);
-            gradient.set_angle(value);
-        }
+        Paint::Gradient(gradient) => gradient_editor(ui, gradient),
         Paint::Pattern(paint) => {
             ui.horizontal(|ui| {
                 ui.label("Pattern");
