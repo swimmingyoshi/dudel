@@ -442,8 +442,11 @@ Stage B - native layer effects:
       the Layer Effects window (`Property::Fill`, same gesture as effects).
       Saved in projects and packages; PSD `iOpa` read and written natively,
       except the eight modes where Photoshop draws fill differently
-- [ ] Satin; pattern effects; gradient editor beyond the two end colors
-      and angle
+- [x] Satin (2026-11-02): |blur(shape moved +offset) - blur(shape moved
+      -offset)|, inverted by default, clipped inside; in the Add effect menu,
+      read from and written to PSD (`ChFX`); contours other than linear are
+      noted as approximated
+- [ ] Pattern effects; gradient editor beyond the two end colors and angle
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total

@@ -448,6 +448,15 @@ fn effect_settings(ui: &mut egui::Ui, effect: &mut Effect) {
             });
         }
         Kind::ColorOverlay | Kind::GradientOverlay => {}
+        Kind::Satin {
+            offset,
+            size,
+            invert,
+        } => {
+            shadow_offset(ui, offset);
+            pixels(ui, "Size", size, 250.0);
+            ui.checkbox(invert, "Invert");
+        }
         Kind::Stroke { size, position } => {
             pixels(ui, "Size", size, 250.0);
             ui.horizontal(|ui| {

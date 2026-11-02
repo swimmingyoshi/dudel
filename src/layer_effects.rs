@@ -64,6 +64,15 @@ pub(crate) enum Kind {
         size: f64,
         position: Position,
     },
+    /// Satin: shading inside the layer where two copies of its shape, moved
+    /// apart along `offset` and blurred by `size`, differ.
+    Satin {
+        /// Where one copy moves; the other moves the opposite way.
+        offset: [f64; 2],
+        size: f64,
+        /// Shade where the copies agree instead (Photoshop's default).
+        invert: bool,
+    },
     /// One half of a bevel: its lit (`highlight`) or its shaded side.
     Bevel {
         highlight: bool,
@@ -151,6 +160,9 @@ impl LayerEffect {
             } => unit(spread) && size(s) && range.is_finite() && (0.01..=1.0).contains(&range),
             Kind::GradientOverlay | Kind::ColorOverlay => true,
             Kind::Stroke { size: s, .. } => size(s),
+            Kind::Satin {
+                offset, size: s, ..
+            } => offset.iter().all(|v| v.is_finite() && v.abs() <= MAX_SIZE) && size(s),
             Kind::Bevel {
                 depth,
                 size: s,
@@ -259,6 +271,16 @@ impl Effect {
                 BlendMode::Normal,
                 1.0,
             ),
+            "Satin" => (
+                Kind::Satin {
+                    offset: offset(19.0, 11.0),
+                    size: 14.0,
+                    invert: true,
+                },
+                black,
+                BlendMode::Multiply,
+                0.5,
+            ),
             _ => return None,
         };
         Some(Self {
@@ -293,7 +315,7 @@ impl Effect {
     }
 }
 /// Names offered when adding an effect.
-pub(crate) const PRESETS: [&str; 8] = [
+pub(crate) const PRESETS: [&str; 9] = [
     "Drop Shadow",
     "Outer Glow",
     "Stroke",
@@ -301,6 +323,7 @@ pub(crate) const PRESETS: [&str; 8] = [
     "Gradient Overlay",
     "Inner Shadow",
     "Inner Glow",
+    "Satin",
     "Bevel and Emboss",
 ];
 /// A layer's effects, bottom to top, and those that could not be drawn.
@@ -322,6 +345,7 @@ impl Effect {
             Kind::InnerGlow { .. } => "Inner Glow",
             Kind::InnerShadow { .. } => "Inner Shadow",
             Kind::Stroke { .. } => "Stroke",
+            Kind::Satin { .. } => "Satin",
             Kind::Bevel {
                 highlight: true, ..
             } => "Bevel Highlights",
@@ -354,10 +378,11 @@ impl Effect {
             Kind::OuterGlow { .. } => 1,
             Kind::GradientOverlay => 2,
             Kind::ColorOverlay => 3,
-            Kind::InnerGlow { .. } => 4,
-            Kind::InnerShadow { .. } => 5,
-            Kind::Stroke { .. } => 6,
-            Kind::Bevel { .. } => 7,
+            Kind::Satin { .. } => 4,
+            Kind::InnerGlow { .. } => 5,
+            Kind::InnerShadow { .. } => 6,
+            Kind::Stroke { .. } => 7,
+            Kind::Bevel { .. } => 8,
         }
     }
     /// How far beyond the layer's pixels the effect can reach.
@@ -378,9 +403,9 @@ impl Effect {
     /// measures (a blur of `size` spreads about 1.2 times that).
     fn influence(&self) -> usize {
         let influence = match self.kind {
-            Kind::DropShadow { offset, size, .. } | Kind::InnerShadow { offset, size, .. } => {
-                3.0 * size + offset[0].abs().max(offset[1].abs())
-            }
+            Kind::DropShadow { offset, size, .. }
+            | Kind::InnerShadow { offset, size, .. }
+            | Kind::Satin { offset, size, .. } => 3.0 * size + offset[0].abs().max(offset[1].abs()),
             Kind::OuterGlow { size, .. } | Kind::InnerGlow { size, .. } => 3.0 * size,
             Kind::Stroke { size, .. } => size,
             Kind::Bevel { size, soften, .. } => 3.0 * size + 2.0 * soften,
@@ -1631,6 +1656,24 @@ pub(crate) fn to_psd(effects: &[LayerEffect]) -> Option<Vec<u8>> {
                 items.extend([("Clr ", rgb(color?)), opacity]);
                 ("solidFillMulti", "SoFi")
             }
+            Kind::Satin {
+                offset,
+                size,
+                invert,
+            } if color.is_some() => {
+                let (angle, distance) = polar(offset);
+                items.extend([
+                    ("Clr ", rgb(color?)),
+                    ("AntA", Value::Bool(false)),
+                    ("Invr", Value::Bool(invert)),
+                    opacity,
+                    ("lagl", unit("#Ang", angle)),
+                    ("Dstn", pixels(distance)),
+                    ("blur", pixels(size)),
+                    ("MpgS", linear()),
+                ]);
+                ("ChFX", "ChFX")
+            }
             Kind::GradientOverlay => {
                 let Paint::Gradient(gradient) = &effect.paint else {
                     return None;
@@ -1844,7 +1887,7 @@ fn read(
         "SoFi" => "color overlay",
         "GrFl" => "gradient overlay",
         "FrFX" => "stroke",
-        "ChFX" => return Err("satin".into()),
+        "ChFX" => "satin",
         "patternFill" => return Err("pattern overlay".into()),
         _ => return Ok(None),
     };
@@ -1853,6 +1896,9 @@ fn read(
         effect.enumerated("Md  ").unwrap_or_default()
     ))?;
     let opacity = percent("Opct").unwrap_or(1.0) as f32;
+    if name == "satin" && !linear(effect.object("MpgS")) {
+        approximated.push("satin contour".into());
+    }
     if matches!(
         name,
         "drop shadow" | "inner shadow" | "outer glow" | "inner glow"
@@ -1894,6 +1940,11 @@ fn read(
         },
         "color overlay" => Kind::ColorOverlay,
         "gradient overlay" => Kind::GradientOverlay,
+        "satin" => Kind::Satin {
+            offset: offset(),
+            size,
+            invert: effect.flag("Invr").unwrap_or(true),
+        },
         _ => Kind::Stroke {
             size: pixels("Sz  ").ok_or("stroke without a size")?,
             position: match effect.enumerated("Styl") {
@@ -2545,6 +2596,23 @@ pub(crate) fn coverage(
             }
         }
         Kind::ColorOverlay | Kind::GradientOverlay => vec![1.0; w * h],
+        Kind::Satin {
+            offset,
+            size,
+            invert,
+        } => {
+            let mut a = shift(&alpha.values, w, h, offset, 0.0);
+            let mut b = shift(&alpha.values, w, h, offset.map(|v| -v), 0.0);
+            blur(&mut a, w, h, size, cancel)?;
+            blur(&mut b, w, h, size, cancel)?;
+            a.iter()
+                .zip(&b)
+                .map(|(a, b)| {
+                    let differ = (a - b).abs().min(1.0);
+                    if invert { 1.0 - differ } else { differ }
+                })
+                .collect()
+        }
         Kind::Bevel {
             highlight,
             style,
@@ -3167,6 +3235,35 @@ mod tests {
         assert!(many.validate().is_err());
     }
 
+    #[test]
+    fn satin_shades_where_moved_copies_differ() {
+        let mut effect = Effect::preset("Satin").unwrap();
+        effect.kind = Kind::Satin {
+            offset: [8.0, 0.0],
+            size: 0.0,
+            invert: false,
+        };
+        let mut alpha = square(64, [16, 16, 48, 48]);
+        let plain = coverage(&effect, &mut alpha, &|| false).unwrap();
+        // Copies moved 8 px apart sideways agree in the middle, differ
+        // within 8 px of the left and right edges, and not above or below.
+        let at = |c: &[f32], x: usize, y: usize| c[y * 64 + x];
+        assert_eq!(at(&plain, 32, 32), 0.0);
+        assert_eq!(at(&plain, 18, 32), 1.0);
+        assert_eq!(at(&plain, 45, 32), 1.0);
+        assert_eq!(at(&plain, 32, 18), 0.0);
+        effect.kind = Kind::Satin {
+            offset: [8.0, 0.0],
+            size: 0.0,
+            invert: true,
+        };
+        let inverted = coverage(&effect, &mut alpha, &|| false).unwrap();
+        assert_eq!(at(&inverted, 32, 32), 1.0);
+        assert_eq!(at(&inverted, 18, 32), 0.0);
+        // Drawn inside the layer, clipped to it.
+        assert_eq!(effect.place(), Place::Inside);
+    }
+
     /// Two layers in a folder carrying a drop shadow and an overlay.
     fn folder_doc() -> Document {
         let (w, h) = (600, 200);
@@ -3486,7 +3583,21 @@ mod tests {
                 ),
                 (
                     "ChFX".into(),
-                    object("ChFX", vec![("enab", Value::Bool(true))]),
+                    object(
+                        "ChFX",
+                        vec![
+                            ("enab", Value::Bool(true)),
+                            ("Clr ", red.clone()),
+                            ("Invr", Value::Bool(false)),
+                            ("lagl", unit("#Ang", 0.0)),
+                            ("Dstn", unit("#Pxl", 6.0)),
+                            ("blur", unit("#Pxl", 2.0)),
+                        ],
+                    ),
+                ),
+                (
+                    "patternFill".into(),
+                    object("patternFill", vec![("enab", Value::Bool(true))]),
                 ),
                 (
                     "SoFi".into(),
@@ -3496,9 +3607,20 @@ mod tests {
         };
         let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
         data.extend(crate::psd_vector::encode(&settings));
-        let effects = parse(&data, 90.0).unwrap();
-        assert_eq!(effects.skipped, vec!["satin".to_string()]);
-        assert_eq!(effects.list.len(), 2);
+        let mut effects = parse(&data, 90.0).unwrap();
+        assert_eq!(effects.skipped, vec!["pattern overlay".to_string()]);
+        assert_eq!(effects.list.len(), 3);
+        let Kind::Satin {
+            offset,
+            size,
+            invert,
+        } = effects.list[1].kind
+        else {
+            panic!("satin is read")
+        };
+        assert!((offset[0] + 6.0).abs() < 1e-9 && offset[1].abs() < 1e-9);
+        assert_eq!((size, invert), (2.0, false));
+        effects.list.remove(1);
         assert_eq!(effects.list[0].name(), "Drop Shadow");
         assert_eq!(effects.list[0].blend, BlendMode::Multiply);
         let Kind::DropShadow { offset, size, .. } = effects.list[0].kind else {
