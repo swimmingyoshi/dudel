@@ -66,7 +66,7 @@ impl Dudel {
             ui.label(format!("All {} open projects tracked CPU: {:.2} MiB", projects.projects, mib(projects.tracked_cpu_bytes)));
             ui.label(format!("All projects canvas / reference and thumbnail RGBA: {:.2} / {:.2} MiB",
                 mib(projects.canvas_rgba_bytes), mib(projects.auxiliary_rgba_bytes)));
-            ui.small("Includes parked projects and shared reference pixels counted once. RGBA payload estimates exclude GPU allocation overhead, auxiliary mipmaps and preview-window textures; not process memory or VRAM commitment.");
+            ui.small("Includes parked projects, layer effect drawings and shared reference pixels counted once. RGBA payload estimates exclude GPU allocation overhead, auxiliary mipmaps and preview-window textures; not process memory or VRAM commitment.");
             ui.separator();
             ui.label(format!(
                 "Layer effect drawings (all projects): {:.2} / {} MiB",

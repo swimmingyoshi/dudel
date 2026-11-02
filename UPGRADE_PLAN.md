@@ -429,7 +429,9 @@ Stage B - native layer effects:
       ~3 -> ~1 ms per dab; 100 px: 0.58 -> 0.18 ms
 - [ ] Effects on folders natively; fill opacity; satin; pattern effects;
       gradient editor beyond the two end colors and angle
-- [ ] Effect-layer memory is not yet counted in the memory panel
+- [x] Effect-layer memory counts in each project's tracked memory: the
+      snapshot registry visits cached drawings' tiles (shared states once);
+      the Performance window also shows the global effect cache total
 - [ ] Manual check in the app with pen (owner)
 - [x] PSD export writes them back as editable effects (see goal 5)
 

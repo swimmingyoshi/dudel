@@ -202,6 +202,10 @@ impl Registry {
                     .pixels
                     .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
             }
+            // Cached effect drawings; tiles shared between states count once.
+            layer
+                .effect_cache
+                .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
         }
     }
     fn counted(&self, id: AllocationId) -> bool {

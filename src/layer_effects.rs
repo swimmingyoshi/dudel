@@ -847,6 +847,20 @@ impl Cached {
 }
 
 impl Cache {
+    /// Visit the pixel allocations of every drawing held, for memory totals.
+    pub(crate) fn visit_allocations(
+        &self,
+        mut visit: impl FnMut(crate::pixels::AllocationId, usize),
+    ) {
+        let entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        for layer in entries
+            .iter()
+            .flat_map(|c| &c.parts)
+            .filter_map(|p| p.layer.as_ref())
+        {
+            layer.pixels.visit_allocations(&mut visit);
+        }
+    }
     /// Forget `id`'s drawing, once its effects are gone or switched off.
     fn forget(&self, id: crate::document::LayerId) {
         let mut entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -2850,6 +2864,24 @@ mod tests {
         let (_, shown, waiting) = expand_for_display(&before, &wake);
         assert!(!waiting);
         assert_eq!(shown, first);
+    }
+
+    #[test]
+    fn project_memory_counts_effect_drawings_once() {
+        let doc = doc_with(vec![overlay()]);
+        let bare = crate::snapshot_memory::Registry::new(&doc).live_bytes();
+        expand(&doc, false, &|| false).unwrap();
+        let drawn = crate::snapshot_memory::Registry::new(&doc).live_bytes();
+        let mut bytes = 0;
+        doc.layers[0]
+            .effect_cache
+            .visit_allocations(|_, size| bytes += size);
+        assert!(bytes > 0);
+        assert_eq!(drawn - bare, bytes);
+        // A clone shares the cache, so the drawing is not counted twice.
+        let mut registry = crate::snapshot_memory::Registry::new(&doc);
+        registry.add_document(&doc.clone());
+        assert_eq!(registry.live_bytes(), drawn);
     }
 
     #[test]
