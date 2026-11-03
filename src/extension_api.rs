@@ -52,6 +52,13 @@ pub enum ToolPreset {
     Pointer,
     Picker,
     Move,
+    /// A Rhai program that turns pen samples into lines the current brush
+    /// draws (see `scripted_tool`). `erase` draws them with the eraser.
+    Script {
+        source: String,
+        #[serde(default)]
+        erase: bool,
+    },
 }
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -111,7 +118,15 @@ impl Contributions {
         let caps: BTreeSet<&str> = capabilities.iter().map(String::as_str).collect();
         if caps.len() != capabilities.len()
             || caps.iter().any(|c| {
-                !["brushes", "tools", "commands", "pixels.filter", "ui.panels"].contains(c)
+                ![
+                    "brushes",
+                    "tools",
+                    "tools.script",
+                    "commands",
+                    "pixels.filter",
+                    "ui.panels",
+                ]
+                .contains(c)
             })
         {
             return Err("Unknown or duplicate API 2 capability".into());
@@ -133,12 +148,18 @@ impl Contributions {
                     brush.validate()?;
                     "brushes"
                 }
-                Action::Tool { tool } => {
-                    if let ToolPreset::Brush { brush, .. } = tool {
+                Action::Tool { tool } => match tool {
+                    ToolPreset::Brush { brush, .. } => {
                         brush.validate()?;
+                        "tools"
                     }
-                    "tools"
-                }
+                    // Code that runs while drawing is declared on its own.
+                    ToolPreset::Script { source, .. } => {
+                        crate::scripted_tool::compile(source)?;
+                        "tools.script"
+                    }
+                    _ => "tools",
+                },
                 Action::Filter { source } => {
                     validate_filter(source)?;
                     "pixels.filter"
@@ -208,7 +229,7 @@ pub(crate) fn validate_filter(source: &str) -> Result<(), String> {
 }
 impl Dudel {
     pub(crate) fn run_extension_command(&mut self, package: &str, command: &str) {
-        let Some(action) = self
+        let Some((label, action)) = self
             .extensions
             .iter()
             .find(|e| e.enabled && e.package.id == package)
@@ -219,7 +240,7 @@ impl Dudel {
                     .iter()
                     .find(|c| c.id == command)
             })
-            .map(|c| c.action.clone())
+            .map(|c| (c.label.clone(), c.action.clone()))
         else {
             self.status = "Extension command is unavailable or disabled".into();
             return;
@@ -256,6 +277,23 @@ impl Dudel {
                 ToolPreset::Pointer => self.select_tool(Tool::Pointer),
                 ToolPreset::Picker => self.select_tool(Tool::Picker),
                 ToolPreset::Move => self.select_tool(Tool::Move),
+                ToolPreset::Script { source, erase } => {
+                    match crate::scripted_tool::compile(&source) {
+                        Ok(ast) => {
+                            self.select_tool(if erase { Tool::Eraser } else { Tool::Brush });
+                            self.scripted_tool = Some(crate::scripted_tool::Active {
+                                package: package.into(),
+                                command: command.into(),
+                                label: label.clone(),
+                                ast,
+                            });
+                            self.status = format!(
+                                "{label} draws with your current brush; choose any tool to stop"
+                            );
+                        }
+                        Err(error) => self.status = format!("{label}: {error}"),
+                    }
+                }
             },
             Action::Filter { source } => {
                 self.start_filter(crate::plugins::FilterProgram::Rhai(source))
@@ -416,10 +454,14 @@ impl Dudel {
             })
             .collect();
         for (package, command) in commands {
+            let active = self
+                .scripted_tool
+                .as_ref()
+                .is_some_and(|a| a.package == package && a.command == command.id);
             ui.push_id((&package, &command.id), |ui| {
                 let initials: String = command.label.chars().take(2).collect();
                 if ui
-                    .add_sized([side, side], egui::Button::new(initials))
+                    .add_sized([side, side], egui::Button::new(initials).selected(active))
                     .on_hover_text(format!("{} · {package}", command.label))
                     .clicked()
                 {

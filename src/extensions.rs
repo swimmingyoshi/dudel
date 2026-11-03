@@ -113,6 +113,9 @@ pub(crate) fn capability_text(capability: &str) -> &'static str {
     match capability {
         "brushes" => "Add brushes",
         "tools" => "Add presets of Dudel's tools",
+        "tools.script" => {
+            "Add tools that run their own code while you draw, to decide where the brush goes"
+        }
         "commands" => "Add commands for undo, redo, new layer, selections, transform and the view",
         "pixels.filter" => "Change the active layer's pixels when you run one of its filters",
         "ui.panels" => "Show panels with its buttons and brush, color and guide controls",
@@ -125,6 +128,7 @@ fn capability_name(capability: &str) -> &str {
     match capability {
         "brushes" => "brushes",
         "tools" => "tool presets",
+        "tools.script" => "scripted tools",
         "commands" => "commands",
         "pixels.filter" => "layer filters",
         "ui.panels" => "panels",

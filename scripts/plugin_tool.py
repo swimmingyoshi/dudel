@@ -18,6 +18,19 @@ def build(project: Path, output: Path, executable: Path) -> None:
     if manifest.get("api") == 2:
         if "entry" in manifest:
             raise ValueError("API 2 defines programs inside contributed commands")
+        # Filter and scripted-tool programs may live in their own .rhai files
+        # beside the manifest; "source_file" is replaced by their text.
+        for command in manifest.get("contributes", {}).get("commands", []):
+            action = command.get("action", {})
+            for holder in (action, action.get("tool") if isinstance(action.get("tool"), dict) else None):
+                if holder is None or "source_file" not in holder:
+                    continue
+                source = (project / holder.pop("source_file")).resolve(strict=True)
+                if not source.is_relative_to(project) or source.suffix != ".rhai":
+                    raise ValueError("source_file must be a .rhai file inside the plugin project")
+                if source.stat().st_size > 32768:
+                    raise ValueError(f"{source.name} exceeds 32 KiB")
+                holder["source"] = source.read_text(encoding="utf-8")
     else:
         entry = (project / manifest.pop("entry")).resolve(strict=True)
         if not entry.is_relative_to(project):

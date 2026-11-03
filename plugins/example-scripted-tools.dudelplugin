@@ -1,0 +1,104 @@
+{
+  "format": "dudel-extension",
+  "version": 2,
+  "api": 2,
+  "id": "dudel-scripted-tools",
+  "name": "Scripted tools",
+  "author": "Dudel",
+  "release": "1.0.0",
+  "description": "Example scripted tools: parallel lines, hatching and a coil, drawn with your current brush and color.",
+  "capabilities": [
+    "tools.script",
+    "brushes",
+    "ui.panels"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "parallel",
+        "label": "Parallel lines",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "script",
+            "source": "// Parallel lines: three lines that follow the pen side by side, like rails\n// or speed lines. Each line is its own track, so the brush draws each one\n// with its own spacing, smoothing and pressure.\n\nfn begin(x, y, pressure) {\n    // `this` is a map kept for the whole stroke; the host fills in\n    // canvas_width, canvas_height, brush_size and zoom.\n    this.gap = max(this.brush_size * 1.5, 4.0);\n    this.last_x = x;\n    this.last_y = y;\n    this.dx = 0.0;\n    this.dy = 0.0;\n    []\n}\n\nfn point(x, y, pressure) {\n    let mx = x - this.last_x;\n    let my = y - this.last_y;\n    let moved = (mx * mx + my * my).sqrt();\n    // Wait until the pen has moved enough to know which way it goes.\n    if moved < 1.0 {\n        return [];\n    }\n    // Ease the direction so the side lines do not wobble on small jitters.\n    this.dx = this.dx * 0.6 + mx / moved * 0.4;\n    this.dy = this.dy * 0.6 + my / moved * 0.4;\n    let length = (this.dx * this.dx + this.dy * this.dy).sqrt();\n    this.last_x = x;\n    this.last_y = y;\n    // Perpendicular to the direction of travel.\n    let nx = -this.dy / length;\n    let ny = this.dx / length;\n    let points = [];\n    for side in [-1.0, 0.0, 1.0] {\n        let track = side.to_int() + 1;\n        points.push([x + nx * side * this.gap, y + ny * side * this.gap, pressure, track]);\n    }\n    points\n}\n"
+          }
+        }
+      },
+      {
+        "id": "hatching",
+        "label": "Hatching",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "script",
+            "source": "// Hatching: short parallel strokes laid down along the path. Press harder\n// for longer strokes. Each stroke ends with `lift`, so they never join.\n\nfn begin(x, y, pressure) {\n    this.spacing = max(this.brush_size * 1.2, 3.0);\n    this.length = max(this.brush_size * 5.0, 12.0);\n    // Distance travelled since the last hatch.\n    this.travel = this.spacing;\n    this.last_x = x;\n    this.last_y = y;\n    []\n}\n\nfn point(x, y, pressure) {\n    let mx = x - this.last_x;\n    let my = y - this.last_y;\n    let moved = (mx * mx + my * my).sqrt();\n    let points = [];\n    // A fast pen covers several hatches between two samples: place each one\n    // where it belongs along the segment.\n    let walked = 0.0;\n    while walked + (this.spacing - this.travel) <= moved {\n        walked += this.spacing - this.travel;\n        this.travel = 0.0;\n        let t = if moved > 0.0 { walked / moved } else { 0.0 };\n        let cx = this.last_x + mx * t;\n        let cy = this.last_y + my * t;\n        // At 45 degrees, centred on the path; longer with more pressure.\n        let half = this.length * (0.4 + 0.6 * pressure) / 2.0;\n        let d = half * 0.7071;\n        points.push(#{ x: cx - d, y: cy + d, pressure: pressure });\n        points.push(#{ x: cx + d, y: cy - d, pressure: pressure * 0.6, lift: true });\n    }\n    this.travel += moved - walked;\n    this.last_x = x;\n    this.last_y = y;\n    points\n}\n"
+          }
+        }
+      },
+      {
+        "id": "coil",
+        "label": "Coil",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "script",
+            "source": "// Coil: a line that loops around the path as you draw, like a spring or a\n// telephone cord. The loops are spaced by distance, not by time, so slow and\n// fast strokes look alike.\n\nfn begin(x, y, pressure) {\n    this.radius = max(this.brush_size * 2.5, 8.0);\n    // How far along the path one loop takes.\n    this.pitch = this.radius * 1.6;\n    this.angle = 0.0;\n    this.last_x = x;\n    this.last_y = y;\n    [[x + this.radius, y, pressure]]\n}\n\nfn point(x, y, pressure) {\n    let mx = x - this.last_x;\n    let my = y - this.last_y;\n    let moved = (mx * mx + my * my).sqrt();\n    let points = [];\n    // Step along the segment, at most 2 px and 12 degrees of turn at a\n    // time, so long jumps still draw round loops.\n    let turn = moved / this.pitch * 2.0 * PI();\n    let steps = max(max(moved / 2.0, turn / 0.21).ceiling().to_int(), 1);\n    for i in 1..=steps {\n        let t = i.to_float() / steps.to_float();\n        this.angle += turn / steps.to_float();\n        let r = this.radius * (0.5 + 0.5 * pressure);\n        points.push([\n            this.last_x + mx * t + r * this.angle.cos(),\n            this.last_y + my * t + r * this.angle.sin(),\n            pressure,\n        ]);\n    }\n    this.last_x = x;\n    this.last_y = y;\n    points\n}\n"
+          }
+        }
+      },
+      {
+        "id": "hatch-eraser",
+        "label": "Hatching eraser",
+        "action": {
+          "type": "tool",
+          "tool": {
+            "kind": "script",
+            "erase": true,
+            "source": "// Hatching: short parallel strokes laid down along the path. Press harder\n// for longer strokes. Each stroke ends with `lift`, so they never join.\n\nfn begin(x, y, pressure) {\n    this.spacing = max(this.brush_size * 1.2, 3.0);\n    this.length = max(this.brush_size * 5.0, 12.0);\n    // Distance travelled since the last hatch.\n    this.travel = this.spacing;\n    this.last_x = x;\n    this.last_y = y;\n    []\n}\n\nfn point(x, y, pressure) {\n    let mx = x - this.last_x;\n    let my = y - this.last_y;\n    let moved = (mx * mx + my * my).sqrt();\n    let points = [];\n    // A fast pen covers several hatches between two samples: place each one\n    // where it belongs along the segment.\n    let walked = 0.0;\n    while walked + (this.spacing - this.travel) <= moved {\n        walked += this.spacing - this.travel;\n        this.travel = 0.0;\n        let t = if moved > 0.0 { walked / moved } else { 0.0 };\n        let cx = this.last_x + mx * t;\n        let cy = this.last_y + my * t;\n        // At 45 degrees, centred on the path; longer with more pressure.\n        let half = this.length * (0.4 + 0.6 * pressure) / 2.0;\n        let d = half * 0.7071;\n        points.push(#{ x: cx - d, y: cy + d, pressure: pressure });\n        points.push(#{ x: cx + d, y: cy - d, pressure: pressure * 0.6, lift: true });\n    }\n    this.travel += moved - walked;\n    this.last_x = x;\n    this.last_y = y;\n    points\n}\n"
+          }
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "tools",
+        "title": "Scripted tools",
+        "widgets": [
+          {
+            "type": "label",
+            "text": "Each tool draws with your current brush and color. Pick any other tool to stop."
+          },
+          {
+            "type": "button",
+            "command": "parallel"
+          },
+          {
+            "type": "button",
+            "command": "hatching"
+          },
+          {
+            "type": "button",
+            "command": "coil"
+          },
+          {
+            "type": "button",
+            "command": "hatch-eraser"
+          },
+          {
+            "type": "separator"
+          },
+          {
+            "type": "brush_size"
+          },
+          {
+            "type": "opacity"
+          },
+          {
+            "type": "color"
+          }
+        ]
+      }
+    ]
+  }
+}

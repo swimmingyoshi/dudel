@@ -192,6 +192,7 @@ impl Dudel {
         self.stroke_buffer = None;
         self.stroke_settings = None;
         self.stroke.reset();
+        self.script_stroke = None;
         self.stroking = false;
         self.stroke_previous_end = None;
     }
@@ -513,9 +514,12 @@ impl Dudel {
             || !self.stroking
             || !matches!(self.tool, Tool::Brush | Tool::Eraser)
             || settings.brush.stabilization <= 0.0
-            || !self
-                .stroke
-                .lagging(0.25 / self.zoom.max(1e-3), &settings.brush)
+            || !match &self.script_stroke {
+                Some(script) => script.lagging(0.25 / self.zoom.max(1e-3), &settings.brush),
+                None => self
+                    .stroke
+                    .lagging(0.25 / self.zoom.max(1e-3), &settings.brush),
+            }
         {
             self.smoothing_clock = None;
             return;
@@ -528,7 +532,10 @@ impl Dudel {
         if fraction > 0.0 {
             let brush = settings.brush.clone();
             self.replay.catch_up(fraction);
-            let dabs = self.stroke.catch_up(fraction, &brush);
+            let dabs = match &mut self.script_stroke {
+                Some(script) => script.catch_up(fraction, &brush),
+                None => self.stroke.catch_up(fraction, &brush),
+            };
             self.deliver_canvas_dabs(dabs);
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(8));
@@ -911,11 +918,16 @@ impl Dudel {
                     if !self.begin_canvas_stroke(settings) {
                         continue;
                     }
+                    self.begin_script_stroke();
                     if self.tool == Tool::Brush {
                         self.note_recent_color();
                     }
-                    // Shift+click continues from the previous stroke's end as a line.
-                    if shift && let Some(last) = self.last_stroke_end {
+                    // Shift+click continues from the previous stroke's end as a
+                    // line (scripted tools draw only what their script asks).
+                    if shift
+                        && self.script_stroke.is_none()
+                        && let Some(last) = self.last_stroke_end
+                    {
                         self.replay.seed(last, self.zoom);
                         let brush = self
                             .stroke_settings
@@ -973,19 +985,35 @@ impl Dudel {
                 let snapped = self.stroke_snap.is_some();
                 let count = points.len();
                 let mut dabs = Vec::new();
+                let mut failed = None;
                 for (index, point) in points.into_iter().enumerate() {
                     let lift = end && index + 1 == count;
                     if snapped {
                         self.replay.local(point, self.zoom, lift);
                     }
-                    dabs.extend(if lift {
-                        self.stroke.finish_at_zoom(point, brush, self.zoom)
-                    } else {
-                        self.stroke.sample_at_zoom(point, brush, self.zoom)
-                    });
+                    let drawn = match &mut self.script_stroke {
+                        Some(script) if lift => script.finish(point, brush, self.zoom),
+                        Some(script) => script.sample(point, brush, self.zoom),
+                        None if lift => Ok(self.stroke.finish_at_zoom(point, brush, self.zoom)),
+                        None => Ok(self.stroke.sample_at_zoom(point, brush, self.zoom)),
+                    };
+                    match drawn {
+                        Ok(drawn) => dabs.extend(drawn),
+                        Err(error) => {
+                            failed = Some(error);
+                            break;
+                        }
+                    }
                     self.last_stroke_end = Some(point);
                 }
                 self.deliver_canvas_dabs(dabs);
+                if let Some(error) = failed {
+                    // What was drawn stays, as one undo step; the tool stops.
+                    let label = self.scripted_tool.take().map(|a| a.label);
+                    self.status = format!("{}: {error}", label.unwrap_or_default());
+                    self.finish_painted_stroke();
+                    continue;
+                }
             }
             if end {
                 self.finish_painted_stroke();

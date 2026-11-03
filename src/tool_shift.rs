@@ -73,6 +73,8 @@ impl Dudel {
         self.deselect_reference();
         self.tool_shift.permanent(tool);
         self.tool = tool;
+        // A scripted tool lasts until another tool is chosen.
+        self.scripted_tool = None;
         self.sync_eraser_slot();
     }
     /// While the Eraser tool is active, its tip (Eraser tip mode) or just its

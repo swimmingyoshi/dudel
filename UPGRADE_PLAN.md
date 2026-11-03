@@ -105,7 +105,12 @@ Left:
 - [x] Permission prompt on install showing declared capabilities; replacements
       mark capabilities the installed release lacked
       (`installing_asks_first_and_lists_what_the_package_can_do`)
-- [ ] Scripted tools (custom input handling), beyond presets of native tools
+- [x] Scripted tools (2026-11-02): tool kind `script` (capability `tools.script`),
+      Rhai `begin`/`point`/`end` return points on tracks drawn by native samplers
+      with the current brush into one stroke (`src/scripted_tool.rs`); example
+      `plugins/example-scripted-tools.dudelplugin` (source `plugins/sdk/scripted-tools/`:
+      parallel lines, hatching, coil, hatching eraser); `plugin_tool.py` inlines
+      `source_file`. Owner pen check pending
 - [ ] Brush asset contributions (tip/grain textures), not only parameters
 - [ ] More panel widgets; decide the stable widget list before 0.2
 - [x] Load/unload without restart: install, enable, disable and uninstall apply at once

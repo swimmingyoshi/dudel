@@ -142,6 +142,7 @@ mod replay;
 mod rulers;
 mod save_jobs;
 mod screentone;
+mod scripted_tool;
 mod selection;
 mod selection_contour;
 mod selection_mask;
@@ -288,6 +289,10 @@ struct Dudel {
     /// Adjustment settings last sent through the busy render queue.
     adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
     adjustment_window_open: bool,
+    /// An extension's scripted tool, drawing with the Brush or Eraser.
+    scripted_tool: Option<scripted_tool::Active>,
+    /// Its script's state during a stroke.
+    script_stroke: Option<scripted_tool::ScriptedStroke>,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -537,6 +542,8 @@ impl Default for Dudel {
             adjustment_edit: None,
             adjustment_sent: None,
             adjustment_window_open: false,
+            scripted_tool: None,
+            script_stroke: None,
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

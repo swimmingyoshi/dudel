@@ -1,0 +1,55 @@
+{
+  "format": "dudel-extension",
+  "version": 2,
+  "api": 2,
+  "id": "dudel-scripted-tools",
+  "name": "Scripted tools",
+  "author": "Dudel",
+  "release": "1.0.0",
+  "description": "Example scripted tools: parallel lines, hatching and a coil, drawn with your current brush and color.",
+  "capabilities": ["tools.script", "brushes", "ui.panels"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "parallel",
+        "label": "Parallel lines",
+        "action": { "type": "tool", "tool": { "kind": "script", "source_file": "parallel.rhai" } }
+      },
+      {
+        "id": "hatching",
+        "label": "Hatching",
+        "action": { "type": "tool", "tool": { "kind": "script", "source_file": "hatching.rhai" } }
+      },
+      {
+        "id": "coil",
+        "label": "Coil",
+        "action": { "type": "tool", "tool": { "kind": "script", "source_file": "coil.rhai" } }
+      },
+      {
+        "id": "hatch-eraser",
+        "label": "Hatching eraser",
+        "action": {
+          "type": "tool",
+          "tool": { "kind": "script", "source_file": "hatching.rhai", "erase": true }
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "tools",
+        "title": "Scripted tools",
+        "widgets": [
+          { "type": "label", "text": "Each tool draws with your current brush and color. Pick any other tool to stop." },
+          { "type": "button", "command": "parallel" },
+          { "type": "button", "command": "hatching" },
+          { "type": "button", "command": "coil" },
+          { "type": "button", "command": "hatch-eraser" },
+          { "type": "separator" },
+          { "type": "brush_size" },
+          { "type": "opacity" },
+          { "type": "color" }
+        ]
+      }
+    ]
+  }
+}
