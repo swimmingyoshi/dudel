@@ -303,6 +303,8 @@ struct Dudel {
     vector_erase_mode: vector_layer::EraseMode,
     /// Lines of a vector layer picked with the Pointer tool.
     vector_pick: vector_pick::Pick,
+    /// The Pointer's drag on empty canvas lassoes vector lines (else pans).
+    pointer_lasso: bool,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -558,6 +560,7 @@ impl Default for Dudel {
             vector_erase: None,
             vector_erase_mode: Default::default(),
             vector_pick: Default::default(),
+            pointer_lasso: true,
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

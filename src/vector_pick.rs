@@ -1,6 +1,7 @@
 //! Single lines on a vector layer, handled with the Pointer tool (O): a
-//! press on a line picks it (Shift adds or removes it), dragging moves the
-//! picked lines, and the tool panel resizes, recolors or deletes them.
+//! press on a line picks it (Shift adds or removes it), a lasso drawn from
+//! empty canvas picks the lines inside it, dragging moves the picked lines,
+//! and the tool panel resizes, smooths, tapers, recolors or deletes them.
 //! The pick follows the strokes themselves, so undo or other edits that
 //! replace a line simply drop it from the pick.
 use crate::{
@@ -24,6 +25,31 @@ pub(crate) struct Pick {
     layer: Option<LayerId>,
     lines: Vec<Arc<Stroke>>,
     drag: Option<Drag>,
+    lasso: Option<Lasso>,
+}
+
+/// A lasso being drawn around lines, in canvas pixels.
+struct Lasso {
+    points: Vec<[f32; 2]>,
+    /// Shift: the lines join the pick instead of replacing it.
+    adds: bool,
+}
+
+/// Lasso points kept at most.
+const MAX_LASSO: usize = 20_000;
+
+/// Whether (`x`, `y`) lies inside `polygon` (even-odd rule).
+fn inside(polygon: &[[f32; 2]], x: f32, y: f32) -> bool {
+    let mut odd = false;
+    let mut j = polygon.len() - 1;
+    for i in 0..polygon.len() {
+        let ([xi, yi], [xj, yj]) = (polygon[i], polygon[j]);
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            odd = !odd;
+        }
+        j = i;
+    }
+    odd
 }
 
 /// Picked lines being dragged: they move live, in one undo step.
@@ -108,14 +134,18 @@ impl Dudel {
             .find(|s| s.touches(at.x, at.y, reach, size))
             .cloned()
     }
-    /// Whether a Pointer press at `pos` lands on a line of the active
-    /// vector layer, so the Pointer does not also pan.
+    /// Whether a Pointer press at `pos` picks lines of the active vector
+    /// layer (on a line, or anywhere with the lasso on), so the Pointer
+    /// does not also pan.
     pub(crate) fn line_grabs(&self, view: View, pos: Pos2) -> bool {
         self.vector_pick.drag.is_some()
-            || self
-                .vector_target()
-                .and_then(|index| self.line_at(index, view.to_doc(pos), REACH / self.zoom))
-                .is_some()
+            || self.vector_pick.lasso.is_some()
+            || self.vector_target().is_some_and(|index| {
+                self.pointer_lasso
+                    || self
+                        .line_at(index, view.to_doc(pos), REACH / self.zoom)
+                        .is_some()
+            })
     }
     fn line_edit_blocker(&self, index: usize) -> Option<&'static str> {
         if self.doc.layers[index].locked {
@@ -156,6 +186,13 @@ impl Dudel {
             }
             self.vector_pick.lines = self.picked_lines();
             let Some(hit) = self.line_at(index, at, REACH / self.zoom) else {
+                if self.pointer_lasso {
+                    self.vector_pick.lasso = Some(Lasso {
+                        points: vec![[at.x, at.y]],
+                        adds: shift,
+                    });
+                    return true;
+                }
                 // Empty canvas: let go of the lines and let the Pointer pan.
                 if !shift {
                     self.vector_pick.lines.clear();
@@ -202,6 +239,17 @@ impl Dudel {
                 applied: [0.0; 2],
                 checkpointed: false,
             });
+            return true;
+        }
+        if let Some(lasso) = &mut self.vector_pick.lasso {
+            let last = *lasso.points.last().unwrap();
+            let step = 2.0 / self.zoom.max(1e-3);
+            if (at.x - last[0]).hypot(at.y - last[1]) >= step && lasso.points.len() < MAX_LASSO {
+                lasso.points.push([at.x, at.y]);
+            }
+            if end {
+                self.finish_lasso();
+            }
             return true;
         }
         let Some(drag) = &mut self.vector_pick.drag else {
@@ -259,8 +307,57 @@ impl Dudel {
         layer.vector = Some(vector);
         self.changed();
     }
+    /// Close the lasso: the lines entirely inside it are picked. A lasso
+    /// too small to hold anything is a click on empty canvas.
+    fn finish_lasso(&mut self) {
+        let Some(lasso) = self.vector_pick.lasso.take() else {
+            return;
+        };
+        if !lasso.adds {
+            self.vector_pick.lines.clear();
+        }
+        let Some(index) = self.picked_layer() else {
+            return;
+        };
+        if lasso.points.len() < 3 {
+            return;
+        }
+        let size = [self.doc.width, self.doc.height];
+        let polygon = &lasso.points;
+        let (mut low, mut high) = ([f32::MAX; 2], [f32::MIN; 2]);
+        for &[x, y] in polygon {
+            (low, high) = (
+                [low[0].min(x), low[1].min(y)],
+                [high[0].max(x), high[1].max(y)],
+            );
+        }
+        let mut lines = self.picked_lines();
+        let mut added = 0;
+        for stroke in &self.doc.layers[index].vector.as_ref().unwrap().strokes {
+            let path = stroke.path(size);
+            let within = !path.is_empty()
+                && path
+                    .iter()
+                    .all(|&[x, y]| x >= low[0] && x <= high[0] && y >= low[1] && y <= high[1])
+                && path
+                    .iter()
+                    .step_by(path.len().div_ceil(500).max(1))
+                    .chain(path.last())
+                    .all(|&[x, y]| inside(polygon, x, y));
+            if within && !lines.iter().any(|l| Arc::ptr_eq(l, stroke)) {
+                lines.push(stroke.clone());
+                added += 1;
+            }
+        }
+        self.vector_pick.lines = lines;
+        if added > 0 {
+            let count = self.vector_pick.lines.len();
+            self.status = format!("{count} line{} picked", if count == 1 { "" } else { "s" });
+        }
+    }
     /// Lift the dragged lines: one undo step for the whole move.
     pub(crate) fn finish_line_drag(&mut self) {
+        self.vector_pick.lasso = None;
         self.apply_line_drag();
         if let Some(drag) = self.vector_pick.drag.take()
             && drag.checkpointed
@@ -334,6 +431,18 @@ impl Dudel {
     pub(crate) fn resize_picked_lines(&mut self, size: f32) {
         self.change_lines(&|s| Some(resized(s, size)), "Resized the picked lines");
     }
+    pub(crate) fn smooth_picked_lines(&mut self) {
+        self.change_lines(
+            &|s| Some(s.smoothed(4.0 + line_size(s))),
+            "Smoothed the picked lines",
+        );
+    }
+    pub(crate) fn taper_picked_lines(&mut self, start: Option<f32>, end: Option<f32>) {
+        self.change_lines(
+            &|s| Some(s.with_taper(start, end)),
+            "Tapered the picked lines",
+        );
+    }
     pub(crate) fn recolor_picked_lines(&mut self) {
         let color = self.color;
         self.change_lines(&|s| Some(s.recolored(color)), "Recolored the picked lines");
@@ -342,14 +451,15 @@ impl Dudel {
         self.finish_line_drag();
         self.vector_pick.lines.clear();
     }
-    /// Outline the picked lines along their middles.
+    /// Outline the picked lines along their middles, the line under the
+    /// pointer, and the lasso being drawn.
     pub(crate) fn paint_vector_pick(&self, painter: &egui::Painter, view: View) {
         if self.tool != crate::tools::Tool::Pointer {
             return;
         }
         let size = [self.doc.width, self.doc.height];
         let accent = Color32::from_rgb(240, 160, 60);
-        for line in self.picked_lines() {
+        let outline = |line: &Stroke, width: f32, color: Color32| {
             let path = line.path(size);
             // Long lines are outlined through at most 2000 of their points.
             let step = path.len().div_ceil(2000).max(1);
@@ -359,23 +469,56 @@ impl Dudel {
                 .map(|&[x, y]| view.to_screen(egui::pos2(x, y)))
                 .collect();
             if let Some(&[x, y]) = path.last()
-                && (path.len() - 1) % step != 0
+                && !(path.len() - 1).is_multiple_of(step)
             {
                 points.push(view.to_screen(egui::pos2(x, y)));
             }
             if points.len() == 1 {
-                painter.circle_filled(points[0], 3.0, accent);
-                continue;
+                painter.circle_filled(points[0], width + 1.5, color);
+                return;
             }
             painter.add(Shape::line(
                 points.clone(),
-                egui::Stroke::new(3.5_f32, Color32::from_black_alpha(110)),
+                egui::Stroke::new(width + 2.0, Color32::from_black_alpha(110)),
             ));
-            painter.add(Shape::line(points, egui::Stroke::new(1.5_f32, accent)));
+            painter.add(Shape::line(points, egui::Stroke::new(width, color)));
+        };
+        let picked = self.picked_lines();
+        if self.vector_pick.drag.is_none()
+            && self.vector_pick.lasso.is_none()
+            && let Some(index) = self.vector_target()
+            && let Some(hover) = painter.ctx().input(|i| i.pointer.hover_pos())
+            && painter.clip_rect().contains(hover)
+            && let Some(line) = self.line_at(index, view.to_doc(hover), REACH / self.zoom)
+            && !picked.iter().any(|l| Arc::ptr_eq(l, &line))
+        {
+            outline(&line, 1.0, accent.gamma_multiply(0.6));
+        }
+        for line in &picked {
+            outline(line, 1.5, accent);
+        }
+        if let Some(lasso) = &self.vector_pick.lasso {
+            let mut points: Vec<Pos2> = lasso
+                .points
+                .iter()
+                .map(|&[x, y]| view.to_screen(egui::pos2(x, y)))
+                .collect();
+            points.push(points[0]);
+            painter.add(Shape::line(
+                points.clone(),
+                egui::Stroke::new(3.0_f32, Color32::from_black_alpha(110)),
+            ));
+            painter.add(Shape::line(points, egui::Stroke::new(1.0_f32, accent)));
         }
     }
     /// The Pointer panel's controls for picked lines.
     pub(crate) fn picked_lines_ui(&mut self, ui: &mut egui::Ui) {
+        if self.vector_target().is_some() {
+            ui.checkbox(&mut self.pointer_lasso, "Lasso lines from empty canvas")
+                .on_hover_text(
+                    "Dragging empty canvas draws a lasso that picks the lines inside it (Shift adds). Off: it pans. Space or the middle button always pan.",
+                );
+        }
         let lines = self.picked_lines();
         if lines.is_empty() {
             if self.vector_target().is_some() {
@@ -398,34 +541,44 @@ impl Dudel {
             ui,
             "Drag a picked line to move them. Shift+click picks more or lets one go. Delete removes them.",
         );
-        let id = ui.id().with("picked line size");
-        let shown = line_size(&lines[0]);
-        let mut size = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(shown);
-        let response = ui
-            .horizontal(|ui| {
-                ui.label("Size");
-                ui.add(
-                    egui::DragValue::new(&mut size)
-                        .range(0.1..=MAX_SIZE)
-                        .speed(0.2)
-                        .max_decimals(1)
-                        .suffix(" px"),
-                )
-            })
-            .inner
-            .on_hover_text("Every picked line takes this size");
-        // The size applies when a drag or typed value is done, as one step.
-        if response.dragged() || response.has_focus() {
-            ui.data_mut(|d| d.insert_temp(id, size));
-        } else {
-            ui.data_mut(|d| d.remove::<f32>(id));
-            if (response.changed() || response.drag_stopped() || response.lost_focus())
-                && (size - shown).abs() > 1e-3
-            {
-                self.resize_picked_lines(size);
-            }
+        let first = &lines[0];
+        if let Some(size) = committed_value(
+            ui,
+            "Size",
+            line_size(first),
+            0.1..=MAX_SIZE,
+            "Every picked line takes this size",
+        ) {
+            self.resize_picked_lines(size);
+        }
+        let [start, end] = first.taper();
+        let taper = crate::vector_layer::MAX_TAPER;
+        if let Some(start) = committed_value(
+            ui,
+            "Taper start",
+            start,
+            0.0..=taper,
+            "How far along each picked line its start narrows",
+        ) {
+            self.taper_picked_lines(Some(start), None);
+        }
+        if let Some(end) = committed_value(
+            ui,
+            "Taper end",
+            end,
+            0.0..=taper,
+            "How far along each picked line its end narrows",
+        ) {
+            self.taper_picked_lines(None, Some(end));
         }
         ui.horizontal_wrapped(|ui| {
+            if ui
+                .button("Smooth")
+                .on_hover_text("Even out wobbles in the picked lines; click again to smooth more")
+                .clicked()
+            {
+                self.smooth_picked_lines();
+            }
             if ui
                 .button("Recolor")
                 .on_hover_text("Give the picked lines the current color")
@@ -442,4 +595,38 @@ impl Dudel {
         });
         ui.separator();
     }
+}
+
+/// A labeled pixel field showing `shown`; the new value once a drag or a
+/// typed edit is done, so each change is one undo step.
+fn committed_value(
+    ui: &mut egui::Ui,
+    label: &str,
+    shown: f32,
+    range: std::ops::RangeInclusive<f32>,
+    hover: &str,
+) -> Option<f32> {
+    let id = ui.id().with(("picked lines", label));
+    let mut value = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(shown);
+    let response = ui
+        .horizontal(|ui| {
+            ui.label(label);
+            ui.add(
+                egui::DragValue::new(&mut value)
+                    .range(range)
+                    .speed(0.2)
+                    .max_decimals(1)
+                    .suffix(" px"),
+            )
+        })
+        .inner
+        .on_hover_text(hover);
+    if response.dragged() || response.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, value));
+        return None;
+    }
+    ui.data_mut(|d| d.remove::<f32>(id));
+    ((response.changed() || response.drag_stopped() || response.lost_focus())
+        && (value - shown).abs() > 1e-3)
+        .then_some(value)
 }

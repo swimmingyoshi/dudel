@@ -795,18 +795,6 @@ impl Dudel {
             {
                 continue;
             }
-            if navigation_allowed
-                && self.vector_pick_packet(
-                    view,
-                    pos,
-                    start,
-                    end,
-                    area.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id),
-                    shift,
-                )
-            {
-                continue;
-            }
             let picking = self.tool == Tool::Picker || alt;
             // Dragging the symmetry center handle repositions the guide.
             if start
@@ -825,6 +813,18 @@ impl Dudel {
                     self.symmetry_drag = false;
                     self.status = "Symmetry center moved".into();
                 }
+                continue;
+            }
+            if navigation_allowed
+                && self.vector_pick_packet(
+                    view,
+                    pos,
+                    start,
+                    end,
+                    area.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id),
+                    shift,
+                )
+            {
                 continue;
             }
             if start && on_canvas && navigation_allowed && picking {

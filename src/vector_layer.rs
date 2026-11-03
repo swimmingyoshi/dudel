@@ -50,6 +50,9 @@ pub(crate) struct Stroke {
     /// width, pressure and anti-aliasing); `brush` and `commands` then go
     /// unused and `color` mirrors its color.
     pub csp: Option<Arc<crate::clip_vector::Stroke>>,
+    /// A CSP line's start and end tapers, in canvas pixels along it (a
+    /// stroke's are its brush's).
+    pub csp_taper: [f32; 2],
     /// Where its dabs land, worked out on first use.
     footprint: OnceLock<Footprint>,
 }
@@ -60,6 +63,7 @@ impl PartialEq for Stroke {
             && self.symmetry == other.symmetry
             && self.commands == other.commands
             && self.csp == other.csp
+            && self.csp_taper == other.csp_taper
     }
 }
 impl std::fmt::Debug for Stroke {
@@ -90,6 +94,7 @@ impl Stroke {
             symmetry,
             commands: Vec::new(),
             csp: None,
+            csp_taper: [0.0; 2],
             footprint: OnceLock::new(),
         }
     }
@@ -101,13 +106,14 @@ impl Stroke {
             symmetry: Symmetry::default(),
             commands: Vec::new(),
             csp: Some(Arc::new(line)),
+            csp_taper: [0.0; 2],
             footprint: OnceLock::new(),
         }
     }
     /// The line as circles of its drawn radius, about a pixel apart along
     /// a CSP line, and at the brush's dabs otherwise.
     fn line(&self) -> Vec<(Sample, f32)> {
-        let Some(line) = &self.csp else {
+        let Some(line) = self.drawn_csp() else {
             let radius = self.brush.size * 0.5;
             return self.dabs().into_iter().map(|d| (d, radius)).collect();
         };
@@ -227,7 +233,7 @@ impl Stroke {
     }
     /// Paint the stroke onto layer `layer` of `doc`, as it was drawn.
     pub(crate) fn paint(&self, doc: &mut Document, layer: usize) {
-        if let Some(line) = &self.csp {
+        if let Some(line) = self.drawn_csp() {
             let size = [doc.width, doc.height];
             line.paint_onto(&mut doc.layers[layer].pixels, size);
             return;
@@ -278,7 +284,11 @@ impl VectorLayer {
                     && line.points.iter().all(|p| {
                         p.x.abs() < 1e7 && p.y.abs() < 1e7 && (0.0..=1.0).contains(&p.pressure)
                     });
-                if !ok {
+                let taper = stroke
+                    .csp_taper
+                    .iter()
+                    .all(|t| t.is_finite() && (0.0..=MAX_TAPER).contains(t));
+                if !ok || !taper {
                     return Err("A Clip Studio vector line has damaged points".into());
                 }
                 continue;
@@ -354,6 +364,7 @@ impl Stroke {
             symmetry: self.symmetry,
             commands: self.commands.clone(),
             csp: self.csp.clone(),
+            csp_taper: self.csp_taper,
             footprint: OnceLock::new(),
         };
         for command in &mut stroke.commands {
@@ -381,6 +392,7 @@ impl Stroke {
             }
             if scale.is_finite() && scale > 0.0 {
                 line.width = (line.width * f64::from(scale)).clamp(0.01, MAX_CSP_WIDTH);
+                stroke.csp_taper = self.csp_taper.map(|t| (t * scale).min(MAX_TAPER));
             }
             stroke.csp = Some(Arc::new(line));
             return stroke;
@@ -560,6 +572,7 @@ impl Stroke {
                     symmetry: self.symmetry,
                     commands,
                     csp: None,
+                    csp_taper: [0.0; 2],
                     footprint: OnceLock::new(),
                 });
             }
@@ -866,6 +879,171 @@ impl Stroke {
     }
 }
 
+/// Longest taper a line keeps, in canvas pixels.
+pub(crate) const MAX_TAPER: f32 = 1000.0;
+
+impl Stroke {
+    /// A CSP line as it is drawn: with its tapers, when it has any.
+    fn drawn_csp(&self) -> Option<std::borrow::Cow<'_, crate::clip_vector::Stroke>> {
+        let line = self.csp.as_deref()?;
+        if self.csp_taper == [0.0; 2] {
+            return Some(std::borrow::Cow::Borrowed(line));
+        }
+        // Points at most 2 px apart, so the taper narrows smoothly.
+        let mut points: Vec<crate::clip_vector::Point> = Vec::new();
+        for pair in line.points.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let steps = ((b.x - a.x).hypot(b.y - a.y) / 2.0)
+                .ceil()
+                .clamp(1.0, 4096.0) as usize;
+            for i in 0..steps {
+                let t = i as f64 / steps as f64;
+                points.push(crate::clip_vector::Point {
+                    x: a.x + (b.x - a.x) * t,
+                    y: a.y + (b.y - a.y) * t,
+                    pressure: a.pressure + (b.pressure - a.pressure) * t,
+                });
+            }
+        }
+        points.extend(line.points.last().copied());
+        let mut along = vec![0.0; points.len()];
+        for i in 1..points.len() {
+            let (a, b) = (points[i - 1], points[i]);
+            along[i] = along[i - 1] + (b.x - a.x).hypot(b.y - a.y);
+        }
+        let total = along.last().copied().unwrap_or(0.0);
+        // As a brush tapers: from 5% of the width over the taper's length.
+        let factor = |distance: f64, taper: f32| {
+            if taper > 0.0 {
+                0.05 + 0.95 * (distance / f64::from(taper)).min(1.0)
+            } else {
+                1.0
+            }
+        };
+        for (p, s) in points.iter_mut().zip(&along) {
+            p.pressure *= factor(*s, self.csp_taper[0]).min(factor(total - s, self.csp_taper[1]));
+        }
+        Some(std::borrow::Cow::Owned(crate::clip_vector::Stroke {
+            points,
+            ..line.clone()
+        }))
+    }
+    /// The line's start and end tapers, in canvas pixels.
+    pub(crate) fn taper(&self) -> [f32; 2] {
+        if self.csp.is_some() {
+            self.csp_taper
+        } else {
+            [self.brush.taper_in, self.brush.taper_out]
+        }
+    }
+    /// The stroke with these tapers (`None` keeps that end's).
+    pub(crate) fn with_taper(&self, start: Option<f32>, end: Option<f32>) -> Self {
+        let [old_start, old_end] = self.taper();
+        let taper = [
+            start.unwrap_or(old_start).clamp(0.0, MAX_TAPER),
+            end.unwrap_or(old_end).clamp(0.0, MAX_TAPER),
+        ];
+        let mut out = self.clone().fresh();
+        if out.csp.is_some() {
+            out.csp_taper = taper;
+        } else {
+            let mut brush = (*self.brush).clone();
+            // Brush settings allow up to 300 px.
+            [brush.taper_in, brush.taper_out] = taper.map(|t| t.min(300.0));
+            out.brush = Arc::new(brush);
+        }
+        out
+    }
+    /// The stroke with its path evened out over `radius` canvas pixels
+    /// along it; its ends stay where they are.
+    pub(crate) fn smoothed(&self, radius: f32) -> Self {
+        let mut out = self.clone().fresh();
+        let radius = f64::from(radius);
+        if let Some(line) = &self.csp {
+            let path: Vec<[f64; 2]> = line.points.iter().map(|p| [p.x, p.y]).collect();
+            let mut line = (**line).clone();
+            for (p, [x, y]) in line.points.iter_mut().zip(smooth_path(&path, radius)) {
+                (p.x, p.y) = (x, y);
+            }
+            out.csp = Some(Arc::new(line));
+            return out;
+        }
+        // The pen's points, run by run (a reset starts a new run).
+        let mut start = 0;
+        let commands = &mut out.commands;
+        while start < commands.len() {
+            let end = commands[start..]
+                .iter()
+                .position(|c| matches!(c, Command::Reset))
+                .map_or(commands.len(), |i| start + i);
+            let run: Vec<usize> = (start..end)
+                .filter(|&i| matches!(commands[i], Command::Sample { .. } | Command::Seed { .. }))
+                .collect();
+            let path: Vec<[f64; 2]> = run
+                .iter()
+                .map(|&i| match commands[i] {
+                    Command::Sample { sample, .. } | Command::Seed { sample, .. } => {
+                        [f64::from(sample.x), f64::from(sample.y)]
+                    }
+                    _ => unreachable!(),
+                })
+                .collect();
+            for (&i, [x, y]) in run.iter().zip(smooth_path(&path, radius)) {
+                if let Command::Sample { sample, .. } | Command::Seed { sample, .. } =
+                    &mut commands[i]
+                {
+                    (sample.x, sample.y) = (x as f32, y as f32);
+                }
+            }
+            start = end + 1;
+        }
+        out
+    }
+}
+
+/// `points` averaged over `radius` along the path (triangle weights); the
+/// window narrows toward the ends, which stay put.
+fn smooth_path(points: &[[f64; 2]], radius: f64) -> Vec<[f64; 2]> {
+    let n = points.len();
+    if n < 3 || radius <= 0.0 {
+        return points.to_vec();
+    }
+    let mut along = vec![0.0; n];
+    for i in 1..n {
+        let (a, b) = (points[i - 1], points[i]);
+        along[i] = along[i - 1] + (b[0] - a[0]).hypot(b[1] - a[1]);
+    }
+    let total = along[n - 1];
+    let mut first = 0;
+    (0..n)
+        .map(|i| {
+            let window = radius.min(along[i]).min(total - along[i]);
+            if window <= 1e-9 {
+                return points[i];
+            }
+            // The window's start only moves forward along the path.
+            while along[first] < along[i] - window {
+                first += 1;
+            }
+            let (mut sum, mut weight) = ([0.0; 2], 0.0);
+            for j in first..n {
+                let offset = (along[j] - along[i]).abs();
+                if along[j] > along[i] + window {
+                    break;
+                }
+                let k = 1.0 - offset / window;
+                sum = [sum[0] + points[j][0] * k, sum[1] + points[j][1] * k];
+                weight += k;
+            }
+            if weight > 0.0 {
+                [sum[0] / weight, sum[1] / weight]
+            } else {
+                points[i]
+            }
+        })
+        .collect()
+}
+
 /// Give layer `index` these strokes and the pixels they paint.
 pub(crate) fn redraw_layer(
     doc: &mut Document,
@@ -917,6 +1095,12 @@ mod saved {
         /// A Clip Studio line; brush and commands are then unused.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         csp: Option<SavedLine>,
+        /// The CSP line's tapers.
+        #[serde(default, skip_serializing_if = "untapered")]
+        taper: [f32; 2],
+    }
+    fn untapered(taper: &[f32; 2]) -> bool {
+        *taper == [0.0; 2]
     }
     #[derive(Serialize, Deserialize)]
     struct SavedLine {
@@ -1079,6 +1263,7 @@ mod saved {
                             symmetry: stroke.symmetry,
                             commands: String::new(),
                             csp: Some(SavedLine::new(line)),
+                            taper: stroke.csp_taper,
                         };
                     }
                     let brush = brushes
@@ -1094,6 +1279,7 @@ mod saved {
                         symmetry: stroke.symmetry,
                         commands: crate::pattern::base64(&pack(&stroke.commands)),
                         csp: None,
+                        taper: [0.0; 2],
                     }
                 })
                 .collect();
@@ -1115,7 +1301,10 @@ mod saved {
                         let line = saved
                             .line(s.color)
                             .ok_or_else(|| D::Error::custom("Damaged vector line"))?;
-                        return Ok(Arc::new(Stroke::from_csp(line)));
+                        return Ok(Arc::new(Stroke {
+                            csp_taper: s.taper,
+                            ..Stroke::from_csp(line)
+                        }));
                     }
                     let brush = brushes
                         .get(s.brush)
@@ -1130,6 +1319,7 @@ mod saved {
                         symmetry: s.symmetry,
                         commands,
                         csp: None,
+                        csp_taper: [0.0; 2],
                         footprint: OnceLock::new(),
                     }))
                 })
@@ -1602,6 +1792,10 @@ mod tests {
         drag(app, from, to, egui::Modifiers::NONE);
     }
     fn drag(app: &mut Dudel, from: [f32; 2], to: [f32; 2], modifiers: egui::Modifiers) {
+        trace(app, &[from, to], modifiers);
+    }
+    /// Pen input along `points` (16 samples per segment).
+    fn trace(app: &mut Dudel, points: &[[f32; 2]], modifiers: egui::Modifiers) {
         let ctx = egui::Context::default();
         let raw = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -1612,9 +1806,12 @@ mod tests {
             ..Default::default()
         };
         let _ = ctx.run(raw(), |ctx| app.canvas(ctx, &[]));
-        let n = 16;
+        let segments = points.len() - 1;
+        let n = 16 * segments;
         for i in 0..=n {
-            let t = i as f32 / n as f32;
+            let segment = (i / 16).min(segments - 1);
+            let t = (i - segment * 16) as f32 / 16.0;
+            let [from, to] = [points[segment], points[segment + 1]];
             let p = egui::pos2(
                 from[0] + (to[0] - from[0]) * t,
                 from[1] + (to[1] - from[1]) * t,
@@ -2096,5 +2293,189 @@ mod tests {
                 slowest
             );
         }
+    }
+
+    /// Times one frame of dragging each of a real file's biggest lines.
+    #[test]
+    #[ignore]
+    fn line_drag_timing() {
+        let path = std::env::var("DUDEL_CSP_FILE").unwrap();
+        let doc = crate::clip_metadata::import_document(path.as_ref(), &|| false)
+            .unwrap()
+            .document;
+        let size = [doc.width, doc.height];
+        for layer in &doc.layers {
+            let Some(vector) = &layer.vector else {
+                continue;
+            };
+            let mut order: Vec<usize> = (0..vector.strokes.len()).collect();
+            order.sort_by_key(|&i| std::cmp::Reverse(vector.strokes[i].path(size).len()));
+            for &i in order.iter().take(3) {
+                let started = std::time::Instant::now();
+                let moved = Arc::new(vector.strokes[i].mapped(&|x, y| [x + 3.0, y + 2.0], size));
+                let mut strokes = vector.strokes.clone();
+                let rect = [vector.strokes[i].bounds(size), moved.bounds(size)]
+                    .into_iter()
+                    .flatten()
+                    .reduce(|a, b| {
+                        [
+                            a[0].min(b[0]),
+                            a[1].min(b[1]),
+                            a[2].max(b[2]),
+                            a[3].max(b[3]),
+                        ]
+                    })
+                    .unwrap();
+                strokes[i] = moved;
+                let mut pixels = layer.pixels.clone();
+                VectorLayer { strokes }
+                    .redraw(&mut pixels, rect, size, &|| false)
+                    .unwrap();
+                println!(
+                    "{} {}x{}: line {i} ({} px long, rect {}x{}): {:?}",
+                    layer.name,
+                    size[0],
+                    size[1],
+                    vector.strokes[i].path(size).len(),
+                    rect[2] - rect[0],
+                    rect[3] - rect[1],
+                    started.elapsed()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn picked_lines_smooth_and_taper() {
+        let mut app = app();
+        app.brush.scatter = 0.0;
+        app.brush.taper_out = 0.0;
+        app.brush.stabilization = 0.0;
+        // A jittery line: 4 px up and down every 4 px.
+        let zigzag: Vec<[f32; 2]> = (0..=20)
+            .map(|i| [8.0 + i as f32 * 4.0, if i % 2 == 0 { 28.0 } else { 32.0 }])
+            .collect();
+        trace(&mut app, &zigzag, egui::Modifiers::NONE);
+        let size = [96, 64];
+        let wobble = |app: &Dudel| {
+            let path = layer(app).vector.as_ref().unwrap().strokes[0]
+                .path(size)
+                .to_vec();
+            let mean = path.iter().map(|p| p[1]).sum::<f32>() / path.len() as f32;
+            path.iter().map(|p| (p[1] - mean).abs()).sum::<f32>() / path.len() as f32
+        };
+        let ends = |app: &Dudel| {
+            let commands = &layer(app).vector.as_ref().unwrap().strokes[0].commands;
+            let points: Vec<[f32; 2]> = commands
+                .iter()
+                .filter_map(|c| match c {
+                    Command::Sample { sample, .. } => Some([sample.x, sample.y]),
+                    _ => None,
+                })
+                .collect();
+            [points[0], *points.last().unwrap()]
+        };
+        let (before, before_ends) = (wobble(&app), ends(&app));
+        app.select_tool(Tool::Pointer);
+        drag(&mut app, [8.0, 28.0], [8.0, 28.0], egui::Modifiers::NONE);
+        assert_eq!(app.picked_lines().len(), 1, "{}", app.status);
+        app.smooth_picked_lines();
+        consistent(&app);
+        assert!(
+            wobble(&app) < before * 0.5,
+            "{} -> {}",
+            before,
+            wobble(&app)
+        );
+        assert_eq!(ends(&app), before_ends);
+        app.taper_picked_lines(Some(30.0), None);
+        consistent(&app);
+        let stroke = &layer(&app).vector.as_ref().unwrap().strokes[0];
+        assert_eq!(stroke.taper(), [30.0, 0.0]);
+        assert_eq!(stroke.brush.taper_in, 30.0);
+        // One undo step per change.
+        app.undo();
+        app.flush_render_queue();
+        assert_eq!(
+            layer(&app).vector.as_ref().unwrap().strokes[0].taper(),
+            [0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn csp_lines_taper_and_keep_it_saved() {
+        let mut app = csp_app();
+        let before = alpha(&app, 12, 21);
+        app.select_tool(Tool::Pointer);
+        drag(&mut app, [48.0, 20.0], [48.0, 20.0], egui::Modifiers::NONE);
+        assert_eq!(app.picked_lines().len(), 1);
+        app.taper_picked_lines(Some(40.0), Some(10.0));
+        consistent(&app);
+        let vector = layer(&app).vector.as_ref().unwrap().clone();
+        assert_eq!(vector.strokes[0].taper(), [40.0, 10.0]);
+        assert_eq!(vector.strokes[1].taper(), [0.0, 0.0]);
+        // The start narrows: rows off its middle lose coverage.
+        assert!(before > 0 && alpha(&app, 12, 21) < before, "{before}");
+        app.smooth_picked_lines();
+        consistent(&app);
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&app.doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        let reloaded = loaded.layers[0].vector.as_ref().unwrap();
+        assert_eq!(reloaded, layer(&app).vector.as_ref().unwrap());
+        let redrawn = reloaded.render([96, 64], &|| false).unwrap();
+        assert!(same_pixels(&redrawn, &layer(&app).pixels, 96 * 64));
+    }
+
+    #[test]
+    fn a_lasso_picks_the_lines_inside_it() {
+        let mut app = app();
+        app.brush.size = 4.0;
+        straight(&mut app, 16.0);
+        straight(&mut app, 48.0);
+        stroke_line(&mut app, [40.0, 30.0], [56.0, 30.0]);
+        app.select_tool(Tool::Pointer);
+        let none = egui::Modifiers::NONE;
+        let around = [
+            [30.0, 24.0],
+            [66.0, 24.0],
+            [66.0, 38.0],
+            [30.0, 38.0],
+            [30.0, 24.0],
+        ];
+        trace(&mut app, &around, none);
+        let picked = app.picked_lines();
+        assert_eq!(picked.len(), 1, "{}", app.status);
+        assert!(Arc::ptr_eq(
+            &picked[0],
+            &layer(&app).vector.as_ref().unwrap().strokes[2]
+        ));
+        // Lines only partly inside are left out; Shift adds to the pick.
+        let wide = [
+            [2.0, 8.0],
+            [60.0, 8.0],
+            [60.0, 56.0],
+            [2.0, 56.0],
+            [2.0, 8.0],
+        ];
+        trace(&mut app, &wide, egui::Modifiers::SHIFT);
+        assert_eq!(app.picked_lines().len(), 1);
+        let all = [
+            [2.0, 8.0],
+            [94.0, 8.0],
+            [94.0, 56.0],
+            [2.0, 56.0],
+            [2.0, 8.0],
+        ];
+        trace(&mut app, &all, egui::Modifiers::SHIFT);
+        assert_eq!(app.picked_lines().len(), 3);
+        // Nothing moved or changed while picking.
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 3);
+        // Without the lasso, empty canvas pans instead.
+        app.pointer_lasso = false;
+        trace(&mut app, &around, none);
+        assert!(app.picked_lines().is_empty());
     }
 }
