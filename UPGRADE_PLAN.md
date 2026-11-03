@@ -256,8 +256,11 @@ PSD (`src/psd_import.rs`, new):
       effect layers with a note. File > Export PSD for Live2D keeps the
       effect-layer form (Cubism ignores styles). Public set: every effect file
       reopens with the same effects and an exact render; psd-tools reads them.
-- [ ] Disabled effects: written with `enab` false, but the importer drops
-      them (it skips any effect not enabled); keep `present` ones disabled
+- [x] Disabled effects (2026-11-02): switched-off effects marked `present`,
+      and all effects under a master switch that is off, import switched off
+      (`Effects::disabled`) on layers and folders whose effects stay editable.
+      Public sets: no pixel changes in 360 files; ag-psd effects/src.psd and
+      psd-tools effects-enabled.psd now keep theirs
 - [ ] PSD export: mask link state (not stored; masks reopen linked), PSB for
       files over 4 GB of layer data, 16-bit export
 - [x] PSD export opens in Live2D Cubism Editor 5.2 (owner, 2026-10-31: Frieren

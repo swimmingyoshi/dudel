@@ -379,6 +379,37 @@ pub(crate) struct Effects {
     pub skipped: Vec<String>,
     /// Drawn, but without a setting Dudel cannot reproduce yet.
     pub approximated: Vec<String>,
+    /// Switched off in the file (or by its master switch): not drawn, but
+    /// kept on layers whose effects stay editable.
+    pub disabled: Vec<Effect>,
+}
+
+impl Effects {
+    /// The effects as a layer keeps them, bottom to top: switched-off ones
+    /// included when they fit and are valid, else only those drawn. `None`
+    /// when even those cannot stay editable.
+    pub(crate) fn editable(&self) -> Option<Vec<LayerEffect>> {
+        let usable = |effects: &[LayerEffect]| {
+            effects.len() <= crate::document::MAX_EFFECTS
+                && effects.iter().all(|e| e.validate().is_ok())
+        };
+        let mut all: Vec<LayerEffect> = self
+            .list
+            .iter()
+            .cloned()
+            .map(LayerEffect::new)
+            .chain(self.disabled.iter().cloned().map(|effect| LayerEffect {
+                enabled: false,
+                ..LayerEffect::new(effect)
+            }))
+            .collect();
+        all.sort_by_key(|e| e.effect.rank());
+        if usable(&all) {
+            return Some(all);
+        }
+        all.retain(|e| e.enabled);
+        usable(&all).then_some(all)
+    }
 }
 
 impl Effect {
@@ -1492,9 +1523,8 @@ pub(crate) fn parse(
 ) -> Result<Effects, String> {
     let settings = crate::psd_vector::versioned(data.get(4..).ok_or("Truncated PSD effects")?)?;
     let mut effects = Effects::default();
-    if settings.flag("masterFXSwitch") == Some(false) {
-        return Ok(effects);
-    }
+    // With the master switch off nothing is drawn, but every effect is kept.
+    let master = settings.flag("masterFXSwitch") != Some(false);
     // "Scl " is not applied: it records a Scale Effects factor already
     // in the stored sizes (a 208% file draws its 1 px strokes at 1 px).
     for (key, value) in &settings.items {
@@ -1512,31 +1542,43 @@ pub(crate) fn parse(
             _ => continue,
         };
         for effect in list {
-            if effect.flag("enab") != Some(true) {
+            // Photoshop lists effects never added as switched off, without
+            // `present`; switched-off ones the user added say `present`.
+            let switched_on = effect.flag("enab") == Some(true);
+            if !switched_on && effect.flag("present") != Some(true) {
                 continue;
             }
-            if effect.class == "ebbl" {
+            let drawn = switched_on && master;
+            // Notes about switched-off effects would describe nothing shown.
+            let mut notes = Vec::new();
+            let approximated = if drawn {
+                &mut effects.approximated
+            } else {
+                &mut notes
+            };
+            let parsed = if effect.class == "ebbl" {
                 let pair = effects
                     .list
                     .iter()
+                    .chain(&effects.disabled)
                     .filter(|e| matches!(e.kind, Kind::Bevel { .. }))
                     .count() as u32
                     / 2
                     + 1;
-                match bevel(effect, global_angle, pair, &mut effects.approximated) {
-                    Ok(halves) => effects.list.extend(halves),
-                    Err(skipped) => effects.skipped.push(skipped),
-                }
-                continue;
-            }
-            match read(effect, global_angle, &mut effects.approximated, patterns) {
-                Ok(Some(effect)) => effects.list.push(effect),
-                Ok(None) => {}
-                Err(skipped) => effects.skipped.push(skipped),
+                bevel(effect, global_angle, pair, approximated)
+            } else {
+                read(effect, global_angle, approximated, patterns).map(Vec::from_iter)
+            };
+            match (parsed, drawn) {
+                (Ok(parsed), true) => effects.list.extend(parsed),
+                (Ok(parsed), false) => effects.disabled.extend(parsed),
+                (Err(skipped), true) => effects.skipped.push(skipped),
+                (Err(_), false) => {}
             }
         }
     }
     effects.list.sort_by_key(Effect::rank);
+    effects.disabled.sort_by_key(Effect::rank);
     Ok(effects)
 }
 
@@ -3851,5 +3893,20 @@ mod tests {
             }
         );
         assert_eq!(effects.list[1].place(), Place::Inside);
+        assert!(effects.disabled.is_empty(), "never added, not present");
+        // With the master switch off, every effect is kept switched off,
+        // with no notes about how it would draw.
+        let mut settings = settings;
+        settings
+            .items
+            .push(("masterFXSwitch".into(), Value::Bool(false)));
+        let mut data = vec![0, 0, 0, 0, 0, 0, 0, 16];
+        data.extend(crate::psd_vector::encode(&settings));
+        let effects = parse(&data, 90.0, &[]).unwrap();
+        assert!(effects.list.is_empty() && effects.skipped.is_empty());
+        let names: Vec<_> = effects.disabled.iter().map(Effect::name).collect();
+        assert_eq!(names, ["Drop Shadow", "Satin", "Stroke"]);
+        let editable = effects.editable().unwrap();
+        assert!(editable.iter().all(|e| !e.enabled));
     }
 }

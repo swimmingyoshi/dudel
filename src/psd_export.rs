@@ -871,6 +871,34 @@ mod tests {
     }
 
     #[test]
+    fn switched_off_effects_survive_a_round_trip() {
+        use crate::layer_effects::{Effect, LayerEffect};
+        let (w, h) = (32, 32);
+        let mut doc = Document::new(w, h);
+        paint(&mut doc.layers[0], w, [8, 8, 24, 24], [200, 30, 30, 255]);
+        let mut shadow = LayerEffect::new(Effect::preset("Drop Shadow").unwrap());
+        shadow.enabled = false;
+        let stroke = LayerEffect::new(Effect::preset("Stroke").unwrap());
+        doc.layers[0].effects = vec![shadow, stroke];
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(back.layers.len(), 1);
+        let effects: Vec<_> = back.layers[0]
+            .effects
+            .iter()
+            .map(|e| (e.effect.name(), e.enabled))
+            .collect();
+        assert_eq!(effects, [("Drop Shadow", false), ("Stroke", true)]);
+        assert_eq!(back.composite(), doc.composite());
+        // Only switched-off effects: still kept, nothing drawn.
+        doc.layers[0].effects.truncate(1);
+        let back =
+            import(&encode(&doc, Effects::Editable, &AtomicBool::new(false)).unwrap()).document;
+        assert_eq!(back.layers[0].effects.len(), 1);
+        assert!(!back.layers[0].effects[0].enabled);
+    }
+
+    #[test]
     fn fill_opacity_survives_a_round_trip() {
         use crate::layer_effects::{Effect, LayerEffect};
         let (w, h) = (48, 48);

@@ -415,20 +415,18 @@ fn effect_layers(
     budget: &mut usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<(), String> {
-    let effects = std::mem::take(&mut record.effects.list);
     let source = record.source.take();
     // Effects that follow the layer's own pixels stay editable on it, with
     // its fill; shape outlines have no native form, so those bake.
-    let native: Vec<_> = effects
-        .iter()
-        .cloned()
-        .map(crate::layer_effects::LayerEffect::new)
-        .collect();
     if source.is_none()
-        && native.len() <= crate::document::MAX_EFFECTS
-        && native.iter().all(|e| e.validate().is_ok())
+        && let Some(native) = record.effects.editable()
     {
         record.layer.effects = native;
+        record.effects.list.clear();
+        return Ok(());
+    }
+    let effects = std::mem::take(&mut record.effects.list);
+    if effects.is_empty() {
         return Ok(());
     }
     [record.below, record.inside, record.above] = crate::layer_effects::draw(
@@ -1170,7 +1168,9 @@ fn layers(
                 cancel,
             )?;
         }
-        if record.group == 0 && !record.effects.list.is_empty() {
+        if record.group == 0
+            && (!record.effects.list.is_empty() || !record.effects.disabled.is_empty())
+        {
             effect_layers(record, width, height, &mut decoded_budget, cancel)?;
         }
     }
@@ -1226,18 +1226,11 @@ fn layers(
         }
         if record.group != 0 {
             let start = starts.pop().ok_or("PSD group nesting exceeds limits")?;
-            let native: Vec<_> = record
+            let native = record
                 .effects
-                .list
-                .iter()
-                .cloned()
-                .map(crate::layer_effects::LayerEffect::new)
-                .collect();
-            if !native.is_empty()
-                && record.fill == 255
-                && native.len() <= crate::document::MAX_EFFECTS
-                && native.iter().all(|e| e.validate().is_ok())
-            {
+                .editable()
+                .filter(|native| !native.is_empty() && record.fill == 255);
+            if let Some(native) = native {
                 // Native folder effects follow its contents as Photoshop's do.
                 record.layer.effects = native;
             } else if !record.effects.list.is_empty() {
