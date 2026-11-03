@@ -268,8 +268,10 @@ PSD (`src/psd_import.rs`, new):
       ZIP layer channels, and reads records bottom first; see FORMAT_SUPPORT.
 - [x] PSD export opens in Affinity and Photopea (owner, 2026-10-31)
 - [ ] PSD export: owner check in Krita (on Linux) and Photoshop if available
-- [ ] Export speed: Frieren takes ~2.3 s (exact pixel bounds visit every
-      painted pixel; composite on the export thread)
+- [x] Export speed (2026-11-02): Frieren 460 -> ~215 ms (byte-identical
+      file). Layers and the merged image are RLE-encoded in parallel, and
+      full composites split into several row bands a core, so the busy
+      middle of a character file no longer holds up the rest (343 -> 174 ms)
 
 Docs updated: [FORMAT_SUPPORT.md](FORMAT_SUPPORT.md), [RELEASE_NOTES.md](RELEASE_NOTES.md).
 

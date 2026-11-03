@@ -234,19 +234,30 @@ const OPEN: u32 = 1;
 const CLOSED: u32 = 2;
 const DIVIDER: u32 = 3;
 
-struct Writer<'a> {
-    width: usize,
-    height: usize,
-    cancel: &'a AtomicBool,
-    count: usize,
-    records: Vec<u8>,
-    channels: Vec<u8>,
-    styles: Styles,
+/// One layer record and its channel data, encoded on their own so layers
+/// can be encoded in parallel. `section` marks folder records.
+struct Record<'a> {
+    layer: std::borrow::Cow<'a, Layer>,
+    section: Option<u32>,
 }
-impl Writer<'_> {
-    /// One layer record and its channel data. `section` marks folder records.
-    fn record(&mut self, layer: &Layer, section: Option<u32>) -> Result<(), String> {
-        let (w, h) = (self.width, self.height);
+impl Record<'_> {
+    fn divider() -> Self {
+        let mut end = Layer::new_folder("</Layer group>".into());
+        end.folder = false;
+        Self {
+            layer: std::borrow::Cow::Owned(end),
+            section: Some(DIVIDER),
+        }
+    }
+    /// The record bytes and the channel data that follows all records.
+    fn encode(
+        &self,
+        [w, h]: [usize; 2],
+        styles: &Styles,
+        cancel: &AtomicBool,
+    ) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let (layer, section) = (&*self.layer, self.section);
+        let mut records = Vec::new();
         // Folders and adjustment layers have no pixels of their own.
         let pixelless = section.is_some() || layer.adjustment.is_some();
         let bounds = (!pixelless)
@@ -262,7 +273,7 @@ impl Writer<'_> {
                 4,
                 bottom - top,
                 |y| layer.pixels.region(w, [left, top + y, right, top + y + 1]),
-                self.cancel,
+                cancel,
             )?;
             let mut rgba = rgba.into_iter().map(channel_data);
             let [r, g, b, a] = std::array::from_fn(|_| rgba.next().unwrap());
@@ -283,7 +294,7 @@ impl Writer<'_> {
                         .map(|x| coverage.at(x, area[1] + y))
                         .collect()
                 },
-                self.cancel,
+                cancel,
             )?;
             channels.push((-2, channel_data(plane.into_iter().next().unwrap())));
             mask_record.extend(rect(area));
@@ -292,25 +303,24 @@ impl Writer<'_> {
             mask_record.push(if mask.enabled { 0 } else { 2 });
             mask_record.extend([0, 0]);
         }
-        self.records.extend(rect(bounds));
-        self.records.extend((channels.len() as u16).to_be_bytes());
+        records.extend(rect(bounds));
+        records.extend((channels.len() as u16).to_be_bytes());
         for (id, data) in &channels {
-            self.records.extend(id.to_be_bytes());
-            self.records.extend((data.len() as u32).to_be_bytes());
+            records.extend(id.to_be_bytes());
+            records.extend((data.len() as u32).to_be_bytes());
         }
-        self.records.extend(b"8BIM");
-        self.records.extend(blend_key(layer.blend));
-        self.records
-            .push((layer.opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
-        self.records.push(u8::from(layer.clipped));
+        records.extend(b"8BIM");
+        records.extend(blend_key(layer.blend));
+        records.push((layer.opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
+        records.push(u8::from(layer.clipped));
         // Bit 0 protects transparency, bit 1 hides; bits 3 and 4 mark a
         // folder or adjustment record's pixels as irrelevant.
-        self.records.push(
+        records.push(
             u8::from(layer.alpha_locked)
                 | if layer.visible { 0 } else { 2 }
                 | if pixelless { 8 | 16 } else { 0 },
         );
-        self.records.push(0);
+        records.push(0);
         let mut extra = Vec::new();
         extra.extend((mask_record.len() as u32).to_be_bytes());
         extra.extend(mask_record);
@@ -342,7 +352,7 @@ impl Writer<'_> {
         }
         units.iter().for_each(|u| luni.extend(u.to_be_bytes()));
         tagged(&mut extra, b"luni", &luni);
-        if let Some((_, style)) = self.styles.iter().find(|(id, _)| *id == layer.id) {
+        if let Some((_, style)) = styles.iter().find(|(id, _)| *id == layer.id) {
             let mut style = style.clone();
             style.resize(style.len().next_multiple_of(4), 0);
             tagged(&mut extra, b"lfx2", &style);
@@ -369,19 +379,40 @@ impl Writer<'_> {
             let fill = (layer.fill.clamp(0.0, 1.0) * 255.0).round() as u8;
             tagged(&mut extra, b"iOpa", &[fill, 0, 0, 0]);
         }
-        self.records.extend((extra.len() as u32).to_be_bytes());
-        self.records.extend(extra);
-        for (_, data) in channels {
-            self.channels.extend(data);
+        records.extend((extra.len() as u32).to_be_bytes());
+        records.extend(extra);
+        let data = channels.into_iter().flat_map(|(_, data)| data).collect();
+        Ok((records, data))
+    }
+}
+
+/// `planes` over bands of rows encoded in parallel, joined in order.
+fn planes_parallel(
+    channels: usize,
+    rows: usize,
+    row: impl Fn(usize) -> Vec<u8> + Sync,
+    cancel: &AtomicBool,
+) -> Result<Vec<Plane>, String> {
+    const BAND: usize = 64;
+    let bands = rows.div_ceil(BAND);
+    let parts = crate::parallel::run(bands, |band| {
+        let start = band * BAND;
+        planes(
+            channels,
+            (rows - start).min(BAND),
+            |y| row(start + y),
+            cancel,
+        )
+    });
+    let mut out = vec![(Vec::with_capacity(rows), Vec::new()); channels];
+    for part in parts {
+        let part = part.map_err(|_| "PSD encoding failed".to_string())??;
+        for ((counts, data), (more_counts, more_data)) in out.iter_mut().zip(part) {
+            counts.extend(more_counts);
+            data.extend(more_data);
         }
-        self.count += 1;
-        Ok(())
     }
-    fn divider(&mut self) -> Result<(), String> {
-        let mut end = Layer::new_folder("</Layer group>".into());
-        end.folder = false;
-        self.record(&end, Some(DIVIDER))
-    }
+    Ok(out)
 }
 
 /// The complete file. Every layer is written bottom first, each folder's
@@ -405,40 +436,49 @@ pub(crate) fn encode(
         }
     }
     let (expanded, styles) = written(doc, effects, &stopped)?;
-    let mut writer = Writer {
-        width,
-        height,
-        cancel,
-        count: 0,
-        records: Vec::new(),
-        channels: Vec::new(),
-        styles,
-    };
+    let mut list = Vec::new();
     let mut open = 0;
     for layer in &expanded.layers {
         // Entering a folder writes its divider first.
         while open < layer.depth + u8::from(layer.folder) {
-            writer.divider()?;
+            list.push(Record::divider());
             open += 1;
         }
         let section = layer
             .folder
             .then_some(if layer.collapsed { CLOSED } else { OPEN });
-        writer.record(layer, section)?;
+        list.push(Record {
+            layer: std::borrow::Cow::Borrowed(layer),
+            section,
+        });
         if layer.folder {
             open = layer.depth;
         }
     }
-    if writer.count == 0 {
+    if list.is_empty() {
         // Photoshop needs a layer; an empty one keeps the file layered.
-        writer.record(&Layer::raster("Layer 1".into(), width, height), None)?;
+        list.push(Record {
+            layer: std::borrow::Cow::Owned(Layer::raster("Layer 1".into(), width, height)),
+            section: None,
+        });
     }
-    let count = i16::try_from(writer.count).map_err(|_| "Too many layers for a PSD")?;
+    let count = i16::try_from(list.len()).map_err(|_| "Too many layers for a PSD")?;
+    // Layers are encoded in parallel, largest share of the time.
+    let encoded = crate::parallel::run(list.len(), |i| {
+        list[i].encode([width, height], &styles, cancel)
+    });
+    let mut records = Vec::new();
+    let mut channels = Vec::new();
+    for result in encoded {
+        let (record, data) = result.map_err(|_| "PSD encoding failed".to_string())??;
+        records.extend(record);
+        channels.extend(data);
+    }
     let mut info = Vec::new();
     // Negative: the flattened image's extra channel is its transparency.
     info.extend((-count).to_be_bytes());
-    info.extend(writer.records);
-    info.extend(writer.channels);
+    info.extend(records);
+    info.extend(channels);
     info.extend(std::iter::repeat_n(0, (4 - info.len() % 4) % 4));
     let too_large = || "This document is too large for a PSD file".to_string();
     let info_len = u32::try_from(info.len()).map_err(|_| too_large())?;
@@ -490,7 +530,7 @@ pub(crate) fn encode(
     out.extend(global);
     check()?;
     let row = width * 4;
-    let merged = planes(
+    let merged = planes_parallel(
         4,
         height,
         |y| composite[y * row..(y + 1) * row].to_vec(),

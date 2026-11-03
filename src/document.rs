@@ -1263,7 +1263,9 @@ impl Document {
         if threads <= 1 {
             rows(&mut out, 0)?;
         } else {
-            let band = height.div_ceil(threads);
+            // Several bands a core, taken as cores free up: artwork is rarely
+            // spread evenly, and a band of busy rows would hold up the rest.
+            let band = height.div_ceil(threads * 8).max(16);
             let bands: Vec<_> = out
                 .chunks_mut(band * width * 4)
                 .map(std::sync::Mutex::new)
