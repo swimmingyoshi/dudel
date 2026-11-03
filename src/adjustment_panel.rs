@@ -8,6 +8,60 @@ use crate::{
 };
 use egui::{Color32, Pos2, Sense, Stroke, pos2, vec2};
 
+/// Counts of the image below the selected levels layer, read in the
+/// background and kept until the document changes.
+#[derive(Default)]
+pub(crate) struct Histogram {
+    job: Option<(HistogramKey, crate::background::Handle<HistogramResult>)>,
+    done: Option<(HistogramKey, Counts)>,
+}
+/// The layer and the document revision counted.
+type HistogramKey = (crate::document::LayerId, u64);
+type Counts = [[u32; 256]; 3];
+type HistogramResult = Result<Counts, String>;
+
+impl Histogram {
+    /// Most pixels counted; the rest of the image is skipped evenly.
+    const SAMPLES: usize = 1 << 18;
+
+    /// The counts for `target`, starting a count when the document changed.
+    /// Until it finishes, the previous counts for the same layer stand in.
+    fn poll(
+        &mut self,
+        doc: &crate::document::Document,
+        target: crate::document::LayerId,
+        revision: u64,
+        ctx: &egui::Context,
+    ) -> Option<Counts> {
+        let key = (target, revision);
+        if self.job.as_ref().is_some_and(|(_, job)| job.is_finished())
+            && let Some((counted, job)) = self.job.take()
+            && let Ok(Ok(counts)) = job.join()
+        {
+            self.done = Some((counted, counts));
+        }
+        if self.job.is_none()
+            && self.done.as_ref().is_none_or(|(done, _)| *done != key)
+            && let Some(index) = doc.layers.iter().position(|l| l.id == target)
+        {
+            let doc = doc.clone();
+            self.job = Some((
+                key,
+                crate::background::spawn(move || {
+                    doc.histogram_below(index, Self::SAMPLES, &|| false)
+                }),
+            ));
+        }
+        if self.job.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
+        self.done
+            .as_ref()
+            .filter(|((layer, _), _)| *layer == target)
+            .map(|(_, counts)| *counts)
+    }
+}
+
 /// An adjustment change being dragged.
 pub(crate) struct Edit {
     target: crate::document::LayerId,
@@ -53,8 +107,14 @@ impl Dudel {
                             .map(|(_, settings)| settings.clone())
                     })
                     .unwrap_or_else(|| adjustment.settings().clone());
+                let histogram = if matches!(base, Settings::Levels { .. }) {
+                    self.levels_histogram
+                        .poll(&self.doc, target, self.revision, ui.ctx())
+                } else {
+                    None
+                };
                 let mut settings = base.clone();
-                settings_ui(ui, &mut settings);
+                settings_ui(ui, &mut settings, histogram.as_ref());
                 if settings != base {
                     self.set_adjustment_settings(target, settings);
                 }
@@ -194,7 +254,7 @@ fn slider(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::Rang
 }
 
 /// Controls for an adjustment's settings.
-fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
+fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings, histogram: Option<&Counts>) {
     match settings {
         Settings::Invert => {
             ui.label("Inverts the colors below. There is nothing to set.");
@@ -210,6 +270,12 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
             let index = channel_picker(ui);
             let before = channels[index].unwrap_or(IDENTITY);
             let mut value = before;
+            match histogram {
+                Some(counts) => histogram_graph(ui, counts, index, value.input),
+                None => {
+                    ui.small("Reading the image below…");
+                }
+            }
             slider(ui, "Input black", &mut value.input[0], 0.0..=254.0);
             slider(ui, "Input white", &mut value.input[1], 1.0..=255.0);
             crate::workspace::labeled_slider(
@@ -300,49 +366,10 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
                     slider(ui, "Saturation", &mut tint[1], 0.0..=100.0);
                     slider(ui, "Lightness", &mut tint[2], -100.0..=100.0);
                 }
-                None => {
-                    slider(ui, "Hue", &mut master[0], -180.0..=180.0);
-                    slider(ui, "Saturation", &mut master[1], -100.0..=100.0);
-                    slider(ui, "Lightness", &mut master[2], -100.0..=100.0);
-                }
-            }
-            if !ranges.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.small(format!(
-                        "Also changes {} color range{} from the source file.",
-                        ranges.len(),
-                        if ranges.len() == 1 { "" } else { "s" }
-                    ));
-                    if ui.small_button("Clear").clicked() {
-                        ranges.clear();
-                    }
-                });
+                None => hue_ranges_ui(ui, master, ranges),
             }
         }
-        Settings::GradientMap { stops, reverse } => {
-            let last = stops.len() - 1;
-            let to_u8 = |c: [f32; 3]| c.map(|v| v.round().clamp(0.0, 255.0) as u8);
-            let (mut start, mut end) = (to_u8(stops[0].1), to_u8(stops[last].1));
-            ui.horizontal(|ui| {
-                ui.label("Shadows");
-                egui::color_picker::color_edit_button_srgb(ui, &mut start);
-                ui.label("Highlights");
-                egui::color_picker::color_edit_button_srgb(ui, &mut end);
-            });
-            if start != to_u8(stops[0].1) {
-                stops[0].1 = start.map(f32::from);
-            }
-            if end != to_u8(stops[last].1) {
-                stops[last].1 = end.map(f32::from);
-            }
-            ui.checkbox(reverse, "Reverse");
-            if stops.len() > 2 {
-                ui.small(format!(
-                    "{} more stops in between keep their colors.",
-                    stops.len() - 2
-                ));
-            }
-        }
+        Settings::GradientMap { stops, reverse } => gradient_map_ui(ui, stops, reverse),
         Settings::ColorBalance {
             tones,
             preserve_luminosity,
@@ -417,6 +444,136 @@ fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings) {
                 ui.selectable_value(absolute, true, "Absolute");
             });
         }
+    }
+}
+
+/// Master hue, saturation and lightness, or those of one color range
+/// (Photoshop's six), picked by name; ranges with changes are marked.
+fn hue_ranges_ui(ui: &mut egui::Ui, master: &mut [f32; 3], ranges: &mut Vec<([f32; 4], [f32; 3])>) {
+    use crate::adjustment::{HUE_RANGES, hue_range_slot};
+    const NAMES: [&str; 6] = ["Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas"];
+    let changed: Vec<String> = std::iter::once("Master".to_string())
+        .chain(NAMES.iter().enumerate().map(|(slot, name)| {
+            let marked = ranges
+                .iter()
+                .any(|(range, change)| hue_range_slot(*range) == slot && *change != [0.0; 3]);
+            if marked {
+                format!("{name} •")
+            } else {
+                (*name).to_string()
+            }
+        }))
+        .collect();
+    let names: Vec<&str> = changed.iter().map(String::as_str).collect();
+    let group = picker(ui, "Edit", &names);
+    if group == 0 {
+        slider(ui, "Hue", &mut master[0], -180.0..=180.0);
+        slider(ui, "Saturation", &mut master[1], -100.0..=100.0);
+        slider(ui, "Lightness", &mut master[2], -100.0..=100.0);
+        return;
+    }
+    let slot = group - 1;
+    let at = ranges
+        .iter()
+        .position(|(range, _)| hue_range_slot(*range) == slot);
+    let before = at.map_or([0.0; 3], |at| ranges[at].1);
+    let mut change = before;
+    slider(ui, "Hue", &mut change[0], -180.0..=180.0);
+    slider(ui, "Saturation", &mut change[1], -100.0..=100.0);
+    slider(ui, "Lightness", &mut change[2], -100.0..=100.0);
+    if change != before {
+        match at {
+            Some(at) => ranges[at].1 = change,
+            None if ranges.len() < HUE_RANGES.len() => ranges.push((HUE_RANGES[slot], change)),
+            None => {}
+        }
+    }
+    if let Some(at) = at
+        && ranges[at].0 != HUE_RANGES[slot]
+    {
+        let [from, .., to] = ranges[at].0;
+        ui.small(format!("Hues {from:.0}°–{to:.0}°, from the source file."));
+    }
+}
+
+/// The map as a bar (shadows on the left), reverse, and its color stops.
+fn gradient_map_ui(ui: &mut egui::Ui, stops: &mut Vec<(f32, [f32; 3], f32)>, reverse: &mut bool) {
+    use crate::adjustment::ramp;
+    let to_u8 = |c: [f32; 3]| c.map(|v| v.round().clamp(0.0, 255.0) as u8);
+    let flipped = *reverse;
+    crate::effects_panel::gradient_bar(ui, |t| {
+        let t = if flipped { 1.0 - t } else { t };
+        let [r, g, b] = to_u8(ramp(stops, t as f32));
+        [r, g, b, 255]
+    });
+    ui.checkbox(reverse, "Reverse");
+    ui.small("Dark tones take the left colors, light tones the right.");
+    let mut colors: Vec<(f64, [u8; 3])> = stops
+        .iter()
+        .map(|(at, color, _)| (f64::from(*at), to_u8(*color)))
+        .collect();
+    crate::effects_panel::color_stops(ui, &mut colors, |t| to_u8(ramp(stops, t as f32)));
+    colors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Segment midpoints stay with the stop at the same place in the list.
+    let updated: Vec<(f32, [f32; 3], f32)> = colors
+        .iter()
+        .enumerate()
+        .map(|(i, (at, color))| {
+            (
+                (*at as f32).clamp(0.0, 1.0),
+                color.map(f32::from),
+                stops.get(i).map_or(0.5, |s| s.2),
+            )
+        })
+        .collect();
+    // Unchanged stops keep their exact values (colors are not rounded).
+    let same = updated.len() == stops.len()
+        && updated
+            .iter()
+            .zip(stops.iter())
+            .all(|(a, b)| a.0 == b.0 && to_u8(a.1) == to_u8(b.1));
+    if !same {
+        *stops = updated;
+    }
+}
+
+/// The counts of `channel` (0 for all three) as a graph, with the input
+/// black and white points marked.
+fn histogram_graph(ui: &mut egui::Ui, counts: &Counts, channel: usize, input: [f32; 2]) {
+    let bins: Vec<u32> = (0..256)
+        .map(|v| match channel {
+            0 => counts.iter().map(|c| c[v]).sum(),
+            c => counts[c - 1][v],
+        })
+        .collect();
+    // Pure black and white (often paper) would flatten everything else.
+    let tallest = bins[1..255].iter().copied().max().unwrap_or(0).max(1) as f32;
+    let (rect, _) = ui.allocate_exact_size(vec2(256.0, 72.0), Sense::hover());
+    let painter = ui.painter_at(rect);
+    let visuals = ui.visuals();
+    painter.rect_filled(rect, 2.0, visuals.extreme_bg_color);
+    let color = match channel {
+        1 => Color32::from_rgb(220, 70, 70),
+        2 => Color32::from_rgb(70, 180, 90),
+        3 => Color32::from_rgb(80, 120, 230),
+        _ => visuals.text_color(),
+    };
+    for (v, count) in bins.iter().enumerate() {
+        let height = (*count as f32 / tallest).min(1.0) * rect.height();
+        if height > 0.0 {
+            let x = rect.left() + v as f32 + 0.5;
+            painter.line_segment(
+                [pos2(x, rect.bottom()), pos2(x, rect.bottom() - height)],
+                Stroke::new(1.0_f32, color),
+            );
+        }
+    }
+    for at in input {
+        let x = rect.left() + at.clamp(0.0, 255.0) + 0.5;
+        painter.line_segment(
+            [pos2(x, rect.top()), pos2(x, rect.bottom())],
+            Stroke::new(1.0_f32, visuals.weak_text_color()),
+        );
     }
 }
 
@@ -627,5 +784,45 @@ mod tests {
             app.doc.layers[1].adjustment.as_ref().unwrap().settings(),
             &Settings::Threshold { level: 120 }
         );
+    }
+
+    #[test]
+    fn histogram_counts_what_shows_below_the_layer() {
+        let mut doc = crate::document::Document::new(4, 4);
+        let paint = |layer: &mut crate::document::Layer, rgba: [u8; 4]| {
+            let mut writer = layer.pixels.writer();
+            for i in 0..16 {
+                writer.rgba_mut(i).copy_from_slice(&rgba);
+            }
+        };
+        paint(&mut doc.layers[0], [255, 0, 0, 255]);
+        // In a folder: a green layer, the levels layer, then the header.
+        let mut green = doc.layers[0].clone();
+        green.id = crate::document::LayerId::new();
+        green.depth = 1;
+        paint(&mut green, [0, 255, 0, 255]);
+        let mut target = green.clone();
+        target.id = crate::document::LayerId::new();
+        let mut header = doc.layers[0].clone();
+        header.id = crate::document::LayerId::new();
+        header.folder = true;
+        doc.layers.extend([green, target, header]);
+        let counts = doc.histogram_below(2, 1 << 18, &|| false).unwrap();
+        assert_eq!((counts[0][0], counts[1][255], counts[2][0]), (16, 16, 16));
+        let counts = doc.histogram_below(1, 4, &|| false).unwrap();
+        assert_eq!(counts[0][255], 4, "about four pixels sampled");
+        // Nothing below: white paper.
+        assert_eq!(doc.histogram_below(0, 16, &|| false).unwrap()[2][255], 16);
+    }
+
+    #[test]
+    fn hue_ranges_are_named_by_their_hues() {
+        use crate::adjustment::{HUE_RANGES, hue_range_slot};
+        for (slot, range) in HUE_RANGES.iter().enumerate() {
+            assert_eq!(hue_range_slot(*range), slot);
+        }
+        // A narrower range around orange-red is still reds.
+        assert_eq!(hue_range_slot([340.0, 355.0, 10.0, 25.0]), 0);
+        assert_eq!(hue_range_slot([200.0, 230.0, 250.0, 270.0]), 4);
     }
 }

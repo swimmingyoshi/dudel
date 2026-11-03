@@ -623,6 +623,20 @@ impl Dudel {
             if menu_item(ui, "New folder", "", self.doc.has_room(0, 1)) {
                 self.new_folder();
             }
+            ui.add_enabled_ui(self.doc.has_room(1, 1), |ui| {
+                ui.menu_button("New adjustment layer", |ui| {
+                    for settings in crate::adjustment::presets() {
+                        if ui.button(settings.name()).clicked() {
+                            self.create_adjustment_layer(settings);
+                            self.adjustment_window_open = true;
+                            ui.close();
+                        }
+                    }
+                });
+            });
+            if menu_item(ui, "Layer effects…", "", self.input_target().is_some()) {
+                self.effects_window_open = true;
+            }
             if menu_item(ui, "Put in new folder", "Ctrl+G", self.doc.has_room(0, 1)) {
                 self.group_into_folder();
             }

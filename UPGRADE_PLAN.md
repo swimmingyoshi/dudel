@@ -510,8 +510,12 @@ Stage B - native layer effects:
       colors and reverse, posterize, threshold. Edits as one undo step per
       gesture (`Property::Adjustment`), queued like effects when busy.
       `--capture-adjustment-layer` screenshots it
-- [ ] Adjustment UI follow-ups: hue/saturation range editing, gradient map
-      stop editing, a Layer menu entry, histogram in levels
+- [x] Adjustment UI follow-ups (2026-11-02): hue/saturation edits Master or
+      one of the six color ranges (changed ones marked; PSD ranges written
+      in the slot named for their hues), gradient map stop editing with the
+      effects window's bar and stop rows, Layer > New adjustment layer and
+      Layer effects, a histogram in levels of what shows below the layer
+      (sampled in the background, `Document::histogram_below`)
 - [x] Masks (2026-10-29): user and vector mask density and feather, and the
       separate "real" user mask (channel -3) when a vector mask exists; PSD
       notes grouped by kind with layer names. psd-tools 181 -> 193/279

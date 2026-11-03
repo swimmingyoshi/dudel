@@ -1295,6 +1295,63 @@ impl Document {
         );
         output_pixel(value, transparent)
     }
+    /// Red, green and blue counts of what shows below layer `index`, on
+    /// white paper, from at most about `samples` evenly spread pixels.
+    /// Folders the layer sits in are left open, so their contents below it
+    /// count as if outside them.
+    pub(crate) fn histogram_below(
+        &self,
+        index: usize,
+        samples: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<[[u32; 256]; 3], String> {
+        let mut below = self.clone();
+        below.layers.truncate(index.min(self.layers.len()));
+        below.active = 0;
+        // Headers follow their contents, so walking down from the top tells
+        // which of the remaining layers are still inside a remaining folder.
+        let mut open: Vec<u8> = Vec::new();
+        for layer in below.layers.iter_mut().rev() {
+            while open.last().is_some_and(|d| *d >= layer.depth) {
+                open.pop();
+            }
+            let depth = layer.depth;
+            layer.depth = open.len() as u8;
+            if layer.folder {
+                open.push(depth);
+            }
+        }
+        let mut counts = [[0u32; 256]; 3];
+        if below.layers.is_empty() {
+            counts
+                .iter_mut()
+                .for_each(|c| c[255] = samples.max(1) as u32);
+            return Ok(counts);
+        }
+        let below = if below.needs_expansion() {
+            crate::layer_effects::expand(&below, false, cancel)?
+        } else {
+            below
+        };
+        let step = ((below.width * below.height) as f64 / samples.max(1) as f64)
+            .sqrt()
+            .max(1.0) as usize;
+        let plan = pass_plan(&below.layers);
+        let mut levels = [EMPTY_LEVEL; MAX_DEPTH as usize + 1];
+        for y in (step / 2..below.height).step_by(step) {
+            if cancel() {
+                return Err("Canceled".into());
+            }
+            for x in (step / 2..below.width).step_by(step) {
+                let value = below.composite_pixel(y * below.width + x, &mut levels, &plan);
+                let pixel = output_pixel(value, false);
+                for (channel, count) in counts.iter_mut().enumerate() {
+                    count[usize::from(pixel[channel])] += 1;
+                }
+            }
+        }
+        Ok(counts)
+    }
     /// Display region composite; `transparent` keeps alpha instead of paper.
     pub(crate) fn composite_display_region(&self, rect: [usize; 4], transparent: bool) -> Vec<u8> {
         self.composite_bounds(

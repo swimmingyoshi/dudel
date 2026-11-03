@@ -578,7 +578,7 @@ impl Settings {
 }
 
 /// Color at `t` between stops, bending each segment toward its midpoint.
-fn ramp(stops: &[(f32, [f32; 3], f32)], t: f32) -> [f32; 3] {
+pub(crate) fn ramp(stops: &[(f32, [f32; 3], f32)], t: f32) -> [f32; 3] {
     let first = stops[0];
     if t <= first.0 {
         return first.1;
@@ -971,6 +971,31 @@ fn selective_color(c: [f32; 3], colors: &[[f32; 4]; 9], absolute: bool) -> [f32;
     out.map(|v| (v * 255.0).clamp(0.0, 255.0))
 }
 
+/// Photoshop's hue ranges for reds, yellows, greens, cyans, blues and
+/// magentas: trapezoids of hue degrees centered every 60 degrees from red.
+pub(crate) const HUE_RANGES: [[f32; 4]; 6] = [
+    [315.0, 345.0, 15.0, 45.0],
+    [15.0, 45.0, 75.0, 105.0],
+    [75.0, 105.0, 135.0, 165.0],
+    [135.0, 165.0, 195.0, 225.0],
+    [195.0, 225.0, 255.0, 285.0],
+    [255.0, 285.0, 315.0, 345.0],
+];
+/// Which of `HUE_RANGES` a range's fully affected hues center nearest.
+pub(crate) fn hue_range_slot(range: [f32; 4]) -> usize {
+    let mut end = range[2];
+    if end < range[1] {
+        end += 360.0;
+    }
+    let center = ((range[1] + end) / 2.0).rem_euclid(360.0);
+    let distance = |slot: usize| {
+        let d = (center - slot as f32 * 60.0).rem_euclid(360.0);
+        d.min(360.0 - d)
+    };
+    (0..6)
+        .min_by(|a, b| distance(*a).total_cmp(&distance(*b)))
+        .unwrap_or(0)
+}
 fn hue_saturation(
     c: [f32; 3],
     colorize: Option<[f32; 3]>,
@@ -1593,19 +1618,20 @@ fn write_hue_saturation(
     {
         short(out, v);
     }
-    // Photoshop's default ranges, centered every 60 degrees from red.
-    let mut slots: [([f32; 4], [f32; 3]); 6] = [
-        [315.0, 345.0, 15.0, 45.0],
-        [15.0, 45.0, 75.0, 105.0],
-        [75.0, 105.0, 135.0, 165.0],
-        [135.0, 165.0, 195.0, 225.0],
-        [195.0, 225.0, 255.0, 285.0],
-        [255.0, 285.0, 315.0, 345.0],
-    ]
-    .map(|range| (range, [0.0; 3]));
-    // Overlapping ranges apply in order, so they keep theirs.
-    for (slot, range) in slots.iter_mut().zip(ranges) {
-        *slot = *range;
+    let mut slots = HUE_RANGES.map(|range| (range, [0.0; 3]));
+    // Each range goes in the slot named for its hues (Photoshop lists them
+    // as reds, yellows...), or the first free one when that is taken.
+    let mut taken = [false; 6];
+    for range in ranges {
+        let nearest = hue_range_slot(range.0);
+        let Some(slot) = std::iter::once(nearest)
+            .chain(0..6)
+            .find(|slot| !taken[*slot])
+        else {
+            break;
+        };
+        taken[slot] = true;
+        slots[slot] = *range;
     }
     for (range, change) in slots {
         range.into_iter().chain(change).for_each(|v| short(out, v));
@@ -2313,6 +2339,26 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn hue_ranges_are_written_in_their_named_slots() {
+        let blues = (HUE_RANGES[4], [10.0, -20.0, 5.0]);
+        let settings = Settings::HueSaturation {
+            colorize: None,
+            master: [0.0; 3],
+            ranges: vec![blues],
+        };
+        let blocks = to_psd(&settings);
+        let (key, data) = &blocks[0];
+        // Version, flags, colorization and master, then 14 bytes a slot.
+        let slot = |n: usize| &data[16 + n * 14..16 + (n + 1) * 14];
+        assert_eq!(&slot(4)[8..], &[0, 10, 255, 236, 0, 5]);
+        assert_eq!(&slot(0)[8..], &[0; 6]);
+        let Some(read) = from_psd(key, data, false).unwrap() else {
+            panic!()
+        };
+        assert_eq!(read, settings);
     }
 
     #[test]

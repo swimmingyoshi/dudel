@@ -361,35 +361,8 @@ fn percent(ui: &mut egui::Ui, label: &str, value: &mut f64) {
 /// opacity stops.
 fn gradient_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient) {
     use crate::psd_vector::Gradient;
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width().min(280.0), 18.0),
-        egui::Sense::hover(),
-    );
-    let painter = ui.painter_at(rect);
-    // Over a checkerboard, so transparent parts read as such.
-    for i in 0..(rect.width() / 6.0).ceil() as usize {
-        for j in 0..3 {
-            let shade = if (i + j) % 2 == 0 { 200 } else { 245 };
-            let cell = egui::Rect::from_min_size(
-                rect.min + egui::vec2(i as f32 * 6.0, j as f32 * 6.0),
-                egui::vec2(6.0, 6.0),
-            )
-            .intersect(rect);
-            painter.rect_filled(cell, 0.0, egui::Color32::from_gray(shade));
-        }
-    }
-    let slices = 64;
-    for i in 0..slices {
-        let t = (i as f64 + 0.5) / slices as f64;
-        let [r, g, b, a] = gradient.sample(if gradient.reverse() { 1.0 - t } else { t });
-        let x0 = rect.left() + rect.width() * i as f32 / slices as f32;
-        let x1 = rect.left() + rect.width() * (i + 1) as f32 / slices as f32;
-        painter.rect_filled(
-            egui::Rect::from_x_y_ranges(x0..=x1 + 0.5, rect.y_range()),
-            0.0,
-            egui::Color32::from_rgba_unmultiplied(r, g, b, a),
-        );
-    }
+    let reverse = gradient.reverse();
+    gradient_bar(ui, |t| gradient.sample(if reverse { 1.0 - t } else { t }));
     ui.horizontal(|ui| {
         let mut style = gradient.style();
         egui::ComboBox::from_id_salt("gradient style")
@@ -424,41 +397,10 @@ fn gradient_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient
     }
     let mut colors = gradient.color_stops();
     let mut opacities = gradient.opacity_stops();
-    egui::CollapsingHeader::new(format!("Color stops ({})", colors.len()))
-        .id_salt("color stops")
-        .show(ui, |ui| {
-            let mut remove = None;
-            let count = colors.len();
-            for (index, (at, color)) in colors.iter_mut().enumerate() {
-                ui.push_id(index, |ui| {
-                    ui.horizontal(|ui| {
-                        egui::color_picker::color_edit_button_srgb(ui, color);
-                        let mut location = *at * 100.0;
-                        ui.add(
-                            egui::Slider::new(&mut location, 0.0..=100.0)
-                                .suffix("%")
-                                .integer(),
-                        );
-                        *at = location / 100.0;
-                        if ui
-                            .add_enabled(count > 2, egui::Button::new("✕"))
-                            .on_hover_text("Remove stop")
-                            .clicked()
-                        {
-                            remove = Some(index);
-                        }
-                    });
-                });
-            }
-            if let Some(index) = remove {
-                colors.remove(index);
-            }
-            if ui.button("Add color stop").clicked() {
-                let at = widest_gap(colors.iter().map(|c| c.0));
-                let [r, g, b, _] = gradient.sample(at);
-                colors.push((at, [r, g, b]));
-            }
-        });
+    color_stops(ui, &mut colors, |t| {
+        let [r, g, b, _] = gradient.sample(t);
+        [r, g, b]
+    });
     egui::CollapsingHeader::new(format!("Opacity stops ({})", opacities.len()))
         .id_salt("opacity stops")
         .show(ui, |ui| {
@@ -501,6 +443,80 @@ fn gradient_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient
         });
     gradient.set_color_stops(&colors);
     gradient.set_opacity_stops(&opacities);
+}
+/// A gradient as a bar over a checkerboard, `sample` giving its straight
+/// RGBA from 0 (left) to 1 (right).
+pub(crate) fn gradient_bar(ui: &mut egui::Ui, sample: impl Fn(f64) -> [u8; 4]) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().min(280.0), 18.0),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    // Over a checkerboard, so transparent parts read as such.
+    for i in 0..(rect.width() / 6.0).ceil() as usize {
+        for j in 0..3 {
+            let shade = if (i + j) % 2 == 0 { 200 } else { 245 };
+            let cell = egui::Rect::from_min_size(
+                rect.min + egui::vec2(i as f32 * 6.0, j as f32 * 6.0),
+                egui::vec2(6.0, 6.0),
+            )
+            .intersect(rect);
+            painter.rect_filled(cell, 0.0, egui::Color32::from_gray(shade));
+        }
+    }
+    let slices = 64;
+    for i in 0..slices {
+        let [r, g, b, a] = sample((i as f64 + 0.5) / slices as f64);
+        let x0 = rect.left() + rect.width() * i as f32 / slices as f32;
+        let x1 = rect.left() + rect.width() * (i + 1) as f32 / slices as f32;
+        painter.rect_filled(
+            egui::Rect::from_x_y_ranges(x0..=x1 + 0.5, rect.y_range()),
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+        );
+    }
+}
+/// Color stops (location 0..=1, color) to recolor, move, remove (keeping
+/// two) and add; a new stop takes the color `sample` gives at its place.
+pub(crate) fn color_stops(
+    ui: &mut egui::Ui,
+    colors: &mut Vec<(f64, [u8; 3])>,
+    sample: impl Fn(f64) -> [u8; 3],
+) {
+    egui::CollapsingHeader::new(format!("Color stops ({})", colors.len()))
+        .id_salt("color stops")
+        .show(ui, |ui| {
+            let mut remove = None;
+            let count = colors.len();
+            for (index, (at, color)) in colors.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    ui.horizontal(|ui| {
+                        egui::color_picker::color_edit_button_srgb(ui, color);
+                        let mut location = *at * 100.0;
+                        ui.add(
+                            egui::Slider::new(&mut location, 0.0..=100.0)
+                                .suffix("%")
+                                .integer(),
+                        );
+                        *at = location / 100.0;
+                        if ui
+                            .add_enabled(count > 2, egui::Button::new("✕"))
+                            .on_hover_text("Remove stop")
+                            .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
+                });
+            }
+            if let Some(index) = remove {
+                colors.remove(index);
+            }
+            if ui.button("Add color stop").clicked() {
+                let at = widest_gap(colors.iter().map(|c| c.0));
+                colors.push((at, sample(at)));
+            }
+        });
 }
 /// The middle of the widest gap between stop locations (or the ends).
 fn widest_gap(locations: impl Iterator<Item = f64>) -> f64 {

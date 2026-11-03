@@ -288,6 +288,8 @@ struct Dudel {
     /// Adjustment settings last sent through the busy render queue.
     adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
     adjustment_window_open: bool,
+    /// Counts shown in the Levels settings of the Adjustment window.
+    levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
     /// window builds on until the queue has published it.
     effects_sent: Option<(document::LayerId, effects_panel::Style)>,
@@ -535,6 +537,7 @@ impl Default for Dudel {
             adjustment_edit: None,
             adjustment_sent: None,
             adjustment_window_open: false,
+            levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,
             mask_view: false,
@@ -2219,11 +2222,30 @@ fn main() -> eframe::Result {
                     let (width, height) = (app.doc.width, app.doc.height);
                     let mut layer =
                         crate::document::Layer::raster("Curves 1".into(), width, height);
-                    layer.adjustment =
-                        Some(adjustment::Adjustment::new(adjustment::Settings::Curves {
+                    // DUDEL_CAPTURE_ADJUSTMENT=levels, hue or gradient shows those.
+                    let presets = adjustment::presets();
+                    let settings = match std::env::var("DUDEL_CAPTURE_ADJUSTMENT").as_deref() {
+                        Ok("levels") => presets[0].clone(),
+                        Ok("hue") => adjustment::Settings::HueSaturation {
+                            colorize: None,
+                            master: [0.0; 3],
+                            ranges: vec![(adjustment::HUE_RANGES[4], [30.0, 20.0, 0.0])],
+                        },
+                        Ok("gradient") => adjustment::Settings::GradientMap {
+                            stops: vec![
+                                (0.0, [40.0, 20.0, 90.0], 0.5),
+                                (0.55, [220.0, 90.0, 60.0], 0.5),
+                                (1.0, [255.0, 240.0, 180.0], 0.5),
+                            ],
+                            reverse: false,
+                        },
+                        _ => adjustment::Settings::Curves {
                             channels: vec![(0, vec![[0, 0], [70, 40], [190, 225], [255, 255]])],
                             bezier: false,
-                        }));
+                        },
+                    };
+                    layer.name = format!("{} 1", settings.name());
+                    layer.adjustment = Some(adjustment::Adjustment::new(settings));
                     app.doc.layers.push(layer);
                     app.doc.active = app.doc.layers.len() - 1;
                     app.adjustment_window_open = true;
