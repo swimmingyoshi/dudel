@@ -3214,10 +3214,15 @@ mod tests {
         };
         let mut doc = doc_with(vec![overlay()]);
         // Nothing drawn yet: the layer shows without effects until ready.
+        // (A worker fast enough to finish before the call returns is shown
+        // at once.)
         let (first, _, waiting) = expand_for_display(&doc, &wake);
         assert!(waiting);
-        assert_eq!(first.layers.len(), 1);
+        assert!([1, 2].contains(&first.layers.len()), "{}", first.layers.len());
         let (ready, drawn) = settle(&doc);
+        if first.layers.len() == 2 {
+            assert!(first.layers[1].pixels.shares(&ready.layers[1].pixels));
+        }
         // The drawing is stored just before the worker wakes the display.
         for _ in 0..500 {
             if woken.load(Ordering::Relaxed) >= 1 {

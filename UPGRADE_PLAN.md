@@ -83,7 +83,7 @@ press and release in one frame, which took a different path than a mouse click.
       tooltip (`toolbar_symmetry_popup_stays_open_while_its_label_grows`). Fill
       options, Smooth/Rope and Color stay open across 640-1700 px. Other
       `menu_button`s close on any click or are hover submenus.
-- [ ] Manual check with mouse and pen
+- [x] Manual check with mouse and pen (owner, 2026-11-03)
 
 ### 4. Plugin / add-on system
 
@@ -110,7 +110,7 @@ Left:
       with the current brush into one stroke (`src/scripted_tool.rs`); example
       `plugins/example-scripted-tools.dudelplugin` (source `plugins/sdk/scripted-tools/`:
       parallel lines, hatching, coil, hatching eraser); `plugin_tool.py` inlines
-      `source_file`. Owner pen check pending
+      `source_file`. Owner pen check passed 2026-11-03
 - [ ] Brush asset contributions (tip/grain textures), not only parameters
 - [ ] More panel widgets; decide the stable widget list before 0.2
 - [x] Load/unload without restart: install, enable, disable and uninstall apply at once
@@ -476,7 +476,7 @@ Stage B - native layer effects:
 - [x] Effect-layer memory counts in each project's tracked memory: the
       snapshot registry visits cached drawings' tiles (shared states once);
       the Performance window also shows the global effect cache total
-- [ ] Manual check in the app with pen (owner)
+- [x] Manual check in the app with pen (owner, 2026-11-03)
 - [x] PSD export writes them back as editable effects (see goal 5)
 
 ### 8. PSD adjustment layers (owner, 2026-10-29)
@@ -570,10 +570,11 @@ Stage B - native layer effects:
 - [x] `scripts/Verify.ps1 -Mode Full` passed on the review working tree,
       2026-10-29. Initial release replacement hit access denied; the final run
       passed. Thumbnail DLL emitted LNK4104 export warnings. See the review report.
-- [ ] Owner's manual pen pass: Layer Effects window and badges, mask view,
+- [x] Owner's manual pen pass (2026-11-03): Layer Effects window and badges, mask view,
       PSDs with effects and adjustment layers, settings window
-- [ ] Owner approves the push; then one hosted run of both workflows (see CI
-      status above; artifact quota may still block uploads)
+- [x] Owner approved the push (2026-11-03, b7492d8). Its hosted run failed only on
+      a racy test (background drawing finishing before the first display call);
+      the test now accepts either order
 
 Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
