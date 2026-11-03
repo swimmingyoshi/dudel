@@ -203,6 +203,7 @@ project_session! {
     pending_action: Option<crate::document_actions::Action>,
     references: crate::references::References,
     reference_layers: crate::reference_layers::State,
+    vector_pick: crate::vector_pick::Pick,
     recording: crate::timelapse::Recording,
 }
 

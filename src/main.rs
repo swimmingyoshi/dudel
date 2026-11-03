@@ -166,6 +166,7 @@ mod tool_shift;
 mod tools;
 mod transform;
 mod vector_layer;
+mod vector_pick;
 mod view;
 mod wand;
 mod wasm_filters;
@@ -300,6 +301,8 @@ struct Dudel {
     vector_erase: Option<vector_layer::Erase>,
     /// What the eraser takes from vector layers.
     vector_erase_mode: vector_layer::EraseMode,
+    /// Lines of a vector layer picked with the Pointer tool.
+    vector_pick: vector_pick::Pick,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -554,6 +557,7 @@ impl Default for Dudel {
             vector_record: None,
             vector_erase: None,
             vector_erase_mode: Default::default(),
+            vector_pick: Default::default(),
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

@@ -179,6 +179,7 @@ impl Dudel {
         self.selection_drag = None;
         self.finish_move_drag();
         self.finish_affine_preview();
+        self.finish_line_drag();
     }
     pub(crate) fn finish_painted_stroke(&mut self) {
         self.stroke_snap = None;
@@ -473,12 +474,18 @@ impl Dudel {
                 self.cancel_move_drag();
             } else if self.render_queue.cancel_background_edit() {
                 self.status = "Canceling background edit".into();
+            } else if self.tool == Tool::Pointer && !self.picked_lines().is_empty() {
+                self.deselect_lines();
             } else {
                 self.set_selection(None);
             }
         }
         if key(Modifiers::NONE, Key::Delete) || key(Modifiers::NONE, Key::Backspace) {
-            self.clear_selection_pixels();
+            if self.tool == Tool::Pointer && !self.picked_lines().is_empty() {
+                self.delete_picked_lines();
+            } else {
+                self.clear_selection_pixels();
+            }
         }
         if ctx.input(|i| i.modifiers.is_none()) {
             if key(Modifiers::NONE, Key::OpenBracket) {
@@ -576,6 +583,7 @@ impl Dudel {
         !on_symmetry
             && self.guide_cursor(area, &view, origin).is_none()
             && !self.reference_grabs(view, origin)
+            && !self.line_grabs(view, origin)
     }
     pub(crate) fn canvas(&mut self, ctx: &egui::Context, packets: &[input::Packet]) {
         self.tab_bar(ctx);
@@ -725,6 +733,7 @@ impl Dudel {
                     }
                     self.cancel_affine_preview();
                     self.cancel_reference_drag();
+                    self.finish_line_drag();
                     if self.move_drag.is_some()
                         || self.pending_move.is_some()
                         || (self.tool == Tool::Move
@@ -776,6 +785,18 @@ impl Dudel {
             // A selected reference layer owns canvas input until deselected.
             if navigation_allowed
                 && self.reference_packet(
+                    view,
+                    pos,
+                    start,
+                    end,
+                    area.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id),
+                    shift,
+                )
+            {
+                continue;
+            }
+            if navigation_allowed
+                && self.vector_pick_packet(
                     view,
                     pos,
                     start,
@@ -1078,6 +1099,7 @@ impl Dudel {
             }
         }
         self.stabilizer_catch_up(ctx, allowed);
+        self.apply_line_drag();
         if moved || self.move_drag.is_some() || self.pending_move.is_some() {
             self.apply_move();
         }
@@ -1463,6 +1485,7 @@ impl Dudel {
         crate::guides::paint_grid(&painter, view, dimensions, self.grid);
         self.paint_affine_handles(&painter, *view);
         self.paint_reference_handles(&painter, *view);
+        self.paint_vector_pick(&painter, *view);
         if let Some(
             crate::selection_ui::Drag::Lasso { points, .. }
             | crate::selection_ui::Drag::PaintLasso { points, .. },

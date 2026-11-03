@@ -244,6 +244,14 @@ impl Dudel {
                             "Whole line",
                         )
                         .on_hover_text("Erase every line the eraser touches");
+                        ui.selectable_value(
+                            &mut self.vector_erase_mode,
+                            EraseMode::Crossings,
+                            "Up to crossings",
+                        )
+                        .on_hover_text(
+                            "Erase the touched part of a line up to the lines crossing it",
+                        );
                     });
                 }
                 self.eraser_mode_ui(ui);
@@ -575,6 +583,7 @@ impl Dudel {
     /// Pointer tool: canvas aids in one place, so they stay out of the way
     /// while drawing.
     fn pointer_panel_ui(&mut self, ui: &mut egui::Ui) {
+        self.picked_lines_ui(ui);
         hint(
             ui,
             "Drag guide lines and the symmetry center, even when guides are locked. Drag empty canvas to pan. Drawing tools never move locked guides.",
@@ -1069,7 +1078,7 @@ impl Dudel {
     }
 }
 
-fn hint(ui: &mut egui::Ui, text: &str) {
+pub(crate) fn hint(ui: &mut egui::Ui, text: &str) {
     ui.label(egui::RichText::new(text).small().weak());
 }
 

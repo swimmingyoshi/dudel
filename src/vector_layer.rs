@@ -78,6 +78,8 @@ impl std::fmt::Debug for Stroke {
 struct Footprint {
     circles: Vec<[f32; 3]>,
     bounds: Option<[f32; 4]>,
+    /// The line's middle as drawn (without symmetry copies).
+    path: Vec<[f32; 2]>,
 }
 
 impl Stroke {
@@ -179,6 +181,7 @@ impl Stroke {
             };
             let mut footprint = Footprint::default();
             for (dab, radius) in self.line() {
+                footprint.path.push([dab.x, dab.y]);
                 for ([x, y], _) in self.symmetry.copies(dab.x, dab.y, size[0], size[1]) {
                     footprint.circles.push([x, y, radius]);
                     let b = footprint.bounds.get_or_insert([x, y, x, y]);
@@ -202,6 +205,10 @@ impl Stroke {
             clamp(b[3].ceil() + 1.0, size[1]),
         ];
         (rect[0] < rect[2] && rect[1] < rect[3]).then_some(rect)
+    }
+    /// The middle of the line as drawn, in canvas pixels.
+    pub(crate) fn path(&self, size: [usize; 2]) -> &[[f32; 2]] {
+        &self.footprint(size).path
     }
     /// Whether a circle at (`x`, `y`) of `radius` touches the stroke's line.
     pub(crate) fn touches(&self, x: f32, y: f32, radius: f32, size: [usize; 2]) -> bool {
@@ -340,7 +347,7 @@ impl Stroke {
     /// The stroke with every point moved by `map` (canvas pixels to canvas
     /// pixels): its tip scales with the map and its symmetry follows it.
     /// `size` is the canvas the stroke was drawn on.
-    fn mapped(&self, map: &dyn Fn(f32, f32) -> [f32; 2], size: [usize; 2]) -> Self {
+    pub(crate) fn mapped(&self, map: &dyn Fn(f32, f32) -> [f32; 2], size: [usize; 2]) -> Self {
         let mut stroke = Stroke {
             brush: self.brush.clone(),
             color: self.color,
@@ -403,6 +410,9 @@ pub(crate) enum EraseMode {
     Touched,
     /// Every line the eraser touches, whole.
     Whole,
+    /// The touched part of a line up to the lines crossing it, or up to its
+    /// ends where nothing crosses it.
+    Crossings,
 }
 
 impl Stroke {
@@ -412,34 +422,108 @@ impl Stroke {
     /// drawn without the stabilizer, which already shaped them. `None` when
     /// the stroke cannot be cut (scattered or mirrored dabs are not a line).
     fn cut(&self, circles: &[[f32; 3]]) -> Option<Vec<Stroke>> {
-        if let Some(line) = &self.csp {
-            return Some(cut_csp(line, &self.line(), circles));
+        let points = self.cut_points()?;
+        let removed: Vec<bool> = points
+            .iter()
+            .map(|(s, r)| covered(circles, s, *r))
+            .collect();
+        Some(self.rebuild(&points, &removed))
+    }
+
+    /// `cut`, taking the touched part out up to the nearest lines of
+    /// `others` that cross this one on either side (or up to its ends).
+    fn cut_to_crossings(
+        &self,
+        circles: &[[f32; 3]],
+        others: &[Arc<Stroke>],
+        size: [usize; 2],
+    ) -> Option<Vec<Stroke>> {
+        let points = self.cut_points()?;
+        let crossings = crossings(&points, self, others, size);
+        // Where each crossing cuts the line: its point nearest the middle of
+        // the line that crosses there.
+        let mut cuts = Vec::new();
+        let mut run: Option<(usize, f32)> = None;
+        for (i, depth) in crossings.iter().enumerate() {
+            match (depth, &mut run) {
+                (Some(d), Some((at, best))) => {
+                    if d < best {
+                        (*at, *best) = (i, *d);
+                    }
+                }
+                (Some(d), None) => run = Some((i, *d)),
+                (None, Some((at, _))) => {
+                    cuts.push(*at);
+                    run = None;
+                }
+                (None, None) => {}
+            }
         }
-        if self.brush.scatter > 0.0 || self.symmetry.active() {
+        if let Some((at, _)) = run {
+            cuts.push(at);
+        }
+        // The stretches between cuts that the eraser touches go; the cut
+        // points stay as the ends of what remains.
+        let mut removed = vec![false; points.len()];
+        let mut from = 0;
+        for end in cuts.iter().copied().chain([points.len()]) {
+            let stretch = from..end;
+            if stretch
+                .clone()
+                .any(|i| covered(circles, &points[i].0, points[i].1))
+            {
+                removed[stretch].fill(true);
+            }
+            from = end + 1;
+        }
+        Some(self.rebuild(&points, &removed))
+    }
+
+    /// The points `cut` works on, with the line's radius at each: a CSP
+    /// line's dense points, or a stroke's dabs. `None` for strokes whose
+    /// dabs are not one line (scattered or mirrored).
+    fn cut_points(&self) -> Option<Vec<(Sample, f32)>> {
+        if self.csp.is_some() {
+            return Some(self.line());
+        }
+        if self.brush.scatter > 0.0 || self.symmetry.active() || self.cut_zoom().is_none() {
             return None;
         }
-        let zoom = self.commands.iter().find_map(|c| match c {
+        let half = self.brush.size * 0.5;
+        let pressure_size = self.brush.pressure_size;
+        Some(
+            self.dabs()
+                .into_iter()
+                .map(|d| {
+                    let scale = if pressure_size {
+                        d.pressure.max(0.05)
+                    } else {
+                        1.0
+                    };
+                    (d, half * scale)
+                })
+                .collect(),
+        )
+    }
+    fn cut_zoom(&self) -> Option<f32> {
+        self.commands.iter().find_map(|c| match c {
             Command::Sample { zoom, .. } => Some(*zoom),
             _ => None,
-        })?;
-        let dabs = self.dabs();
-        let half = self.brush.size * 0.5;
-        let covered = |d: &Sample| {
-            let r = half
-                * if self.brush.pressure_size {
-                    d.pressure.max(0.05)
-                } else {
-                    1.0
-                };
-            circles.iter().any(|&[x, y, radius]| {
-                let reach = radius + r;
-                (d.x - x) * (d.x - x) + (d.y - y) * (d.y - y) <= reach * reach
-            })
+        })
+    }
+
+    /// The runs of `points` not `removed`, as strokes like this one.
+    fn rebuild(&self, points: &[(Sample, f32)], removed: &[bool]) -> Vec<Stroke> {
+        if let Some(line) = &self.csp {
+            return rebuild_csp(line, points, removed);
+        }
+        let Some(zoom) = self.cut_zoom() else {
+            return Vec::new();
         };
         let mut pieces = Vec::new();
         let mut run: Vec<Sample> = Vec::new();
         let mut first_run = true;
-        let last = dabs.len();
+        let last = points.len();
         let mut flush = |run: &mut Vec<Sample>, starts: bool, ends: bool| {
             if run.len() >= 2 {
                 let mut brush = (*self.brush).clone();
@@ -481,8 +565,8 @@ impl Stroke {
             }
             run.clear();
         };
-        for (i, dab) in dabs.iter().enumerate() {
-            if covered(dab) {
+        for (i, (dab, _)) in points.iter().enumerate() {
+            if removed[i] {
                 flush(&mut run, first_run, false);
                 first_run = false;
             } else {
@@ -492,26 +576,88 @@ impl Stroke {
                 flush(&mut run, first_run, true);
             }
         }
-        Some(pieces)
+        pieces
     }
+}
+
+/// Whether one of `circles` covers the line at `s`, where it is `r` wide.
+fn covered(circles: &[[f32; 3]], s: &Sample, r: f32) -> bool {
+    circles.iter().any(|&[x, y, radius]| {
+        let reach = radius + r;
+        (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y) <= reach * reach
+    })
+}
+
+/// For each of `stroke`'s `points`, how deep inside another line of
+/// `others` it lies (distance to that line's middle over its radius, below
+/// 1), or `None` where no other line covers it.
+fn crossings(
+    points: &[(Sample, f32)],
+    stroke: &Stroke,
+    others: &[Arc<Stroke>],
+    size: [usize; 2],
+) -> Vec<Option<f32>> {
+    let Some(b) = stroke.footprint(size).bounds else {
+        return vec![None; points.len()];
+    };
+    let overlaps = |o: &[f32; 4]| o[0] <= b[2] && b[0] <= o[2] && o[1] <= b[3] && b[1] <= o[3];
+    // The other lines' circles over this one, bucketed in a grid of at
+    // most 256 x 256 cells.
+    let side = ((b[2] - b[0]).max(b[3] - b[1]) / 256.0).max(16.0);
+    let columns = ((b[2] - b[0]) / side) as usize + 1;
+    let rows = ((b[3] - b[1]) / side) as usize + 1;
+    let cell = |x: f32, y: f32| {
+        [
+            (((x - b[0]) / side).max(0.0) as usize).min(columns - 1),
+            (((y - b[1]) / side).max(0.0) as usize).min(rows - 1),
+        ]
+    };
+    let mut grid: Vec<Vec<[f32; 3]>> = vec![Vec::new(); columns * rows];
+    for other in others.iter().filter(|o| !std::ptr::eq(o.as_ref(), stroke)) {
+        let footprint = other.footprint(size);
+        if !footprint.bounds.as_ref().is_some_and(overlaps) {
+            continue;
+        }
+        for &[x, y, r] in &footprint.circles {
+            if x + r < b[0] || x - r > b[2] || y + r < b[1] || y - r > b[3] {
+                continue;
+            }
+            let [x0, y0] = cell(x - r, y - r);
+            let [x1, y1] = cell(x + r, y + r);
+            for row in y0..=y1 {
+                for column in x0..=x1 {
+                    grid[row * columns + column].push([x, y, r]);
+                }
+            }
+        }
+    }
+    points
+        .iter()
+        .map(|(s, _)| {
+            let [column, row] = cell(s.x, s.y);
+            let mut deepest: Option<f32> = None;
+            for &[x, y, r] in &grid[row * columns + column] {
+                let d2 = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
+                if d2 <= r * r {
+                    let depth = d2.sqrt() / r.max(1e-3);
+                    deepest = Some(deepest.map_or(depth, |d: f32| d.min(depth)));
+                }
+            }
+            deepest
+        })
+        .collect()
 }
 
 /// Widest CSP line kept after scaling.
 const MAX_CSP_WIDTH: f64 = 10_000.0;
 
 /// What remains of a CSP line (`dense`: its points about a pixel apart with
-/// their radius) once `circles` are taken out, as CSP lines.
-fn cut_csp(
+/// their radius) once the `removed` points are taken out, as CSP lines.
+fn rebuild_csp(
     line: &crate::clip_vector::Stroke,
     dense: &[(Sample, f32)],
-    circles: &[[f32; 3]],
+    removed: &[bool],
 ) -> Vec<Stroke> {
-    let covered = |s: &Sample, r: f32| {
-        circles.iter().any(|&[x, y, radius]| {
-            let reach = radius + r;
-            (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y) <= reach * reach
-        })
-    };
     let mut pieces = Vec::new();
     let mut run: Vec<crate::clip_vector::Point> = Vec::new();
     let mut flush = |run: &mut Vec<crate::clip_vector::Point>| {
@@ -523,8 +669,8 @@ fn cut_csp(
         }
         run.clear();
     };
-    for (s, r) in dense {
-        if covered(s, *r) {
+    for ((s, _), removed) in dense.iter().zip(removed) {
+        if *removed {
             flush(&mut run);
         } else {
             run.push(crate::clip_vector::Point {
@@ -648,18 +794,9 @@ pub(crate) fn restyle(
             if !picked(doc, stroke) {
                 return stroke.clone();
             }
-            let mut restyled = Stroke {
-                footprint: OnceLock::new(),
-                ..(**stroke).clone()
-            };
+            let mut restyled = (**stroke).clone().fresh();
             if let Some(color) = color {
-                restyled.color = color;
-                if let Some(line) = &restyled.csp {
-                    restyled.csp = Some(Arc::new(crate::clip_vector::Stroke {
-                        color,
-                        ..(**line).clone()
-                    }));
-                }
+                restyled = restyled.recolored(color);
             }
             if let Some(brush) = &brush {
                 restyled = restyled.with_brush(brush.clone());
@@ -679,6 +816,25 @@ pub(crate) fn restyle(
 }
 
 impl Stroke {
+    /// The stroke without its worked-out footprint, for a changed copy.
+    pub(crate) fn fresh(self) -> Self {
+        Self {
+            footprint: OnceLock::new(),
+            ..self
+        }
+    }
+    /// The stroke in `color`.
+    pub(crate) fn recolored(&self, color: [u8; 3]) -> Self {
+        let mut out = self.clone();
+        out.color = color;
+        if let Some(line) = &self.csp {
+            out.csp = Some(Arc::new(crate::clip_vector::Stroke {
+                color,
+                ..(**line).clone()
+            }));
+        }
+        out
+    }
     /// The stroke drawn with `brush`; a CSP line becomes a stroke through
     /// its points (the brush's stabilizer is not applied again).
     fn with_brush(mut self, brush: Arc<Brush>) -> Self {
@@ -1138,6 +1294,7 @@ impl crate::Dudel {
         let mode = erase.mode;
         let layer = &mut self.doc.layers[index];
         let vector = layer.vector.as_mut().unwrap();
+        let all = vector.strokes.clone();
         // Each touched line is removed, or replaced by what is left of it.
         vector.strokes = std::mem::take(&mut vector.strokes)
             .into_iter()
@@ -1153,6 +1310,12 @@ impl crate::Dudel {
                         .map(Arc::new)
                         .collect(),
                     EraseMode::Whole => Vec::new(),
+                    EraseMode::Crossings => stroke
+                        .cut_to_crossings(&circles, &all, size)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Arc::new)
+                        .collect(),
                 }
             })
             .collect();
@@ -1436,12 +1599,16 @@ mod tests {
     }
     /// A straight stroke (no wobble) through real input.
     fn stroke_line(app: &mut Dudel, from: [f32; 2], to: [f32; 2]) {
+        drag(app, from, to, egui::Modifiers::NONE);
+    }
+    fn drag(app: &mut Dudel, from: [f32; 2], to: [f32; 2], modifiers: egui::Modifiers) {
         let ctx = egui::Context::default();
         let raw = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(800.0, 600.0),
             )),
+            modifiers,
             ..Default::default()
         };
         let _ = ctx.run(raw(), |ctx| app.canvas(ctx, &[]));
@@ -1781,5 +1948,153 @@ mod tests {
         assert!(strokes[0].csp.is_some());
         assert!(strokes[1].csp.is_none() && strokes[1].brush.size == 5.0);
         assert!(alpha(&app, 48, 44) > 0);
+    }
+
+    #[test]
+    fn the_eraser_can_stop_at_crossing_lines() {
+        let mut app = app();
+        app.brush.size = 4.0;
+        straight(&mut app, 32.0);
+        stroke_line(&mut app, [30.0, 8.0], [30.0, 56.0]);
+        stroke_line(&mut app, [64.0, 8.0], [64.0, 56.0]);
+        app.select_tool(Tool::Eraser);
+        app.vector_erase_mode = EraseMode::Crossings;
+        app.brush.size = 2.0;
+        // A dab between the crossing lines takes all of the line between them.
+        stroke_line(&mut app, [47.0, 30.0], [47.0, 34.0]);
+        consistent(&app);
+        assert_eq!(
+            layer(&app).vector.as_ref().unwrap().strokes.len(),
+            4,
+            "{}",
+            app.status
+        );
+        for x in [36, 47, 58] {
+            assert_eq!(alpha(&app, x, 32), 0, "x {x}");
+        }
+        assert!(alpha(&app, 20, 32) > 0 && alpha(&app, 76, 32) > 0);
+        assert!(alpha(&app, 30, 20) > 0 && alpha(&app, 64, 44) > 0);
+        // Past the last crossing it goes up to the line's end.
+        stroke_line(&mut app, [80.0, 30.0], [80.0, 34.0]);
+        consistent(&app);
+        assert_eq!(alpha(&app, 76, 32), 0);
+        assert_eq!(alpha(&app, 70, 32), 0);
+        assert!(alpha(&app, 20, 32) > 0 && alpha(&app, 64, 20) > 0);
+        // A line nothing crosses goes whole.
+        app.select_tool(Tool::Brush);
+        stroke_line(&mut app, [8.0, 60.0], [20.0, 60.0]);
+        app.select_tool(Tool::Eraser);
+        let lines = layer(&app).vector.as_ref().unwrap().strokes.len();
+        stroke_line(&mut app, [14.0, 58.0], [14.0, 62.0]);
+        assert_eq!(
+            layer(&app).vector.as_ref().unwrap().strokes.len(),
+            lines - 1
+        );
+    }
+
+    #[test]
+    fn the_pointer_picks_moves_and_edits_single_lines() {
+        let mut app = app();
+        app.brush.size = 4.0;
+        straight(&mut app, 16.0);
+        straight(&mut app, 48.0);
+        let before = layer(&app).pixels.clone();
+        let count = 96 * 64;
+        app.select_tool(Tool::Pointer);
+        // A drag that starts on a line moves that line alone.
+        stroke_line(&mut app, [40.0, 16.0], [40.0, 26.0]);
+        consistent(&app);
+        assert_eq!(app.picked_lines().len(), 1, "{}", app.status);
+        assert!(alpha(&app, 40, 26) > 0 && alpha(&app, 40, 16) == 0);
+        assert!(alpha(&app, 40, 48) > 0);
+        // One undo step puts it back; the moved line is no longer picked.
+        app.undo();
+        app.flush_render_queue();
+        assert!(same_pixels(&before, &layer(&app).pixels, count));
+        assert!(app.picked_lines().is_empty());
+        // Shift+click picks a second line; the panel's actions use both.
+        let shift = egui::Modifiers::SHIFT;
+        drag(&mut app, [40.0, 16.0], [40.0, 16.0], egui::Modifiers::NONE);
+        drag(&mut app, [40.0, 48.0], [40.0, 48.0], shift);
+        assert_eq!(app.picked_lines().len(), 2);
+        assert!(same_pixels(&before, &layer(&app).pixels, count));
+        app.resize_picked_lines(10.0);
+        consistent(&app);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert!(strokes.iter().all(|s| s.brush.size == 10.0));
+        assert!(alpha(&app, 40, 20) > 0 && alpha(&app, 40, 52) > 0);
+        app.color = [0, 200, 0];
+        app.recolor_picked_lines();
+        consistent(&app);
+        assert_eq!(&layer(&app).pixels.rgba(16 * 96 + 40)[..3], &[0, 200, 0]);
+        // Shift+click on a picked line lets it go.
+        drag(&mut app, [40.0, 48.0], [40.0, 48.0], shift);
+        assert_eq!(app.picked_lines().len(), 1);
+        app.delete_picked_lines();
+        consistent(&app);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+        assert_eq!(alpha(&app, 40, 16), 0);
+        app.undo();
+        app.flush_render_queue();
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 2);
+        // A press away from every line lets go of the pick.
+        drag(&mut app, [40.0, 16.0], [40.0, 16.0], egui::Modifiers::NONE);
+        assert_eq!(app.picked_lines().len(), 1);
+        drag(&mut app, [40.0, 32.0], [40.0, 32.0], egui::Modifiers::NONE);
+        assert!(app.picked_lines().is_empty());
+    }
+
+    #[test]
+    fn picked_csp_lines_move_and_resize() {
+        let mut app = csp_app();
+        app.select_tool(Tool::Pointer);
+        stroke_line(&mut app, [48.0, 20.0], [48.0, 30.0]);
+        consistent(&app);
+        assert!(
+            alpha(&app, 48, 30) > 0 && alpha(&app, 48, 20) == 0,
+            "{}",
+            app.status
+        );
+        app.resize_picked_lines(2.0);
+        consistent(&app);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert_eq!(strokes[0].csp.as_ref().unwrap().width, 1.0);
+        assert_eq!(strokes[1].csp.as_ref().unwrap().width, 3.0);
+    }
+
+    /// Times the crossing search on every line of a real file's vector
+    /// layers (`DUDEL_CSP_FILE`).
+    #[test]
+    #[ignore]
+    fn crossing_search_timing() {
+        let path = std::env::var("DUDEL_CSP_FILE").unwrap();
+        let doc = crate::clip_metadata::import_document(path.as_ref(), &|| false)
+            .unwrap()
+            .document;
+        let size = [doc.width, doc.height];
+        for layer in &doc.layers {
+            let Some(vector) = &layer.vector else {
+                continue;
+            };
+            let started = std::time::Instant::now();
+            let mut slowest = std::time::Duration::ZERO;
+            let mut pieces = 0;
+            for stroke in &vector.strokes {
+                let one = std::time::Instant::now();
+                let path = stroke.path(size);
+                let [x, y] = path[path.len() / 2];
+                if let Some(cut) = stroke.cut_to_crossings(&[[x, y, 2.0]], &vector.strokes, size) {
+                    pieces += cut.len();
+                }
+                slowest = slowest.max(one.elapsed());
+            }
+            println!(
+                "{}: {} lines -> {pieces} pieces, {:?} total, slowest {:?}",
+                layer.name,
+                vector.strokes.len(),
+                started.elapsed(),
+                slowest
+            );
+        }
     }
 }
