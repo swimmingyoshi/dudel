@@ -305,6 +305,10 @@ struct Dudel {
     vector_pick: vector_pick::Pick,
     /// The Pointer's drag on empty canvas lassoes vector lines (else pans).
     pointer_lasso: bool,
+    /// What the Pointer's drag on a vector line does.
+    line_drag: vector_pick::LineDrag,
+    /// How far along a line a reshape reaches, in canvas pixels.
+    bend_reach: f32,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -561,6 +565,8 @@ impl Default for Dudel {
             vector_erase_mode: Default::default(),
             vector_pick: Default::default(),
             pointer_lasso: true,
+            line_drag: Default::default(),
+            bend_reach: 40.0,
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

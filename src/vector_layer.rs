@@ -1001,6 +1001,119 @@ impl Stroke {
     }
 }
 
+impl Stroke {
+    /// The points that shape the line, in order: a CSP line's points, or
+    /// the pen samples of a stroke.
+    pub(crate) fn control_points(&self) -> Vec<[f32; 2]> {
+        if let Some(line) = &self.csp {
+            return line
+                .points
+                .iter()
+                .map(|p| [p.x as f32, p.y as f32])
+                .collect();
+        }
+        self.commands
+            .iter()
+            .filter_map(|c| match c {
+                Command::Sample { sample, .. } | Command::Seed { sample, .. } => {
+                    Some([sample.x, sample.y])
+                }
+                _ => None,
+            })
+            .collect()
+    }
+    /// The stroke with points added along it so that no two shaping points
+    /// are more than `spacing` apart; it draws the same line.
+    pub(crate) fn densified(&self, spacing: f32) -> Self {
+        let spacing = spacing.max(0.5);
+        let steps = |dx: f32, dy: f32| (dx.hypot(dy) / spacing).ceil().clamp(1.0, 4096.0) as usize;
+        let mut out = self.clone().fresh();
+        if let Some(line) = &self.csp {
+            let mut dense = (**line).clone();
+            dense.points.clear();
+            for pair in line.points.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                let n = steps((b.x - a.x) as f32, (b.y - a.y) as f32);
+                for i in 0..n {
+                    let t = i as f64 / n as f64;
+                    dense.points.push(crate::clip_vector::Point {
+                        x: a.x + (b.x - a.x) * t,
+                        y: a.y + (b.y - a.y) * t,
+                        pressure: a.pressure + (b.pressure - a.pressure) * t,
+                    });
+                }
+            }
+            dense.points.extend(line.points.last().copied());
+            if dense.points.len() <= MAX_COMMANDS {
+                out.csp = Some(Arc::new(dense));
+            }
+            return out;
+        }
+        let mut commands = Vec::with_capacity(self.commands.len());
+        let mut previous: Option<Sample> = None;
+        for command in &self.commands {
+            match *command {
+                Command::Sample { sample, zoom, .. } => {
+                    if let Some(a) = previous {
+                        let n = steps(sample.x - a.x, sample.y - a.y);
+                        for i in 1..n {
+                            let t = i as f32 / n as f32;
+                            let time = match (a.time, sample.time) {
+                                (Some(ta), Some(tb)) => Some(ta + (tb - ta) * f64::from(t)),
+                                _ => sample.time,
+                            };
+                            commands.push(Command::Sample {
+                                sample: Sample {
+                                    x: a.x + (sample.x - a.x) * t,
+                                    y: a.y + (sample.y - a.y) * t,
+                                    pressure: a.pressure + (sample.pressure - a.pressure) * t,
+                                    time,
+                                    ..a
+                                },
+                                zoom,
+                                lift: false,
+                            });
+                        }
+                    }
+                    previous = Some(sample);
+                }
+                Command::Seed { sample, .. } => previous = Some(sample),
+                Command::Reset => previous = None,
+                Command::CatchUp(_) => {}
+            }
+            commands.push(*command);
+        }
+        if commands.len() <= MAX_COMMANDS {
+            out.commands = commands;
+        }
+        out
+    }
+    /// The stroke with each shaping point `i` moved by `offset` times
+    /// `weights[i]` (points past the weights stay).
+    pub(crate) fn displaced(&self, weights: &[f32], offset: [f32; 2]) -> Self {
+        let mut out = self.clone().fresh();
+        let [dx, dy] = offset;
+        if let Some(line) = &self.csp {
+            let mut line = (**line).clone();
+            for (p, w) in line.points.iter_mut().zip(weights) {
+                p.x += f64::from(dx * w);
+                p.y += f64::from(dy * w);
+            }
+            out.csp = Some(Arc::new(line));
+            return out;
+        }
+        let shaping = out.commands.iter_mut().filter_map(|c| match c {
+            Command::Sample { sample, .. } | Command::Seed { sample, .. } => Some(sample),
+            _ => None,
+        });
+        for (sample, w) in shaping.zip(weights) {
+            sample.x += dx * w;
+            sample.y += dy * w;
+        }
+        out
+    }
+}
+
 /// `points` averaged over `radius` along the path (triangle weights); the
 /// window narrows toward the ends, which stay put.
 fn smooth_path(points: &[[f64; 2]], radius: f64) -> Vec<[f64; 2]> {
@@ -2477,5 +2590,92 @@ mod tests {
         app.pointer_lasso = false;
         trace(&mut app, &around, none);
         assert!(app.picked_lines().is_empty());
+    }
+
+    #[test]
+    fn reshaping_bends_a_line_around_the_grab() {
+        let mut app = app();
+        app.brush.size = 4.0;
+        app.brush.taper_out = 0.0;
+        straight(&mut app, 32.0);
+        straight(&mut app, 56.0);
+        let before = layer(&app).pixels.clone();
+        app.select_tool(Tool::Pointer);
+        app.line_drag = crate::vector_pick::LineDrag::Reshape;
+        app.bend_reach = 20.0;
+        stroke_line(&mut app, [48.0, 32.0], [48.0, 44.0]);
+        consistent(&app);
+        assert_eq!(app.status, "Reshaped the line");
+        // The grabbed point follows; the line beyond the reach stays.
+        assert!(alpha(&app, 48, 44) > 0 && alpha(&app, 48, 32) == 0);
+        assert!(alpha(&app, 20, 32) > 0 && alpha(&app, 76, 32) > 0);
+        assert_eq!(alpha(&app, 20, 44), 0);
+        // The other line is untouched and the bent one is picked.
+        assert!(alpha(&app, 48, 56) > 0);
+        assert_eq!(app.picked_lines().len(), 1);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert!(Arc::ptr_eq(&app.picked_lines()[0], &strokes[0]));
+        let ends = strokes[0].control_points();
+        assert_eq!(ends[0][1], 32.0);
+        assert_eq!(ends.last().unwrap()[1], 32.0);
+        app.undo();
+        app.flush_render_queue();
+        assert!(same_pixels(&before, &layer(&app).pixels, 96 * 64));
+    }
+
+    #[test]
+    fn reshaping_bends_csp_lines_between_their_points() {
+        let mut app = csp_app();
+        // A straight line of two points: densified, its middle still bends.
+        let line = layer(&app).vector.as_ref().unwrap().strokes[0]
+            .csp
+            .clone()
+            .unwrap();
+        let two = crate::clip_vector::Stroke {
+            points: vec![line.points[0], *line.points.last().unwrap()],
+            ..(*line).clone()
+        };
+        let index = app.doc.active;
+        redraw_layer(
+            &mut app.doc,
+            index,
+            VectorLayer {
+                strokes: vec![Arc::new(Stroke::from_csp(two))],
+            },
+        )
+        .unwrap();
+        app.select_tool(Tool::Pointer);
+        app.line_drag = crate::vector_pick::LineDrag::Reshape;
+        app.bend_reach = 15.0;
+        stroke_line(&mut app, [48.0, 20.0], [48.0, 30.0]);
+        consistent(&app);
+        assert!(
+            alpha(&app, 48, 30) > 0 && alpha(&app, 48, 20) == 0,
+            "{}",
+            app.status
+        );
+        assert!(alpha(&app, 14, 20) > 0 && alpha(&app, 82, 20) > 0);
+        let stroke = &layer(&app).vector.as_ref().unwrap().strokes[0];
+        assert!(stroke.csp.as_ref().unwrap().points.len() > 20);
+    }
+
+    #[test]
+    fn densified_lines_draw_the_same() {
+        let mut app = app();
+        app.brush.scatter = 0.0;
+        stroke(&mut app, [8.0, 30.0], [88.0, 30.0]);
+        let original = layer(&app).vector.as_ref().unwrap().strokes[0].clone();
+        let dense = original.densified(1.0);
+        assert!(dense.commands.len() > original.commands.len());
+        let size = [96, 64];
+        let paths = [original.path(size), dense.path(size)];
+        // The stabilizer sees more samples, so allow a fraction of a pixel.
+        let far = paths[1].iter().map(|p| {
+            paths[0]
+                .iter()
+                .map(|q| (p[0] - q[0]).hypot(p[1] - q[1]))
+                .fold(f32::MAX, f32::min)
+        });
+        assert!(far.fold(0.0, f32::max) < 1.0);
     }
 }

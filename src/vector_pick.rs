@@ -35,6 +35,9 @@ struct Lasso {
     adds: bool,
 }
 
+/// Longest reach a reshape may have, in canvas pixels.
+const MAX_REACH: f32 = 2000.0;
+
 /// Lasso points kept at most.
 const MAX_LASSO: usize = 20_000;
 
@@ -52,6 +55,66 @@ fn inside(polygon: &[[f32; 2]], x: f32, y: f32) -> bool {
     odd
 }
 
+/// What a drag on a line does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum LineDrag {
+    /// Moves the picked lines.
+    #[default]
+    Move,
+    /// Bends the grabbed line around the grab, fading out over the reach.
+    Reshape,
+}
+
+/// The line being bent: its shaping points' weights.
+struct Bend {
+    index: usize,
+    /// The line with extra shaping points, so short reaches still bend it.
+    base: Arc<Stroke>,
+    weights: Vec<f32>,
+}
+
+/// How far apart the shaping points of a bent line may be, at most.
+const BEND_SPACING: f32 = 3.0;
+
+/// How much each of `points` follows a grab `reach` pixels wide at
+/// `at` (canvas pixels): 1 at the nearest point of the line, fading
+/// smoothly to 0 at `reach` along it.
+fn bend_weights(points: &[[f32; 2]], at: [f32; 2], reach: f32) -> Vec<f32> {
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let mut along = vec![0.0f32; points.len()];
+    for i in 1..points.len() {
+        let (a, b) = (points[i - 1], points[i]);
+        along[i] = along[i - 1] + (b[0] - a[0]).hypot(b[1] - a[1]);
+    }
+    // Where along the line the grab is: its nearest point on any segment.
+    let (mut grab, mut best) = (0.0, f32::MAX);
+    for i in 0..points.len() {
+        let a = points[i];
+        let b = points[(i + 1).min(points.len() - 1)];
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let length2 = dx * dx + dy * dy;
+        let t = if length2 > 0.0 {
+            (((at[0] - a[0]) * dx + (at[1] - a[1]) * dy) / length2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let d = (a[0] + dx * t - at[0]).hypot(a[1] + dy * t - at[1]);
+        if d < best {
+            (grab, best) = (along[i] + t * length2.sqrt(), d);
+        }
+    }
+    let reach = reach.max(1.0);
+    along
+        .iter()
+        .map(|s| {
+            let u = ((s - grab).abs() / reach).min(1.0);
+            (1.0 - u * u) * (1.0 - u * u)
+        })
+        .collect()
+}
+
 /// Picked lines being dragged: they move live, in one undo step.
 struct Drag {
     grab: [f32; 2],
@@ -63,6 +126,8 @@ struct Drag {
     drawn: Option<[usize; 4]>,
     applied: [f32; 2],
     checkpointed: bool,
+    /// Set when the drag bends one line instead of moving the pick.
+    bend: Option<Bend>,
 }
 
 fn union(a: Option<[usize; 4]>, b: Option<[usize; 4]>) -> Option<[usize; 4]> {
@@ -206,12 +271,16 @@ impl Dudel {
                     return true;
                 }
                 Some(_) => {}
-                None if shift => lines.push(hit),
-                None => *lines = vec![hit],
+                None if shift => lines.push(hit.clone()),
+                None => *lines = vec![hit.clone()],
             }
             if let Some(blocker) = self.line_edit_blocker(index) {
                 self.status = blocker.into();
                 return true;
+            }
+            if self.line_drag == LineDrag::Reshape {
+                // Only the grabbed line bends, and it becomes the pick.
+                self.vector_pick.lines = vec![hit.clone()];
             }
             let strokes = self.doc.layers[index]
                 .vector
@@ -230,6 +299,15 @@ impl Dudel {
                 .iter()
                 .map(|&i| strokes[i].bounds(size))
                 .fold(None, union);
+            let bend = (self.line_drag == LineDrag::Reshape).then(|| {
+                let base = Arc::new(strokes[moving[0]].densified(BEND_SPACING));
+                let weights = bend_weights(&base.control_points(), [at.x, at.y], self.bend_reach);
+                Bend {
+                    index: moving[0],
+                    base,
+                    weights,
+                }
+            });
             self.vector_pick.drag = Some(Drag {
                 grab: [at.x, at.y],
                 offset: [0.0; 2],
@@ -238,6 +316,7 @@ impl Dudel {
                 drawn,
                 applied: [0.0; 2],
                 checkpointed: false,
+                bend,
             });
             return true;
         }
@@ -288,7 +367,10 @@ impl Dudel {
         let mut lines = Vec::new();
         let mut drawn = None;
         for &i in &drag.moving {
-            let moved = Arc::new(drag.before[i].mapped(&|x, y| [x + dx, y + dy], size));
+            let moved = Arc::new(match &drag.bend {
+                Some(bend) if bend.index == i => bend.base.displaced(&bend.weights, [dx, dy]),
+                _ => drag.before[i].mapped(&|x, y| [x + dx, y + dy], size),
+            });
             drawn = union(drawn, moved.bounds(size));
             strokes[i] = moved.clone();
             lines.push(moved);
@@ -364,7 +446,11 @@ impl Dudel {
         {
             self.history.settle(&self.doc);
             let count = drag.moving.len();
-            self.status = format!("Moved {count} line{}", if count == 1 { "" } else { "s" });
+            self.status = if drag.bend.is_some() {
+                "Reshaped the line".into()
+            } else {
+                format!("Moved {count} line{}", if count == 1 { "" } else { "s" })
+            };
         }
     }
     /// Replace each picked line by `change` of it (`None` removes it), in
@@ -497,6 +583,20 @@ impl Dudel {
         for line in &picked {
             outline(line, 1.5, accent);
         }
+        if self.line_drag == LineDrag::Reshape
+            && self.vector_target().is_some()
+            && self.vector_pick.lasso.is_none()
+            && let Some(hover) = painter.ctx().input(|i| i.pointer.hover_pos())
+            && painter.clip_rect().contains(hover)
+        {
+            let radius = self.bend_reach * self.zoom;
+            painter.circle_stroke(
+                hover,
+                radius,
+                egui::Stroke::new(3.0_f32, Color32::from_black_alpha(70)),
+            );
+            painter.circle_stroke(hover, radius, egui::Stroke::new(1.0_f32, accent));
+        }
         if let Some(lasso) = &self.vector_pick.lasso {
             let mut points: Vec<Pos2> = lasso
                 .points
@@ -514,6 +614,28 @@ impl Dudel {
     /// The Pointer panel's controls for picked lines.
     pub(crate) fn picked_lines_ui(&mut self, ui: &mut egui::Ui) {
         if self.vector_target().is_some() {
+            ui.horizontal(|ui| {
+                ui.label("Drag a line to");
+                ui.selectable_value(&mut self.line_drag, LineDrag::Move, "Move")
+                    .on_hover_text("Dragging a picked line moves every picked line");
+                ui.selectable_value(&mut self.line_drag, LineDrag::Reshape, "Reshape")
+                    .on_hover_text(
+                        "Dragging a line bends it: the grabbed point follows the pointer and the line around it follows less the farther along it is",
+                    );
+            });
+            if self.line_drag == LineDrag::Reshape {
+                ui.horizontal(|ui| {
+                    ui.label("Reach");
+                    ui.add(
+                        egui::Slider::new(&mut self.bend_reach, 2.0..=MAX_REACH)
+                            .logarithmic(true)
+                            .suffix(" px"),
+                    )
+                    .on_hover_text(
+                        "How far along the line a reshape reaches (the circle at the pointer)",
+                    );
+                });
+            }
             ui.checkbox(&mut self.pointer_lasso, "Lasso lines from empty canvas")
                 .on_hover_text(
                     "Dragging empty canvas draws a lasso that picks the lines inside it (Shift adds). Off: it pans. Space or the middle button always pan.",
