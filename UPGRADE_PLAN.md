@@ -442,6 +442,11 @@ Stage B - native layer effects:
       the Layer Effects window (`Property::Fill`, same gesture as effects).
       Saved in projects and packages; PSD `iOpa` read and written natively,
       except the eight modes where Photoshop draws fill differently
+- [ ] Fill below 100% with inside effects (overlays, satin, inner glow or
+      shadow): they are drawn above the faded layer, so soft edges come out
+      too opaque and show some of the layer's color (owner, 2026-11-02).
+      Fix: draw the layer and its inside effects as one part (layer-space
+      colors, alpha a * (fill + U * (1 - fill))) and hide the owner
 - [x] Satin (2026-11-02): |blur(shape moved +offset) - blur(shape moved
       -offset)|, inverted by default, clipped inside; in the Add effect menu,
       read from and written to PSD (`ChFX`); contours other than linear are
