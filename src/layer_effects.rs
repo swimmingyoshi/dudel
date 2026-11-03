@@ -42,7 +42,7 @@ impl PatternPaint {
         }
     }
     /// The color at canvas pixel (`x`, `y`).
-    fn at(&self, x: usize, y: usize) -> [u8; 4] {
+    pub(crate) fn at(&self, x: usize, y: usize) -> [u8; 4] {
         self.pattern.sample(
             (x as f64 + 0.5 - self.phase[0]) / self.scale,
             (y as f64 + 0.5 - self.phase[1]) / self.scale,
@@ -2006,9 +2006,9 @@ fn descriptor(class: &str, items: Vec<(&str, Value)>) -> Descriptor {
 
 /// One enabled effect. `Ok(None)` for keys that are not effects; `Err`
 /// names an effect that cannot be drawn.
-/// A pattern effect's paint: the file's pattern it names, with its scale
-/// and phase.
-fn pattern_paint(
+/// A pattern effect's (or pattern fill layer's) paint: the file's pattern
+/// it names, with its scale and phase.
+pub(crate) fn pattern_paint(
     effect: &Descriptor,
     patterns: &[crate::pattern::Pattern],
 ) -> Result<PatternPaint, String> {

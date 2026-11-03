@@ -524,10 +524,19 @@ Stage B - native layer effects:
 - [x] Masks (2026-10-29): user and vector mask density and feather, and the
       separate "real" user mask (channel -3) when a vector mask exists; PSD
       notes grouped by kind with layer names. psd-tools 181 -> 193/279
-- [ ] Remaining PSD fallbacks by count: CMYK (15), 32-bit channels (10;
-      earlier notes called these canvases over 4096), knockout `knko` (9),
-      artboards (6), unsupported mask flags (3), stroke widths (3); `.psb`
-      (large document format) is not read at all
+- [x] PSD fallbacks (2026-11-02): 32-bit files (Lr32, float prediction,
+      linear samples and setting colors to sRGB, Mt32 merged transparency),
+      Lab, indexed, bitmap, duotone and multichannel modes, CMYK and Lab
+      setting colors, artboards (folder mask + background layer), pattern
+      fill layers; gradient ramps now span edge to edge along their angle
+      (20 public files closer to Photoshop, 2 within 0.1). Public sets: ag-psd
+      83/89, psd-tools 273/316 open without falling back (PSD and PSB)
+- [ ] Remaining PSD fallbacks: knockout `knko` (9), CMYK adjustment layers
+      (8; would need adjustments applied in CMYK), noise gradients (4), mask
+      flags (3), stroke widths (4), dashed strokes (3), `lmgm`/`clbl`/`brst`/
+      Blend If; 32-bit layers blend in sRGB where Photoshop uses linear light;
+      a reflected gradient on the 4x4 psd-tools files still differs; pattern
+      fill phase is off by a pixel on some tiles of psd-tools patterns.psd
 
 ## Before pushing (next candidate)
 

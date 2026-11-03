@@ -1661,7 +1661,7 @@ fn descriptor_rgb(color: &crate::psd_vector::Descriptor) -> Option<[f32; 3]> {
     let v = |key| color.number(key).map(|v| v.clamp(0.0, 255.0) as f32);
     Some([v("Rd  ")?, v("Grn ")?, v("Bl  ")?])
 }
-fn lab_d50_to_srgb([l, a, b]: [f32; 3]) -> [f32; 3] {
+pub(crate) fn lab_d50_to_srgb([l, a, b]: [f32; 3]) -> [f32; 3] {
     let fy = (l + 16.0) / 116.0;
     let f = |t: f32| {
         if t > 6.0 / 29.0 {

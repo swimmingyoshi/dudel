@@ -180,6 +180,19 @@ fn decode(
                     previous = previous.wrapping_add(u16::from_be_bytes([sample[0], sample[1]]));
                     sample.copy_from_slice(&previous.to_be_bytes());
                 }
+            } else if depth == 32 {
+                // Float rows store each sample's first bytes, then second
+                // bytes and so on, predicted as one run of bytes.
+                for x in 1..row.len() {
+                    row[x] = row[x].wrapping_add(row[x - 1]);
+                }
+                let w = row.len() / 4;
+                let planar = row.to_vec();
+                for (i, sample) in row.chunks_exact_mut(4).enumerate() {
+                    for (b, byte) in sample.iter_mut().enumerate() {
+                        *byte = planar[b * w + i];
+                    }
+                }
             } else {
                 for x in 1..row.len() {
                     row[x] = row[x].wrapping_add(row[x - 1]);
@@ -196,19 +209,29 @@ pub(crate) fn decode_plane(data: &[u8], width: usize, height: usize) -> Result<V
     decode(data, width, height, 1, 8, false, &|| false)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum ColorMode {
+    /// Also bitmap (1-bit, expanded to black and white) and duotone (shown
+    /// by its gray channel; the inks are not applied).
     Gray,
     Rgb,
     /// Cyan, magenta, yellow, black, stored inverted (255 is no ink).
     Cmyk,
+    /// Lightness and a, b, each in 0..=255 (a and b centered on 128).
+    Lab,
+    /// One channel of palette indices.
+    Indexed,
+    /// Up to four ink channels, inverted like CMYK and shown as cyan,
+    /// magenta, yellow and black inks.
+    Multichannel(usize),
 }
 impl ColorMode {
     fn channels(self) -> usize {
         match self {
-            Self::Gray => 1,
-            Self::Rgb => 3,
+            Self::Gray | Self::Indexed => 1,
+            Self::Rgb | Self::Lab => 3,
             Self::Cmyk => 4,
+            Self::Multichannel(n) => n,
         }
     }
 }
@@ -219,6 +242,10 @@ impl ColorMode {
 struct Colors {
     mode: ColorMode,
     cmyk: Option<std::sync::Arc<moxcms::Transform8BitExecutor>>,
+    /// An indexed file's colors, from its color mode data.
+    palette: Vec<[u8; 3]>,
+    /// The palette entry an indexed file shows as transparent.
+    transparent: Option<u8>,
 }
 impl Colors {
     fn new(mode: ColorMode, icc: Option<&[u8]>) -> Self {
@@ -236,7 +263,12 @@ impl Colors {
                     )
                     .ok()
             });
-        Self { mode, cmyk }
+        Self {
+            mode,
+            cmyk,
+            palette: Vec::new(),
+            transparent: None,
+        }
     }
     /// RGB of `count` pixels whose channel `c` holds `sample(c, i)`.
     fn rgb(
@@ -249,6 +281,22 @@ impl Colors {
         match self.mode {
             ColorMode::Gray => out.extend((0..count).map(|i| [sample(0, i); 3])),
             ColorMode::Rgb => out.extend((0..count).map(|i| [0, 1, 2].map(|c| sample(c, i)))),
+            ColorMode::Lab => out.extend((0..count).map(|i| {
+                let [l, a, b] = [0, 1, 2].map(|c| f32::from(sample(c, i)));
+                crate::adjustment::lab_d50_to_srgb([l * 100.0 / 255.0, a - 128.0, b - 128.0])
+                    .map(|v| v.round().clamp(0.0, 255.0) as u8)
+            })),
+            ColorMode::Indexed => out.extend((0..count).map(|i| {
+                self.palette
+                    .get(usize::from(sample(0, i)))
+                    .copied()
+                    .unwrap_or([0; 3])
+            })),
+            ColorMode::Multichannel(n) => out.extend((0..count).map(|i| {
+                let paper = |c: usize| if c < n { u32::from(sample(c, i)) } else { 255 };
+                let k = paper(3);
+                [0, 1, 2].map(|c| ((paper(c) * k + 127) / 255) as u8)
+            })),
             ColorMode::Cmyk => {
                 const CHUNK: usize = 1 << 16;
                 let mut ink = vec![0u8; CHUNK * 4];
@@ -361,6 +409,7 @@ struct MaskInfo {
 enum Fill {
     Solid([u8; 3]),
     Gradient(crate::psd_vector::Gradient),
+    Pattern(crate::layer_effects::PatternPaint),
 }
 struct Record {
     layer: Layer,
@@ -387,6 +436,52 @@ struct Record {
     above: Vec<Layer>,
     /// Left out of the import (named in the notes).
     dropped: bool,
+    /// An artboard folder: the area it shows, and its background color
+    /// (none when transparent).
+    artboard: Option<Artboard>,
+}
+
+#[derive(Clone, Copy)]
+struct Artboard {
+    rect: [usize; 4],
+    background: Option<[u8; 3]>,
+}
+impl Artboard {
+    /// `artb` (or the older `artd`/`abdd`) settings, clamped to the canvas.
+    fn read(
+        settings: &crate::psd_vector::Descriptor,
+        width: usize,
+        height: usize,
+    ) -> Result<Self, String> {
+        let bounds = settings
+            .object("artboardRect")
+            .ok_or("PSD artboard has no bounds")?;
+        let side = |key: &str, limit: usize| {
+            bounds
+                .number(key)
+                .filter(|v| v.is_finite())
+                .map(|v| v.round().clamp(0.0, limit as f64) as usize)
+                .ok_or_else(|| "PSD artboard bounds are damaged".to_string())
+        };
+        let rect = [
+            side("Left", width)?,
+            side("Top ", height)?,
+            side("Rght", width)?,
+            side("Btom", height)?,
+        ];
+        // 1 white (Photoshop's default), 2 black, 3 transparent, 4 a color.
+        let background = match settings.number("artboardBackgroundType").map(|v| v as i64) {
+            Some(2) => Some([0; 3]),
+            Some(3) => None,
+            Some(4) => Some(crate::psd_vector::color(
+                settings
+                    .object("Clr ")
+                    .ok_or("PSD artboard color is missing")?,
+            )?),
+            _ => Some([255; 3]),
+        };
+        Ok(Self { rect, background })
+    }
 }
 
 /// Whether Photoshop's fill opacity acts differently from opacity in this
@@ -768,6 +863,7 @@ fn layers(
         let mut vector = None;
         let mut stroke = None;
         let mut filled = true;
+        let mut artboard = None;
         // Effects in the newest form present: lmfx, then lfx2, then lfxs.
         let mut effects: [Option<crate::layer_effects::Effects>; 3] = Default::default();
         let mut legacy_effects = false;
@@ -792,11 +888,18 @@ fn layers(
                         &crate::psd_vector::versioned(value.0)?,
                     )?));
                 }
+                b"PtFl" => {
+                    solid = Some(Fill::Pattern(pattern_fill(
+                        &crate::psd_vector::versioned(value.0)?,
+                        patterns,
+                    )?));
+                }
                 b"vscg" => {
                     let (fill, settings) = crate::psd_vector::keyed(value.0)?;
                     solid = Some(match fill.as_str() {
                         "SoCo" => Fill::Solid(crate::psd_vector::solid_fill(&settings)?),
                         "GdFl" => Fill::Gradient(crate::psd_vector::gradient(&settings)?),
+                        "PtFl" => Fill::Pattern(pattern_fill(&settings, patterns)?),
                         _ => {
                             return Err(format!("PSD shape fill {fill} needs the saved composite"));
                         }
@@ -864,6 +967,14 @@ fn layers(
                 b"lrFX" => legacy_effects = true,
                 b"infx" | b"knko" if value.u8()? == 0 => {}
                 b"lyid" | b"lclr" | b"lnsr" | b"shmd" | b"fxrp" | b"lyvr" => {}
+                // Artboards become folders clipped to their area.
+                b"artb" | b"artd" | b"abdd" => {
+                    artboard = Some(Artboard::read(
+                        &crate::psd_vector::versioned(value.0)?,
+                        width,
+                        height,
+                    )?);
+                }
                 // Brightness/contrast from CS3 on; `brit` holds legacy values.
                 b"CgEd" => {
                     adjustment = Some(crate::adjustment::brightness_contrast_descriptor(
@@ -1000,6 +1111,7 @@ fn layers(
             inside: Vec::new(),
             above: Vec::new(),
             dropped,
+            artboard,
         });
     }
     notes.extend(grouped.lines());
@@ -1036,7 +1148,9 @@ fn layers(
                 .filter(|b| *b <= crate::document::MAX_PAYLOAD)
                 .ok_or("PSD layer payload exceeds memory budget")?;
             let plane = decode(data, cw, ch, 1, depth, big, cancel)?;
-            planes.insert(id, if depth == 16 { to_8_bit(&plane) } else { plane });
+            // Color channels of 32-bit files are linear light; transparency
+            // and masks are plain fractions.
+            planes.insert(id, to_8_bit(&plane, depth, id >= 0));
         }
         if let Some(fill) = &record.solid {
             // A gradient spans the shape's path, else the layer's own bounds.
@@ -1054,6 +1168,13 @@ fn layers(
                     Box::new(move |_, _| [c[0], c[1], c[2], 255])
                 }
                 Fill::Gradient(g) => Box::new(g.painter(layer_box, [width, height])),
+                // Fill layers start their pattern at the layer's corner.
+                Fill::Pattern(p) => {
+                    let mut p = p.clone();
+                    p.phase[0] += layer_box[0];
+                    p.phase[1] += layer_box[1];
+                    Box::new(move |x, y| p.at(x, y))
+                }
             };
             let fill = draw_shape(
                 &mut record.layer,
@@ -1226,6 +1347,17 @@ fn layers(
         }
         if record.group != 0 {
             let start = starts.pop().ok_or("PSD group nesting exceeds limits")?;
+            if let Some(artboard) = record.artboard {
+                add_artboard(
+                    &mut record.layer,
+                    artboard,
+                    depth,
+                    start,
+                    &mut result,
+                    width,
+                    height,
+                )?;
+            }
             let native = record
                 .effects
                 .editable()
@@ -1295,6 +1427,61 @@ fn layers(
     doc.validate()?;
     Ok((doc, order, (notes, details)))
 }
+/// A pattern fill layer's paint, from the file's patterns.
+fn pattern_fill(
+    settings: &crate::psd_vector::Descriptor,
+    patterns: &[crate::pattern::Pattern],
+) -> Result<crate::layer_effects::PatternPaint, String> {
+    crate::layer_effects::pattern_paint(settings, patterns)
+        .map_err(|e| format!("PSD pattern fill: {e}"))
+}
+/// An artboard as Photoshop draws it: a mask on its folder showing only its
+/// area, and its background color filling that area under its contents
+/// (which start at `start` in `result`).
+fn add_artboard(
+    folder: &mut Layer,
+    artboard: Artboard,
+    depth: u8,
+    start: usize,
+    result: &mut Vec<Layer>,
+    width: usize,
+    height: usize,
+) -> Result<(), String> {
+    let [left, top, right, bottom] = artboard.rect;
+    let inside = |x: usize, y: usize| (left..right).contains(&x) && (top..bottom).contains(&y);
+    let coverage: Vec<u8> = (0..width * height)
+        .map(|i| {
+            let shown = inside(i % width, i / width);
+            // A mask the folder already has still applies inside.
+            let own = folder
+                .mask
+                .as_ref()
+                .filter(|m| m.enabled)
+                .map_or(255, |m| m.coverage.at(i % width, i / width));
+            if shown { own } else { 0 }
+        })
+        .collect();
+    folder.mask = Some(crate::layer_mask::LayerMask {
+        id: crate::document::LayerId::new(),
+        enabled: true,
+        linked: true,
+        coverage: crate::layer_mask::Mask::from_coverage(width, height, &coverage, None)?,
+    });
+    if let Some([r, g, b]) = artboard.background {
+        let mut background = Layer::raster(format!("{} background", folder.name), width, height);
+        background.depth = depth + 1;
+        let mut writer = background.pixels.writer();
+        for y in top..bottom {
+            for x in left..right {
+                writer
+                    .rgba_mut(y * width + x)
+                    .copy_from_slice(&[r, g, b, 255]);
+            }
+        }
+        result.insert(start, background);
+    }
+    Ok(())
+}
 /// Whether reversing a flat stack matches the saved image better, judged on
 /// a grid of sample pixels.
 fn reversed_matches_better(doc: &Document, saved: &[u8]) -> bool {
@@ -1336,14 +1523,25 @@ fn saved_image(
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<u8>, String> {
     let mode = colors.mode;
-    let raw = decode(data, width, height, channels, depth, big, cancel)?;
+    // Bitmap rows pack eight pixels a byte, a set bit being black.
+    let row_bytes = width.div_ceil(8);
+    let raw = if depth == 1 {
+        decode(data, row_bytes, height, channels, 8, big, cancel)?
+    } else {
+        decode(data, width, height, channels, depth, big, cancel)?
+    };
     let samples = width * height;
     let value = |c: usize, i: usize| {
+        if depth == 1 {
+            let (x, y) = (i % width, i / width);
+            let byte = raw[(c * height + y) * row_bytes + x / 8];
+            return if byte >> (7 - x % 8) & 1 == 1 { 0 } else { 255 };
+        }
         let at = (c * samples + i) * usize::from(depth / 8);
-        if depth == 8 {
-            raw[at]
-        } else {
-            sample_8_bit([raw[at], raw[at + 1]])
+        match depth {
+            8 => raw[at],
+            16 => sample_8_bit([raw[at], raw[at + 1]]),
+            _ => float_8_bit(raw[at..at + 4].try_into().unwrap(), c < mode.channels()),
         }
     };
     let rgb = colors.rgb(samples, value, cancel)?;
@@ -1359,6 +1557,8 @@ fn saved_image(
             blue,
             if has_alpha && channels > mode.channels() {
                 value(mode.channels(), i)
+            } else if colors.transparent == Some(value(0, i)) && mode == ColorMode::Indexed {
+                0
             } else {
                 255
             },
@@ -1425,17 +1625,51 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
 fn sample_8_bit(sample: [u8; 2]) -> u8 {
     ((u32::from(u16::from_be_bytes(sample)) + 128) / 257) as u8
 }
-fn to_8_bit(samples: &[u8]) -> Vec<u8> {
-    samples
-        .chunks_exact(2)
-        .map(|sample| sample_8_bit([sample[0], sample[1]]))
-        .collect()
+/// A big-endian 32-bit float sample (0..=1) as 8 bits. Photoshop's 32-bit
+/// colors are linear light, so color is encoded as sRGB; transparency is not.
+fn float_8_bit(sample: [u8; 4], color: bool) -> u8 {
+    let mut v = f32::from_be_bytes(sample);
+    if !v.is_finite() {
+        v = 0.0;
+    }
+    let v = v.clamp(0.0, 1.0);
+    let v = if !color {
+        v
+    } else if v <= 0.003_130_8 {
+        v * 12.92
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
+    (v * 255.0).round() as u8
+}
+/// A channel's samples at `depth` bits as 8 bits; `color` says whether
+/// 32-bit samples are linear color rather than transparency.
+fn to_8_bit(samples: &[u8], depth: u16, color: bool) -> Vec<u8> {
+    match depth {
+        16 => samples
+            .chunks_exact(2)
+            .map(|sample| sample_8_bit([sample[0], sample[1]]))
+            .collect(),
+        32 => samples
+            .chunks_exact(4)
+            .map(|sample| float_8_bit(sample.try_into().unwrap(), color))
+            .collect(),
+        _ => samples.to_vec(),
+    }
+}
+fn high_depth_detail(depth: u16) -> String {
+    if depth == 32 {
+        "Converted 32-bit (HDR) channels to Dudel's 8-bit channels: colors brighter than white are clipped.".into()
+    } else {
+        "Converted 16-bit channels to Dudel's 8-bit channels.".into()
+    }
 }
 fn parse(data: &[u8], cancel: &impl Fn() -> bool) -> Result<Imported, String> {
     parse_mode(data, cancel, true)
 }
-/// High-depth Photoshop files put their layer list in Lr16, leaving the
-/// ordinary list empty. Its signed count still controls merged transparency.
+/// High-depth Photoshop files put their layer list in Lr16 or Lr32, leaving
+/// the ordinary list empty. Its signed count still controls merged
+/// transparency.
 fn layer_count(data: &[u8], depth: u16, big: bool) -> Result<i16, String> {
     if data.is_empty() {
         return Ok(0);
@@ -1450,12 +1684,17 @@ fn layer_count(data: &[u8], depth: u16, big: bool) -> Result<i16, String> {
         primary.u16()? as i16
     })
 }
-/// The Lr16 layer list of a 16-bit file: the same layout as the ordinary
-/// layer list, with 16-bit channel samples.
+/// The Lr16 or Lr32 layer list of a 16- or 32-bit file: the same layout as
+/// the ordinary layer list, with wider channel samples.
 fn high_depth_layers(data: &[u8], depth: u16, big: bool) -> Result<Option<Reader<'_>>, String> {
     let mut reader = Reader(data);
     reader.section_wide(big)?;
-    if depth != 16 || reader.0.is_empty() {
+    let wanted: &[u8] = match depth {
+        16 => b"Lr16",
+        32 => b"Lr32",
+        _ => return Ok(None),
+    };
+    if reader.0.is_empty() {
         return Ok(None);
     }
     // Some writers omit the global mask field entirely.
@@ -1474,15 +1713,15 @@ fn high_depth_layers(data: &[u8], depth: u16, big: bool) -> Result<Option<Reader
         let value = reader.section_wide(wide_key(big, key))?;
         let padding = (4 - value.0.len() % 4) % 4;
         reader.take(padding)?;
-        if key == b"Lr16" {
+        if key == wanted {
             return Ok(Some(value));
         }
     }
     Ok(None)
 }
-/// The patterns in the document-wide blocks after the layer records, which
-/// pattern effects name by id. Blocks that cannot be read give none.
-fn global_patterns(data: &[u8], big: bool) -> Vec<crate::pattern::Pattern> {
+/// The document-wide tagged blocks after the layer records, as far as they
+/// can be read.
+fn global_blocks(data: &[u8], big: bool) -> Vec<(&[u8], &[u8])> {
     let mut reader = Reader(data);
     if reader.section_wide(big).is_err() {
         return Vec::new();
@@ -1491,7 +1730,7 @@ fn global_patterns(data: &[u8], big: bool) -> Vec<crate::pattern::Pattern> {
     {
         return Vec::new();
     }
-    let mut patterns = Vec::new();
+    let mut blocks = Vec::new();
     while reader.0.len() >= 12 {
         let (Ok(signature), Ok(key)) = (reader.take(4), reader.take(4)) else {
             break;
@@ -1502,14 +1741,21 @@ fn global_patterns(data: &[u8], big: bool) -> Vec<crate::pattern::Pattern> {
         let Ok(value) = reader.section_wide(wide_key(big, key)) else {
             break;
         };
-        if matches!(key, b"Patt" | b"Pat2" | b"Pat3") {
-            patterns.extend(crate::pattern::read_psd(value.0));
-        }
+        blocks.push((key, value.0));
         if reader.take((4 - value.0.len() % 4) % 4).is_err() {
             break;
         }
     }
-    patterns
+    blocks
+}
+/// The patterns in the document-wide blocks, which pattern effects name by
+/// id. Blocks that cannot be read give none.
+fn global_patterns(data: &[u8], big: bool) -> Vec<crate::pattern::Pattern> {
+    global_blocks(data, big)
+        .into_iter()
+        .filter(|(key, _)| matches!(*key, b"Patt" | b"Pat2" | b"Pat3"))
+        .flat_map(|(_, value)| crate::pattern::read_psd(value))
+        .collect()
 }
 fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<Imported, String> {
     check(cancel)?;
@@ -1531,23 +1777,25 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let height = reader.u32()? as usize;
     let width = reader.u32()? as usize;
     let depth = reader.u16()?;
-    let mode = match reader.u16()? {
-        1 => ColorMode::Gray,
+    let mode_code = reader.u16()?;
+    let mode = match mode_code {
+        0 | 1 | 8 => ColorMode::Gray,
+        2 => ColorMode::Indexed,
         3 => ColorMode::Rgb,
         4 => ColorMode::Cmyk,
-        other => {
-            return Err(format!(
-                "Unsupported PSD color mode {other}; RGB and grayscale are supported"
-            ));
-        }
+        7 => ColorMode::Multichannel(channels.clamp(1, 4)),
+        9 => ColorMode::Lab,
+        other => return Err(format!("Unsupported PSD color mode {other}")),
     };
-    if width == 0
-        || height == 0
-        || !(mode.channels()..=56).contains(&channels)
-        || ![8, 16].contains(&depth)
-    {
+    // Bitmap files are 1-bit; indexed ones 8-bit.
+    let depth_ok = match mode_code {
+        0 => depth == 1,
+        2 => depth == 8,
+        _ => [8, 16, 32].contains(&depth),
+    };
+    if width == 0 || height == 0 || !(mode.channels()..=56).contains(&channels) || !depth_ok {
         return Err(
-            "PSD import supports RGB/grayscale 8/16-bit canvases with valid channel counts".into(),
+            "PSD import supports 8, 16 and 32-bit canvases with valid channel counts".into(),
         );
     }
     if width > crate::document::MAX_SIDE
@@ -1559,13 +1807,14 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             crate::document::SIZE_LIMIT
         ));
     }
-    reader.section()?;
+    let mode_data = reader.section()?;
     let mut resources = reader.section()?;
     let mut has_composite = true;
     let mut resolution = None;
     let mut profile: Option<&[u8]> = None;
     // Photoshop's default light angle, for files without one.
     let mut global_angle = 120.0;
+    let mut transparent = None;
     while !resources.0.is_empty() {
         if resources.take(4)? != b"8BIM" {
             return Err("Invalid PSD resource signature".into());
@@ -1595,13 +1844,20 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         } else if id == 1037 && data.0.len() >= 4 {
             let mut angle = data;
             global_angle = f64::from(angle.u32()? as i32);
+        } else if id == 1047 && data.0.len() >= 2 {
+            // Indexed color: the palette entry shown as transparent.
+            transparent = u8::try_from(u16::from_be_bytes([data.0[0], data.0[1]])).ok();
         }
     }
     let layer_data = reader.section_wide(big)?;
     // A negative layer count marks the first extra channel as the merged
     // image's transparency.
     let count = layer_count(layer_data.0, depth, big)?;
-    let has_alpha = count < 0;
+    // High-depth files can mark it with a block instead of the sign.
+    let has_alpha = count < 0
+        || global_blocks(layer_data.0, big)
+            .iter()
+            .any(|(key, _)| matches!(*key, b"Mtrn" | b"Mt16" | b"Mt32"));
     let (mut notes, mut details) = (Vec::new(), Vec::new());
     let dpi = match resolution {
         Some((x, y))
@@ -1625,7 +1881,26 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
         details
             .push("Expanded grayscale samples to equal RGB channels for editing in Dudel.".into());
     }
-    let colors = Colors::new(mode, profile);
+    let mut colors = Colors::new(mode, profile);
+    colors.transparent = transparent;
+    if mode == ColorMode::Indexed {
+        // 256 reds, then greens, then blues.
+        let table = mode_data.0;
+        if table.len() < 768 {
+            return Err("Indexed PSD has no color table".into());
+        }
+        colors.palette = (0..256)
+            .map(|i| [table[i], table[256 + i], table[512 + i]])
+            .collect();
+    }
+    match mode_code {
+        0 => details.push("Expanded the 1-bit bitmap to black and white.".into()),
+        2 => details.push("Converted indexed colors through the file's color table.".into()),
+        7 => notes.push("Multichannel inks are shown as cyan, magenta, yellow and black, so spot colors are approximate.".into()),
+        8 => notes.push("This duotone file is shown by its gray channel; its inks are not applied.".into()),
+        9 => details.push("Converted Lab colors to sRGB.".into()),
+        _ => {}
+    }
     if matches!(mode, ColorMode::Cmyk) {
         if colors.cmyk.is_some() {
             details.push(
@@ -1667,6 +1942,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             }
             None => std::borrow::Cow::Borrowed(layer_data.0),
         };
+        // 32-bit files store setting colors as linear light too.
+        let _linear = crate::psd_vector::LinearColors::new(depth == 32);
         match layers(
             &list,
             width,
@@ -1681,8 +1958,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             Ok((mut document, order, (layer_notes, layer_details))) => {
                 document.dpi = dpi;
                 details.push("Imported editable raster layers, supported groups, masks and blend modes. Rendering uses Dudel's compositor.".into());
-                if depth == 16 {
-                    details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
+                if depth > 8 {
+                    details.push(high_depth_detail(depth));
                 }
                 notes.extend(layer_notes);
                 details.extend(layer_details);
@@ -1725,8 +2002,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
             .iter()
             .find_map(|n| n.split_once("unavailable: ").map(|(_, why)| why.to_owned()))
             .unwrap_or_else(|| {
-                if depth == 16 {
-                    "16-bit layers are not imported yet".into()
+                if depth > 8 {
+                    format!("{depth}-bit layers are not imported yet")
                 } else {
                     "no editable layers were read".into()
                 }
@@ -1738,8 +2015,8 @@ fn parse_mode(data: &[u8], cancel: &impl Fn() -> bool, layered: bool) -> Result<
     let pixels = saved_image(
         reader.0, width, height, channels, depth, &colors, has_alpha, big, cancel,
     )?;
-    if depth == 16 {
-        details.push("Converted 16-bit channels to Dudel's 8-bit channels.".into());
+    if depth > 8 {
+        details.push(high_depth_detail(depth));
     }
     let mut document = Document::new(width, height);
     document.dpi = dpi;
@@ -1766,6 +2043,148 @@ mod tests {
         let mut out = (bytes.len() as u32).to_be_bytes().to_vec();
         out.extend(bytes);
         out
+    }
+    /// A one-row file header: channels, width, bit depth and color mode.
+    fn header(channels: u16, width: u32, depth: u16, mode: u16) -> Vec<u8> {
+        let mut b = b"8BPS       ".to_vec();
+        b.extend(channels.to_be_bytes());
+        b.extend(1u32.to_be_bytes());
+        b.extend(width.to_be_bytes());
+        b.extend(depth.to_be_bytes());
+        b.extend(mode.to_be_bytes());
+        b
+    }
+    fn pixels(file: &[u8]) -> Vec<u8> {
+        parse(file, &|| false)
+            .unwrap()
+            .document
+            .composite_transparent()
+    }
+
+    #[test]
+    fn bitmap_indexed_and_32_bit_files_open() {
+        // Bitmap: eight pixels a byte, set bits black.
+        let mut bitmap = header(1, 4, 1, 0);
+        bitmap.extend([0; 12]);
+        bitmap.extend([0, 0, 0b1010_0000]);
+        let black = [0, 0, 0, 255];
+        let white = [255, 255, 255, 255];
+        assert_eq!(pixels(&bitmap), [black, white, black, white].concat());
+        // Indexed: a color table, and entry 1 shown as transparent.
+        let mut indexed = header(1, 2, 8, 2);
+        let mut table = vec![0u8; 768];
+        table[0] = 255; // entry 0 red
+        table[512 + 1] = 255; // entry 1 blue
+        indexed.extend(section(&table));
+        let mut resource = b"8BIM".to_vec();
+        resource.extend(1047u16.to_be_bytes());
+        resource.extend([0, 0]);
+        resource.extend(section(&[0, 1]));
+        indexed.extend(section(&resource));
+        indexed.extend([0; 4]);
+        indexed.extend([0, 0, 0, 1]);
+        assert_eq!(pixels(&indexed), [255, 0, 0, 255, 0, 0, 0, 0]);
+        // 32-bit: linear floats, encoded as sRGB.
+        let mut float = header(3, 1, 32, 3);
+        float.extend([0; 12]);
+        float.extend([0, 0]);
+        for v in [1.0f32, 0.5, 0.0] {
+            float.extend(v.to_be_bytes());
+        }
+        let rgba = pixels(&float);
+        assert_eq!((rgba[0], rgba[2], rgba[3]), (255, 0, 255));
+        assert!((187..=188).contains(&rgba[1]), "{rgba:?}");
+    }
+
+    #[test]
+    fn float_rows_with_prediction_are_unshuffled() {
+        // Samples 1.0 and 0.5, bytes split into planes, then delta coded.
+        let planar: [u8; 8] = [0x3F, 0x3F, 0x80, 0x00, 0, 0, 0, 0];
+        let mut delta = planar;
+        for i in (1..delta.len()).rev() {
+            delta[i] = delta[i].wrapping_sub(delta[i - 1]);
+        }
+        let mut zip = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut zip, &delta).unwrap();
+        let mut data = 3u16.to_be_bytes().to_vec();
+        data.extend(zip.finish().unwrap());
+        let out = decode(&data, 2, 1, 1, 32, false, &|| false).unwrap();
+        assert_eq!(out, [1.0f32.to_be_bytes(), 0.5f32.to_be_bytes()].concat());
+    }
+
+    #[test]
+    fn artboards_clip_to_their_area_over_their_background() {
+        let (width, height) = (4, 2);
+        let mut child = Layer::raster("Art".into(), width, height);
+        child.depth = 1;
+        {
+            let mut writer = child.pixels.writer();
+            for i in 0..width * height {
+                writer.rgba_mut(i).copy_from_slice(&[0, 0, 0, 128]);
+            }
+        }
+        let mut result = vec![child];
+        let mut folder = Layer::new_folder("Board".into());
+        let artboard = Artboard {
+            rect: [1, 0, 3, 2],
+            background: Some([255, 255, 255]),
+        };
+        add_artboard(&mut folder, artboard, 0, 0, &mut result, width, height).unwrap();
+        assert_eq!(result[0].name, "Board background");
+        result.push(folder);
+        let mut doc = Document::new(width, height);
+        doc.layers = result;
+        doc.version = 2;
+        doc.validate().unwrap();
+        let rgba = doc.composite_transparent();
+        // Outside the board nothing shows; inside, the art over white.
+        assert_eq!(&rgba[..4], &[0, 0, 0, 0]);
+        assert_eq!(rgba[7], 255);
+        assert!((126..=128).contains(&rgba[4]), "{rgba:?}");
+    }
+
+    #[test]
+    fn setting_colors_in_cmyk_lab_and_linear_light() {
+        use crate::psd_vector::{Descriptor, Value, color};
+        let object = |class: &str, items: &[(&str, f64)]| Descriptor {
+            class: class.into(),
+            items: items
+                .iter()
+                .map(|(k, v)| (k.to_string(), Value::Number(*v)))
+                .collect(),
+        };
+        let cyan = object(
+            "CMYC",
+            &[("Cyn ", 100.0), ("Mgnt", 0.0), ("Ylw ", 0.0), ("Blck", 0.0)],
+        );
+        assert_eq!(color(&cyan).unwrap(), [0, 255, 255]);
+        let white = object("LbCl", &[("Lmnc", 100.0), ("A   ", 0.0), ("B   ", 0.0)]);
+        assert!(color(&white).unwrap().iter().all(|v| *v >= 254));
+        let half = object("RGBC", &[("Rd  ", 127.5), ("Grn ", 0.0), ("Bl  ", 255.0)]);
+        assert_eq!(color(&half).unwrap(), [128, 0, 255]);
+        {
+            let _linear = crate::psd_vector::LinearColors::new(true);
+            let [r, g, b] = color(&half).unwrap();
+            assert!((187..=188).contains(&r) && g == 0 && b == 255);
+        }
+        assert_eq!(color(&half).unwrap(), [128, 0, 255], "restored");
+    }
+
+    #[test]
+    fn gradients_span_the_box_along_their_angle() {
+        let Some(crate::layer_effects::Paint::Gradient(mut gradient)) =
+            crate::layer_effects::Effect::preset("Gradient Overlay").map(|e| e.paint)
+        else {
+            panic!()
+        };
+        gradient.set_color_stops(&[(0.0, [0; 3]), (1.0, [255; 3])]);
+        gradient.set_opacity_stops(&[(0.0, 1.0), (1.0, 1.0)]);
+        gradient.set_angle(45.0);
+        let paint = gradient.painter([0.0, 0.0, 10.0, 10.0], [10, 10]);
+        // Through the center at 45 degrees the box is 10 / cos 45 across,
+        // so the top-right pixel center sits at 0.95 of the ramp.
+        let value = paint(9, 0)[0];
+        assert!((241..=243).contains(&value), "{value}");
     }
     /// One 1 × 1 layer record at `left`, or a group record (`section` 1 = open
     /// folder, 3 = end divider) without pixels.
@@ -1806,6 +2225,7 @@ mod tests {
                 (None, true, ColorMode::Cmyk) => {
                     &[(0, 0), (1, 1), (2, 2), (3, 5), (-1, 3), (-2, 4)]
                 }
+                (None, _, _) => unimplemented!("fixtures are gray, RGB or CMYK"),
             };
             records.extend((channels.len() as u16).to_be_bytes());
             for &(id, index) in channels {

@@ -12,7 +12,7 @@ This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISI
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
-| Photoshop `.psd` | RGB/grayscale 8/16-bit PSD v1 | 8-bit RGB layered export | Import: 8- and 16-bit layers, groups, masks, vector shapes, gradient fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, layer effects (editable styles, or drawn as layers for Live2D) and the flattened image |
+| Photoshop `.psd` | RGB, grayscale, CMYK and Lab layers at 8, 16 and 32 bits; indexed, bitmap, duotone and multichannel images | 8-bit RGB layered export | Import: layers, groups, artboards, masks, vector shapes, gradient and pattern fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, layer effects (editable styles, or drawn as layers for Live2D) and the flattened image |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
 Native saves use v4 unless layer masks require v5. Opening v5 projects requires
@@ -121,9 +121,11 @@ masks on ordinary layers and folders become layer masks. Strokes use round joins
 (Photoshop's miter corners differ slightly) and stroke anti-aliasing is approximate.
 Gradient fill layers and gradient-filled shapes are drawn too (linear, radial, angle,
 reflected and diamond; angle, scale, offset, reverse, align with layer; color and
-opacity stops with midpoints). Stops blend linearly, where Photoshop smooths them, so
+opacity stops with midpoints); the ramp runs edge to edge along the line through the
+box's center at the gradient's angle, as Photoshop's does. Pattern fill layers draw the
+file's pattern from the layer's corner. Stops blend linearly, where Photoshop smooths them, so
 gradients can differ by up to about 16 levels. Noise gradients, stops using the
-editor's foreground/background colors, pattern fills, dashed strokes and other
+editor's foreground/background colors, dashed strokes and other
 unsupported descriptors use the saved composite with an explicit Import details report.
 Layer and vector masks keep their density and feather (a Gaussian blur of the feather
 radius); when a layer has both, the user mask Photoshop stores separately is used. They are not silently approximated as editable layers.
@@ -188,8 +190,14 @@ background-only; psd-tools, which concentrates on edge features: 223 of 316 with
 and 11 background-only (counted 2026-10-30). Layered imports match the
 saved image except anti-aliased text edges (Photoshop renders text slightly differently
 for the flattened image), a writer that flattened onto white without a background layer,
-and two small pass-through/fill cases. The rest fall back to the flattened image or are
-unsupported color modes (Lab, indexed, bitmap, 32-bit).
+and two small pass-through/fill cases. The rest fall back to the flattened image.
+Counted again 2026-11-02 after 32-bit, color mode, artboard and pattern fill support:
+83 of 89 ag-psd files and 273 of 316 psd-tools files open without falling back
+(PSD and PSB). Most remaining fallbacks are knockout groups, CMYK files with
+adjustment layers, noise gradients, Blend If and dashed strokes.
+
+Artboards become folders: a mask shows only the artboard's area and a layer named
+after it holds its background color (none when transparent).
 
 16-bit RGB and grayscale files import their layers (Photoshop keeps them in the Lr16
 block), converted to 8-bit channels; the saved composite is converted the same way. Extra
@@ -199,8 +207,15 @@ PSB files read the same way as PSD. CMYK files (8 and 16 bit) open in RGB: color
 through the file's embedded CMYK profile as Photoshop displays them (within about 2 levels
 of Photoshop's own preview on the test files), or through the plain ink formula with a note
 when there is none. Layers then blend in RGB, so soft overlapping edges can differ a little;
-CMYK files with adjustment layers use the saved composite. Lab, indexed and bitmap modes,
-and 32-bit channels are unsupported. Files are capped at 2 GB (the PSD limit; larger PSB files are refused) and decoded layer payload shares the 2 GiB
+CMYK files with adjustment layers use the saved composite (Photoshop applies them to the
+CMYK channels). 32-bit files import their layers (from the Lr32 block): linear-light
+samples and setting colors are encoded as sRGB and clipped at white, and since
+Photoshop blends 32-bit layers in linear light, soft edges and blend modes can differ.
+Lab files convert to sRGB, indexed files go through their color table (with the
+transparent entry), bitmap files expand to black and white, duotone files show their
+gray channel without the inks, and multichannel files show their channels as cyan,
+magenta, yellow and black inks, each with a note where colors are approximate.
+Files are capped at 2 GB (the PSD limit; larger PSB files are refused) and decoded layer payload shares the 2 GiB
 document budget. A PSD without
 a usable compatibility composite cannot fall back when layer conversion fails;
 save it with Maximize Compatibility enabled in the source editor.
