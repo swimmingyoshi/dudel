@@ -324,6 +324,9 @@ impl Dudel {
         {
             return;
         }
+        if self.quick_resize_keys(ctx) {
+            return;
+        }
         let opening_new = ctx.input_mut(|input| {
             let opening = input.events.iter().any(crate::new_canvas::opening_shortcut);
             if opening {
@@ -685,6 +688,7 @@ impl Dudel {
 
         self.canvas_area = area;
         let view = self.view(area);
+        self.update_quick_resize(ctx);
         let modal = self.new_canvas
             || self.input_settings
             || self.recovery_window
@@ -748,6 +752,13 @@ impl Dudel {
             };
             let pos = pos2(sample.x, sample.y);
             let at = view.to_doc(pos);
+            // A click while F resizes keeps the size and draws nothing.
+            if self.quick_resize.is_some() {
+                if start {
+                    self.finish_quick_resize(true);
+                }
+                continue;
+            }
             let inside = at.x >= 0.0
                 && at.y >= 0.0
                 && at.x < self.doc.width as f32
@@ -1486,6 +1497,7 @@ impl Dudel {
         self.paint_affine_handles(&painter, *view);
         self.paint_reference_handles(&painter, *view);
         self.paint_vector_pick(&painter, *view);
+        self.paint_quick_resize(&painter);
         if let Some(
             crate::selection_ui::Drag::Lasso { points, .. }
             | crate::selection_ui::Drag::PaintLasso { points, .. },

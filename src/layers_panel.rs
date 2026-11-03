@@ -583,6 +583,7 @@ impl Dudel {
                     ui.push_id(id, |ui| self.layer_row(ui, index, reveal, &mut action));
                     self.reference_rows_at(ui, index);
                 }
+                self.layer_space_ui(ui);
             });
         if let Some(from) = egui::DragAndDrop::payload::<usize>(ui.ctx())
             && let Some(pointer) = ui.ctx().pointer_interact_pos()

@@ -111,6 +111,7 @@ mod psd_vector;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
 mod background;
+mod layer_menu;
 mod native_session;
 mod navigator;
 mod new_canvas;
@@ -128,6 +129,7 @@ mod pressure_editor;
 mod preview;
 mod preview_window;
 mod project_package;
+mod quick_resize;
 mod recovery;
 mod recovery_probe;
 mod reference_layers;
@@ -309,6 +311,8 @@ struct Dudel {
     line_drag: vector_pick::LineDrag,
     /// How far along a line a reshape reaches, in canvas pixels.
     bend_reach: f32,
+    /// F resizing the brush or reach, while it lasts.
+    quick_resize: Option<quick_resize::QuickResize>,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -567,6 +571,7 @@ impl Default for Dudel {
             pointer_lasso: true,
             line_drag: Default::default(),
             bend_reach: 40.0,
+            quick_resize: None,
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

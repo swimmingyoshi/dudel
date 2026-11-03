@@ -36,7 +36,7 @@ struct Lasso {
 }
 
 /// Longest reach a reshape may have, in canvas pixels.
-const MAX_REACH: f32 = 2000.0;
+pub(crate) const MAX_REACH: f32 = 2000.0;
 
 /// Lasso points kept at most.
 const MAX_LASSO: usize = 20_000;
