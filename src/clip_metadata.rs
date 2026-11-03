@@ -2394,10 +2394,10 @@ fn prepare_document_mode(
         .map(|(entry, _)| name_of(entry.id))
         .collect();
     if !drawn.is_empty() {
-        notes.push(format!(
-            "Vector {} drawn as raster pixels from {} strokes (lines cannot be edited as vectors here, and may differ slightly from CSP's): {}.",
+        details.push(format!(
+            "Vector {} keep{} CSP's lines as editable strokes, drawn as CSP draws them (erase, move, transform and recolor them; edges can differ slightly from CSP's): {}.",
             if drawn.len() == 1 { "layer" } else { "layers" },
-            if drawn.len() == 1 { "its" } else { "their" },
+            if drawn.len() == 1 { "s" } else { "" },
             name_list(&drawn)
         ));
     }
@@ -2524,11 +2524,15 @@ fn prepare_document_mode(
             .map_or(report.canvas.current, |e| e.source_id)
     };
     let mut budget = crate::clip_blocks::Budget::default();
+    // Vector layers' pixels, to find their layers once assembled.
+    let mut drawn_vectors: Vec<(crate::pixels::Pixels, i64)> = Vec::new();
     let mut doc =
         crate::clip_document::assemble(canvas, entries, active, &issues, cancelled, &mut |id| {
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
             if let Some(strokes) = vectors.get(&id) {
-                return crate::clip_vector::render(strokes, canvas, cancelled);
+                let pixels = crate::clip_vector::render(strokes, canvas, cancelled)?;
+                drawn_vectors.push((pixels.clone(), id));
+                return Ok(pixels);
             }
             if let Some((text, font)) = report.texts.get(&id) {
                 return crate::clip_text::render(
@@ -2612,6 +2616,18 @@ fn prepare_document_mode(
                 cancelled,
             )
         })?;
+    // Their strokes stay editable on the layers that show them.
+    for layer in &mut doc.layers {
+        if let Some((_, id)) = drawn_vectors.iter().find(|(p, _)| p.shares(&layer.pixels)) {
+            let strokes = vectors[id]
+                .iter()
+                .map(|line| {
+                    std::sync::Arc::new(crate::vector_layer::Stroke::from_csp(line.clone()))
+                })
+                .collect();
+            layer.vector = Some(crate::vector_layer::VectorLayer { strokes });
+        }
+    }
     doc.dpi = report.canvas.resolution;
     crate::document::validate_dpi(doc.dpi)?;
     // Assembly stores children before their folder; map source identities using

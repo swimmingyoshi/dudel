@@ -119,37 +119,17 @@ pub(crate) fn parse(body: &[u8]) -> Result<Vec<Stroke>, String> {
     Ok(strokes)
 }
 
-/// Draw strokes in order onto a transparent `canvas`-sized layer.
-pub(crate) fn render(
-    strokes: &[Stroke],
-    canvas: [usize; 2],
-    cancelled: &impl Fn() -> bool,
-) -> Result<Pixels, String> {
-    let [width, height] = canvas;
-    let mut pixels = Pixels::sparse(width, height);
-    if strokes.is_empty() {
-        return Ok(pixels);
-    }
-    let mut rgba = vec![0u8; width * height * 4];
-    let mut coverage = Vec::new();
-    // Rows any stroke touched; the rest stay sparse.
-    let mut rows = [height, 0];
-    for stroke in strokes {
-        if cancelled() {
-            return Err("Vector drawing canceled".into());
-        }
-        let radius = |p: &Point| stroke.width * p.pressure;
-        let level = f64::from(stroke.antialias.min(3)) / 3.0;
-        let (inset, soft) = (0.5 * (1.0 - level), 1.0 + 0.5 * level);
-        // Pixel bounds of the whole stroke, clipped to the canvas.
+impl Stroke {
+    /// The canvas pixels the stroke can cover, if any.
+    pub(crate) fn rect(&self, [width, height]: [usize; 2]) -> Option<[usize; 4]> {
         let mut bounds = [
             f64::INFINITY,
             f64::INFINITY,
             f64::NEG_INFINITY,
             f64::NEG_INFINITY,
         ];
-        for p in &stroke.points {
-            let r = radius(p) + 1.0;
+        for p in &self.points {
+            let r = self.width * p.pressure + 1.0;
             bounds = [
                 bounds[0].min(p.x - r),
                 bounds[1].min(p.y - r),
@@ -158,18 +138,43 @@ pub(crate) fn render(
             ];
         }
         let clip = |v: f64, limit: usize| v.floor().clamp(0.0, limit as f64) as usize;
-        let [left, top] = [clip(bounds[0], width), clip(bounds[1], height)];
-        let [right, bottom] = [clip(bounds[2] + 1.0, width), clip(bounds[3] + 1.0, height)];
+        let rect = [
+            clip(bounds[0], width),
+            clip(bounds[1], height),
+            clip(bounds[2] + 1.0, width),
+            clip(bounds[3] + 1.0, height),
+        ];
+        (rect[0] < rect[2] && rect[1] < rect[3]).then_some(rect)
+    }
+    /// Paint the stroke source-over onto `rgba`, straight-alpha pixels of
+    /// the canvas rectangle `area`. Whole-canvas and partial painting give
+    /// the same bytes where they overlap.
+    pub(crate) fn paint(
+        &self,
+        rgba: &mut [u8],
+        area: [usize; 4],
+        canvas: [usize; 2],
+        coverage: &mut Vec<f32>,
+    ) {
+        let Some(rect) = self.rect(canvas) else {
+            return;
+        };
+        let [left, top] = [rect[0].max(area[0]), rect[1].max(area[1])];
+        let [right, bottom] = [rect[2].min(area[2]), rect[3].min(area[3])];
         if left >= right || top >= bottom {
-            continue;
+            return;
         }
+        let [width, height] = canvas;
+        let clip = |v: f64, limit: usize| v.floor().clamp(0.0, limit as f64) as usize;
+        let radius = |p: &Point| self.width * p.pressure;
+        let level = f64::from(self.antialias.min(3)) / 3.0;
+        let (inset, soft) = (0.5 * (1.0 - level), 1.0 + 0.5 * level);
         let span = right - left;
-        rows = [rows[0].min(top), rows[1].max(bottom)];
         coverage.clear();
         coverage.resize(span * (bottom - top), 0f32);
         // Each segment is a capsule whose radius runs from one point's to the
         // next; a pixel takes the largest coverage of any segment.
-        let points = &stroke.points;
+        let points = &self.points;
         let segments = points.len().saturating_sub(1).max(1);
         for i in 0..segments {
             let a = points[i];
@@ -205,23 +210,59 @@ pub(crate) fn render(
             }
         }
         // Source-over in straight alpha.
+        let stride = area[2] - area[0];
         for y in top..bottom {
             for x in left..right {
-                let source = coverage[(y - top) * span + x - left] * stroke.opacity;
+                let source = coverage[(y - top) * span + x - left] * self.opacity;
                 if source <= 0.0 {
                     continue;
                 }
-                let i = (y * width + x) * 4;
+                let i = ((y - area[1]) * stride + x - area[0]) * 4;
                 let below = f32::from(rgba[i + 3]) / 255.0;
                 let alpha = source + below * (1.0 - source);
                 for c in 0..3 {
-                    let value = (f32::from(stroke.color[c]) * source
+                    let value = (f32::from(self.color[c]) * source
                         + f32::from(rgba[i + c]) * below * (1.0 - source))
                         / alpha;
                     rgba[i + c] = value.round().clamp(0.0, 255.0) as u8;
                 }
                 rgba[i + 3] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
             }
+        }
+    }
+    /// Paint the stroke onto a layer's pixels, as `render` would.
+    pub(crate) fn paint_onto(&self, pixels: &mut Pixels, canvas: [usize; 2]) {
+        let Some(rect) = self.rect(canvas) else {
+            return;
+        };
+        let mut rgba = pixels.region(canvas[0], rect);
+        self.paint(&mut rgba, rect, canvas, &mut Vec::new());
+        pixels.writer().write_region(canvas[0], rect, &rgba);
+    }
+}
+
+/// Draw strokes in order onto a transparent `canvas`-sized layer.
+pub(crate) fn render(
+    strokes: &[Stroke],
+    canvas: [usize; 2],
+    cancelled: &impl Fn() -> bool,
+) -> Result<Pixels, String> {
+    let [width, height] = canvas;
+    let mut pixels = Pixels::sparse(width, height);
+    if strokes.is_empty() {
+        return Ok(pixels);
+    }
+    let mut rgba = vec![0u8; width * height * 4];
+    let mut coverage = Vec::new();
+    // Rows any stroke touched; the rest stay sparse.
+    let mut rows = [height, 0];
+    for stroke in strokes {
+        if cancelled() {
+            return Err("Vector drawing canceled".into());
+        }
+        if let Some(rect) = stroke.rect(canvas) {
+            rows = [rows[0].min(rect[1]), rows[1].max(rect[3])];
+            stroke.paint(&mut rgba, [0, 0, width, height], canvas, &mut coverage);
         }
     }
     {

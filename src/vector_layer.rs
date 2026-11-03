@@ -46,6 +46,10 @@ pub(crate) struct Stroke {
     pub color: [u8; 3],
     pub symmetry: Symmetry,
     pub commands: Vec<Command>,
+    /// A line from a Clip Studio vector layer, drawn as CSP draws it (its
+    /// width, pressure and anti-aliasing); `brush` and `commands` then go
+    /// unused and `color` mirrors its color.
+    pub csp: Option<Arc<crate::clip_vector::Stroke>>,
     /// Where its dabs land, worked out on first use.
     footprint: OnceLock<Footprint>,
 }
@@ -55,6 +59,7 @@ impl PartialEq for Stroke {
             && self.color == other.color
             && self.symmetry == other.symmetry
             && self.commands == other.commands
+            && self.csp == other.csp
     }
 }
 impl std::fmt::Debug for Stroke {
@@ -67,7 +72,8 @@ impl std::fmt::Debug for Stroke {
     }
 }
 
-/// Dab circles (center and a radius that covers the dab) and their bounds.
+/// The line's circles (center and drawn radius) and the bounds of all it
+/// can paint.
 #[derive(Clone, Default)]
 struct Footprint {
     circles: Vec<[f32; 3]>,
@@ -81,8 +87,56 @@ impl Stroke {
             color,
             symmetry,
             commands: Vec::new(),
+            csp: None,
             footprint: OnceLock::new(),
         }
+    }
+    /// A Clip Studio vector line, kept as CSP drew it.
+    pub(crate) fn from_csp(line: crate::clip_vector::Stroke) -> Self {
+        Self {
+            brush: Arc::new(Brush::default()),
+            color: line.color,
+            symmetry: Symmetry::default(),
+            commands: Vec::new(),
+            csp: Some(Arc::new(line)),
+            footprint: OnceLock::new(),
+        }
+    }
+    /// The line as circles of its drawn radius, about a pixel apart along
+    /// a CSP line, and at the brush's dabs otherwise.
+    fn line(&self) -> Vec<(Sample, f32)> {
+        let Some(line) = &self.csp else {
+            let radius = self.brush.size * 0.5;
+            return self.dabs().into_iter().map(|d| (d, radius)).collect();
+        };
+        let at = |p: &crate::clip_vector::Point| Sample {
+            x: p.x as f32,
+            y: p.y as f32,
+            pressure: p.pressure as f32,
+            pressure_known: true,
+            ..Default::default()
+        };
+        let radius = |pressure: f32| (line.width as f32 * pressure).max(0.5);
+        let mut out = Vec::new();
+        for pair in line.points.windows(2) {
+            let (a, b) = (at(&pair[0]), at(&pair[1]));
+            let steps = ((b.x - a.x).hypot(b.y - a.y).ceil() as usize).clamp(1, 4096);
+            for i in 0..steps {
+                let t = i as f32 / steps as f32;
+                let s = Sample {
+                    x: a.x + (b.x - a.x) * t,
+                    y: a.y + (b.y - a.y) * t,
+                    pressure: a.pressure + (b.pressure - a.pressure) * t,
+                    ..a
+                };
+                out.push((s, radius(s.pressure)));
+            }
+        }
+        if let Some(last) = line.points.last() {
+            let s = at(last);
+            out.push((s, radius(s.pressure)));
+        }
+        out
     }
     fn settings(&self, layer: usize) -> Settings {
         Settings {
@@ -119,11 +173,14 @@ impl Stroke {
         self.footprint.get_or_init(|| {
             // Generous: pressure, dynamics and scatter never draw a dab
             // farther out than this.
-            let reach = self.brush.size * (1.0 + self.brush.scatter) + 2.0;
+            let reach = match &self.csp {
+                Some(line) => line.width as f32 + 2.0,
+                None => self.brush.size * (1.0 + self.brush.scatter) + 2.0,
+            };
             let mut footprint = Footprint::default();
-            for dab in self.dabs() {
+            for (dab, radius) in self.line() {
                 for ([x, y], _) in self.symmetry.copies(dab.x, dab.y, size[0], size[1]) {
-                    footprint.circles.push([x, y, reach]);
+                    footprint.circles.push([x, y, radius]);
                     let b = footprint.bounds.get_or_insert([x, y, x, y]);
                     *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
                 }
@@ -156,14 +213,18 @@ impl Stroke {
             return false;
         }
         // The line itself, not the generous reach used for redraw bounds.
-        let line = self.brush.size * 0.5;
-        footprint.circles.iter().any(|&[cx, cy, _]| {
+        footprint.circles.iter().any(|&[cx, cy, line]| {
             let r = radius + line;
             (cx - x) * (cx - x) + (cy - y) * (cy - y) <= r * r
         })
     }
     /// Paint the stroke onto layer `layer` of `doc`, as it was drawn.
     pub(crate) fn paint(&self, doc: &mut Document, layer: usize) {
+        if let Some(line) = &self.csp {
+            let size = [doc.width, doc.height];
+            line.paint_onto(&mut doc.layers[layer].pixels, size);
+            return;
+        }
         let settings = self.settings(layer);
         let mut buffer = StrokeBuffer::default();
         for dab in self.dabs() {
@@ -201,6 +262,20 @@ impl VectorLayer {
             return Err("A vector layer holds too many strokes".into());
         }
         for stroke in &self.strokes {
+            if let Some(line) = &stroke.csp {
+                let ok = !line.points.is_empty()
+                    && line.points.len() <= MAX_COMMANDS
+                    && line.width > 0.0
+                    && line.width <= MAX_CSP_WIDTH
+                    && (0.0..=1.0).contains(&line.opacity)
+                    && line.points.iter().all(|p| {
+                        p.x.abs() < 1e7 && p.y.abs() < 1e7 && (0.0..=1.0).contains(&p.pressure)
+                    });
+                if !ok {
+                    return Err("A Clip Studio vector line has damaged points".into());
+                }
+                continue;
+            }
             stroke.brush.validate()?;
             if stroke.commands.len() > MAX_COMMANDS {
                 return Err("A vector stroke has too many points".into());
@@ -271,6 +346,7 @@ impl Stroke {
             color: self.color,
             symmetry: self.symmetry,
             commands: self.commands.clone(),
+            csp: self.csp.clone(),
             footprint: OnceLock::new(),
         };
         for command in &mut stroke.commands {
@@ -290,6 +366,18 @@ impl Stroke {
         let (vx, vy) = (down[0] - origin[0], down[1] - origin[1]);
         let scale = (ux * vy - uy * vx).abs().sqrt();
         let turn = uy.atan2(ux).to_degrees();
+        if let Some(line) = &self.csp {
+            let mut line = (**line).clone();
+            for p in &mut line.points {
+                let [x, y] = map(p.x as f32, p.y as f32);
+                (p.x, p.y) = (f64::from(x), f64::from(y));
+            }
+            if scale.is_finite() && scale > 0.0 {
+                line.width = (line.width * f64::from(scale)).clamp(0.01, MAX_CSP_WIDTH);
+            }
+            stroke.csp = Some(Arc::new(line));
+            return stroke;
+        }
         if scale.is_finite() && (scale - 1.0).abs() > 1e-4 || turn.abs() > 1e-3 {
             let mut brush = (*self.brush).clone();
             if scale.is_finite() && scale > 0.0 {
@@ -324,6 +412,9 @@ impl Stroke {
     /// drawn without the stabilizer, which already shaped them. `None` when
     /// the stroke cannot be cut (scattered or mirrored dabs are not a line).
     fn cut(&self, circles: &[[f32; 3]]) -> Option<Vec<Stroke>> {
+        if let Some(line) = &self.csp {
+            return Some(cut_csp(line, &self.line(), circles));
+        }
         if self.brush.scatter > 0.0 || self.symmetry.active() {
             return None;
         }
@@ -384,6 +475,7 @@ impl Stroke {
                     color: self.color,
                     symmetry: self.symmetry,
                     commands,
+                    csp: None,
                     footprint: OnceLock::new(),
                 });
             }
@@ -402,6 +494,48 @@ impl Stroke {
         }
         Some(pieces)
     }
+}
+
+/// Widest CSP line kept after scaling.
+const MAX_CSP_WIDTH: f64 = 10_000.0;
+
+/// What remains of a CSP line (`dense`: its points about a pixel apart with
+/// their radius) once `circles` are taken out, as CSP lines.
+fn cut_csp(
+    line: &crate::clip_vector::Stroke,
+    dense: &[(Sample, f32)],
+    circles: &[[f32; 3]],
+) -> Vec<Stroke> {
+    let covered = |s: &Sample, r: f32| {
+        circles.iter().any(|&[x, y, radius]| {
+            let reach = radius + r;
+            (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y) <= reach * reach
+        })
+    };
+    let mut pieces = Vec::new();
+    let mut run: Vec<crate::clip_vector::Point> = Vec::new();
+    let mut flush = |run: &mut Vec<crate::clip_vector::Point>| {
+        if run.len() >= 2 {
+            pieces.push(Stroke::from_csp(crate::clip_vector::Stroke {
+                points: std::mem::take(run),
+                ..line.clone()
+            }));
+        }
+        run.clear();
+    };
+    for (s, r) in dense {
+        if covered(s, *r) {
+            flush(&mut run);
+        } else {
+            run.push(crate::clip_vector::Point {
+                x: f64::from(s.x),
+                y: f64::from(s.y),
+                pressure: f64::from(s.pressure),
+            });
+        }
+    }
+    flush(&mut run);
+    pieces
 }
 
 /// Whether `stroke` lies in `doc`'s selection (its middle does), or there
@@ -520,9 +654,15 @@ pub(crate) fn restyle(
             };
             if let Some(color) = color {
                 restyled.color = color;
+                if let Some(line) = &restyled.csp {
+                    restyled.csp = Some(Arc::new(crate::clip_vector::Stroke {
+                        color,
+                        ..(**line).clone()
+                    }));
+                }
             }
             if let Some(brush) = &brush {
-                restyled.brush = brush.clone();
+                restyled = restyled.with_brush(brush.clone());
             }
             if restyled == **stroke {
                 stroke.clone()
@@ -536,6 +676,38 @@ pub(crate) fn restyle(
         redraw_layer(doc, index, VectorLayer { strokes })?;
     }
     Ok(changed)
+}
+
+impl Stroke {
+    /// The stroke drawn with `brush`; a CSP line becomes a stroke through
+    /// its points (the brush's stabilizer is not applied again).
+    fn with_brush(mut self, brush: Arc<Brush>) -> Self {
+        let Some(line) = self.csp.take() else {
+            self.brush = brush;
+            return self;
+        };
+        let mut steady = (*brush).clone();
+        steady.stabilization = 0.0;
+        self.brush = Arc::new(steady);
+        let count = line.points.len();
+        self.commands = line
+            .points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| Command::Sample {
+                sample: Sample {
+                    x: p.x as f32,
+                    y: p.y as f32,
+                    pressure: p.pressure as f32,
+                    pressure_known: true,
+                    ..Default::default()
+                },
+                zoom: 1.0,
+                lift: i + 1 == count,
+            })
+            .collect();
+        self
+    }
 }
 
 /// Give layer `index` these strokes and the pixels they paint.
@@ -579,11 +751,64 @@ mod saved {
     }
     #[derive(Serialize, Deserialize)]
     struct SavedStroke {
+        #[serde(default)]
         brush: usize,
         color: [u8; 3],
         #[serde(default)]
         symmetry: Symmetry,
+        #[serde(default)]
         commands: String,
+        /// A Clip Studio line; brush and commands are then unused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        csp: Option<SavedLine>,
+    }
+    #[derive(Serialize, Deserialize)]
+    struct SavedLine {
+        opacity: f32,
+        width: f64,
+        style: u32,
+        antialias: u8,
+        /// x, y and pressure (f64) per point, little-endian base64.
+        points: String,
+    }
+    impl SavedLine {
+        fn new(line: &crate::clip_vector::Stroke) -> Self {
+            let mut bytes = Vec::with_capacity(line.points.len() * 24);
+            for p in &line.points {
+                bytes.extend(p.x.to_le_bytes());
+                bytes.extend(p.y.to_le_bytes());
+                bytes.extend(p.pressure.to_le_bytes());
+            }
+            Self {
+                opacity: line.opacity,
+                width: line.width,
+                style: line.style,
+                antialias: line.antialias,
+                points: crate::pattern::base64(&bytes),
+            }
+        }
+        fn line(self, color: [u8; 3]) -> Option<crate::clip_vector::Stroke> {
+            let bytes = crate::pattern::unbase64(&self.points)?;
+            if bytes.len() % 24 != 0 || bytes.len() / 24 > MAX_COMMANDS {
+                return None;
+            }
+            let points = bytes
+                .chunks_exact(24)
+                .map(|b| crate::clip_vector::Point {
+                    x: f64::from_le_bytes(b[0..8].try_into().unwrap()),
+                    y: f64::from_le_bytes(b[8..16].try_into().unwrap()),
+                    pressure: f64::from_le_bytes(b[16..24].try_into().unwrap()),
+                })
+                .collect();
+            Some(crate::clip_vector::Stroke {
+                color,
+                opacity: self.opacity,
+                width: self.width,
+                style: self.style,
+                antialias: self.antialias,
+                points,
+            })
+        }
     }
 
     const SAMPLE: u8 = 0;
@@ -691,6 +916,15 @@ mod saved {
                 .strokes
                 .iter()
                 .map(|stroke| {
+                    if let Some(line) = &stroke.csp {
+                        return SavedStroke {
+                            brush: 0,
+                            color: line.color,
+                            symmetry: stroke.symmetry,
+                            commands: String::new(),
+                            csp: Some(SavedLine::new(line)),
+                        };
+                    }
                     let brush = brushes
                         .iter()
                         .position(|b| *b == *stroke.brush)
@@ -703,6 +937,7 @@ mod saved {
                         color: stroke.color,
                         symmetry: stroke.symmetry,
                         commands: crate::pattern::base64(&pack(&stroke.commands)),
+                        csp: None,
                     }
                 })
                 .collect();
@@ -720,6 +955,12 @@ mod saved {
                 .strokes
                 .into_iter()
                 .map(|s| {
+                    if let Some(saved) = s.csp {
+                        let line = saved
+                            .line(s.color)
+                            .ok_or_else(|| D::Error::custom("Damaged vector line"))?;
+                        return Ok(Arc::new(Stroke::from_csp(line)));
+                    }
                     let brush = brushes
                         .get(s.brush)
                         .cloned()
@@ -732,6 +973,7 @@ mod saved {
                         color: s.color,
                         symmetry: s.symmetry,
                         commands,
+                        csp: None,
                         footprint: OnceLock::new(),
                     }))
                 })
@@ -1418,5 +1660,126 @@ mod tests {
         }
         let mean = total as f64 / count as f64;
         assert!(mean < 1.0, "pieces drift from the line: {mean}");
+    }
+
+    /// A vector layer holding two CSP lines, as an import makes it.
+    fn csp_app() -> Dudel {
+        let line = |y: f64, color: [u8; 3]| crate::clip_vector::Stroke {
+            color,
+            opacity: 1.0,
+            width: 3.0,
+            style: 1,
+            antialias: 2,
+            points: (0..=8)
+                .map(|i| crate::clip_vector::Point {
+                    x: 8.0 + f64::from(i) * 10.0,
+                    y,
+                    pressure: 0.6 + f64::from(i) * 0.05,
+                })
+                .collect(),
+        };
+        let lines = vec![line(20.0, [0, 0, 0]), line(44.0, [200, 0, 0])];
+        let mut app = Dudel {
+            doc: Document::new(96, 64),
+            zoom: 4.0,
+            auto_fit: false,
+            ..Default::default()
+        };
+        let layer = &mut app.doc.layers[0];
+        layer.pixels = crate::clip_vector::render(&lines, [96, 64], &|| false).unwrap();
+        layer.vector = Some(VectorLayer {
+            strokes: lines
+                .into_iter()
+                .map(|l| Arc::new(Stroke::from_csp(l)))
+                .collect(),
+        });
+        app
+    }
+
+    #[test]
+    fn csp_lines_are_editable_strokes() {
+        let mut app = csp_app();
+        consistent(&app);
+        // The eraser cuts a CSP line where it covers it.
+        app.select_tool(Tool::Eraser);
+        app.brush.size = 4.0;
+        stroke_line(&mut app, [48.0, 10.0], [48.0, 30.0]);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert_eq!(strokes.len(), 3, "{}", app.status);
+        assert!(strokes.iter().all(|s| s.csp.is_some()));
+        consistent(&app);
+        assert_eq!(alpha(&app, 48, 20), 0);
+        assert!(alpha(&app, 20, 20) > 0 && alpha(&app, 76, 20) > 0);
+        // Moving and scaling keep them CSP lines; scaling thins them.
+        let id = layer(&app).id;
+        run(
+            &mut app,
+            crate::document_edits::Edit::MoveTarget {
+                target: id,
+                offset: [0, 4],
+            },
+        );
+        consistent(&app);
+        assert!(alpha(&app, 20, 24) > 0 && alpha(&app, 20, 20) == 0);
+        let matrix = crate::affine::Matrix([0.5, 0.0, 0.0, 0.5, 24.0, 16.0]);
+        run(
+            &mut app,
+            crate::document_edits::Edit::AffineTarget {
+                target: id,
+                matrix,
+                sampling: crate::affine::Sampling::Bilinear,
+            },
+        );
+        consistent(&app);
+        let widths: Vec<f64> = layer(&app)
+            .vector
+            .as_ref()
+            .unwrap()
+            .strokes
+            .iter()
+            .map(|s| s.csp.as_ref().unwrap().width)
+            .collect();
+        assert!(widths.iter().all(|w| (w - 1.5).abs() < 1e-6), "{widths:?}");
+    }
+
+    #[test]
+    fn csp_lines_recolor_take_a_brush_and_survive_saving() {
+        let mut app = csp_app();
+        app.color = [0, 120, 255];
+        app.restyle_vector(true);
+        app.flush_render_queue();
+        consistent(&app);
+        let vector = layer(&app).vector.as_ref().unwrap();
+        assert!(
+            vector
+                .strokes
+                .iter()
+                .all(|s| s.csp.as_ref().unwrap().color == [0, 120, 255])
+        );
+        // Saved and reopened, the lines draw the same pixels.
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&app.doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        let reloaded = loaded.layers[0].vector.as_ref().unwrap();
+        assert_eq!(reloaded, vector);
+        let redrawn = reloaded.render([96, 64], &|| false).unwrap();
+        assert!(same_pixels(&redrawn, &layer(&app).pixels, 96 * 64));
+        // A brush turns the selected line into an ordinary stroke.
+        app.doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 32,
+            right: 96,
+            bottom: 64,
+        });
+        app.brush.size = 5.0;
+        app.restyle_vector(false);
+        app.flush_render_queue();
+        consistent(&app);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert!(strokes[0].csp.is_some());
+        assert!(strokes[1].csp.is_none() && strokes[1].brush.size == 5.0);
+        assert!(alpha(&app, 48, 44) > 0);
     }
 }
