@@ -226,6 +226,26 @@ impl Dudel {
         });
         match self.tool {
             Tool::Eraser => {
+                if self.vector_target().is_some() {
+                    use crate::vector_layer::EraseMode;
+                    ui.label("Vector lines");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(
+                            &mut self.vector_erase_mode,
+                            EraseMode::Touched,
+                            "Touched part",
+                        )
+                        .on_hover_text(
+                            "Erase only where the eraser covers a line; the rest stays editable",
+                        );
+                        ui.selectable_value(
+                            &mut self.vector_erase_mode,
+                            EraseMode::Whole,
+                            "Whole line",
+                        )
+                        .on_hover_text("Erase every line the eraser touches");
+                    });
+                }
                 self.eraser_mode_ui(ui);
                 if self.eraser_own {
                     self.eraser_tip_ui(ui);

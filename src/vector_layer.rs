@@ -227,7 +227,6 @@ impl VectorLayer {
     }
 
     /// The layer's pixels: every stroke painted in order onto a clear layer.
-    #[cfg(test)]
     pub(crate) fn render(
         &self,
         size: [usize; 2],
@@ -260,6 +259,296 @@ impl VectorLayer {
         }
         Ok(())
     }
+}
+
+impl Stroke {
+    /// The stroke with every point moved by `map` (canvas pixels to canvas
+    /// pixels): its tip scales with the map and its symmetry follows it.
+    /// `size` is the canvas the stroke was drawn on.
+    fn mapped(&self, map: &dyn Fn(f32, f32) -> [f32; 2], size: [usize; 2]) -> Self {
+        let mut stroke = Stroke {
+            brush: self.brush.clone(),
+            color: self.color,
+            symmetry: self.symmetry,
+            commands: self.commands.clone(),
+            footprint: OnceLock::new(),
+        };
+        for command in &mut stroke.commands {
+            if let Command::Sample { sample, .. } | Command::Seed { sample, .. } = command {
+                [sample.x, sample.y] = map(sample.x, sample.y);
+            }
+        }
+        // The map's local stretch and turn where the stroke is.
+        let [cx, cy] = self
+            .footprint(size)
+            .bounds
+            .map_or([0.0; 2], |b| [(b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0]);
+        let origin = map(cx, cy);
+        let across = map(cx + 1.0, cy);
+        let down = map(cx, cy + 1.0);
+        let (ux, uy) = (across[0] - origin[0], across[1] - origin[1]);
+        let (vx, vy) = (down[0] - origin[0], down[1] - origin[1]);
+        let scale = (ux * vy - uy * vx).abs().sqrt();
+        let turn = uy.atan2(ux).to_degrees();
+        if scale.is_finite() && (scale - 1.0).abs() > 1e-4 || turn.abs() > 1e-3 {
+            let mut brush = (*self.brush).clone();
+            if scale.is_finite() && scale > 0.0 {
+                brush.size = (brush.size * scale).clamp(1.0, 300.0);
+            }
+            brush.angle = (brush.angle + turn + 180.0).rem_euclid(360.0) - 180.0;
+            stroke.brush = Arc::new(brush);
+        }
+        if stroke.symmetry.active() {
+            let [x, y] = self.symmetry.center(size[0], size[1]);
+            stroke.symmetry.center = Some(map(x, y));
+            stroke.symmetry.angle += turn;
+        }
+        stroke
+    }
+}
+
+/// What the vector eraser takes away.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum EraseMode {
+    /// The part of a line under the eraser; the rest stays as new strokes.
+    #[default]
+    Touched,
+    /// Every line the eraser touches, whole.
+    Whole,
+}
+
+impl Stroke {
+    /// The stroke with the parts under `circles` (x, y, radius) taken out,
+    /// as the pieces that remain (none when it is all covered). Each piece
+    /// follows the line as drawn: its recorded points are the line's dabs,
+    /// drawn without the stabilizer, which already shaped them. `None` when
+    /// the stroke cannot be cut (scattered or mirrored dabs are not a line).
+    fn cut(&self, circles: &[[f32; 3]]) -> Option<Vec<Stroke>> {
+        if self.brush.scatter > 0.0 || self.symmetry.active() {
+            return None;
+        }
+        let zoom = self.commands.iter().find_map(|c| match c {
+            Command::Sample { zoom, .. } => Some(*zoom),
+            _ => None,
+        })?;
+        let dabs = self.dabs();
+        let half = self.brush.size * 0.5;
+        let covered = |d: &Sample| {
+            let r = half
+                * if self.brush.pressure_size {
+                    d.pressure.max(0.05)
+                } else {
+                    1.0
+                };
+            circles.iter().any(|&[x, y, radius]| {
+                let reach = radius + r;
+                (d.x - x) * (d.x - x) + (d.y - y) * (d.y - y) <= reach * reach
+            })
+        };
+        let mut pieces = Vec::new();
+        let mut run: Vec<Sample> = Vec::new();
+        let mut first_run = true;
+        let last = dabs.len();
+        let mut flush = |run: &mut Vec<Sample>, starts: bool, ends: bool| {
+            if run.len() >= 2 {
+                let mut brush = (*self.brush).clone();
+                brush.stabilization = 0.0;
+                // Only the stroke's own ends keep their tapers.
+                if !starts {
+                    brush.taper_in = 0.0;
+                }
+                if !ends {
+                    brush.taper_out = 0.0;
+                }
+                let count = run.len();
+                let commands = run
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| Command::Sample {
+                        sample: Sample {
+                            x: d.x,
+                            y: d.y,
+                            pressure: d.pressure,
+                            time: d.time,
+                            tilt: d.tilt,
+                            twist: d.twist,
+                            pressure_known: true,
+                            ..Default::default()
+                        },
+                        zoom,
+                        lift: i + 1 == count,
+                    })
+                    .collect();
+                pieces.push(Stroke {
+                    brush: Arc::new(brush),
+                    color: self.color,
+                    symmetry: self.symmetry,
+                    commands,
+                    footprint: OnceLock::new(),
+                });
+            }
+            run.clear();
+        };
+        for (i, dab) in dabs.iter().enumerate() {
+            if covered(dab) {
+                flush(&mut run, first_run, false);
+                first_run = false;
+            } else {
+                run.push(*dab);
+            }
+            if i + 1 == last {
+                flush(&mut run, first_run, true);
+            }
+        }
+        Some(pieces)
+    }
+}
+
+/// Whether `stroke` lies in `doc`'s selection (its middle does), or there
+/// is no selection.
+fn picked(doc: &Document, stroke: &Stroke) -> bool {
+    let size = [doc.width, doc.height];
+    let Some(b) = stroke.bounds(size) else {
+        return false;
+    };
+    let (x, y) = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+    if let Some(mask) = &doc.selection_mask {
+        return mask.at(x.min(doc.width - 1), y.min(doc.height - 1)) > 127;
+    }
+    doc.selection.is_none_or(|s| s.contains(x, y))
+}
+
+/// After an operation turned `before`'s active layer into `doc`'s, redraw
+/// it from its strokes moved by `map` instead: the strokes `before`'s
+/// selection picks (all without one) move, the rest stay. Not a vector
+/// layer: nothing to do.
+pub(crate) fn follow(
+    before: &Document,
+    doc: &mut Document,
+    map: &dyn Fn(f32, f32) -> [f32; 2],
+) -> Result<(), String> {
+    let index = before.active;
+    if let Some(vector) = &before.layers[index].vector {
+        let size = [before.width, before.height];
+        let strokes = vector
+            .strokes
+            .iter()
+            .map(|s| {
+                if picked(before, s) {
+                    Arc::new(s.mapped(map, size))
+                } else {
+                    s.clone()
+                }
+            })
+            .collect();
+        redraw_layer(doc, index, VectorLayer { strokes })?;
+    }
+    Ok(())
+}
+
+/// `follow` for a Free Transform's settings: its warp or affine map, over
+/// the same frame the pixels used. A mirrored pair keeps the transformed
+/// pixels and drops the strokes (reflected copies are not strokes yet).
+pub(crate) fn follow_settings(
+    before: &Document,
+    doc: &mut Document,
+    settings: &crate::affine::Settings,
+) -> Result<(), String> {
+    if before.layers[before.active].vector.is_none() {
+        return Ok(());
+    }
+    if settings.mirror.is_some() {
+        doc.layers[before.active].vector = None;
+        return Ok(());
+    }
+    let mapping = settings.mapping(before)?;
+    let frame = crate::affine::Settings::bounds(before);
+    let map = |x: f32, y: f32| {
+        mapping
+            .forward(frame, f64::from(x), f64::from(y))
+            .map(|v| v as f32)
+    };
+    follow(before, doc, &map)
+}
+
+/// Every vector layer of `doc` redrawn with all its strokes moved by `map`
+/// (canvas size changes, crops and turns; `before` is the old canvas).
+pub(crate) fn follow_canvas(
+    before: &Document,
+    doc: &mut Document,
+    map: &dyn Fn(f32, f32) -> [f32; 2],
+) -> Result<(), String> {
+    let size = [before.width, before.height];
+    for index in 0..doc.layers.len() {
+        let Some(vector) = &before.layers[index].vector else {
+            continue;
+        };
+        let strokes = vector
+            .strokes
+            .iter()
+            .map(|s| Arc::new(s.mapped(map, size)))
+            .collect();
+        redraw_layer(doc, index, VectorLayer { strokes })?;
+    }
+    Ok(())
+}
+
+/// Recolor and/or re-brush layer `index`'s strokes in `doc`'s selection
+/// (all without one). Whether anything changed.
+pub(crate) fn restyle(
+    doc: &mut Document,
+    index: usize,
+    color: Option<[u8; 3]>,
+    brush: Option<&Brush>,
+) -> Result<bool, String> {
+    let vector = doc.layers[index]
+        .vector
+        .as_ref()
+        .ok_or("Select a vector layer to restyle its strokes")?;
+    let brush = brush.map(|b| Arc::new(b.clone()));
+    let mut changed = false;
+    let strokes = vector
+        .strokes
+        .iter()
+        .map(|stroke| {
+            if !picked(doc, stroke) {
+                return stroke.clone();
+            }
+            let mut restyled = Stroke {
+                footprint: OnceLock::new(),
+                ..(**stroke).clone()
+            };
+            if let Some(color) = color {
+                restyled.color = color;
+            }
+            if let Some(brush) = &brush {
+                restyled.brush = brush.clone();
+            }
+            if restyled == **stroke {
+                stroke.clone()
+            } else {
+                changed = true;
+                Arc::new(restyled)
+            }
+        })
+        .collect();
+    if changed {
+        redraw_layer(doc, index, VectorLayer { strokes })?;
+    }
+    Ok(changed)
+}
+
+/// Give layer `index` these strokes and the pixels they paint.
+pub(crate) fn redraw_layer(
+    doc: &mut Document,
+    index: usize,
+    vector: VectorLayer,
+) -> Result<(), String> {
+    let pixels = vector.render([doc.width, doc.height], &|| false)?;
+    let layer = &mut doc.layers[index];
+    layer.pixels = pixels;
+    layer.vector = Some(vector);
+    Ok(())
 }
 
 fn render<'a>(
@@ -472,6 +761,7 @@ pub(crate) struct Erase {
     checkpointed: bool,
     modified: bool,
     removed: usize,
+    mode: EraseMode,
 }
 
 impl crate::Dudel {
@@ -542,6 +832,7 @@ impl crate::Dudel {
             checkpointed: false,
             modified: self.modified,
             removed: 0,
+            mode: self.vector_erase_mode,
         });
     }
     /// Feed the vector eraser one pen sample in canvas pixels.
@@ -565,18 +856,24 @@ impl crate::Dudel {
             return;
         };
         let pressure_size = erase.brush.pressure_size;
+        let circles: Vec<[f32; 3]> = dabs
+            .iter()
+            .map(|dab| {
+                let scale = if pressure_size {
+                    dab.pressure.max(0.1)
+                } else {
+                    1.0
+                };
+                [dab.x, dab.y, erase.brush.size * 0.5 * scale]
+            })
+            .collect();
         let hit: Vec<Arc<Stroke>> = vector
             .strokes
             .iter()
             .filter(|stroke| {
-                dabs.iter().any(|dab| {
-                    let scale = if pressure_size {
-                        dab.pressure.max(0.1)
-                    } else {
-                        1.0
-                    };
-                    stroke.touches(dab.x, dab.y, erase.brush.size * 0.5 * scale, size)
-                })
+                circles
+                    .iter()
+                    .any(|&[x, y, r]| stroke.touches(x, y, r, size))
             })
             .cloned()
             .collect();
@@ -596,11 +893,27 @@ impl crate::Dudel {
                 a[3].max(b[3]),
             ]
         });
+        let mode = erase.mode;
         let layer = &mut self.doc.layers[index];
         let vector = layer.vector.as_mut().unwrap();
-        vector
-            .strokes
-            .retain(|stroke| !hit.iter().any(|h| Arc::ptr_eq(h, stroke)));
+        // Each touched line is removed, or replaced by what is left of it.
+        vector.strokes = std::mem::take(&mut vector.strokes)
+            .into_iter()
+            .flat_map(|stroke| {
+                if !hit.iter().any(|h| Arc::ptr_eq(h, &stroke)) {
+                    return vec![stroke];
+                }
+                match mode {
+                    EraseMode::Touched => stroke
+                        .cut(&circles)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Arc::new)
+                        .collect(),
+                    EraseMode::Whole => Vec::new(),
+                }
+            })
+            .collect();
         if let Some(rect) = rect {
             let vector = vector.clone();
             if let Err(error) = vector.redraw(&mut layer.pixels, rect, size, &|| false) {
@@ -618,13 +931,44 @@ impl crate::Dudel {
         if erase.checkpointed {
             self.history.settle(&self.doc);
             self.status = format!(
-                "Erased {} vector stroke{}",
+                "Erased {} {} vector stroke{}",
+                if erase.mode == EraseMode::Whole {
+                    "from"
+                } else {
+                    "parts of"
+                },
                 erase.removed,
                 if erase.removed == 1 { "" } else { "s" }
             );
         } else {
             self.modified = erase.modified;
         }
+    }
+    /// Give the active vector layer's strokes (those in the selection, or
+    /// all) the current color, or the current brush.
+    pub(crate) fn restyle_vector(&mut self, use_color: bool) {
+        let Some(target) = self.input_target() else {
+            return;
+        };
+        if !use_color && self.tool != crate::tools::Tool::Brush {
+            self.status = "Pick the brush to apply first (Brush tool)".into();
+            return;
+        }
+        self.close_input_gestures();
+        let edit = crate::document_edits::Edit::VectorStyle {
+            target,
+            color: use_color.then_some(self.color),
+            brush: (!use_color).then(|| Box::new(self.brush.clone())),
+        };
+        self.dispatch_document_edit(
+            edit,
+            if use_color {
+                "Recolored the vector strokes"
+            } else {
+                "Redrew the vector strokes with the current brush"
+            },
+            "The strokes already look like that",
+        );
     }
     /// Turn the active vector layer into an ordinary raster layer.
     pub(crate) fn rasterize_layer(&mut self) {
@@ -762,6 +1106,7 @@ mod tests {
         stroke(&mut app, [8.0, 50.0], [88.0, 50.0]);
         let before = layer(&app).pixels.clone();
         app.select_tool(Tool::Eraser);
+        app.vector_erase_mode = EraseMode::Whole;
         app.brush.size = 4.0;
         // Across the top stroke only.
         stroke(&mut app, [48.0, 2.0], [48.0, 24.0]);
@@ -832,5 +1177,246 @@ mod tests {
         assert!(same_pixels(&a.pixels, &b.pixels, count));
         let redrawn = vb.render([96, 64], &|| false).unwrap();
         assert!(same_pixels(&redrawn, &b.pixels, count));
+    }
+
+    /// The layer's strokes and pixels agree.
+    fn consistent(app: &Dudel) {
+        let count = app.doc.width * app.doc.height;
+        assert!(same_pixels(&rendered(app), &layer(app).pixels, count));
+    }
+    fn alpha(app: &Dudel, x: usize, y: usize) -> u8 {
+        layer(app).pixels.rgba(y * app.doc.width + x)[3]
+    }
+    fn straight(app: &mut Dudel, y: f32) {
+        app.brush.stabilization = 0.0;
+        app.brush.scatter = 0.0;
+        stroke_line(app, [8.0, y], [88.0, y]);
+    }
+    /// A straight stroke (no wobble) through real input.
+    fn stroke_line(app: &mut Dudel, from: [f32; 2], to: [f32; 2]) {
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw(), |ctx| app.canvas(ctx, &[]));
+        let n = 16;
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let p = egui::pos2(
+                from[0] + (to[0] - from[0]) * t,
+                from[1] + (to[1] - from[1]) * t,
+            );
+            let screen = app.view(app.canvas_area).to_screen(p);
+            let sample = Sample {
+                x: screen.x,
+                y: screen.y,
+                pressure: 1.0,
+                pressure_known: true,
+                time: Some(i as f64 * 0.012),
+                ..Default::default()
+            };
+            let packet = match i {
+                0 => Packet::Start(sample),
+                i if i == n => Packet::End(sample),
+                _ => Packet::Move(sample),
+            };
+            let mut input = raw();
+            input.events.push(egui::Event::PointerMoved(screen));
+            let _ = ctx.run(input, |ctx| app.canvas(ctx, &[packet]));
+        }
+        app.flush_render_queue();
+    }
+    fn run(app: &mut Dudel, edit: crate::document_edits::Edit) {
+        let (doc, outcome) = edit.prepare(&app.doc).unwrap();
+        assert!(outcome.changed);
+        app.doc = doc;
+    }
+
+    #[test]
+    fn moving_and_flipping_move_the_strokes() {
+        let mut app = app();
+        straight(&mut app, 16.0);
+        let id = layer(&app).id;
+        run(
+            &mut app,
+            crate::document_edits::Edit::MoveTarget {
+                target: id,
+                offset: [0, 20],
+            },
+        );
+        consistent(&app);
+        assert!(alpha(&app, 48, 36) > 0 && alpha(&app, 48, 16) == 0);
+        run(
+            &mut app,
+            crate::document_edits::Edit::Transform(crate::transform::Transform::FlipVertical),
+        );
+        consistent(&app);
+        // Flipped about the canvas middle (y 32): 36 lands on 28.
+        assert!(alpha(&app, 48, 28) > 0 && alpha(&app, 48, 36) == 0);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+    }
+
+    #[test]
+    fn the_move_tool_moves_vector_strokes_with_their_pixels() {
+        let mut app = app();
+        straight(&mut app, 16.0);
+        app.select_tool(Tool::Move);
+        stroke_line(&mut app, [48.0, 16.0], [48.0, 40.0]);
+        app.flush_render_queue();
+        consistent(&app);
+        assert!(
+            alpha(&app, 48, 40) > 0 && alpha(&app, 48, 16) == 0,
+            "{}",
+            app.status
+        );
+        // Reopening redraws the same pixels from the moved strokes.
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&app.doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        let reloaded = &loaded.layers[loaded.active];
+        let redrawn = reloaded
+            .vector
+            .as_ref()
+            .unwrap()
+            .render([96, 64], &|| false)
+            .unwrap();
+        assert!(same_pixels(&redrawn, &layer(&app).pixels, 96 * 64));
+    }
+
+    #[test]
+    fn free_transform_scales_strokes_and_their_tips() {
+        let mut app = app();
+        straight(&mut app, 32.0);
+        let size = layer(&app).vector.as_ref().unwrap().strokes[0].brush.size;
+        let mut settings = app.affine_settings;
+        settings.scale_percent = [50.0, 50.0];
+        settings.translation = [0.0, 0.0];
+        settings.angle_degrees = 0.0;
+        settings.warp = None;
+        settings.mirror = None;
+        let target = layer(&app).id;
+        run(
+            &mut app,
+            crate::document_edits::Edit::AffineSettingsTarget {
+                target,
+                settings: Box::new(settings),
+            },
+        );
+        consistent(&app);
+        let stroke = &layer(&app).vector.as_ref().unwrap().strokes[0];
+        assert!(
+            (stroke.brush.size - size * 0.5).abs() < 0.01,
+            "{}",
+            stroke.brush.size
+        );
+        // Half as long about the canvas middle: 8..88 becomes 28..68.
+        assert!(alpha(&app, 30, 32) > 0 && alpha(&app, 12, 32) == 0 && alpha(&app, 84, 32) == 0);
+    }
+
+    #[test]
+    fn canvas_changes_keep_vector_layers_vector() {
+        let mut app = app();
+        straight(&mut app, 16.0);
+        run(
+            &mut app,
+            crate::document_edits::Edit::CanvasSize(crate::canvas_size::Settings {
+                width: 120,
+                height: 80,
+                anchor: [2, 2],
+                dpi: None,
+            }),
+        );
+        assert!(layer(&app).vector.is_some());
+        consistent(&app);
+        // Anchored bottom-right: everything moved by (24, 16).
+        assert!(alpha(&app, 72, 32) > 0);
+        run(&mut app, crate::document_edits::Edit::Rotate(1));
+        assert!(layer(&app).vector.is_some());
+        consistent(&app);
+        // A clockwise turn sends (72, 32) to (80 - 32, 72).
+        assert!(alpha(&app, 48, 72) > 0);
+    }
+
+    #[test]
+    fn the_eraser_takes_only_the_touched_part_of_a_line() {
+        let mut app = app();
+        straight(&mut app, 32.0);
+        app.select_tool(Tool::Eraser);
+        app.brush.size = 6.0;
+        assert_eq!(app.vector_erase_mode, EraseMode::Touched);
+        stroke_line(&mut app, [48.0, 20.0], [48.0, 44.0]);
+        let strokes = &layer(&app).vector.as_ref().unwrap().strokes;
+        assert_eq!(strokes.len(), 2, "{}", app.status);
+        consistent(&app);
+        assert_eq!(alpha(&app, 48, 32), 0);
+        assert!(alpha(&app, 20, 32) > 0 && alpha(&app, 76, 32) > 0);
+        // One undo step brings the whole line back.
+        app.undo();
+        app.flush_render_queue();
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+        assert!(alpha(&app, 48, 32) > 0);
+    }
+
+    #[test]
+    fn strokes_take_the_current_color_or_brush() {
+        let mut app = app();
+        straight(&mut app, 16.0);
+        straight(&mut app, 48.0);
+        app.color = [10, 200, 30];
+        app.restyle_vector(true);
+        app.flush_render_queue();
+        consistent(&app);
+        let vector = layer(&app).vector.as_ref().unwrap();
+        assert!(
+            vector.strokes.iter().all(|s| s.color == [10, 200, 30]),
+            "{}",
+            app.status
+        );
+        // Only strokes in the selection take the bigger brush.
+        app.doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 40,
+            right: 96,
+            bottom: 64,
+        });
+        app.brush.size = 12.0;
+        app.restyle_vector(false);
+        app.flush_render_queue();
+        consistent(&app);
+        let vector = layer(&app).vector.as_ref().unwrap();
+        assert_eq!(vector.strokes[0].brush.size, 6.0);
+        assert_eq!(vector.strokes[1].brush.size, 12.0);
+    }
+
+    #[test]
+    fn cut_pieces_keep_the_stabilized_line_where_it_was() {
+        let mut app = app();
+        app.brush.scatter = 0.0;
+        app.brush.stabilization = 8.0;
+        stroke(&mut app, [8.0, 30.0], [88.0, 34.0]);
+        let before = layer(&app).pixels.clone();
+        app.select_tool(Tool::Eraser);
+        app.brush.size = 4.0;
+        stroke_line(&mut app, [48.0, 4.0], [48.0, 60.0]);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 2);
+        consistent(&app);
+        // Away from the cut the pieces draw the line as it was drawn.
+        let (mut total, mut count) = (0u64, 0u64);
+        for y in 0..64 {
+            for x in (0..30).chain(66..96) {
+                let i = y * 96 + x;
+                let (a, b) = (before.rgba(i)[3], layer(&app).pixels.rgba(i)[3]);
+                total += u64::from(a.abs_diff(b));
+                count += 1;
+            }
+        }
+        let mean = total as f64 / count as f64;
+        assert!(mean < 1.0, "pieces drift from the line: {mean}");
     }
 }

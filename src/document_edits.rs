@@ -85,6 +85,13 @@ pub enum Edit {
     NewVector(crate::document::LayerId),
     /// Keep a vector layer's pixels and drop its strokes.
     Rasterize(crate::document::LayerId),
+    /// Give a vector layer's strokes (those in the selection, or all) this
+    /// color and/or brush, and redraw them.
+    VectorStyle {
+        target: crate::document::LayerId,
+        color: Option<[u8; 3]>,
+        brush: Option<Box<crate::brush::Brush>>,
+    },
     FolderTarget {
         target: crate::document::LayerId,
         folder: crate::document::LayerId,
@@ -366,11 +373,17 @@ impl Edit {
             }
             Self::CanvasSize(settings) => {
                 (doc, outcome.changed) = crate::canvas_size::resize(source, *settings, cancel)?;
-                rasterize_vectors(&mut doc);
+                let [x, y] = settings
+                    .offset(source.width, source.height)
+                    .map(|v| v as f32);
+                crate::vector_layer::follow_canvas(source, &mut doc, &|a, b| [a + x, b + y])?;
             }
             Self::CropCanvas => {
                 (doc, outcome.changed) = crate::canvas_size::crop(source, cancel)?;
-                rasterize_vectors(&mut doc);
+                if let Some(s) = source.selection {
+                    let [x, y] = [s.left as f32, s.top as f32];
+                    crate::vector_layer::follow_canvas(source, &mut doc, &|a, b| [a - x, b - y])?;
+                }
             }
             Self::SelectionRectangle { rectangle, mode } => {
                 let incoming = crate::selection_mask::Mask::rectangle_control(
@@ -557,6 +570,18 @@ impl Edit {
                 layer.name = format!("Vector {}", count + 1);
                 layer.vector = Some(Default::default());
             }
+            Self::VectorStyle {
+                target,
+                color,
+                brush,
+            } => {
+                let index = Self::resolve(&Target::Identity(*target), &doc)?;
+                if let Some(brush) = brush {
+                    brush.validate()?;
+                }
+                outcome.changed =
+                    crate::vector_layer::restyle(&mut doc, index, *color, brush.as_deref())?;
+            }
             Self::Rasterize(target) => {
                 let index = Self::resolve(&Target::Identity(*target), &doc)?;
                 outcome.changed = doc.layers[index].vector.take().is_some();
@@ -727,20 +752,27 @@ impl Edit {
                 .prepare(source);
             }
             Self::Transform(transform) => {
-                refuse_vector(&doc)?;
-                outcome.changed = doc.transform_active_control(*transform, cancel)?
+                outcome.changed = doc.transform_active_control(*transform, cancel)?;
+                if outcome.changed {
+                    crate::vector_layer::follow(source, &mut doc, &flip(source, *transform))?;
+                }
             }
             Self::MoveTarget { target, offset } => {
                 if Self::resolve(&Target::Identity(*target), &doc)? != doc.active {
                     return Err("Captured Move target is no longer active".into());
                 }
-                if let Some(blocker) = doc.paint_blocker() {
+                // A vector layer's strokes move along.
+                if let Some(blocker) = doc.raster_blocker_for(doc.active) {
                     return Err(blocker.into());
                 }
                 if doc.layers[doc.active].alpha_locked {
                     return Err("Turn off Lock transparency to move pixels".into());
                 }
                 outcome.changed = crate::move_preview::apply(&mut doc, *offset, cancel)?;
+                if outcome.changed {
+                    let [x, y] = offset.map(|v| v as f32);
+                    crate::vector_layer::follow(source, &mut doc, &|a, b| [a + x, b + y])?;
+                }
             }
             Self::AffineTarget {
                 target,
@@ -750,27 +782,35 @@ impl Edit {
                 if Self::resolve(&Target::Identity(*target), &doc)? != doc.active {
                     return Err("Captured affine target is no longer active".into());
                 }
-                refuse_vector(&doc)?;
                 outcome.changed = crate::affine::apply(&mut doc, *matrix, *sampling, cancel)?;
+                if outcome.changed {
+                    let map =
+                        |x: f32, y: f32| matrix.point(f64::from(x), f64::from(y)).map(|v| v as f32);
+                    crate::vector_layer::follow(source, &mut doc, &map)?;
+                }
             }
             Self::AffineSettingsTarget { target, settings } => {
                 if Self::resolve(&Target::Identity(*target), &doc)? != doc.active {
                     return Err("Captured affine target is no longer active".into());
                 }
-                refuse_vector(&doc)?;
                 outcome.changed = crate::affine::apply_settings(
                     &mut doc,
                     **settings,
                     crate::paint_target::Target::Raster,
                     cancel,
                 )?;
+                if outcome.changed {
+                    crate::vector_layer::follow_settings(source, &mut doc, settings)?;
+                }
             }
             Self::TransformTarget { target, transform } => {
                 if Self::resolve(&Target::Identity(*target), &doc)? != doc.active {
                     return Err("Captured transform target is no longer active".into());
                 }
-                refuse_vector(&doc)?;
                 outcome.changed = doc.transform_active_control(*transform, cancel)?;
+                if outcome.changed {
+                    crate::vector_layer::follow(source, &mut doc, &flip(source, *transform))?;
+                }
             }
             Self::Rotate(turns) => {
                 outcome.changed = turns % 4 != 0;
@@ -779,7 +819,16 @@ impl Edit {
                     doc.rotate_canvas_clockwise_control(cancel)?;
                 }
                 if outcome.changed {
-                    rasterize_vectors(&mut doc);
+                    let (w, h) = (source.width as f32, source.height as f32);
+                    let turns = turns % 4;
+                    // Clockwise quarter turns of the whole canvas.
+                    let map = move |x: f32, y: f32| match turns {
+                        1 => [h - y, x],
+                        2 => [w - x, h - y],
+                        3 => [y, w - x],
+                        _ => [x, y],
+                    };
+                    crate::vector_layer::follow_canvas(source, &mut doc, &map)?;
                 }
                 if let Some(guides) = &mut doc.guides {
                     guides.map_canvas(*source.canvas_frame, *doc.canvas_frame);
@@ -833,21 +882,16 @@ impl Edit {
         Ok((doc, outcome))
     }
 }
-/// Canvas-wide changes (size, crop, turns) keep vector layers' pixels as
-/// they become; their strokes are dropped rather than redrawn differently.
-fn rasterize_vectors(doc: &mut Document) {
-    for layer in &mut doc.layers {
-        layer.vector = None;
+/// Where a flip or half turn of `doc`'s selection (or canvas) sends a point.
+fn flip(doc: &Document, transform: crate::transform::Transform) -> impl Fn(f32, f32) -> [f32; 2] {
+    use crate::transform::Transform;
+    let b = crate::affine::Settings::bounds(doc);
+    let (sx, sy) = ((b.left + b.right) as f32, (b.top + b.bottom) as f32);
+    move |x, y| match transform {
+        Transform::FlipHorizontal => [sx - x, y],
+        Transform::FlipVertical => [x, sy - y],
+        Transform::RotateHalfTurn => [sx - x, sy - y],
     }
-}
-/// Pixel transforms are not applied to vector layers' strokes yet.
-fn refuse_vector(doc: &Document) -> Result<(), String> {
-    if doc.layers[doc.active].vector.is_some() {
-        return Err(
-            "Transforming vector strokes is not supported yet — rasterize the layer first".into(),
-        );
-    }
-    Ok(())
 }
 fn current_selection(
     doc: &Document,

@@ -641,6 +641,12 @@ impl Dudel {
                 .input_layer()
                 .and_then(|i| self.doc.layers.get(i))
                 .is_some_and(|l| l.vector.is_some());
+            if menu_item(ui, "Recolor vector strokes", "", vector) {
+                self.restyle_vector(true);
+            }
+            if menu_item(ui, "Apply current brush to vector strokes", "", vector) {
+                self.restyle_vector(false);
+            }
             if menu_item(ui, "Rasterize layer", "", vector) {
                 self.rasterize_layer();
             }

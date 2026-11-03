@@ -456,6 +456,35 @@ impl Engine {
     pub(crate) fn original(&self) -> &Document {
         &self.original
     }
+    /// Move a vector layer's strokes the way the finished move or transform
+    /// moved its pixels, and redraw them; a mirrored pair keeps its pixels
+    /// and drops the strokes. Strokes that cannot be redrawn are dropped too,
+    /// so the layer never shows pixels its strokes would not paint.
+    pub(crate) fn follow_vector(&self, doc: &mut Document) {
+        let before = &self.original;
+        if !self.paint_target.is_raster() || before.layers[before.active].vector.is_none() {
+            return;
+        }
+        let result = match self.applied_affine {
+            Some(a) if a.mirror.is_some() => Err(String::new()),
+            Some(a) => {
+                let frame = crate::affine::Settings::bounds(before);
+                let map = |x: f32, y: f32| {
+                    a.mapping
+                        .forward(frame, f64::from(x), f64::from(y))
+                        .map(|v| v as f32)
+                };
+                crate::vector_layer::follow(before, doc, &map)
+            }
+            None => {
+                let [x, y] = self.applied.map(|v| v as f32);
+                crate::vector_layer::follow(before, doc, &|a, b| [a + x, b + y])
+            }
+        };
+        if result.is_err() {
+            doc.layers[before.active].vector = None;
+        }
+    }
     pub(crate) fn register_allocations(&self, registry: &mut crate::snapshot_memory::Registry) {
         registry.add_document(&self.original);
         registry.add_document(&self.expected);

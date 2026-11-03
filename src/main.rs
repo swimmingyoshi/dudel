@@ -298,6 +298,8 @@ struct Dudel {
     vector_record: Option<vector_layer::Stroke>,
     /// The vector eraser while it is dragged.
     vector_erase: Option<vector_layer::Erase>,
+    /// What the eraser takes from vector layers.
+    vector_erase_mode: vector_layer::EraseMode,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -551,6 +553,7 @@ impl Default for Dudel {
             script_stroke: None,
             vector_record: None,
             vector_erase: None,
+            vector_erase_mode: Default::default(),
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

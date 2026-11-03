@@ -818,6 +818,15 @@ impl Document {
         self.paint_blocker_for(self.active)
     }
     pub fn paint_blocker_for(&self, index: usize) -> Option<&'static str> {
+        self.raster_blocker_for(index).or_else(|| {
+            self.layers[index].vector.as_ref().map(|_| {
+                "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels"
+            })
+        })
+    }
+    /// `paint_blocker_for` without refusing vector layers, for operations
+    /// that move their strokes along (Move).
+    pub fn raster_blocker_for(&self, index: usize) -> Option<&'static str> {
         let Some(layer) = self.layers.get(index) else {
             return Some("Selected layer no longer exists");
         };
@@ -827,10 +836,6 @@ impl Document {
             Some("Layer is locked — unlock it to draw")
         } else if layer.adjustment.is_some() {
             Some("An adjustment layer has no pixels — paint on its mask or another layer")
-        } else if layer.vector.is_some() {
-            Some(
-                "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels",
-            )
         } else if !self.shown(index) {
             Some("Layer is hidden — show it (and its folder) to draw")
         } else {
