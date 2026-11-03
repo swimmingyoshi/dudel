@@ -165,6 +165,7 @@ mod tool_panel;
 mod tool_shift;
 mod tools;
 mod transform;
+mod vector_layer;
 mod view;
 mod wand;
 mod wasm_filters;
@@ -293,6 +294,10 @@ struct Dudel {
     scripted_tool: Option<scripted_tool::Active>,
     /// Its script's state during a stroke.
     script_stroke: Option<scripted_tool::ScriptedStroke>,
+    /// The stroke being drawn on a vector layer, as it will be kept.
+    vector_record: Option<vector_layer::Stroke>,
+    /// The vector eraser while it is dragged.
+    vector_erase: Option<vector_layer::Erase>,
     /// Counts shown in the Levels settings of the Adjustment window.
     levels_histogram: adjustment_panel::Histogram,
     /// The effects list last sent through the busy render queue, which the
@@ -544,6 +549,8 @@ impl Default for Dudel {
             adjustment_window_open: false,
             scripted_tool: None,
             script_stroke: None,
+            vector_record: None,
+            vector_erase: None,
             levels_histogram: Default::default(),
             effects_sent: None,
             effects_window_open: false,

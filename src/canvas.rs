@@ -183,7 +183,8 @@ impl Dudel {
     pub(crate) fn finish_painted_stroke(&mut self) {
         self.stroke_snap = None;
         if let Some(id) = self.queued_stroke.take() {
-            if let Err(error) = self.render_queue.end(id) {
+            let record = self.vector_record.take().map(std::sync::Arc::new);
+            if let Err(error) = self.render_queue.end_recorded(id, record) {
                 self.status = error;
             }
         } else {
@@ -193,6 +194,7 @@ impl Dudel {
         self.stroke_settings = None;
         self.stroke.reset();
         self.script_stroke = None;
+        self.vector_record = None;
         self.stroking = false;
         self.stroke_previous_end = None;
     }
@@ -231,6 +233,7 @@ impl Dudel {
             self.last_stroke_end = self.stroke_previous_end;
             self.stroke_settings = None;
             self.stroke.reset();
+            self.vector_record = None;
             self.stroking = false;
             self.stroke_previous_end = None;
             self.selection_drag = None;
@@ -534,7 +537,13 @@ impl Dudel {
             self.replay.catch_up(fraction);
             let dabs = match &mut self.script_stroke {
                 Some(script) => script.catch_up(fraction, &brush),
-                None => self.stroke.catch_up(fraction, &brush),
+                None => {
+                    crate::vector_layer::record(
+                        &mut self.vector_record,
+                        crate::vector_layer::Command::CatchUp(fraction),
+                    );
+                    self.stroke.catch_up(fraction, &brush)
+                }
             };
             self.deliver_canvas_dabs(dabs);
         }
@@ -899,7 +908,26 @@ impl Dudel {
                     }
                 }
                 self.finish_painted_stroke();
-                if allowed && on_workspace && matches!(self.tool, Tool::Brush | Tool::Eraser) {
+                let vector_erase = allowed
+                    && on_workspace
+                    && (self.tool == Tool::Eraser || sample.eraser)
+                    && self.vector_target().is_some();
+                if vector_erase {
+                    // The eraser removes whole strokes from a vector layer.
+                    let brush = if sample.eraser {
+                        self.eraser_for_stroke().into_owned()
+                    } else {
+                        self.brush.clone()
+                    };
+                    self.begin_vector_erase(brush);
+                } else if allowed
+                    && on_workspace
+                    && matches!(self.tool, Tool::Brush | Tool::Eraser)
+                    && let Some(blocker) = self.vector_stroke_blocker()
+                {
+                    self.status = blocker.into();
+                } else if allowed && on_workspace && matches!(self.tool, Tool::Brush | Tool::Eraser)
+                {
                     let layer = self.input_layer().unwrap_or(self.doc.active);
                     // The pen's eraser end uses the eraser tip when it has its own.
                     let brush = if sample.eraser {
@@ -919,6 +947,7 @@ impl Dudel {
                         continue;
                     }
                     self.begin_script_stroke();
+                    self.begin_vector_record();
                     if self.tool == Tool::Brush {
                         self.note_recent_color();
                     }
@@ -934,6 +963,13 @@ impl Dudel {
                             .as_ref()
                             .map_or(&self.brush, |s| &s.brush);
                         let _ = self.stroke.sample_at_zoom(last, brush, self.zoom);
+                        crate::vector_layer::record(
+                            &mut self.vector_record,
+                            crate::vector_layer::Command::Seed {
+                                sample: last,
+                                zoom: self.zoom,
+                            },
+                        );
                         self.stroke_snap = None;
                     } else {
                         let (_, active) = self.active_rulers();
@@ -953,6 +989,18 @@ impl Dudel {
             }
             if picking {
                 self.finish_painted_stroke();
+            }
+            if self.vector_erase.is_some() {
+                let local = stroke::Sample {
+                    x: at.x,
+                    y: at.y,
+                    ..sample
+                };
+                self.vector_erase_sample(local, end);
+                if end {
+                    self.finish_vector_erase();
+                }
+                continue;
             }
             if allowed && self.stroking && matches!(self.tool, Tool::Brush | Tool::Eraser) {
                 let Some(settings) = &self.stroke_settings else {
@@ -997,6 +1045,16 @@ impl Dudel {
                         None if lift => Ok(self.stroke.finish_at_zoom(point, brush, self.zoom)),
                         None => Ok(self.stroke.sample_at_zoom(point, brush, self.zoom)),
                     };
+                    if self.script_stroke.is_none() {
+                        crate::vector_layer::record(
+                            &mut self.vector_record,
+                            crate::vector_layer::Command::Sample {
+                                sample: point,
+                                zoom: self.zoom,
+                                lift,
+                            },
+                        );
+                    }
                     match drawn {
                         Ok(drawn) => dabs.extend(drawn),
                         Err(error) => {

@@ -54,6 +54,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && a.collapsed == b.collapsed
                 && a.effects == b.effects
                 && a.adjustment == b.adjustment
+                && crate::vector_layer::same(&a.vector, &b.vector)
                 && crate::layer_mask::same_snapshot(&a.mask, &b.mask)
                 && a.pixels.shares(&b.pixels)
         })
@@ -309,9 +310,11 @@ impl Settlement {
                             .saturating_add(payload)
                             .saturating_add((plans.len() + 1) * std::mem::size_of::<RegionPatch>())
                             .saturating_add(plans.capacity() * std::mem::size_of::<[usize; 4]>());
+                        // Patches must save something worth their extra
+                        // work; near a tie the full snapshot is kept.
                         if self
                             .full_snapshot_limit
-                            .is_some_and(|limit| projected >= limit)
+                            .is_some_and(|limit| projected >= limit - limit / 64)
                         {
                             if !self.retain_full(history, doc) {
                                 return Err(

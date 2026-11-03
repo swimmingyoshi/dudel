@@ -171,6 +171,10 @@ pub struct Layer {
     /// pixels; its own pixels are unused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjustment: Option<crate::adjustment::Adjustment>,
+    /// A vector layer keeps its strokes; its pixels are them painted in order
+    /// (`vector_layer`), and other pixel edits are refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector: Option<crate::vector_layer::VectorLayer>,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -250,6 +254,7 @@ impl Default for Layer {
             effects: Vec::new(),
             effect_cache: Default::default(),
             adjustment: None,
+            vector: None,
             pixels: Default::default(),
             display_reference: None,
         }
@@ -731,6 +736,12 @@ impl Document {
                 }
                 adjustment.validate()?;
             }
+            if let Some(vector) = &layer.vector {
+                if layer.folder || layer.adjustment.is_some() {
+                    return Err("Only raster layers can be vector layers".into());
+                }
+                vector.validate()?;
+            }
             if layer.name.len() > 4096
                 || (layer.folder && layer.csp_byte_opacity)
                 || !layer.opacity.is_finite()
@@ -816,6 +827,10 @@ impl Document {
             Some("Layer is locked — unlock it to draw")
         } else if layer.adjustment.is_some() {
             Some("An adjustment layer has no pixels — paint on its mask or another layer")
+        } else if layer.vector.is_some() {
+            Some(
+                "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels",
+            )
         } else if !self.shown(index) {
             Some("Layer is hidden — show it (and its folder) to draw")
         } else {
@@ -2177,6 +2192,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.depth != b.depth
             || a.effects != b.effects
             || a.adjustment != b.adjustment
+            || !crate::vector_layer::same(&a.vector, &b.vector)
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
         {
             return None;

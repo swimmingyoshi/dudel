@@ -634,6 +634,16 @@ impl Dudel {
                     }
                 });
             });
+            if menu_item(ui, "New vector layer", "", self.doc.has_room(1, 1)) {
+                self.create_vector_layer();
+            }
+            let vector = self
+                .input_layer()
+                .and_then(|i| self.doc.layers.get(i))
+                .is_some_and(|l| l.vector.is_some());
+            if menu_item(ui, "Rasterize layer", "", vector) {
+                self.rasterize_layer();
+            }
             if menu_item(ui, "Layer effects…", "", self.input_target().is_some()) {
                 self.effects_window_open = true;
             }

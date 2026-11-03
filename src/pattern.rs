@@ -165,7 +165,7 @@ impl<'de> serde::Deserialize<'de> for Pattern {
 }
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-fn base64(bytes: &[u8]) -> String {
+pub(crate) fn base64(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let n = chunk
@@ -182,7 +182,7 @@ fn base64(bytes: &[u8]) -> String {
     }
     out
 }
-fn unbase64(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn unbase64(text: &str) -> Option<Vec<u8>> {
     let text = text.trim_end_matches('=').as_bytes();
     let mut out = Vec::with_capacity(text.len() * 3 / 4);
     let (mut bits, mut count) = (0u32, 0);

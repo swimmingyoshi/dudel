@@ -1149,6 +1149,13 @@ impl Dudel {
         if let Some(adjustment) = &layer.adjustment {
             summary = format!("{} · {summary}", adjustment.name());
         }
+        if let Some(vector) = &layer.vector {
+            let count = vector.strokes.len();
+            summary = format!(
+                "Vector · {count} stroke{} · {summary}",
+                if count == 1 { "" } else { "s" }
+            );
+        }
         if layer.folder {
             let items = self.doc.layers[self.doc.block(index)]
                 .iter()

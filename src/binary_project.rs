@@ -48,6 +48,8 @@ struct LayerMetadata<'a> {
     fill: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     adjustment: Option<&'a crate::adjustment::Adjustment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vector: Option<&'a crate::vector_layer::VectorLayer>,
     pixels: [u8; 0],
 }
 #[derive(Serialize)]
@@ -92,6 +94,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
                 effects: &layer.effects,
                 fill: layer.fill,
                 adjustment: layer.adjustment.as_ref(),
+                vector: layer.vector.as_ref(),
                 pixels: [],
             })
             .collect(),
@@ -113,6 +116,9 @@ pub fn encode(doc: &Document, writer: impl Write) -> Result<(), String> {
     }
     if !doc.references.is_empty() {
         return Err("Legacy v3 cannot store reference layers; use current project format".into());
+    }
+    if doc.layers.iter().any(|l| l.vector.is_some()) {
+        return Err("Legacy v3 cannot store vector layers; use current project format".into());
     }
     let data = metadata(doc)?;
     let mut writer = writer;

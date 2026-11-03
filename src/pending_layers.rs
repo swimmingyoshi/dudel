@@ -58,6 +58,8 @@ struct Entry {
     blend: crate::blend::BlendMode,
     clipped: bool,
     mask: Option<MaskProperties>,
+    /// Vector layers refuse pixel edits other than their strokes.
+    vector: bool,
 }
 
 #[cfg(test)]
@@ -465,6 +467,7 @@ impl PendingLayers {
                 blend: Default::default(),
                 clipped: false,
                 mask: None,
+                vector: false,
             },
         );
         crate::document::validate_folder_depths(
@@ -578,6 +581,7 @@ impl PendingLayers {
                     csp_byte_opacity: layer.csp_byte_opacity,
                     blend: layer.blend,
                     clipped: layer.clipped,
+                    vector: layer.vector.is_some(),
                 })
                 .collect(),
         }
@@ -618,6 +622,7 @@ impl PendingLayers {
                 blend: Default::default(),
                 clipped: false,
                 mask: None,
+                vector: false,
             },
         );
         Ok(updated)
@@ -625,7 +630,13 @@ impl PendingLayers {
     /// Visibility follows projected ancestry. Existing layer pixel locks are
     /// checked separately against the authoritative document.
     pub fn paint_blocker(&self, id: LayerId) -> Option<&'static str> {
-        self.target_blocker(id, crate::paint_target::Target::Raster, false)
+        let blocker = self.target_blocker(id, crate::paint_target::Target::Raster, false);
+        if blocker.is_none() && self.entries.iter().any(|e| e.id == id && e.vector) {
+            return Some(
+                "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels",
+            );
+        }
+        blocker
     }
     pub fn target_blocker(
         &self,

@@ -107,6 +107,12 @@ pub(crate) fn apply(
     {
         return Err(blocker.into());
     }
+    if settings.paint_target.is_raster() && doc.layers[doc.active].vector.is_some() {
+        return Err(
+            "Shapes draw on raster layers — draw on this vector layer with the brush, or rasterize it"
+                .into(),
+        );
+    }
     let alpha_locked = doc.layers[doc.active].alpha_locked;
     if settings.erase && alpha_locked && settings.paint_target.is_raster() {
         return Err("Turn off Lock transparency to use lasso eraser".into());

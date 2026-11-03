@@ -22,7 +22,8 @@ enum Command {
         id: StrokeId,
         sample: Sample,
     },
-    End(StrokeId),
+    /// A stroke's end, with its recording when it was drawn on a vector layer.
+    End(StrokeId, Option<Arc<crate::vector_layer::Stroke>>),
     Skipped(StrokeId),
     Undo,
     Redo,
@@ -44,9 +45,10 @@ enum Command {
 impl Command {
     fn id(&self) -> Option<StrokeId> {
         match self {
-            Self::Begin { id, .. } | Self::Dab { id, .. } | Self::End(id) | Self::Skipped(id) => {
-                Some(*id)
-            }
+            Self::Begin { id, .. }
+            | Self::Dab { id, .. }
+            | Self::End(id, _)
+            | Self::Skipped(id) => Some(*id),
             _ => None,
         }
     }
@@ -75,6 +77,8 @@ struct Active {
     cancel: bool,
     retired_prefix: usize,
     failure: Option<String>,
+    /// Added to the vector layer's strokes when the stroke settles.
+    record: Option<Arc<crate::vector_layer::Stroke>>,
 }
 pub struct Completed {
     pub id: StrokeId,
@@ -594,11 +598,20 @@ impl Queue {
         Ok(())
     }
     pub fn end(&mut self, id: StrokeId) -> Result<(), String> {
+        self.end_recorded(id, None)
+    }
+    /// End a stroke drawn on a vector layer: `record` joins the layer's
+    /// strokes in the same history step as its pixels.
+    pub fn end_recorded(
+        &mut self,
+        id: StrokeId,
+        record: Option<Arc<crate::vector_layer::Stroke>>,
+    ) -> Result<(), String> {
         if self.input_open != Some(id) {
             return Err("Input stroke is no longer open".into());
         }
         // Begin/dab reserve this control slot so a stroke cannot lose its end.
-        self.push(Command::End(id));
+        self.push(Command::End(id, record));
         self.input_open = None;
         Ok(())
     }
@@ -1101,6 +1114,16 @@ impl Queue {
                             continue;
                         }
                         let changed = active.buffer.has_visible_changes(doc);
+                        // The recording joins the layer before history keeps it.
+                        if changed
+                            && let Some(record) = active.record.take()
+                            && let Some(vector) = doc
+                                .layers
+                                .get_mut(active.settings.layer)
+                                .and_then(|layer| layer.vector.as_mut())
+                        {
+                            vector.strokes.push(record);
+                        }
                         if changed && let Some(cursor) = history.begin_settle(doc) {
                             active.operation = Operation::Compact(Box::new(cursor));
                             record_timing(&mut progress, 2, started);
@@ -1292,6 +1315,7 @@ impl Queue {
                         cancel: false,
                         retired_prefix: 0,
                         failure: None,
+                        record: None,
                     });
                     progress.started = Some(id);
                     record_timing(&mut progress, 4, started);
@@ -1309,11 +1333,12 @@ impl Queue {
                             .ok_or("Queued dab target changed")?,
                     ));
                 }
-                Command::End(id) => {
+                Command::End(id, record) => {
                     let active = self.active.as_mut().ok_or("Queued end has no stroke")?;
                     if active.id != id {
                         return Err("Queued end identifier does not match".into());
                     }
+                    active.record = record;
                     active.operation = Operation::Finish(
                         active
                             .buffer

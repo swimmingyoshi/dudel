@@ -13,6 +13,8 @@ pub const MASK_MAGIC: &[u8] = b"DUDL\x05\r\n";
 /// Projects with layer effects or adjustment layers. Builds that predate them
 /// reject this header instead of opening the file and dropping them on resave.
 pub const STYLE_MAGIC: &[u8] = b"DUDL\x06\r\n";
+/// Projects with vector layers; older builds would drop their strokes.
+pub const VECTOR_MAGIC: &[u8] = b"DUDL\x07\r\n";
 /// Which header a project was read from.
 #[derive(Clone, Copy, PartialEq)]
 enum Container {
@@ -22,7 +24,9 @@ enum Container {
 }
 /// The header `doc` is saved with.
 pub(crate) fn magic(doc: &Document) -> &'static [u8] {
-    if doc
+    if doc.layers.iter().any(|l| l.vector.is_some()) {
+        VECTOR_MAGIC
+    } else if doc
         .layers
         .iter()
         .any(|l| !l.effects.is_empty() || l.adjustment.is_some() || l.fill != 1.0)
@@ -120,6 +124,10 @@ pub(crate) fn decode_masked(reader: impl Read) -> Result<Document, String> {
     decode_inner(reader, None, Container::Masked)
 }
 pub(crate) fn decode_styled(reader: impl Read) -> Result<Document, String> {
+    decode_inner(reader, None, Container::Styled)
+}
+/// v7 is laid out as v6; only its header differs.
+pub(crate) fn decode_vector(reader: impl Read) -> Result<Document, String> {
     decode_inner(reader, None, Container::Styled)
 }
 /// Replay fixtures reject multi-layer metadata and over-budget tile counts

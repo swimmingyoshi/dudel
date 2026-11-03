@@ -383,6 +383,8 @@ impl Document {
         self.layers[lower].effects.clear();
         // The lower layer's fill opacity is in the merged pixels too.
         self.layers[lower].fill = 1.0;
+        // Merged pixels are no longer the strokes of a vector layer.
+        self.layers[lower].vector = None;
         self.layers.remove(upper);
         self.active = lower;
         Ok(())
