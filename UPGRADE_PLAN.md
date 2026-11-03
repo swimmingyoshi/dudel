@@ -159,12 +159,13 @@ CSP (`src/clip_*.rs`):
       (folders only; contents composite onto the backdrop, faded back by folder
       opacity/mask/visibility). CSP 10/12/30 and PSD pass/diss/tsly-off map to
       them; Purplelady and rude Glow layers checked against CSP previews.
-- [ ] **Vector layers:** CSP does NOT store their rendered pixels (the render
-      mipmap's external chunks are absent in all 5 corpus files); it redraws
-      from `VectorObjectList` on open. Owner wants vector layers eventually and
-      pixels for now, so the next step is a CSP vector stroke reader + renderer
-      (points, pressure, width, color, brush). 7 vector layers and 1 text layer
-      are skipped across the corpus (rude's line art is one).
+- [x] **Vector layers** (2026-10-29, `src/clip_vector.rs`): CSP stores strokes, not
+      pixels; Dudel reads them and draws them as raster pixels (radius = width x
+      pressure, edge by anti-alias level). Rechecked 2026-11-03: all 69 owner CSP
+      files import; REnderPurple (the only full-size preview) 0.69 mean levels off.
+      The only skipped layer left is Animation.clip's "Story Information" text.
+      Still open: editable vector layers in Dudel itself (strokes stay strokes),
+      and CSP's SizeEffector end tapering
 - [ ] Glow alpha over partly transparent backdrops is our reading of the
       definition (verified by eye on opaque art only)
 - [ ] Pixel comparison against CSP previews at full size (most previews are
