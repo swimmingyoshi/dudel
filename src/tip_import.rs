@@ -6,6 +6,10 @@ use crate::{
 pub fn from_png(path: &std::path::Path) -> Result<TipImage, String> {
     mask_from_png(path, true)
 }
+/// A paper grain from a PNG: dark marks on white, kept at its own aspect.
+pub fn grain_from_png(path: &std::path::Path) -> Result<TipImage, String> {
+    mask_from_png(path, false)
+}
 
 fn mask_from_png(path: &std::path::Path, square: bool) -> Result<TipImage, String> {
     use image::ImageDecoder;

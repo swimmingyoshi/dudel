@@ -3218,7 +3218,11 @@ mod tests {
         // at once.)
         let (first, _, waiting) = expand_for_display(&doc, &wake);
         assert!(waiting);
-        assert!([1, 2].contains(&first.layers.len()), "{}", first.layers.len());
+        assert!(
+            [1, 2].contains(&first.layers.len()),
+            "{}",
+            first.layers.len()
+        );
         let (ready, drawn) = settle(&doc);
         if first.layers.len() == 2 {
             assert!(first.layers[1].pixels.shares(&ready.layers[1].pixels));

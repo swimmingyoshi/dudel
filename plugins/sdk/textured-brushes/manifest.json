@@ -1,0 +1,94 @@
+{
+  "format": "dudel-extension",
+  "version": 2,
+  "api": 2,
+  "id": "dudel-textured-brushes",
+  "name": "Textured brushes",
+  "author": "Dudel",
+  "release": "1.0.0",
+  "description": "Example brushes with their own tip images and paper grain: scattered leaves, a grainy pencil and chalk.",
+  "capabilities": ["brushes", "ui.panels"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "leaves",
+        "label": "Leaf scatter",
+        "action": {
+          "type": "brush",
+          "brush": {
+            "name": "Leaf scatter",
+            "size": 40.0,
+            "opacity": 1.0,
+            "hardness": 1.0,
+            "spacing": 0.9,
+            "pressure_size": true,
+            "pressure_opacity": false,
+            "scatter": 1.2,
+            "angle_jitter": 180.0,
+            "group": "Brush",
+            "image_file": "leaf.png"
+          }
+        }
+      },
+      {
+        "id": "pencil",
+        "label": "Grainy pencil",
+        "action": {
+          "type": "brush",
+          "brush": {
+            "name": "Grainy pencil",
+            "size": 9.0,
+            "opacity": 0.9,
+            "flow": 0.5,
+            "hardness": 0.6,
+            "spacing": 0.08,
+            "pressure_size": false,
+            "pressure_opacity": true,
+            "group": "Pencil",
+            "grain_file": "paper.png",
+            "grain_amount": 0.8,
+            "grain_scale": 2.0
+          }
+        }
+      },
+      {
+        "id": "chalk",
+        "label": "Chalk",
+        "action": {
+          "type": "brush",
+          "brush": {
+            "name": "Chalk",
+            "size": 24.0,
+            "opacity": 0.85,
+            "hardness": 1.0,
+            "spacing": 0.15,
+            "pressure_size": true,
+            "pressure_opacity": true,
+            "angle_jitter": 180.0,
+            "group": "Brush",
+            "image_file": "chalk.png",
+            "grain_file": "paper.png",
+            "grain_amount": 0.6,
+            "grain_scale": 1.5
+          }
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "brushes",
+        "title": "Textured brushes",
+        "widgets": [
+          { "type": "label", "text": "Brushes with their own tip images and paper grain. Save as new preset keeps one in your library." },
+          { "type": "button", "command": "leaves" },
+          { "type": "button", "command": "pencil" },
+          { "type": "button", "command": "chalk" },
+          { "type": "separator" },
+          { "type": "brush_size" },
+          { "type": "opacity" },
+          { "type": "color" }
+        ]
+      }
+    ]
+  }
+}

@@ -112,6 +112,16 @@ existing output:
 Filter and scripted-tool commands may name a `.rhai` file beside the manifest
 with `"source_file"` instead of `"source"`; packaging inlines it.
 
+Brushes (in `brush` commands and `brush` tools) may name PNG files for their
+textures: `"image_file"` for the tip (which also sets `"tip": "Image"`) and
+`"grain_file"` for the paper grain. Packaging asks Dudel to convert them exactly as
+**Brush settings > Import tip/grain** does: dark marks on white or transparent
+become paint, tips are padded square, and both are scaled to at most 128 px. With
+flow below 1 a grain shows through overlapping dabs; at full flow it only shows at
+the stroke's edges. `example-textured-brushes.dudelplugin` (source in
+`plugins/sdk/textured-brushes/`) has a stamped tip with scatter, a grainy pencil and
+a chalk brush with both. Packages over 256 KiB are written without indentation.
+
 ```powershell
 python scripts/plugin_tool.py plugins/sdk/studio-kit studio-kit.dudelplugin --executable target/debug/dudel.exe
 target/debug/dudel.exe --check-plugin studio-kit.dudelplugin

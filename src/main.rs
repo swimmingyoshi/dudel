@@ -1268,6 +1268,29 @@ fn main() -> eframe::Result {
         println!("Plugin API, metadata and program validation passed");
         return Ok(());
     }
+    if mode.as_deref() == Some("--brush-texture") {
+        // For plugin packaging: a PNG as the brush tip or grain JSON a
+        // manifest embeds, converted exactly as Brush settings import it.
+        let usage = "Usage: --brush-texture tip|grain IMAGE.png";
+        let (Some(kind), Some(path), None) = (args.next(), args.next(), args.next()) else {
+            eprintln!("{usage}");
+            std::process::exit(1);
+        };
+        let path = PathBuf::from(path);
+        let texture = match kind.as_str() {
+            "tip" => tip_import::from_png(&path),
+            "grain" => tip_import::grain_from_png(&path),
+            _ => Err(usage.into()),
+        };
+        match texture.and_then(|t| serde_json::to_string(&t).map_err(|e| e.to_string())) {
+            Ok(json) => println!("{json}"),
+            Err(error) => {
+                eprintln!("Brush texture: {error}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
     if mode.as_deref() == Some("--probe-artwork-recovery") {
         let root = args.next().map(PathBuf::from);
         let phase = args.next();

@@ -674,6 +674,88 @@ mod tests {
             "over 5 MiB"
         );
     }
+    /// Draw a wavy stroke with the current tool through real pen input.
+    pub(crate) fn wave(app: &mut Dudel, size: f32) {
+        use crate::{input::Packet, stroke::Sample};
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw(), |ctx| app.canvas(ctx, &[]));
+        let n = 120;
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let p = egui::pos2(
+                size * (0.12 + 0.76 * t),
+                size * (0.5 + 0.27 * (t * std::f32::consts::TAU).sin()),
+            );
+            let screen = app.view(app.canvas_area).to_screen(p);
+            let sample = Sample {
+                x: screen.x,
+                y: screen.y,
+                pressure: 0.4 + 0.6 * t,
+                time: Some(i as f64 * 0.01),
+                ..Default::default()
+            };
+            let packet = match i {
+                0 => Packet::Start(sample),
+                i if i == n => Packet::End(sample),
+                _ => Packet::Move(sample),
+            };
+            let mut input = raw();
+            input.events.push(egui::Event::PointerMoved(screen));
+            let _ = ctx.run(input, |ctx| app.canvas(ctx, &[packet]));
+        }
+        app.flush_render_queue();
+    }
+
+    #[test]
+    fn textured_example_brushes_carry_their_images_and_paint() {
+        let package: crate::extensions::Package = serde_json::from_str(include_str!(
+            "../plugins/example-textured-brushes.dudelplugin"
+        ))
+        .unwrap();
+        package.validate().unwrap();
+        for (id, tip, grain) in [
+            ("leaves", true, false),
+            ("pencil", false, true),
+            ("chalk", true, true),
+        ] {
+            let mut app = Dudel {
+                doc: crate::document::Document::new(128, 128),
+                zoom: 2.0,
+                auto_fit: false,
+                ..Default::default()
+            };
+            app.extensions.push(crate::extensions::Installed {
+                package: package.clone(),
+                enabled: true,
+            });
+            app.run_extension_command("dudel-textured-brushes", id);
+            assert_eq!(app.brush.image.is_some(), tip, "{id}");
+            assert_eq!(app.brush.tip == crate::brush::Tip::Image, tip, "{id}");
+            assert_eq!(app.brush.grain.is_some(), grain, "{id}");
+            app.brush.size = app.brush.size.min(16.0);
+            wave(&mut app, 128.0);
+            let painted = (0..128 * 128)
+                .filter(|i| app.doc.layers[0].pixels.rgba(*i)[3] > 0)
+                .count();
+            assert!(painted > 200, "{id}: {painted} pixels");
+            if grain {
+                // Grain leaves gaps and varied coverage inside the stroke.
+                let levels: std::collections::BTreeSet<u8> = (0..128 * 128)
+                    .map(|i| app.doc.layers[0].pixels.rgba(i)[3])
+                    .filter(|a| *a > 0)
+                    .collect();
+                assert!(levels.len() > 20, "{id}: {} levels", levels.len());
+            }
+        }
+    }
+
     #[test]
     fn brushes_tools_commands_and_disable_use_native_state_and_undo() {
         let mut app = Dudel {

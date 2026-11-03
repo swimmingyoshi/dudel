@@ -111,7 +111,11 @@ Left:
       `plugins/example-scripted-tools.dudelplugin` (source `plugins/sdk/scripted-tools/`:
       parallel lines, hatching, coil, hatching eraser); `plugin_tool.py` inlines
       `source_file`. Owner pen check passed 2026-11-03
-- [ ] Brush asset contributions (tip/grain textures), not only parameters
+- [x] Brush asset contributions (2026-11-03): brushes name `image_file`/`grain_file`
+      PNGs; `plugin_tool.py` converts them with `dudel.exe --brush-texture tip|grain`
+      (same conversion as the brush settings import) and times out on an older exe;
+      example `plugins/example-textured-brushes.dudelplugin` (leaf scatter, grainy
+      pencil, chalk; source and generated PNGs in `plugins/sdk/textured-brushes/`)
 - [ ] More panel widgets; decide the stable widget list before 0.2
 - [x] Load/unload without restart: install, enable, disable and uninstall apply at once
 - [x] Owner test (2026-11-01): the example's "Invert selection" was a color filter.
