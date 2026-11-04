@@ -882,6 +882,12 @@ impl Dudel {
         self.timelapse.prefs = p.timelapse.sanitized();
         self.new_canvas_form.prefs = p.new_canvas.sanitized();
         self.shortcuts = p.shortcuts;
+        if p.shortcuts_dropped > 0 {
+            self.status = format!(
+                "{} saved shortcut(s) clashed and went back to their defaults",
+                p.shortcuts_dropped
+            );
+        }
         let finite = |h: Option<f32>| h.filter(|h| h.is_finite() && *h > 0.0);
         self.library_height = finite(p.layout.library_height);
         self.color_height = finite(p.layout.color_height);
@@ -926,6 +932,7 @@ impl Dudel {
             timelapse: self.timelapse.prefs.clone(),
             new_canvas: self.new_canvas_form.prefs.clone(),
             shortcuts: self.shortcuts.clone(),
+            shortcuts_dropped: 0,
             layout: preferences::LayoutPrefs {
                 library_height: self.library_height,
                 color_height: self.color_height,

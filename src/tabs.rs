@@ -204,6 +204,8 @@ project_session! {
     references: crate::references::References,
     reference_layers: crate::reference_layers::State,
     vector_pick: crate::vector_pick::Pick,
+    layer_navigation: crate::layer_navigation::Navigation,
+    layer_selection: crate::layer_batch::Selection,
     recording: crate::timelapse::Recording,
 }
 
@@ -1205,6 +1207,26 @@ mod tests {
             .writer()
             .write_region(w, [0, 0, 2, 2], &rgba.repeat(4));
         app.changed();
+    }
+    #[test]
+    fn tabs_keep_their_own_layer_filter_and_multi_selection() {
+        let mut app = Dudel {
+            doc: crate::document::Document::new(16, 16),
+            ..Default::default()
+        };
+        paint(&mut app, [255, 0, 0, 255]);
+        let layer = app.doc.layers[0].id;
+        app.layer_navigation.query = "ink".into();
+        app.layer_selection.ids = vec![layer];
+        assert!(app.prepare_tab_for_open());
+        assert!(app.layer_navigation.query.is_empty());
+        assert!(app.layer_selection.ids.is_empty());
+        app.layer_navigation.query = "sketch".into();
+        app.request_tab(0);
+        assert_eq!(app.layer_navigation.query, "ink");
+        assert_eq!(app.layer_selection.ids, [layer]);
+        app.request_tab(1);
+        assert_eq!(app.layer_navigation.query, "sketch");
     }
     #[test]
     fn tabs_keep_independent_documents_history_views_and_paths() {

@@ -1,7 +1,7 @@
 //! Validated, portable shortcut overrides. Missing entries retain defaults;
 //! an empty entry explicitly unbinds a command.
 use crate::{
-    commands::{Action, COMMANDS},
+    commands::{Action, COMMANDS, Command},
     egui,
 };
 use serde::{Deserialize, Serialize};
@@ -152,19 +152,38 @@ impl Bindings {
                 return Err("Use at most three shortcuts per command".into());
             }
         }
-        let mut used: Vec<(Chord, &str)> = Vec::new();
+        self.problem().map_or(Ok(()), |(reason, _)| Err(reason))
+    }
+    /// The first reserved or doubly assigned key, and the saved entry behind it.
+    fn problem(&self) -> Option<(String, Option<&'static str>)> {
+        let saved = |command: &Command| self.0.contains_key(command.id).then_some(command.id);
+        let mut used: Vec<(Chord, &Command)> = Vec::new();
         for command in COMMANDS {
             for chord in self.effective(command.action) {
                 if let Some(reason) = chord.reserved(command.action) {
-                    return Err(format!("{}: {reason}", chord.label()));
+                    return Some((format!("{}: {reason}", chord.label()), saved(command)));
                 }
                 if let Some((_, owner)) = used.iter().find(|(other, _)| *other == chord) {
-                    return Err(format!("{} is already assigned to {owner}", chord.label()));
+                    let reason =
+                        format!("{} is already assigned to {}", chord.label(), owner.label);
+                    return Some((reason, saved(command).or(saved(owner))));
                 }
-                used.push((chord, command.label));
+                used.push((chord, command));
             }
         }
-        Ok(())
+        None
+    }
+    /// Put saved entries that no longer validate back to their defaults, so
+    /// that a new default taking a key costs one shortcut and not the settings.
+    /// Returns how many went.
+    pub fn repair(&mut self) -> usize {
+        let before = self.0.len();
+        self.0
+            .retain(|id, chords| chords.len() <= 3 && COMMANDS.iter().any(|c| c.id == id));
+        while let Some((_, Some(id))) = self.problem() {
+            self.0.remove(id);
+        }
+        before - self.0.len()
     }
     pub fn changed(&self, action: Action, chords: Option<Vec<Chord>>) -> Result<Self, String> {
         let mut next = self.clone();
@@ -204,6 +223,17 @@ impl Bindings {
         profile.bindings.validate()?;
         Ok(profile.bindings)
     }
+}
+
+/// Saved bindings, leaving out entries this build cannot read.
+pub(crate) fn lenient<'de, D: serde::Deserializer<'de>>(source: D) -> Result<Bindings, D::Error> {
+    let serde_json::Value::Object(saved) = serde_json::Value::deserialize(source)? else {
+        return Ok(Bindings::default());
+    };
+    let readable = saved
+        .into_iter()
+        .filter_map(|(id, chords)| Some((id, serde_json::from_value(chords).ok()?)));
+    Ok(Bindings(readable.collect()))
 }
 
 pub(crate) const MAX_PROFILE_BYTES: usize = 64 * 1024;
@@ -287,6 +317,47 @@ mod tests {
             custom.effective(Action::NewLayer)[0]
                 .matches(egui::Key::L, egui::Modifiers::CTRL | egui::Modifiers::SHIFT)
         );
+    }
+
+    #[test]
+    fn a_bad_saved_shortcut_keeps_the_other_settings_and_shortcuts() {
+        let app = Dudel {
+            shortcuts: Bindings::default()
+                .changed(Action::NewFolder, Some(vec![Chord::parse("Ctrl+Shift+L")]))
+                .unwrap(),
+            ..Default::default()
+        };
+        let source = app.encode_preferences().unwrap();
+        let mut saved: serde_json::Value = serde_json::from_str(&source).unwrap();
+        let shortcuts = saved["shortcuts"].as_object_mut().unwrap();
+        // A key another command now has by default, one that is reserved, a
+        // command this build lacks and a key it cannot read.
+        for (id, chords) in [
+            ("layer.effects", r#"[{"key":"Z","command":true}]"#),
+            ("app.settings", r#"[{"key":"F"}]"#),
+            ("tool.future", r#"[{"key":"Q"}]"#),
+            ("brush.editor", r#"[{"key":"NoSuchKey"}]"#),
+        ] {
+            shortcuts.insert(id.into(), serde_json::from_str(chords).unwrap());
+        }
+        let p = crate::preferences::Preferences::decode(&saved.to_string()).unwrap();
+        assert_eq!(p.shortcuts_dropped, 3);
+        assert_eq!(p.shortcuts, app.shortcuts);
+        p.shortcuts.validate().unwrap();
+        // Two saved entries that clash lose one, and the result is valid.
+        let chord = Chord::parse("Ctrl+Shift+L");
+        let mut clash = Bindings::default();
+        clash.0.insert("layer.new_vector".into(), vec![chord]);
+        clash.0.insert("layer.new_folder".into(), vec![chord]);
+        assert_eq!(clash.repair(), 1);
+        clash.validate().unwrap();
+        // Swapped keys are valid together and stay.
+        let mut swapped = Bindings::default();
+        swapped.0.insert("tool.eraser".into(), vec![]);
+        swapped
+            .0
+            .insert("layer.new".into(), vec![Chord::parse("E")]);
+        assert_eq!(swapped.repair(), 0);
     }
 
     #[test]

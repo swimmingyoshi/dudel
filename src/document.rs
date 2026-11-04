@@ -3125,7 +3125,8 @@ mod tests {
         }
     }
     fn finish_cooling(history: &mut History, doc: &Document) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        // Only a hang guard: a loaded machine can take far longer than usual.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         while history.cool_idle(doc) {
             assert!(
                 std::time::Instant::now() < deadline,

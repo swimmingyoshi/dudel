@@ -2678,4 +2678,26 @@ mod tests {
         });
         assert!(far.fold(0.0, f32::max) < 1.0);
     }
+
+    #[test]
+    fn line_commands_need_a_pick_and_undo_in_one_step() {
+        use crate::{commands::Action, vector_pick::LineDrag};
+        let mut app = app();
+        app.brush.size = 4.0;
+        straight(&mut app, 16.0);
+        straight(&mut app, 48.0);
+        assert!(app.command_disabled(Action::DeleteLines).is_some());
+        app.execute_command(Action::LineDrag(LineDrag::Reshape));
+        assert!(app.tool == Tool::Pointer);
+        assert_eq!(app.line_drag, LineDrag::Reshape);
+        app.execute_command(Action::LineDrag(LineDrag::Move));
+        drag(&mut app, [48.0, 16.0], [48.0, 16.0], egui::Modifiers::NONE);
+        assert_eq!(app.picked_lines().len(), 1, "{}", app.status);
+        app.execute_command(Action::DeleteLines);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+        assert!(app.command_disabled(Action::DeleteLines).is_some());
+        app.undo();
+        app.flush_render_queue();
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 2);
+    }
 }

@@ -1,5 +1,5 @@
 //! Shared command identities, labels, defaults, availability and execution.
-use crate::{Dudel, egui, tools::Tool};
+use crate::{Dudel, egui, tools::Tool, vector_pick::LineDrag};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Action {
@@ -44,6 +44,11 @@ pub(crate) enum Action {
     Settings,
     Shortcuts,
     BrushEditor,
+    SmoothLines,
+    RecolorLines,
+    DeleteLines,
+    DeselectLines,
+    LineDrag(LineDrag),
     Tool(Tool),
 }
 
@@ -273,6 +278,48 @@ pub(crate) const COMMANDS: &[Command] = &[
         Action::BrushEditor
     ),
     command!(
+        "lines.move",
+        "Drag vector lines to move them",
+        "",
+        "pointer pick line mode",
+        Action::LineDrag(LineDrag::Move)
+    ),
+    command!(
+        "lines.reshape",
+        "Drag vector lines to reshape them",
+        "",
+        "pointer pick line bend mode",
+        Action::LineDrag(LineDrag::Reshape)
+    ),
+    command!(
+        "lines.smooth",
+        "Smooth picked lines",
+        "",
+        "vector pointer wobble simplify",
+        Action::SmoothLines
+    ),
+    command!(
+        "lines.recolor",
+        "Recolor picked lines",
+        "",
+        "vector pointer paint color",
+        Action::RecolorLines
+    ),
+    command!(
+        "lines.delete",
+        "Delete picked lines",
+        "",
+        "vector pointer remove erase",
+        Action::DeleteLines
+    ),
+    command!(
+        "lines.deselect",
+        "Deselect lines",
+        "",
+        "vector pointer pick clear",
+        Action::DeselectLines
+    ),
+    command!(
         "tool.brush",
         "Brush tool",
         "B",
@@ -483,6 +530,17 @@ impl Dudel {
             {
                 Some("No selection")
             }
+            Action::SmoothLines
+            | Action::RecolorLines
+            | Action::DeleteLines
+            | Action::DeselectLines
+                if self.picked_lines().is_empty() =>
+            {
+                Some("Pick vector lines with the Pointer first")
+            }
+            Action::LineDrag(_) if self.vector_target().is_none() => {
+                Some("Select a vector layer first")
+            }
             _ => None,
         }
     }
@@ -536,6 +594,14 @@ impl Dudel {
             Action::Settings => self.settings_open = true,
             Action::Shortcuts => self.shortcuts_window = true,
             Action::BrushEditor => self.brush_studio = true,
+            Action::SmoothLines => self.smooth_picked_lines(),
+            Action::RecolorLines => self.recolor_picked_lines(),
+            Action::DeleteLines => self.delete_picked_lines(),
+            Action::DeselectLines => self.deselect_lines(),
+            Action::LineDrag(drag) => {
+                self.select_tool(Tool::Pointer);
+                self.line_drag = drag;
+            }
             Action::Tool(tool) => self.select_tool(tool),
         }
     }

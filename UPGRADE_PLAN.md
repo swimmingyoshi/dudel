@@ -555,6 +555,20 @@ Stage B - native layer effects:
       a reflected gradient on the 4x4 psd-tools files still differs; pattern
       fill phase is off by a pixel on some tiles of psd-tools patterns.psd
 
+### 9. Vector layers (owner goal, 2026-11-03)
+
+- [x] Strokes kept as recordings and redrawn exactly; transforms move strokes;
+      partial eraser, restyle; CSP vector layers import as editable strokes
+- [x] Eraser "Up to crossings"; Pointer picks and lassoes single lines, with move,
+      reshape (Reach), size, taper, smooth, recolor and delete, each one undo step
+- [x] F resizes the brush or Reach (`src/quick_resize.rs`); new layers in the
+      Layers panel right-click menu (`src/layer_menu.rs`). Owner tried both
+- [x] Line actions in command search; layer filter and multi-selection are per tab
+- [ ] Owner's pen pass of the whole vector workflow before the next candidate
+- Known limits for the release notes: Fill does not stop at vector line centres,
+  selections do not limit vector drawing, no SVG export, no scale/rotate handles
+  for picked lines; PSD export writes the rendered pixels.
+
 ## Before pushing (next candidate)
 
 - [x] Review follow-ups (2026-10-29, Claude), each with a regression test:

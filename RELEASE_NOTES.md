@@ -24,6 +24,11 @@ the identity or acceptance of the previously prepared ZIPs.
   locks, stack movement, grouping and deletion. Each batch is atomic and undoable
   in one step; filtered selections report hidden rows. Painting remains on the
   active layer. See [Quick Start](QUICK_START.md) for folder and lock behavior.
+- Vector line editing with the Pointer: pick or lasso single lines, move, reshape
+  with a Reach, resize, taper, smooth, recolor and delete them, on native and CSP
+  strokes. The Eraser can stop at crossing lines.
+- F resizes the brush, eraser or reshape Reach by moving the pen. The right-click
+  menu of the Layers panel now creates layers of every kind.
 - Custom shortcuts in **View > Settings > Shortcuts**, with conflict detection,
   per-command/all-command defaults, unbinding and `.dudelkeys` profile import/export.
   Menus, command search and tool hints share the saved bindings. Tool tap/hold

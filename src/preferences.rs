@@ -6,8 +6,11 @@ pub const KEY: &str = "dudel.preferences.v1";
 
 #[derive(Serialize, Deserialize)]
 pub struct Preferences {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::shortcuts::lenient")]
     pub shortcuts: crate::shortcuts::Bindings,
+    /// Saved shortcuts that decoding put back to their defaults.
+    #[serde(skip)]
+    pub shortcuts_dropped: usize,
     pub version: u32,
     #[serde(default)]
     pub theme: crate::themes::Theme,
@@ -111,7 +114,7 @@ impl Preferences {
         if p.version != 1 {
             return Err("Unsupported preferences version".into());
         }
-        p.shortcuts.validate()?;
+        p.shortcuts_dropped = p.shortcuts.repair();
         if p.brushes.len() > 512 {
             return Err("Too many brush presets".into());
         }
@@ -157,6 +160,7 @@ mod tests {
         };
         let p = Preferences {
             shortcuts: Default::default(),
+            shortcuts_dropped: 0,
             theme: crate::themes::Theme::presets().remove(1),
             version: 1,
             brushes: vec![brush.clone()],

@@ -140,6 +140,29 @@ In the shortest layout, **Layer** holds layer actions, blend, opacity and masks,
 leaving room for the selected layer. Narrow inspectors use a draggable opacity
 percentage; click it to type a value.
 
+### Resize quickly with F
+
+With the Brush or Eraser, press **F** and move the pen: a circle shows the size
+as it changes. Click, press Enter or press F again to keep it; **Esc** puts the
+old size back. Holding F and letting go also keeps it.
+
+### Vector layers and lines
+
+Right-click a layer, or the space below the layers, and choose **New vector
+layer**. Its strokes stay editable: Dudel keeps each one as a line and redraws
+the layer from them. CSP vector layers import the same way. Vector layers draw
+without selections, so deselect first. Fill and other pixel tools need a raster
+layer. The Eraser's **Up to crossings** option removes a line only as far as the
+lines that cross it.
+
+Use **Pointer (O)** to edit single lines. Click a line to pick it, or drag around
+lines on empty canvas to lasso them; hold Shift to add to the lasso. Drag a picked
+line to move it, or set **Drag a line to: Reshape** to bend it: the grabbed point
+follows the pointer and the line around it follows less over the **Reach** shown
+by the circle. F resizes the Reach. The Pointer panel changes the picked lines'
+Size, Taper, Smooth and color; Delete removes them and Esc deselects. Each change
+is one undo step. Command search lists these actions too.
+
 ## Build up the illustration
 
 Press **G** for the bucket. **Fill to edges** is on by default and replaces the
