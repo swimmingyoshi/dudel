@@ -88,7 +88,12 @@ pub(crate) fn written(
         if styles.iter().any(|(id, _)| *id == layer.id) {
             layer.effects = source.effects.clone();
         }
-        if source.fill != 1.0 && !crate::psd_import::fill_differs(source.blend) {
+        // A reduced-fill owner combined with inside effects already has fill
+        // baked into its pixels. Restoring it would fade the artwork twice.
+        if source.fill != 1.0
+            && layer.pixels.shares(&source.pixels)
+            && !crate::psd_import::fill_differs(source.blend)
+        {
             layer.opacity = source.opacity;
             layer.fill = source.fill;
         }
@@ -135,6 +140,20 @@ pub(crate) fn notes(doc: &Document, effects: Effects) -> Vec<String> {
                     "Photoshop cannot show these layers' effects (glow blend modes, gradient glows, or two glows or bevels of a kind), so they are written as separate layers",
             },
             list(&drawn)
+        ));
+    }
+    let combined = names(&|l| {
+        !l.folder
+            && l.fill < 1.0
+            && (effects == Effects::AsLayers || crate::layer_effects::to_psd(&l.effects).is_none())
+            && l.effects
+                .iter()
+                .any(|e| e.enabled && e.effect.place() == crate::layer_effects::Place::Inside)
+    });
+    if !combined.is_empty() {
+        notes.push(format!(
+            "Reduced fill and inside effects are combined with their layer and mask to preserve soft edges: {}.",
+            list(&combined)
         ));
     }
     notes

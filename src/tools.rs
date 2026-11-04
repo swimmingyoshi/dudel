@@ -57,18 +57,7 @@ impl Tool {
             Self::Pointer => "Pointer",
         }
     }
-    pub fn shortcut(self) -> &'static str {
-        match self {
-            Self::Brush => "B",
-            Self::Eraser => "E",
-            Self::Fill => "G",
-            Self::Picker => "I",
-            Self::Select => "M",
-            Self::Lasso => "L",
-            Self::Move => "V",
-            Self::Pointer => "O",
-        }
-    }
+    #[cfg(test)]
     pub fn key(self) -> eframe::egui::Key {
         use eframe::egui::Key;
         match self {
@@ -101,11 +90,11 @@ impl Tool {
             Self::Fill => "Fill a contiguous area of the active layer",
             Self::Picker => "Sample visible artwork · hold Alt with any tool",
             Self::Select => {
-                "Rectangle, lasso, polygon or magic wand · Ctrl+D deselects · Delete clears"
+                "Rectangle, lasso, polygon or magic wand · Deselect removes the selection · Delete clears"
             }
             Self::Move => "Drag to move the selection, or the whole active layer",
             Self::Lasso => {
-                "Draw a freehand, rectangle or ellipse shape to fill or erase · tap L again to switch fill/erase · Esc cancels"
+                "Draw a freehand, rectangle or ellipse shape to fill or erase · tap its shortcut again to switch fill/erase · Esc cancels"
             }
             Self::Pointer => {
                 "Move guide lines and the symmetry center, even when locked · drag empty canvas to pan"

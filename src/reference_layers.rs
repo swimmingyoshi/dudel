@@ -665,6 +665,7 @@ impl Dudel {
     }
     /// Select a reference for editing with the Pointer tool (O).
     pub(crate) fn select_reference(&mut self, id: u64) {
+        self.layer_selection = Default::default();
         self.finish_painted_stroke();
         if self.tool != crate::tools::Tool::Pointer {
             self.select_tool(crate::tools::Tool::Pointer);
@@ -1203,13 +1204,14 @@ impl Dudel {
                 egui::Id::new(("reference row", id)),
                 egui::Sense::click_and_drag(),
             );
-            if response.drag_started() {
+            if !self.layer_navigation.active() && response.drag_started() {
                 response.dnd_set_drag_payload(crate::reference_stack::ReferenceDrag(id));
             }
-            if response
-                .dnd_hover_payload::<crate::reference_stack::ReferenceDrag>()
-                .is_some()
-                || response.dnd_hover_payload::<usize>().is_some()
+            if !self.layer_navigation.active()
+                && (response
+                    .dnd_hover_payload::<crate::reference_stack::ReferenceDrag>()
+                    .is_some()
+                    || response.dnd_hover_payload::<usize>().is_some())
             {
                 ui.painter().rect_stroke(
                     rect.shrink(1.0),
@@ -1989,7 +1991,7 @@ mod tests {
                 },
                 |ctx| {
                     crate::themes::apply(ctx, &app.theme);
-                    egui::CentralPanel::default().show(ctx, |ui| app.layers_ui(ui, true));
+                    egui::CentralPanel::default().show(ctx, |ui| app.layers_ui(ui, true, true));
                 },
             );
         }

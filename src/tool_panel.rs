@@ -358,7 +358,7 @@ impl Dudel {
                                         || self.doc.selection_mask.is_some(),
                                     egui::Button::new("Invert"),
                                 )
-                                .on_hover_text("Select everything outside the selection (Ctrl+Shift+I)")
+                                .on_hover_text(self.command_hint(crate::commands::Action::InvertSelection, "Select everything outside the selection"))
                                 .clicked()
                             {
                                 self.invert_selection();
@@ -380,7 +380,10 @@ impl Dudel {
                 );
                 if ui
                     .button("Free transform…")
-                    .on_hover_text("Scale, rotate and flip with handles · Ctrl+T from any tool")
+                    .on_hover_text(self.command_hint(
+                        crate::commands::Action::Transform,
+                        "Scale, rotate and flip with handles",
+                    ))
                     .clicked()
                 {
                     self.toggle_free_transform();
@@ -599,13 +602,25 @@ impl Dudel {
         section("Symmetry").show(ui, |ui| self.symmetry_ui(ui));
         section("View").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Fit canvas").on_hover_text("Ctrl+0").clicked() {
+                if ui
+                    .button("Fit canvas")
+                    .on_hover_text(self.shortcuts.label(crate::commands::Action::Fit))
+                    .clicked()
+                {
                     self.fit_view();
                 }
-                if ui.button("100%").on_hover_text("Ctrl+1").clicked() {
+                if ui
+                    .button("100%")
+                    .on_hover_text(self.shortcuts.label(crate::commands::Action::ActualSize))
+                    .clicked()
+                {
                     self.actual_size();
                 }
-                if ui.button("Reset rotation").on_hover_text("5").clicked() {
+                if ui
+                    .button("Reset rotation")
+                    .on_hover_text(self.shortcuts.label(crate::commands::Action::ResetRotation))
+                    .clicked()
+                {
                     self.reset_rotation();
                 }
                 if ui

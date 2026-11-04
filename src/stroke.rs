@@ -46,6 +46,9 @@ pub struct Stroke {
     heading: f32,
     /// View zoom of the latest sample; sizes the rope in screen pixels.
     zoom: f32,
+    /// Optional native-output allowance for extension-generated strokes.
+    dab_budget: Option<usize>,
+    budget_exhausted: bool,
 }
 
 /// Assumed pen-packet interval when input has no native timestamps.
@@ -113,6 +116,35 @@ pub fn smoothing_fraction(elapsed: f32, brush: &Brush) -> f32 {
 }
 
 impl Stroke {
+    /// Bound generation itself, before output vectors grow. The caller shares
+    /// the remaining allowance across tracks and all hooks of one input event.
+    pub(crate) fn bounded(
+        &mut self,
+        remaining: &mut usize,
+        generate: impl FnOnce(&mut Self) -> Vec<Sample>,
+    ) -> Result<Vec<Sample>, String> {
+        self.dab_budget = Some(*remaining);
+        self.budget_exhausted = false;
+        let dabs = generate(self);
+        *remaining = self.dab_budget.take().expect("generation budget is set");
+        if self.budget_exhausted {
+            Err("Tool generated too many brush dabs in one input event; use shorter paths or wider spacing".into())
+        } else {
+            Ok(dabs)
+        }
+    }
+
+    fn reserve_dab(&mut self) -> bool {
+        if let Some(remaining) = &mut self.dab_budget {
+            if *remaining == 0 {
+                self.budget_exhausted = true;
+                return false;
+            }
+            *remaining -= 1;
+        }
+        true
+    }
+
     pub fn reset(&mut self) {
         self.previous = None;
         self.until_dab = 0.0;
@@ -370,7 +402,9 @@ impl Stroke {
             sample.taper = Self::taper(brush, self.length);
             sample.distance = self.length;
             self.last_dab = Some(sample);
-            dabs.extend(self.scatter(vec![sample], brush));
+            if self.reserve_dab() {
+                dabs.extend(self.scatter(vec![sample], brush));
+            }
         }
         dabs
     }
@@ -569,7 +603,11 @@ impl Stroke {
             self.until_dab = Self::spacing(brush, &sample);
             sample.spacing = Some(self.until_dab);
             self.last_dab = Some(sample);
-            return vec![sample];
+            return if self.reserve_dab() {
+                vec![sample]
+            } else {
+                vec![]
+            };
         };
         let dx = sample.x - previous.x;
         let dy = sample.y - previous.y;
@@ -580,6 +618,9 @@ impl Stroke {
         let mut at = self.until_dab;
         let mut dabs = vec![];
         while at <= length {
+            if !self.reserve_dab() {
+                break;
+            }
             let t = at / length;
             let mut dab = Sample {
                 x: previous.x + dx * t,

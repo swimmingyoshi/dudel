@@ -182,10 +182,21 @@ impl Dudel {
                 input.time,
                 input.focused,
                 input.events.clone(),
-                Tool::ALL.map(|tool| input.key_down(tool.key())),
+                Tool::ALL.map(|tool| {
+                    self.shortcuts
+                        .effective(crate::commands::Action::Tool(tool))
+                        .iter()
+                        .any(|c| input.key_down(c.key))
+                }),
             )
         });
-        let opening_new = events.iter().any(crate::new_canvas::opening_shortcut);
+        let opening_new = events.iter().any(|event| {
+            self.shortcuts
+                .event_matches(crate::commands::Action::New, event)
+                || self
+                    .shortcuts
+                    .event_matches(crate::commands::Action::Search, event)
+        });
         let enabled = focused
             && !opening_new
             && !ctx.wants_keyboard_input()
@@ -193,6 +204,9 @@ impl Dudel {
             && self.renaming.is_none()
             && self.unsaved_action.is_none()
             && !self.new_canvas
+            && !self.command_search.open
+            && self.shortcut_editor.capture.is_none()
+            && !self.shortcut_editor.block_frame
             && !self.input_settings
             && !self.recovery_window;
         let enabled = enabled
@@ -211,30 +225,38 @@ impl Dudel {
                 modifiers,
                 ..
             } = event
-                && let Some(tool) = Tool::ALL.into_iter().find(|tool| tool.key() == key)
             {
-                if !pressed {
-                    if self.tool_shift.release(tool, now) && enabled {
-                        // Tapping the current tool's key steps through its variants.
-                        match tool {
-                            Tool::Brush => self.select_brush_group(self.brush_group.next()),
-                            Tool::Lasso => {
-                                self.lasso.erase = !self.lasso.erase;
-                                self.status = if self.lasso.erase {
-                                    "Lasso erases"
-                                } else {
-                                    "Lasso fills"
-                                }
-                                .into();
-                            }
-                            _ => {}
-                        }
+                for tool in Tool::ALL {
+                    if !self
+                        .shortcuts
+                        .effective(crate::commands::Action::Tool(tool))
+                        .iter()
+                        .any(|c| c.key == key && (!pressed || c.matches(key, modifiers)))
+                    {
+                        continue;
                     }
-                } else if enabled && !repeat && modifiers.is_none() {
-                    self.tool_shift.press(tool, now);
-                    ctx.input_mut(|input| {
-                        input.consume_key(egui::Modifiers::NONE, key);
-                    });
+                    if !pressed {
+                        if self.tool_shift.release(tool, now) && enabled {
+                            // Tapping the current tool's key steps through its variants.
+                            match tool {
+                                Tool::Brush => self.select_brush_group(self.brush_group.next()),
+                                Tool::Lasso => {
+                                    self.lasso.erase = !self.lasso.erase;
+                                    self.status = if self.lasso.erase {
+                                        "Lasso erases"
+                                    } else {
+                                        "Lasso fills"
+                                    }
+                                    .into();
+                                }
+                                _ => {}
+                            }
+                        }
+                    } else if enabled && !repeat {
+                        self.tool_shift.press(tool, now);
+                        self.shortcuts
+                            .consume(ctx, crate::commands::Action::Tool(tool));
+                    }
                 }
             }
         }

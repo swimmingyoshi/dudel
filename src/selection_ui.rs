@@ -77,7 +77,10 @@ impl Dudel {
                 self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
                 egui::Button::new("Transform selection…"),
             )
-            .on_hover_text("Move, scale, rotate or warp the selection · Ctrl+T")
+            .on_hover_text(self.command_hint(
+                crate::commands::Action::Transform,
+                "Move, scale, rotate or warp the selection",
+            ))
             .clicked()
         {
             self.affine_settings.mirror = None;

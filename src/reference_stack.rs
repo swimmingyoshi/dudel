@@ -507,6 +507,9 @@ impl Dudel {
                 if at != gap {
                     return false;
                 }
+                if self.layer_navigation.active() {
+                    return self.layer_navigation.matches_reference(&b.name);
+                }
                 let mut current = parent;
                 while let Some(index) = current {
                     if self.doc.layers[index].collapsed {

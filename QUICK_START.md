@@ -3,9 +3,82 @@
 Dudel is a Windows drawing application in development. Save editable work as a
 `.dudel` project and export PNG copies when you want to share the image.
 
-The current Windows x64 build uses the Microsoft Visual C++ v14 runtime. If launch
-reports a missing VCRUNTIME140.dll, install Microsoft's current x64 redistributable
-from the [official download page](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
+The Windows x64 build links the C runtime into the application; a separate Visual
+C++ redistributable is not required.
+
+## Find actions and keep track of your target
+
+In current development builds, **Edit > Find a command** (`Ctrl+K` or
+`Ctrl+Shift+P`) searches common file, layer, selection, view and tool actions.
+Type an action or a familiar term such as "mirror" or "transparent PNG".
+Use Up/Down and Enter, or click a result. Unavailable actions show a reason;
+Escape closes search without clearing the canvas selection. Shortcuts appear
+beside results and follow your saved bindings.
+
+### Customize shortcuts
+
+Open **View > Settings > Shortcuts**, or **Help > Keyboard shortcuts > Customize
+shortcuts**. Search for a command, click its current binding (or **Unassigned**),
+press the new keys and click **Apply shortcut**. This replaces that command's
+bindings. Conflicts name the command that already uses those keys; **Unbind** it
+first if you want to move its shortcut. Escape cancels assignment.
+
+**Default** restores one command; **Restore defaults** restores all commands
+after confirmation. **Export profile** saves your bindings as a `.dudelkeys`
+file; **Import profile** replaces them after checking the complete file. Invalid
+or conflicting profiles leave your current bindings intact. Bindings are saved
+in application settings, independently of artwork files. Menus, tooltips,
+command search and the shortcut reference display the active bindings.
+
+Tool bindings retain tap-to-select and hold-to-switch behavior. Clipboard keys,
+Tab project/control navigation, Enter/Escape, arrow keys, Delete/Backspace,
+F6/F11, Space, R rotation, F resizing and Alt gestures retain their standard
+roles. Plain Tab can be removed from the panel-toggle command. Shortcuts in
+the rest of this guide describe the defaults. Common built-in commands can be
+rebound; extension commands and pointer gestures are outside this editor.
+
+The strip above the canvas names the active artwork, vector, mask or reference
+target. It offers explicit actions for locked layers, hidden layers and their
+folders, transparency locks, and tools that need a raster layer. **Switch to
+artwork** leaves mask/reference editing. **Deselect** removes an active selection.
+These actions use the normal editing and undo paths; selecting a vector layer
+never automatically rasterizes it.
+
+The Layers panel searches names and filters by raster, vector, adjustment,
+folder or reference type. Search ignores case and finds children inside collapsed
+folders without expanding them or changing your selection. The **Types** menu
+(named for the selected type when filtered) includes **Clear filters** and
+**Compact rows**, which uses smaller rows with details in their tooltips.
+**Reveal** clears filters, expands the active entry's parent folders and scrolls
+to it. Clear filters before dragging layers into a different stack position.
+In very short windows, click **LAYERS** to open these navigation controls.
+
+### Select and edit several layers
+
+**Ctrl-click** layer names or artwork thumbnails to add/remove individual
+layers. **Shift-click** selects a range of currently displayed artwork rows;
+Ctrl+Shift-click adds that range. Collapsed children are excluded unless a
+search reveals them. The brighter row remains the active painting target.
+Plain click or **Only active** returns to a single layer.
+
+With several layers selected, **Batch** above the rows offers Show, Hide, Lock,
+Unlock, Move up/down, Group and Delete. Move changes stack order, not pixel
+positions. Move and Group require a shared parent folder and preserve relative
+order. Nonadjacent layers group at the highest selected position. Each successful
+batch is one undo step; rejected or unchanged operations create none.
+
+A selected folder covers its descendants, even if they are selected separately.
+Visibility and lock actions change the selected folder's own flag, preserving
+its children's individual flags. Structural actions reject locked targets,
+locked contents or locked parents. Deleting the last artwork layer is rejected.
+Earlier queued drawing settles before a batch is applied.
+
+Filtering preserves the selection; the count reports selected rows hidden by
+filters or collapsed folders. **Batch acts on the whole selection**, including
+those hidden rows. Multi-layer dragging is disabled; use Move up/down or Group.
+References retain their separate selection controls. Painting, masks, transforms,
+merging and duplication still target the active layer. Selection is session UI
+state, not part of the saved artwork or undo history.
 
 ## Create and draw
 
@@ -87,10 +160,17 @@ to step through modes and judge each one on the canvas.
 The sparkle (**fx**) button in the layer action row opens Layer Effects for the
 selected layer, and a sparkle badge on a layer row marks layers with effects (click it
 to edit them; it is crossed out when all are switched off). Effects include drop and
-inner shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
-and emboss. Effects follow the layer's pixels as you paint (they refresh when the
-stroke ends), can be switched off, reordered or removed, and save with the project.
-Merge down bakes them into the merged pixels.
+inner shadows, outer and inner glows, strokes, color/gradient/pattern overlays,
+satin, and bevel and emboss. Effects follow the layer's pixels or a folder's
+contents. They redraw in the background as you paint; the status bar shows when
+a drawing is still catching up. Effects can be switched off, reordered or removed
+and save with the project. Merge down bakes them into the merged pixels.
+
+The **Fill** slider in Layer Effects fades the layer's own pixels while leaving
+its effects visible. **Opacity** fades the whole result. Inside effects and reduced
+fill share the layer's soft edge and mask, so overlays do not thicken that edge.
+Gradient effects have editable color and opacity stops; pattern effects can load
+an image. Layer effects and adjustments require a build that reads project v6.
 
 **Adjustment layers:** the half-circle button in the layer action row adds levels,
 curves, brightness/contrast, exposure, hue/saturation, vibrance, color balance, black &
@@ -98,7 +178,9 @@ white, photo filter, channel mixer, selective color, gradient map, invert, poste
 threshold above the selected layer. It recolors everything below it
 (or, clipped, only its base); its opacity and mask fade it. Click its thumbnail to
 open the Adjustment window: in Curves, click the graph to add a point, drag to move
-it and double-click to remove it.
+it and double-click to remove it. Hue/saturation exposes individual color ranges,
+gradient maps have editable middle stops, and Levels shows a histogram. The Layer
+menu also provides adjustment actions.
 
 **Masks:** a masked layer shows its mask thumbnail beside the artwork. Click the
 mask thumbnail (or **Mask** under the layer properties) to paint the mask: the

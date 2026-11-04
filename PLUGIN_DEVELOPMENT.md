@@ -1,7 +1,9 @@
 # Developing and sharing Dudel plugins
 
 Plugins use versioned `.dudelplugin` JSON packages. API 1 covers filters;
-[API 2](plugins/API_2.md) adds brushes, native tool presets, commands and panels.
+[API 2](plugins/API_2.md) adds textured brushes, native tool presets, scripted
+tools, commands and panels. Scripted tools return bounded brush paths; they do
+not have arbitrary document access.
 Install, enable, disable, run and uninstall them from Filter > Manage extensions.
 Filter execution runs in a background job, respects the active layer and
 selection/mask, commits atomically and supports undo/cancel.

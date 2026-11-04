@@ -5,6 +5,47 @@ existing automated, performance and owner workflow evidence, within the limits
 in [the release decision](RELEASE_DECISION.md). This document does not imply that
 the package has been uploaded to a public store.
 
+## Current development changes after packaged 0.1.0 (2026-11-04)
+
+These changes are in source after the accepted `v0.1.0` tag. They do not change
+the identity or acceptance of the previously prepared ZIPs.
+
+- Layer effects draw in the background and reuse regional drawings and recent
+  undo states. Large brush dabs use parallel row bands.
+- Native folder effects, fill opacity, satin, pattern overlays and pattern
+  strokes; a gradient editor with editable color/opacity stops.
+- Adjustment controls expose hue ranges, gradient-map middle stops and a Levels
+  histogram, with adjustment actions in the Layer menu.
+- Wider PSD/PSB import: 32-bit channels, Lab, indexed, bitmap, duotone and
+  multichannel images, artboards and pattern fills; faster PSD export and full
+  composites. These conversions retain the limits in [format support](FORMAT_SUPPORT.md).
+- Settings search and per-page reset, saved new-canvas presets and recent sizes.
+- Multi-layer selection with Ctrl/Shift-click and a Batch menu for visibility,
+  locks, stack movement, grouping and deletion. Each batch is atomic and undoable
+  in one step; filtered selections report hidden rows. Painting remains on the
+  active layer. See [Quick Start](QUICK_START.md) for folder and lock behavior.
+- Custom shortcuts in **View > Settings > Shortcuts**, with conflict detection,
+  per-command/all-command defaults, unbinding and `.dudelkeys` profile import/export.
+  Menus, command search and tool hints share the saved bindings. Tool tap/hold
+  behavior and fixed clipboard/navigation/canvas gestures are retained.
+- Command search (`Ctrl+K` / `Ctrl+Shift+P`) with aliases, shortcut hints and
+  keyboard navigation; layer name/type filtering, compact rows and reveal-active;
+  an editing-target strip with explicit recovery actions. See the
+  [workflow improvement plan](UX_WORKFLOW_PLAN.md) for scope and validation.
+- Extension API 2 scripted tools and packaged brush tip/grain images, with
+  SDK example packages. Plugin update/version ordering remains unfinished.
+- The separately developed vector-layer work now retains native stroke recordings
+  and supported CSP vector strokes. Projects containing them use v7; PSD exports
+  their rendered pixels. These changes are separate from the two stabilization fixes.
+
+- Stabilization fixes: reduced fill and inside effects share one soft edge;
+  scripted tools are limited to 4096 generated dabs per sampling update, with
+  an error and an undoable earlier stroke if the allowance is exceeded.
+
+The [stabilization plan](STABILIZATION_PLAN.md) records implementation and
+verification of these fixes. Current source checks
+are recorded separately from packaged-release evidence in [release status](RELEASE_STATUS.md).
+
 ## Rebuilt 0.1.0: imports, PSD export, effects and large documents (2026-10-31)
 
 - Selection options and the compact toolbar expose Transform selection directly.
@@ -17,8 +58,8 @@ the package has been uploaded to a public store.
   with capability validation, namespaced IDs and an SDK example. API 1 stays supported.
 - CSP adds ordinary folders/clipping, standard blends, locks and Gray layers.
   Animation files open on their saved frame with every cel kept as a layer.
-  Vector, text and other unsupported layers are skipped and listed instead of
-  failing the import. Files that still fail offer an explicitly flattened
+  Unsupported layers are skipped and listed instead of failing the import;
+  supported vector and text subsets are described below. Files that still fail offer an explicitly flattened
   saved-preview import. PSD RGB import supports bounded editable subsets and a
   reported saved-composite fallback.
 
@@ -46,7 +87,8 @@ the package has been uploaded to a public store.
 - Layer effects: **fx** in the layer properties adds editable drop and inner
   shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
   and emboss. They follow the layer's pixels, save with the project, and appear in
-  exports. Older Dudel builds open such projects without the effects.
+  exports. Such projects use the v6 header; older readers reject that header
+  instead of silently discarding effects or adjustments.
 - Adjustment layers: levels, curves, brightness/contrast, exposure,
   hue/saturation, vibrance, color balance, black & white, photo filter, channel
   mixer, selective color, gradient map, invert, posterize and threshold, from the

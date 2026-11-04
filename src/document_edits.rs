@@ -33,6 +33,7 @@ pub enum Property {
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Edit {
+    LayerBatch(crate::layer_batch::Request),
     MaskTransform {
         target: crate::document::LayerId,
         mask: crate::document::LayerId,
@@ -209,6 +210,9 @@ impl Edit {
         }
     }
     pub fn payload_bytes(&self) -> usize {
+        if let Self::LayerBatch(batch) = self {
+            return batch.targets.capacity() * std::mem::size_of::<crate::document::LayerId>();
+        }
         if matches!(
             self,
             Self::MaskTransform {
@@ -239,6 +243,7 @@ impl Edit {
     }
     pub fn validate_arguments(&self) -> Result<(), String> {
         match self {
+            Self::LayerBatch(batch) => batch.validate(),
             Self::MaskTransform { operation, .. } => operation.validate(),
             Self::LayerMask {
                 command: crate::layer_mask_edits::Command::Fill { request, .. },
@@ -356,6 +361,10 @@ impl Edit {
             redraw: true,
         };
         match self {
+            Self::LayerBatch(batch) => {
+                outcome.changed = batch.apply(&mut doc)?;
+                outcome.redraw = !matches!(batch.action, crate::layer_batch::Action::Locked(_));
+            }
             Self::MaskTransform {
                 target,
                 mask,

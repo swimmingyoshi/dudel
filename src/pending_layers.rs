@@ -638,6 +638,41 @@ impl PendingLayers {
         }
         blocker
     }
+    /// Hidden entries along the projected target's ancestry, including itself.
+    pub(crate) fn hidden_ancestors(&self, id: LayerId) -> Vec<LayerId> {
+        let mut hidden = Vec::new();
+        let mut current = self.entries.iter().position(|entry| entry.id == id);
+        while let Some(index) = current {
+            let entry = &self.entries[index];
+            if !entry.visible {
+                hidden.push(entry.id);
+            }
+            current = if entry.depth == 0 {
+                None
+            } else {
+                (index + 1..self.entries.len())
+                    .find(|&parent| self.entries[parent].depth < entry.depth)
+            };
+        }
+        hidden
+    }
+    pub(crate) fn collapsed_ancestors(&self, id: LayerId, include_self: bool) -> Vec<LayerId> {
+        let mut folders = Vec::new();
+        let mut current = self.entries.iter().position(|entry| entry.id == id);
+        while let Some(index) = current {
+            let entry = &self.entries[index];
+            if (include_self || entry.id != id) && entry.folder && entry.collapsed {
+                folders.push(entry.id);
+            }
+            current = if entry.depth == 0 {
+                None
+            } else {
+                (index + 1..self.entries.len())
+                    .find(|&parent| self.entries[parent].depth < entry.depth)
+            };
+        }
+        folders
+    }
     pub fn target_blocker(
         &self,
         id: LayerId,

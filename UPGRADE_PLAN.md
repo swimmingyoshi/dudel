@@ -1,6 +1,9 @@
 # Dudel 0.2 upgrade plan and handoff
 
-Updated 2026-10-29. This file is the working checklist for the post-0.1.0 work.
+Updated 2026-11-03. This file is the working checklist for the post-0.1.0 work.
+The current review follow-ups and their verification are tracked in
+[STABILIZATION_PLAN.md](STABILIZATION_PLAN.md). Dated results below remain
+historical evidence for the builds they identify.
 Any agent picking this up: read this first, update the checkboxes and the
 "Last session" notes as you go, and keep [DELIVERY_PLAN.md](DELIVERY_PLAN.md) for
 0.1 history only.
@@ -9,9 +12,9 @@ Any agent picking this up: read this first, update the checkboxes and the
 
 - 0.1.0 source: tag `v0.1.0`, moved on 2026-10-31 from the unpublished first
   build `67716b6` to the rebuilt release commit (see Last session).
-- Work through `0e0ea0f` (CSP text layers) is pushed to `origin/master`; later
-  commits are local (`git log --oneline origin/master..HEAD`). Pushing starts
-  hosted CI; ask the owner first.
+- Determine unpublished work with `git log --oneline origin/master..HEAD` against
+  the locally known remote ref; the dated handoffs below are not a live push status.
+  Pushing starts hosted CI; ask the owner first.
 - Local gates (see [TESTING.md](TESTING.md)): `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test`,
   `python scripts/check_public_tree.py`, then `scripts/Verify.ps1` for the full set.
@@ -164,8 +167,9 @@ CSP (`src/clip_*.rs`):
       pressure, edge by anti-alias level). Rechecked 2026-11-03: all 69 owner CSP
       files import; REnderPurple (the only full-size preview) 0.69 mean levels off.
       The only skipped layer left is Animation.clip's "Story Information" text.
-      Still open: editable vector layers in Dudel itself (strokes stay strokes),
-      and CSP's SizeEffector end tapering
+      Follow-up 2026-11-03: native vector recordings and editable CSP strokes
+      landed through `7a30db3`, using project v7. CSP's SizeEffector end tapering
+      remains outside the documented subset.
 - [ ] Glow alpha over partly transparent backdrops is our reading of the
       definition (verified by eye on opaque art only)
 - [ ] Pixel comparison against CSP previews at full size (most previews are
@@ -404,8 +408,9 @@ Stage B - native layer effects:
       `Property::Effects` for queued edits. Workflow test covers add, toggle,
       undo and the window growing (button and badge placement: see the owner
       feedback item below)
-- [x] PSD import keeps effects native on raster layers (no shape source,
-      fill 255, valid settings); shapes, fill opacity and folders still bake
+- [x] PSD import keeps supported effects native on raster layers (no separate
+      shape source), including reduced fill, and on folders with fill 255.
+      Separate shape/fill outlines and reduced-fill folder effects still bake.
 - [x] Performance (4096² nearly full layer, release): fresh draw drop shadow
       0.26 s, stroke 0.30 s, outer glow 0.27 s, bevel 0.44 s (was 1.1-1.5 s);
       cached 0.01 ms. Parallel row bands on the shared pool, transposes for
@@ -457,11 +462,13 @@ Stage B - native layer effects:
       the Layer Effects window (`Property::Fill`, same gesture as effects).
       Saved in projects and packages; PSD `iOpa` read and written natively,
       except the eight modes where Photoshop draws fill differently
-- [ ] Fill below 100% with inside effects (overlays, satin, inner glow or
-      shadow): they are drawn above the faded layer, so soft edges come out
-      too opaque and show some of the layer's color (owner, 2026-11-02).
-      Fix: draw the layer and its inside effects as one part (layer-space
-      colors, alpha a * (fill + U * (1 - fill))) and hide the owner
+- [x] Fill below 100% with inside effects (2026-11-02 stabilization): combine
+      the layer and inside effects in layer space, then apply source alpha and
+      mask once. The cached combined raster replaces the displayed owner;
+      local pixel edits update affected regions and count toward effect memory.
+      Baked PSD export keeps fill baked rather than applying it twice. Pixel,
+      cache, save/load and PSD round-trip regressions pass; final verification
+      is recorded in [STABILIZATION_PLAN.md](STABILIZATION_PLAN.md).
 - [x] Satin (2026-11-02): |blur(shape moved +offset) - blur(shape moved
       -offset)|, inverted by default, clipped inside; in the Add effect menu,
       read from and written to PSD (`ChFX`); contours other than linear are

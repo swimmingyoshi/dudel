@@ -1,19 +1,25 @@
 # Dudel project container v4
 
-The default project and recovery writer uses v4. Document schema version remains
-1. v1 JSON, v2 gzip JSON and v3 dense binary projects remain readable and are
+The project and recovery writer selects v4, v5, v6 or v7 according to the features
+present, as described below. Document schema is 1, or 2 with masks.
+v1 JSON, v2 gzip JSON and v3 dense binary projects remain readable and are
 converted on the next save. Old applications do not understand the v4 header.
-Layer limits were raised to 1,000 raster layers and 2,000 entries with a 2 GiB pixel budget; canvas limits are unchanged.
+Current limits are 1,000 raster layers, 2,000 entries, ten folder levels and a
+shared 2 GiB raster/mask pixel budget; canvases are at most 16,384 pixels per side
+and 100 megapixels in total.
 
 ## Layout
 
 All binary integers are unsigned little-endian u32. The raw file begins with
 seven bytes `DUDL\x04\r\n`, followed by exactly one gzip member. Projects with layer
 masks use `DUDL\x05\r\n` (schema version 2), and projects where any layer has layer
-effects (even switched off) or is an adjustment layer use `DUDL\x06\r\n` (schema
-version 1 or 2). The layout after the header is the same. Builds that predate a
+effects (even switched off), an adjustment layer or non-default fill opacity use `DUDL\x06\r\n` (schema
+version 1 or 2). Vector layers require `DUDL\x07\r\n`, taking precedence over
+the other headers. They retain stroke recordings as metadata and rendered raster
+tiles for display. The layout after the header is the same. Builds that predate a
 header refuse the file instead of opening it without data they do not know, so a
-resave there cannot silently drop masks, effects or adjustments. Its payload is:
+resave there cannot silently drop masks, effects, adjustments, fill opacity or
+vector recordings. Its payload is:
 
 1. Metadata byte length (1 to 16,777,216), then that many UTF-8 JSON bytes.
 2. For each raster layer in metadata stack order: tile count, then that many tile
@@ -21,11 +27,13 @@ resave there cannot silently drop masks, effects or adjustments. Its payload is:
 3. Each tile record: tile index followed by packed straight RGBA8 pixels. There
    is no pixel-length field; geometry determines the exact byte count.
 
-Metadata matches document schema 1 with every layer's `pixels` equal to `[]`.
+Metadata matches document schema 1 or 2 with every layer's `pixels` equal to `[]`.
 It retains dimensions, active layer, selection and layer names/properties/folder
 structure. A layer may carry `effects`, its layer effects bottom to top (each
-`{enabled, effect}`; settings are range-checked on load, at most 32 per layer, raster
-layers only). A raster layer may instead be an adjustment layer: `adjustment` holds
+`{enabled, effect}`; settings are range-checked on load, at most 32 per layer,
+on raster layers and folders). `fill` is a finite number from 0 to 1, defaulting to 1;
+it fades source pixels without fading their effects. The UI exposes fill on raster
+layers. A raster layer may instead be an adjustment layer: `adjustment` holds
 its settings (one of the documented kinds, range-checked on load); its pixels are
 unused. Bevels carry a `pair` number shared by their highlight and shadow entries
 (0 in files saved before pairing). It must validate before tile data is allocated. An optional `guides`

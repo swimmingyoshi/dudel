@@ -111,7 +111,12 @@ mod psd_vector;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
 mod background;
+mod command_search;
+mod commands;
+mod editing_feedback;
+mod layer_batch;
 mod layer_menu;
+mod layer_navigation;
 mod native_session;
 mod navigator;
 mod new_canvas;
@@ -151,6 +156,8 @@ mod selection_mask;
 mod selection_ui;
 mod settings_store;
 mod settings_ui;
+mod shortcut_editor;
+mod shortcuts;
 mod snapshot_memory;
 mod storage;
 mod stroke;
@@ -189,6 +196,11 @@ use std::path::PathBuf;
 type Thumbnails = std::collections::HashMap<document::LayerId, egui::TextureHandle>;
 
 struct Dudel {
+    shortcuts: shortcuts::Bindings,
+    shortcut_editor: shortcut_editor::Editor,
+    command_search: command_search::Search,
+    layer_navigation: layer_navigation::Navigation,
+    layer_selection: layer_batch::Selection,
     theme: themes::Theme,
     theme_editor: Option<themes::Editor>,
     timelapse: timelapse::Timelapse,
@@ -470,6 +482,11 @@ struct Dudel {
 impl Default for Dudel {
     fn default() -> Self {
         Self {
+            shortcuts: Default::default(),
+            shortcut_editor: Default::default(),
+            command_search: Default::default(),
+            layer_navigation: Default::default(),
+            layer_selection: Default::default(),
             performance: Default::default(),
             capture: None,
             theme: Default::default(),
@@ -864,6 +881,7 @@ impl Dudel {
         self.tabs.max = p.tabs.max.clamp(1, tabs::LIMIT);
         self.timelapse.prefs = p.timelapse.sanitized();
         self.new_canvas_form.prefs = p.new_canvas.sanitized();
+        self.shortcuts = p.shortcuts;
         let finite = |h: Option<f32>| h.filter(|h| h.is_finite() && *h > 0.0);
         self.library_height = finite(p.layout.library_height);
         self.color_height = finite(p.layout.color_height);
@@ -907,6 +925,7 @@ impl Dudel {
             tabs: preferences::TabPrefs { max: self.tabs.max },
             timelapse: self.timelapse.prefs.clone(),
             new_canvas: self.new_canvas_form.prefs.clone(),
+            shortcuts: self.shortcuts.clone(),
             layout: preferences::LayoutPrefs {
                 library_height: self.library_height,
                 color_height: self.color_height,
@@ -1126,6 +1145,9 @@ impl eframe::App for Dudel {
             raw_input.events.clear();
             return;
         }
+        if self.capture_shortcut_input(raw_input) {
+            return;
+        }
         // Ctrl+Tab and Ctrl+Shift+Tab step through open projects.
         raw_input.events.retain(|event| match event {
             egui::Event::Key {
@@ -1133,7 +1155,7 @@ impl eframe::App for Dudel {
                 pressed,
                 modifiers,
                 ..
-            } if modifiers.command => {
+            } if modifiers.command && !self.command_search.open => {
                 if *pressed {
                     self.tabs.cycle += if modifiers.shift { -1 } else { 1 };
                 }
@@ -1143,8 +1165,17 @@ impl eframe::App for Dudel {
         });
         if !self.new_canvas
             && !self.dialogs.open()
-            && !raw_input.events.iter().any(new_canvas::opening_shortcut)
+            && !raw_input
+                .events
+                .iter()
+                .any(|event| self.shortcuts.event_matches(commands::Action::New, event))
+            && !self.command_search.open
             && workspace::take_panel_toggle(ctx, raw_input)
+            && self
+                .shortcuts
+                .effective(commands::Action::Panels)
+                .iter()
+                .any(|c| c.key == egui::Key::Tab && !c.command && !c.shift && !c.alt)
         {
             self.show_panels = !self.show_panels;
         }
@@ -1813,6 +1844,11 @@ fn main() -> eframe::Result {
     );
     let capture_extensions = mode.as_deref() == Some("--capture-extensions");
     let capture_settings = mode.as_deref() == Some("--capture-settings");
+    let capture_shortcuts = mode.as_deref() == Some("--capture-shortcuts");
+    let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
+    let capture_command_search = mode.as_deref() == Some("--capture-command-search");
+    let capture_workflow = mode.as_deref() == Some("--capture-workflow");
+    let capture_layer_batch = mode.as_deref() == Some("--capture-layer-batch");
     let capture_preview = mode.as_deref() == Some("--capture-preview");
     let capture_project_memory = mode.as_deref() == Some("--capture-project-memory");
     let capture_tabs = mode.as_deref() == Some("--capture-tabs") || capture_project_memory;
@@ -1873,6 +1909,11 @@ fn main() -> eframe::Result {
         || capture_long_toolbar
         || capture_extensions
         || capture_settings
+        || capture_shortcuts
+        || capture_shortcut_conflict
+        || capture_command_search
+        || capture_workflow
+        || capture_layer_batch
         || capture_references
         || capture_reference_layers
         || capture_tabs
@@ -1984,6 +2025,38 @@ fn main() -> eframe::Result {
                     .memory_mut(|memory| *memory = egui::Memory::default());
                 cc.egui_ctx.set_zoom_factor(scale);
                 let mut app = Dudel::for_capture(path);
+                if capture_command_search {
+                    app.open_command_search();
+                    app.command_search.query = "mirror".into();
+                }
+                if capture_workflow {
+                    app.inspector_override = Some(true);
+                    app.tool_panel_override = Some(false);
+                    app.doc.layers[app.doc.active].locked = true;
+                    app.layer_navigation.query = "highlights".into();
+                    app.doc.selection = Some(selection::Selection {
+                        left: 200,
+                        top: 200,
+                        right: 700,
+                        bottom: 600,
+                    });
+                }
+                if capture_layer_batch {
+                    app.inspector_override = Some(true);
+                    app.tool_panel_override = Some(false);
+                    let roots: Vec<_> = app
+                        .doc
+                        .layers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.depth == 0)
+                        .map(|(i, l)| (i, l.id))
+                        .collect();
+                    app.layer_selection.ids = roots.iter().map(|(_, id)| *id).collect();
+                    if let Some((index, _)) = roots.last() {
+                        app.doc.active = *index;
+                    }
+                }
                 if capture_large {
                     // DUDEL_CAPTURE_SIDE checks larger canvases (default 4096).
                     let side = std::env::var("DUDEL_CAPTURE_SIDE")
@@ -2471,6 +2544,16 @@ fn main() -> eframe::Result {
                 }
                 if capture_settings {
                     app.settings_open = true;
+                }
+                if capture_shortcuts || capture_shortcut_conflict {
+                    app.settings_open = true;
+                    app.settings_section = 4;
+                    app.shortcut_editor.filter = "layer".into();
+                    if capture_shortcut_conflict {
+                        app.shortcut_editor.capture = Some(commands::Action::NewLayer);
+                        app.shortcut_editor.candidate =
+                            Some(shortcuts::Chord::new(egui::Key::Z, egui::Modifiers::CTRL));
+                    }
                 }
                 if capture_references {
                     app.reference_capture_fixture(&cc.egui_ctx);

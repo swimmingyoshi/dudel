@@ -312,6 +312,14 @@ impl Dudel {
 
     pub(crate) fn shortcuts(&mut self, ctx: &egui::Context) {
         use egui::{Key, Modifiers};
+        // Drain the native observer even when a text field or modal owns input.
+        let paste_shortcut = self.clipboard_paste_shortcut(ctx);
+        if self.shortcut_editor.capture.is_some() || self.shortcut_editor.block_frame {
+            return;
+        }
+        if self.command_search_shortcut(ctx) {
+            return;
+        }
         if ctx.wants_keyboard_input()
             || self.new_canvas
             || self.unsaved_action.is_some()
@@ -327,21 +335,11 @@ impl Dudel {
         if self.quick_resize_keys(ctx) {
             return;
         }
-        let opening_new = ctx.input_mut(|input| {
-            let opening = input.events.iter().any(crate::new_canvas::opening_shortcut);
-            if opening {
-                input
-                    .events
-                    .retain(|event| !crate::new_canvas::opening_shortcut(event));
-            }
-            opening
-        });
+        let opening_new = self.shortcuts.consume(ctx, crate::commands::Action::New);
         if opening_new {
             self.open_new_canvas();
             return;
         }
-        let paste_shortcut = self.clipboard_paste_shortcut(ctx);
-        let command_shift = Modifiers::COMMAND | Modifiers::SHIFT;
         let key = |modifiers: Modifiers, key: Key| ctx.input_mut(|i| i.consume_key(modifiers, key));
         // Text selected in a label (Import details, notes) copies as text;
         // leave Copy to egui instead of copying the canvas.
@@ -377,66 +375,21 @@ impl Dudel {
         if paste || paste_shortcut || key(Modifiers::COMMAND, Key::V) {
             self.paste_canvas();
         }
-        // Chords with Shift are consumed first: unspecified modifiers match loosely.
-        if key(command_shift, Key::Z) {
-            self.redo();
-        } else if key(Modifiers::COMMAND, Key::Z) {
-            self.undo();
-        }
-        if key(Modifiers::COMMAND, Key::Y) {
-            self.redo();
-        }
-        if key(command_shift, Key::N) {
-            self.new_layer();
-        }
-        if key(command_shift, Key::S) {
-            self.save(true);
-        } else if key(Modifiers::COMMAND, Key::S) {
-            self.save(false);
-        }
-        if key(Modifiers::COMMAND, Key::O) {
-            self.open();
-        }
-        if key(command_shift, Key::I) {
-            self.invert_selection();
-        }
-        if key(Modifiers::COMMAND, Key::A) {
-            self.select_all();
-        }
-        if key(Modifiers::COMMAND, Key::D) {
-            self.set_selection(None);
-        }
-        if key(command_shift, Key::G) {
-            self.ungroup_folder();
-        } else if key(Modifiers::COMMAND, Key::G) {
-            self.group_into_folder();
-        }
-        if key(Modifiers::COMMAND, Key::J) {
-            self.duplicate_layer();
-        }
-        if key(Modifiers::COMMAND, Key::E) {
-            self.merge_down();
-        }
-        if key(Modifiers::COMMAND, Key::Equals) || key(Modifiers::COMMAND, Key::Plus) {
-            self.step_zoom(1.25);
-        }
-        if key(Modifiers::COMMAND, Key::Minus) {
-            self.step_zoom(0.8);
-        }
-        if key(Modifiers::COMMAND, Key::Num0) {
-            self.fit_view();
-        }
-        if key(Modifiers::COMMAND, Key::Num1) {
-            self.actual_size();
-        }
-        if key(command_shift, Key::T) {
-            self.set_show_transparency(!self.show_transparency);
-        }
-        if key(Modifiers::COMMAND, Key::T) {
-            self.toggle_free_transform();
-        }
-        if key(Modifiers::COMMAND, Key::W) {
-            self.close_tab(self.tabs.active);
+        for command in crate::commands::COMMANDS {
+            if matches!(
+                command.action,
+                crate::commands::Action::New
+                    | crate::commands::Action::Search
+                    | crate::commands::Action::Tool(_)
+            ) {
+                continue;
+            }
+            if self.shortcuts.consume(ctx, command.action) {
+                self.execute_command(command.action);
+                if self.new_canvas || self.dialogs.open() || self.command_search.open {
+                    return;
+                }
+            }
         }
         if self.affine_preview.is_some() {
             if key(Modifiers::NONE, Key::Enter) {
@@ -490,29 +443,6 @@ impl Dudel {
                 self.clear_selection_pixels();
             }
         }
-        if ctx.input(|i| i.modifiers.is_none()) {
-            if key(Modifiers::NONE, Key::OpenBracket) {
-                self.resize_brush(0.85);
-            }
-            if key(Modifiers::NONE, Key::CloseBracket) {
-                self.resize_brush(1.0 / 0.85);
-            }
-            if key(Modifiers::NONE, Key::X) {
-                self.swap_paint_colors();
-            }
-            if key(Modifiers::NONE, Key::H) {
-                self.toggle_flip();
-            }
-            if key(Modifiers::NONE, Key::Num4) {
-                self.rotate_view(-15f32.to_radians());
-            }
-            if key(Modifiers::NONE, Key::Num6) {
-                self.rotate_view(15f32.to_radians());
-            }
-            if key(Modifiers::NONE, Key::Num5) {
-                self.reset_rotation();
-            }
-        }
     }
 
     /// Without new pen packets (a resting pen or mouse), keep easing the
@@ -552,10 +482,18 @@ impl Dudel {
                         &mut self.vector_record,
                         crate::vector_layer::Command::CatchUp(fraction),
                     );
-                    self.stroke.catch_up(fraction, &brush)
+                    Ok(self.stroke.catch_up(fraction, &brush))
                 }
             };
-            self.deliver_canvas_dabs(dabs);
+            match dabs {
+                Ok(dabs) => self.deliver_canvas_dabs(dabs),
+                Err(error) => {
+                    let label = self.scripted_tool.take().map(|a| a.label);
+                    self.status = format!("{}: {error}", label.unwrap_or_default());
+                    self.finish_painted_stroke();
+                    return;
+                }
+            }
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(8));
     }
@@ -590,6 +528,7 @@ impl Dudel {
     }
     pub(crate) fn canvas(&mut self, ctx: &egui::Context, packets: &[input::Packet]) {
         self.tab_bar(ctx);
+        egui::TopBottomPanel::top("editing target").show(ctx, |ui| self.editing_target_ui(ui));
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::NONE.fill(crate::color_wheel::color32(self.theme.canvas_background)),
@@ -611,6 +550,9 @@ impl Dudel {
         }
         let typing = ctx.wants_keyboard_input();
         if self.unsaved_action.is_some()
+            || self.shortcut_editor.capture.is_some()
+            || self.shortcut_editor.block_frame
+            || self.command_search.open
             || self.dialogs.open()
             || self.canvas_edit_ticket.is_some()
             || self.adjustment_ticket.is_some()
@@ -1682,92 +1624,43 @@ impl Dudel {
     }
 }
 
-const SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
-    (
-        "Tools",
-        &[
-            ("B", "Brush"),
-            ("E", "Eraser"),
-            ("G", "Fill"),
-            ("I", "Color picker (hold Alt with any tool)"),
-            ("M", "Rectangle selection"),
-            ("V", "Move selection or layer"),
-            (
-                "O",
-                "Pointer: move guides and symmetry center, pan the view",
-            ),
-            (
-                "Hold a tool key > 0.5 s",
-                "Use temporarily; release to return",
-            ),
-            ("Shift + click", "Straight line from the last stroke"),
-            (
-                "Drag symmetry center",
-                "Move the symmetry guide (Pointer, or unlocked guides)",
-            ),
-            (
-                "Ctrl + T",
-                "Free transform the selection or layer; again to apply",
-            ),
-            ("Enter  /  Esc", "Apply / cancel free transform"),
-            ("Arrows  (Shift)", "Nudge free transform 1px (10px)"),
-            (
-                "Ctrl + drag (mirror pair)",
-                "Snap the moving half onto the mirror axis",
-            ),
-            ("[  /  ]", "Smaller / larger brush"),
-            ("X", "Swap main and secondary color"),
-        ],
-    ),
-    (
-        "View",
-        &[
-            ("Space + drag", "Pan (or middle mouse / pen button)"),
-            ("Scroll", "Zoom at the cursor"),
-            ("Ctrl + Space + drag", "Zoom"),
-            ("R + drag  or  Shift + Space + drag", "Rotate view"),
-            ("4  /  6", "Rotate view 15° left / right"),
-            ("5", "Reset rotation"),
-            ("H", "Flip canvas horizontally (view only)"),
-            ("Ctrl + 0  /  Ctrl + 1", "Fit / actual pixels"),
-            ("Ctrl + +  /  Ctrl + -", "Zoom in / out"),
-            ("Tab", "Hide or show panels"),
-            ("F6", "Focus controls; then Tab / Shift+Tab to navigate"),
-        ],
-    ),
-    (
-        "Edit",
-        &[
-            ("Ctrl + Z", "Undo"),
-            ("Ctrl + Shift + Z  /  Ctrl + Y", "Redo"),
-            ("Ctrl + C  /  Ctrl + X", "Copy / cut layer pixels"),
-            ("Ctrl + V", "Paste image as a new layer"),
-            ("Ctrl + A  /  Ctrl + D", "Select all / deselect"),
-            ("Ctrl + Shift + I", "Invert selection"),
-            ("Delete", "Clear selection or layer"),
-            ("Esc", "Cancel selection"),
-        ],
-    ),
-    (
-        "Layers and files",
-        &[
-            ("Ctrl + Shift + N", "New layer"),
-            ("Ctrl + J", "Duplicate layer"),
-            ("Ctrl + E", "Merge down (or merge a selected folder)"),
-            (
-                "Ctrl + G  /  Ctrl + Shift + G",
-                "Put layer in a new folder / ungroup",
-            ),
-            ("Ctrl + N  /  Ctrl + O", "New canvas / open"),
-            ("Ctrl + S  /  Ctrl + Shift + S", "Save / save as"),
-        ],
-    ),
-];
+const SHORTCUTS: &[(&str, &[(&str, &str)])] = &[(
+    "Fixed gestures and editing keys",
+    &[
+        (
+            "Hold a tool key > 0.5 s",
+            "Use temporarily; release to return",
+        ),
+        ("Shift + click", "Straight line from the last stroke"),
+        ("Alt", "Temporary color picker"),
+        ("Space + drag", "Pan (or middle mouse / pen button)"),
+        ("Ctrl + Space + drag", "Zoom"),
+        ("R + drag / Shift + Space + drag", "Rotate view"),
+        ("F + move pointer", "Resize brush or reshape reach"),
+        ("Enter / Esc", "Apply / cancel the current operation"),
+        ("Arrows (Shift)", "Nudge free transform 1px (10px)"),
+        (
+            "Ctrl + drag (mirror pair)",
+            "Snap the moving half onto the mirror axis",
+        ),
+        (
+            "Delete / Backspace",
+            "Clear pixels, remove a vertex or delete picked lines",
+        ),
+        (
+            "Ctrl+C / Ctrl+X / Ctrl+V",
+            "Copy / cut / paste artwork or text",
+        ),
+        ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous project"),
+        ("F6", "Focus controls; then Tab / Shift+Tab to navigate"),
+    ],
+)];
 
 impl Dudel {
     pub(crate) fn shortcuts_ui(&mut self, ctx: &egui::Context) {
+        let mut open = self.shortcuts_window;
         egui::Window::new("Keyboard shortcuts")
-            .open(&mut self.shortcuts_window)
+            .open(&mut open)
             .default_width(460.0)
             .collapsible(false)
             .show(ctx, |ui| {
@@ -1780,6 +1673,26 @@ impl Dudel {
                 egui::ScrollArea::vertical()
                     .max_height(480.0)
                     .show(ui, |ui| {
+                        if ui.button("Customize shortcuts...").clicked() {
+                            self.settings_open = true;
+                            self.settings_section = 4;
+                            self.settings_search.clear();
+                        }
+                        egui::Grid::new("current command bindings")
+                            .num_columns(2)
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for command in crate::commands::COMMANDS {
+                                    let keys = self.shortcuts.label(command.action);
+                                    ui.label(if keys.is_empty() {
+                                        "Unassigned".into()
+                                    } else {
+                                        keys
+                                    });
+                                    ui.label(command.label);
+                                    ui.end_row();
+                                }
+                            });
                         for (group, entries) in SHORTCUTS {
                             ui.add_space(6.0);
                             ui.label(egui::RichText::new(*group).strong());
@@ -1797,6 +1710,7 @@ impl Dudel {
                         }
                     });
             });
+        self.shortcuts_window = open;
     }
 }
 

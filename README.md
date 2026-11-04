@@ -31,7 +31,7 @@ display or tablet.
   (mirror and radial), rulers and guides with stroke snapping.
 
 **Layers and editing**
-- Raster layers, folders, clipping, blend modes and nondestructive **layer masks**.
+- Raster layers, recorded vector strokes, folders, clipping, blend modes and nondestructive **layer masks**.
 - Editable **layer effects** (shadows, glows, strokes, overlays, bevel) and
   **adjustment layers** (levels, curves, hue/saturation and more, from PSD).
 - Selections (rectangle, lasso, polygon, magic wand) and free transform with
@@ -47,7 +47,7 @@ display or tablet.
   boards that never become part of the artwork.
 - Per-canvas **timelapse** recording that plays back in the app and exports as GIF
   or PNG frames; portable UI themes.
-- PNG import/export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+- PNG import/export and layered PSD export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
   (PSD shapes, gradient fills, layer effects and adjustment layers included) and
   clearly identified flattened fallbacks.
 
@@ -152,7 +152,8 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   Projects using more than 32 layers or the newer blend modes need this
   version or later.
 - Native saves use project format v4, v5 when layer masks are used, or v6 when
-  layer effects or adjustment layers are used; newer files need a compatible
+  layer effects, adjustment layers or fill opacity are used, or v7 for vector
+  layers; newer files need a compatible
   Dudel (older builds refuse them rather than drop that data). Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD

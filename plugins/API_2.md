@@ -76,10 +76,15 @@ fn end(x, y, pressure) { [] }                      // optional, at lift
 - Every track is a separate line with its own spacing, stabilizer and pressure
   dynamics. `lift: true` ends that track's line at the point; its next point starts
   a new one. When the pen lifts, every open line ends where it last was.
-- Limits: 32 KiB of source, 200,000 script operations and 4096 points per call, 64
-  tracks per stroke, coordinates within a million pixels. A script that breaks a
-  limit or throws an error ends the stroke (what it drew stays, as one undo step)
-  and the tool; the status bar shows the error. `print` does nothing.
+- Limits: 32 KiB of source, 200,000 script operations and 4096 returned points per
+  call, 64 tracks per stroke, coordinates within a million pixels. Native brush
+  generation also has a **4096-dab allowance per sample, lift or stabilizer
+  catch-up update**, shared across all tracks and hooks in that update. This is
+  checked while generating dabs, before output arrays can grow beyond the limit;
+  brush spacing and pressure can make one returned segment generate many dabs.
+  An over-budget update contributes no dabs. Earlier painted updates stay as one
+  undo step, the tool stops, and the status bar asks for shorter paths or wider
+  spacing. Other script errors also stop the tool. `print` does nothing.
 
 A scripted tool stays in use until another tool is chosen; changing brushes keeps
 it. It is highlighted in the tool rail. Installation needs the `tools.script`

@@ -829,7 +829,10 @@ impl Dudel {
                                 false,
                                 true,
                             )
-                            .on_hover_text("New canvas in a new tab · Ctrl+N")
+                            .on_hover_text(self.command_hint(
+                                crate::commands::Action::New,
+                                "New canvas in a new tab",
+                            ))
                             .clicked()
                             {
                                 self.open_new_canvas();
@@ -918,7 +921,7 @@ fn project_tab(
             stroke,
         );
     }
-    let clicked = close.on_hover_text("Close tab · Ctrl+W").clicked();
+    let clicked = close.on_hover_text("Close tab").clicked();
     (response, clicked)
 }
 

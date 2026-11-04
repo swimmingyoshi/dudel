@@ -16,10 +16,6 @@ const BUILT_IN: [(&str, usize, usize, Option<f64>); 7] = [
     ("4K", 3840, 2160, None),
 ];
 
-pub(crate) fn opening_shortcut(event: &egui::Event) -> bool {
-    matches!(event,egui::Event::Key{key:egui::Key::N,pressed:true,repeat:false,modifiers,..} if modifiers.command && !modifiers.shift)
-}
-
 /// A canvas size the artist saved or created recently.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Size {

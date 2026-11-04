@@ -155,21 +155,28 @@ impl Dudel {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if icons::button(ui, Icon::Fit, 30.0, self.auto_fit, true)
-                .on_hover_text("Fit the whole canvas · Ctrl+0")
+                .on_hover_text(
+                    self.command_hint(crate::commands::Action::Fit, "Fit the whole canvas"),
+                )
                 .clicked()
             {
                 self.fit_view();
             }
             if ui
                 .add(egui::Button::new("100%"))
-                .on_hover_text("Actual pixels · Ctrl+1")
+                .on_hover_text(
+                    self.command_hint(crate::commands::Action::ActualSize, "Actual pixels"),
+                )
                 .clicked()
             {
                 self.actual_size();
             }
             if ui
                 .add(egui::Button::new("Flip canvas").selected(self.mirror))
-                .on_hover_text("Flip the view horizontally to check proportions · H\nThe artwork itself is not changed")
+                .on_hover_text(self.command_hint(
+                    crate::commands::Action::FlipView,
+                    "Flip the view horizontally to check proportions (view only)",
+                ))
                 .clicked()
             {
                 self.toggle_flip();
@@ -182,7 +189,7 @@ impl Dudel {
         let parts: [fn(&mut Self, &mut egui::Ui); 4] = [
             |app, ui| {
                 if icons::button(ui, Icon::ZoomOut, 26.0, false, true)
-                    .on_hover_text("Zoom out · Ctrl+-")
+                    .on_hover_text(app.command_hint(crate::commands::Action::ZoomOut, "Zoom out"))
                     .clicked()
                 {
                     app.step_zoom(0.8);
@@ -205,7 +212,7 @@ impl Dudel {
             },
             |app, ui| {
                 if icons::button(ui, Icon::ZoomIn, 26.0, false, true)
-                    .on_hover_text("Zoom in · Ctrl++")
+                    .on_hover_text(app.command_hint(crate::commands::Action::ZoomIn, "Zoom in"))
                     .clicked()
                 {
                     app.step_zoom(1.25);

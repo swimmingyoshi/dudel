@@ -19,6 +19,7 @@ fn row_height(layer: &crate::document::Layer) -> f32 {
 }
 
 enum RowAction {
+    MultiSelect(usize, bool, bool),
     ReferencePosition {
         id: u64,
         gap: usize,
@@ -304,6 +305,12 @@ impl Dudel {
         self.create_canvas_folder(false);
     }
     pub(crate) fn group_into_folder(&mut self) {
+        if self.multiple_layers() {
+            self.batch_layers(crate::layer_batch::Action::Group(
+                crate::document::LayerId::new(),
+            ));
+            return;
+        }
         self.create_canvas_folder(true);
     }
     pub(crate) fn ungroup_folder(&mut self) {
@@ -317,24 +324,33 @@ impl Dudel {
         self.merge_canvas_layer();
     }
     pub(crate) fn delete_layer(&mut self) {
+        if self.multiple_layers() {
+            self.batch_layers(crate::layer_batch::Action::Delete);
+            return;
+        }
         self.delete_canvas_layer();
     }
     fn reorder_layer(&mut self, from: usize, gap: usize, depth: u8) {
         self.reorder_canvas_layer(from, gap, depth);
     }
 
-    pub(crate) fn layers_ui(&mut self, ui: &mut egui::Ui, inline_controls: bool) {
+    pub(crate) fn layers_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        inline_controls: bool,
+        inline_navigation: bool,
+    ) {
         if self.reference_layers.active.is_some() {
             self.reference_properties_ui(ui);
             ui.add_space(4.0);
-            self.layer_rows_ui(ui);
+            self.layer_rows_ui(ui, inline_navigation);
             return;
         }
         if inline_controls {
             self.layer_controls_ui(ui);
         }
         ui.add_space(4.0);
-        self.layer_rows_ui(ui);
+        self.layer_rows_ui(ui, inline_navigation);
     }
 
     pub(crate) fn layer_controls_ui(&mut self, ui: &mut egui::Ui) {
@@ -355,7 +371,7 @@ impl Dudel {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if icons::button(ui, Icon::Plus, action_size, false, self.doc.has_room(1, 1))
-                .on_hover_text("New layer · Ctrl+Shift+N")
+                .on_hover_text(self.command_hint(crate::commands::Action::NewLayer, "New layer"))
                 .clicked()
             {
                 self.new_layer();
@@ -367,13 +383,16 @@ impl Dudel {
                 false,
                 self.doc.has_room(0, 1),
             )
-            .on_hover_text("New folder · Ctrl+G puts the selected layer in a folder")
+            .on_hover_text(self.command_hint(
+                crate::commands::Action::Group,
+                "New folder; shortcut puts the selected layer in a folder",
+            ))
             .clicked()
             {
                 self.new_folder();
             }
             if icons::button(ui, Icon::Duplicate, action_size, false, target_ready)
-                .on_hover_text("Duplicate · Ctrl+J")
+                .on_hover_text(self.command_hint(crate::commands::Action::Duplicate, "Duplicate"))
                 .clicked()
             {
                 self.duplicate_layer();
@@ -385,11 +404,14 @@ impl Dudel {
                 false,
                 target_ready && can_merge,
             )
-            .on_hover_text(if folder {
-                "Merge folder into one layer · Ctrl+E"
-            } else {
-                "Merge down · Ctrl+E"
-            })
+            .on_hover_text(self.command_hint(
+                crate::commands::Action::Merge,
+                if folder {
+                    "Merge folder into one layer"
+                } else {
+                    "Merge down"
+                },
+            ))
             .clicked()
             {
                 self.merge_down();
@@ -401,7 +423,9 @@ impl Dudel {
                 false,
                 target_ready && block.len() < self.doc.layers.len(),
             )
-            .on_hover_text(if folder {
+            .on_hover_text(if self.multiple_layers() {
+                "Delete selected layers and folder contents"
+            } else if folder {
                 "Delete folder and its contents"
             } else {
                 "Delete layer"
@@ -515,7 +539,24 @@ impl Dudel {
         }
     }
 
-    fn layer_rows_ui(&mut self, ui: &mut egui::Ui) {
+    fn layer_rows_ui(&mut self, ui: &mut egui::Ui, inline_navigation: bool) {
+        self.layer_batch_ui(ui);
+        if inline_navigation {
+            self.layer_navigation_ui(ui);
+        }
+        let viewport = ui.ctx().content_rect().size();
+        let viewport = [viewport.x.round() as i32, viewport.y.round() as i32];
+        if self.layer_navigation.viewport != Some(viewport) {
+            self.layer_reveal = None;
+            self.layer_navigation.viewport = Some(viewport);
+        }
+        let filtering = self.layer_navigation.active();
+        if self.layer_navigation.reveal_requested {
+            self.layer_reveal = None;
+            ui.ctx()
+                .data_mut(|d| d.remove::<(u64, [i32; 2])>(egui::Id::new("revealed reference")));
+            self.layer_navigation.reveal_requested = self.render_queue.busy();
+        }
         let mut action = None;
         self.reference_layers.bind_positions(&self.doc);
         let reveal_key = self
@@ -557,6 +598,10 @@ impl Dudel {
                 let mut hide_deeper_than: Option<u8> = None;
                 for index in (0..self.doc.layers.len()).rev() {
                     let layer = &self.doc.layers[index];
+                    if filtering && !self.layer_navigation.matches(layer) {
+                        self.reference_rows_at(ui, index);
+                        continue;
+                    }
                     if let Some(depth) = hide_deeper_than {
                         if layer.depth > depth {
                             self.reference_rows_at(ui, index);
@@ -564,11 +609,15 @@ impl Dudel {
                         }
                         hide_deeper_than = None;
                     }
-                    if layer.folder && layer.collapsed {
+                    if !filtering && layer.folder && layer.collapsed {
                         hide_deeper_than = Some(layer.depth);
                     }
                     let id = layer.id;
-                    let height = row_height(layer);
+                    let height = if self.layer_navigation.compact {
+                        38.0
+                    } else {
+                        row_height(layer)
+                    };
                     let top = ui.cursor().top();
                     let off_screen =
                         top > clip.bottom() + ROW_HEIGHT || top + height < clip.top() - ROW_HEIGHT;
@@ -628,12 +677,17 @@ impl Dudel {
         self.finish_layer_rename(true);
         // Any artwork row returns from reference editing to that layer.
         self.deselect_reference();
+        if let RowAction::MultiSelect(index, toggle, range) = action {
+            self.select_layer_row(index, toggle, range);
+            return;
+        }
         if let RowAction::PaintTarget(index, mask) = action {
+            self.layer_selection = Default::default();
             self.select_paint_target(index, mask);
             return;
         }
         if let RowAction::Select(index) = action {
-            self.select_layer_target(index);
+            self.select_layer_row(index, false, false);
             return;
         }
         if let RowAction::Reorder { from, gap, depth } = action {
@@ -764,6 +818,7 @@ impl Dudel {
             }
             RowAction::Reorder { from, gap, depth } => self.reorder_layer(from, gap, depth),
             RowAction::ReferencePosition { .. } => unreachable!(),
+            RowAction::MultiSelect(..) => unreachable!(),
             RowAction::PaintTarget(index, mask) => {
                 self.select_paint_target(index, mask);
             }
@@ -864,7 +919,11 @@ impl Dudel {
         action: &mut Option<RowAction>,
     ) {
         let layer = &self.doc.layers[index];
-        let height = row_height(layer);
+        let height = if self.layer_navigation.compact {
+            38.0
+        } else {
+            row_height(layer)
+        };
         let width = ui
             .available_width()
             .min(ui.clip_rect().right() - ui.next_widget_position().x)
@@ -877,8 +936,11 @@ impl Dudel {
         let shown = self.doc.shown(index);
         let visuals = ui.visuals().clone();
         let painter = ui.painter_at(rect.expand(2.0));
+        let multi_selected = self.multiple_layers() && self.layer_selection.ids.contains(&layer.id);
         let fill = if selected {
             visuals.selection.bg_fill.gamma_multiply(0.85)
+        } else if multi_selected {
+            visuals.selection.bg_fill.gamma_multiply(0.45)
         } else if response.hovered() {
             visuals.widgets.hovered.weak_bg_fill
         } else if layer.folder {
@@ -1040,7 +1102,10 @@ impl Dudel {
                 })
                 .clicked()
         {
-            *action = Some(if layer.adjustment.is_some() {
+            let modifiers = ui.input(|i| i.modifiers);
+            *action = Some(if modifiers.ctrl || modifiers.command || modifiers.shift {
+                RowAction::MultiSelect(index, modifiers.ctrl || modifiers.command, modifiers.shift)
+            } else if layer.adjustment.is_some() {
                 RowAction::Adjustment(index)
             } else {
                 RowAction::PaintTarget(index, None)
@@ -1112,7 +1177,9 @@ impl Dudel {
             + (symmetry_badge as usize + guides_badge as usize + effects_badge as usize) as f32
                 * 24.0;
         let text_width = (rect.right() - text_left - 8.0 - badges).max(0.0);
-        let name_top = if layer.folder {
+        let name_top = if self.layer_navigation.compact {
+            rect.center().y - 10.0
+        } else if layer.folder {
             rect.top() + 3.0
         } else {
             rect.top() + 6.0
@@ -1176,15 +1243,21 @@ impl Dudel {
         if layer.clipped {
             summary.push_str(" · clipped");
         }
-        let mut job =
-            egui::text::LayoutJob::simple_singleline(summary, FontId::proportional(11.5), weak);
-        job.wrap = egui::text::TextWrapping::truncate_at_width(text_width);
-        let galley = painter.layout_job(job);
-        painter.galley(
-            pos2(text_left, rect.bottom() - 6.0 - galley.size().y),
-            galley,
-            weak,
-        );
+        if !self.layer_navigation.compact {
+            let mut job =
+                egui::text::LayoutJob::simple_singleline(summary, FontId::proportional(11.5), weak);
+            job.wrap = egui::text::TextWrapping::truncate_at_width(text_width);
+            let galley = painter.layout_job(job);
+            painter.galley(
+                pos2(text_left, rect.bottom() - 6.0 - galley.size().y),
+                galley,
+                weak,
+            );
+        } else {
+            response
+                .clone()
+                .on_hover_text(format!("{}\n{summary}", layer.name));
+        }
         let mut badge_x = rect.right() - 8.0;
         if layer.locked {
             let r = egui::Rect::from_min_max(
@@ -1303,10 +1376,11 @@ impl Dudel {
         }
 
         // Drag to reorder: above, below, or into a folder row.
-        if response.drag_started() {
+        if !self.layer_navigation.active() && !self.multiple_layers() && response.drag_started() {
             response.dnd_set_drag_payload(index);
         }
         if let Some(from) = response.dnd_hover_payload::<usize>()
+            && !self.layer_navigation.active()
             && let Some(pointer) = ui.ctx().pointer_interact_pos()
         {
             let fraction = (pointer.y - rect.top()) / rect.height();
@@ -1351,6 +1425,7 @@ impl Dudel {
         if response
             .dnd_hover_payload::<crate::reference_stack::ReferenceDrag>()
             .is_some()
+            && !self.layer_navigation.active()
             && let Some(pointer) = ui.ctx().pointer_interact_pos()
         {
             let (gap, depth, _) = self.drop_target(index, (pointer.y - rect.top()) / rect.height());
@@ -1377,10 +1452,19 @@ impl Dudel {
         let badge_clicked = symmetry_response.as_ref().is_some_and(|r| r.clicked())
             || guides_response.as_ref().is_some_and(|r| r.clicked())
             || effects_response.as_ref().is_some_and(|r| r.clicked());
-        if response.double_clicked() && action.is_none() && !badge_clicked {
+        if response.double_clicked()
+            && action.is_none()
+            && !badge_clicked
+            && !ui.input(|i| i.modifiers.ctrl || i.modifiers.command || i.modifiers.shift)
+        {
             *action = Some(RowAction::Rename(index));
         } else if response.clicked() && action.is_none() && !badge_clicked {
-            *action = Some(RowAction::Select(index));
+            let modifiers = ui.input(|i| i.modifiers);
+            *action = Some(if modifiers.ctrl || modifiers.command || modifiers.shift {
+                RowAction::MultiSelect(index, modifiers.ctrl || modifiers.command, modifiers.shift)
+            } else {
+                RowAction::Select(index)
+            });
         }
         let folder = layer.folder;
         let layer_id = layer.id;
@@ -1399,7 +1483,7 @@ impl Dudel {
         }
         response
             .on_hover_text(
-                "Click to select · double-click to rename · drag to reorder or drop onto a folder · right-click for more",
+                "Click to select · Ctrl-click to toggle · Shift-click for a visible range · double-click to rename · use Batch to move multiple layers",
             )
             .context_menu(|ui| {
                 self.new_layer_menu(ui, Some(index));
@@ -1411,7 +1495,7 @@ impl Dudel {
                     ui.close();
                 }
                 if ui
-                    .add(egui::Button::new("Duplicate").shortcut_text("Ctrl+J"))
+                    .add(egui::Button::new("Duplicate").shortcut_text(self.shortcuts.label(crate::commands::Action::Duplicate)))
                     .clicked()
                 {
                     *action = Some(RowAction::Duplicate(index));
@@ -1419,7 +1503,7 @@ impl Dudel {
                 }
                 let merge = if folder { "Merge folder" } else { "Merge down" };
                 if ui
-                    .add(egui::Button::new(merge).shortcut_text("Ctrl+E"))
+                    .add(egui::Button::new(merge).shortcut_text(self.shortcuts.label(crate::commands::Action::Merge)))
                     .clicked()
                 {
                     *action = Some(RowAction::Merge(index));
@@ -1427,7 +1511,7 @@ impl Dudel {
                 }
                 ui.separator();
                 if ui
-                    .add(egui::Button::new("Put in new folder").shortcut_text("Ctrl+G"))
+                    .add(egui::Button::new("Put in new folder").shortcut_text(self.shortcuts.label(crate::commands::Action::Group)))
                     .clicked()
                 {
                     *action = Some(RowAction::Group(index));
@@ -1435,7 +1519,7 @@ impl Dudel {
                 }
                 if folder
                     && ui
-                        .add(egui::Button::new("Ungroup folder").shortcut_text("Ctrl+Shift+G"))
+                        .add(egui::Button::new("Ungroup folder").shortcut_text(self.shortcuts.label(crate::commands::Action::Ungroup)))
                         .clicked()
                 {
                     *action = Some(RowAction::Ungroup(index));
@@ -1464,7 +1548,9 @@ impl Dudel {
                     ui.close();
                 }
                 if ui
-                    .button(if folder {
+                    .button(if self.multiple_layers() && self.layer_selection.ids.contains(&layer_id) {
+                        "Delete selected layers"
+                    } else if folder {
                         "Delete folder and contents"
                     } else {
                         "Delete layer"

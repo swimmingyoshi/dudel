@@ -409,12 +409,8 @@ impl Dudel {
     }
     fn menus(&mut self, ui: &mut egui::Ui) {
         let file_menu = bounded_menu(ui, "File", |ui| {
-            if menu_item(ui, "New canvas…", "Ctrl+N", true) {
-                self.open_new_canvas();
-            }
-            if menu_item(ui, "Open…", "Ctrl+O", true) {
-                self.open();
-            }
+            self.command_menu_item(ui, crate::commands::Action::New);
+            self.command_menu_item(ui, crate::commands::Action::Open);
             bounded_menu(ui, "Open recent", |ui| {
                 if self.recent.is_empty() {
                     ui.label("No recent projects");
@@ -435,12 +431,8 @@ impl Dudel {
                 }
             });
             ui.separator();
-            if menu_item(ui, "Save", "Ctrl+S", true) {
-                self.save(false);
-            }
-            if menu_item(ui, "Save as…", "Ctrl+Shift+S", true) {
-                self.save(true);
-            }
+            self.command_menu_item(ui, crate::commands::Action::Save);
+            self.command_menu_item(ui, crate::commands::Action::SaveAs);
             ui.separator();
             bounded_menu(ui, "Import", |ui| {
                 if menu_item(ui, "PNG as canvas…", "", true) {
@@ -460,18 +452,10 @@ impl Dudel {
                     self.import_package();
                 }
             });
-            if menu_item(ui, "Export PNG…", "", true) {
-                self.export(false);
-            }
-            if menu_item(ui, "Export transparent PNG…", "", true) {
-                self.export(true);
-            }
-            if menu_item(ui, "Export Photoshop document (.psd)…", "", true) {
-                self.export_psd(crate::psd_export::Effects::Editable);
-            }
-            if menu_item(ui, "Export PSD for Live2D (effects as layers)…", "", true) {
-                self.export_psd(crate::psd_export::Effects::AsLayers);
-            }
+            self.command_menu_item(ui, crate::commands::Action::ExportPng(false));
+            self.command_menu_item(ui, crate::commands::Action::ExportPng(true));
+            self.command_menu_item(ui, crate::commands::Action::ExportPsd);
+            self.command_menu_item(ui, crate::commands::Action::ExportLive2d);
             if menu_item(ui, "Export project package (.zip)…", "", true) {
                 self.export_package();
             }
@@ -502,36 +486,13 @@ impl Dudel {
         });
         self.open_capture_popup(&file_menu, crate::capture::Popup::FileMenu);
         bounded_menu(ui, "Edit", |ui| {
-            if menu_item(
-                ui,
-                "Undo",
-                "Ctrl+Z",
-                self.history.can_undo() || self.render_queue.busy(),
-            ) {
-                self.undo();
-            }
-            if menu_item(
-                ui,
-                "Redo",
-                "Ctrl+Shift+Z",
-                self.history.can_redo() || self.render_queue.busy(),
-            ) {
-                self.redo();
-            }
+            self.command_menu_item(ui, crate::commands::Action::Search);
+            ui.separator();
+            self.command_menu_item(ui, crate::commands::Action::Undo);
+            self.command_menu_item(ui, crate::commands::Action::Redo);
             ui.separator();
             let transforming = self.affine_preview.is_some();
-            if menu_item(
-                ui,
-                if transforming {
-                    "Apply transform"
-                } else {
-                    "Free transform"
-                },
-                if transforming { "Enter" } else { "Ctrl+T" },
-                true,
-            ) {
-                self.toggle_free_transform();
-            }
+            self.command_menu_item(ui, crate::commands::Action::Transform);
             if transforming && menu_item(ui, "Cancel transform", "Esc", true) {
                 self.cancel_affine_preview();
             }
@@ -616,13 +577,8 @@ impl Dudel {
             }
         });
         bounded_menu(ui, "Layer", |ui| {
-            let folder = self.input_is_folder();
-            if menu_item(ui, "New layer", "Ctrl+Shift+N", self.doc.has_room(1, 1)) {
-                self.new_layer();
-            }
-            if menu_item(ui, "New folder", "", self.doc.has_room(0, 1)) {
-                self.new_folder();
-            }
+            self.command_menu_item(ui, crate::commands::Action::NewLayer);
+            self.command_menu_item(ui, crate::commands::Action::NewFolder);
             ui.add_enabled_ui(self.doc.has_room(1, 1), |ui| {
                 ui.menu_button("New adjustment layer", |ui| {
                     for settings in crate::adjustment::presets() {
@@ -634,9 +590,7 @@ impl Dudel {
                     }
                 });
             });
-            if menu_item(ui, "New vector layer", "", self.doc.has_room(1, 1)) {
-                self.create_vector_layer();
-            }
+            self.command_menu_item(ui, crate::commands::Action::NewVector);
             let vector = self
                 .input_layer()
                 .and_then(|i| self.doc.layers.get(i))
@@ -650,28 +604,22 @@ impl Dudel {
             if menu_item(ui, "Rasterize layer", "", vector) {
                 self.rasterize_layer();
             }
-            if menu_item(ui, "Layer effects…", "", self.input_target().is_some()) {
-                self.effects_window_open = true;
-            }
-            if menu_item(ui, "Put in new folder", "Ctrl+G", self.doc.has_room(0, 1)) {
-                self.group_into_folder();
-            }
-            if menu_item(ui, "Ungroup folder", "Ctrl+Shift+G", folder) {
-                self.ungroup_folder();
-            }
+            self.command_menu_item(ui, crate::commands::Action::Effects);
+            self.command_menu_item(ui, crate::commands::Action::Group);
+            self.command_menu_item(ui, crate::commands::Action::Ungroup);
             ui.separator();
-            if menu_item(ui, "Duplicate", "Ctrl+J", true) {
-                self.duplicate_layer();
-            }
+            self.command_menu_item(ui, crate::commands::Action::Duplicate);
+            self.command_menu_item(ui, crate::commands::Action::Merge);
             if menu_item(
                 ui,
-                if folder { "Merge folder" } else { "Merge down" },
-                "Ctrl+E",
-                folder || self.doc.active > 0,
+                if self.multiple_layers() {
+                    "Delete selected layers"
+                } else {
+                    "Delete"
+                },
+                "",
+                self.doc.layers.len() > 1,
             ) {
-                self.merge_down();
-            }
-            if menu_item(ui, "Delete", "", self.doc.layers.len() > 1) {
                 self.delete_layer();
             }
             ui.separator();
@@ -689,9 +637,7 @@ impl Dudel {
                     .small()
                     .weak(),
             );
-            if menu_item(ui, "Flip horizontally", "", true) {
-                self.transform_active(crate::transform::Transform::FlipHorizontal);
-            }
+            self.command_menu_item(ui, crate::commands::Action::FlipArtwork);
             if menu_item(ui, "Flip vertically", "", true) {
                 self.transform_active(crate::transform::Transform::FlipVertical);
             }
@@ -707,25 +653,9 @@ impl Dudel {
                 self.select_target_coverage();
                 ui.close();
             }
-            if menu_item(ui, "Select all", "Ctrl+A", true) {
-                self.select_all();
-            }
-            if menu_item(
-                ui,
-                "Deselect",
-                "Ctrl+D",
-                self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
-            ) {
-                self.set_selection(None);
-            }
-            if menu_item(
-                ui,
-                "Invert selection",
-                "Ctrl+Shift+I",
-                self.doc.selection.is_some() || self.doc.selection_mask.is_some(),
-            ) {
-                self.invert_selection();
-            }
+            self.command_menu_item(ui, crate::commands::Action::SelectAll);
+            self.command_menu_item(ui, crate::commands::Action::Deselect);
+            self.command_menu_item(ui, crate::commands::Action::InvertSelection);
             if menu_item(
                 ui,
                 if masked { "Clear mask" } else { "Clear pixels" },
@@ -806,57 +736,24 @@ impl Dudel {
                     self.preview_menu(ui);
                 },
             );
-            if ui.button("Settings?").clicked() {
-                self.settings_open = true;
-                ui.close();
-            }
-            ui.checkbox(&mut self.show_panels, "Show all panels · Tab");
+            self.command_menu_item(ui, crate::commands::Action::Settings);
+            self.command_menu_item(ui, crate::commands::Action::Panels);
             if menu_item(ui, "Automatic panel layout", "", true) {
                 self.tool_panel_override = None;
                 self.inspector_override = None;
                 self.show_panels = true;
             }
             ui.separator();
-            if menu_item(ui, "Zoom in", "Ctrl++", true) {
-                self.step_zoom(1.25);
-            }
-            if menu_item(ui, "Zoom out", "Ctrl+-", true) {
-                self.step_zoom(0.8);
-            }
-            if menu_item(ui, "Fit canvas", "Ctrl+0", true) {
-                self.fit_view();
-            }
-            if menu_item(ui, "Actual pixels", "Ctrl+1", true) {
-                self.actual_size();
-            }
+            self.command_menu_item(ui, crate::commands::Action::ZoomIn);
+            self.command_menu_item(ui, crate::commands::Action::ZoomOut);
+            self.command_menu_item(ui, crate::commands::Action::Fit);
+            self.command_menu_item(ui, crate::commands::Action::ActualSize);
             ui.separator();
-            if menu_item(ui, "Rotate view left 15°", "4", true) {
-                self.rotate_view(-15f32.to_radians());
-            }
-            if menu_item(ui, "Rotate view right 15°", "6", true) {
-                self.rotate_view(15f32.to_radians());
-            }
-            if menu_item(ui, "Reset rotation", "5", self.rotation != 0.0) {
-                self.reset_rotation();
-            }
-            let mut flipped = self.mirror;
-            if ui
-                .checkbox(&mut flipped, "Flip canvas horizontally · H")
-                .on_hover_text("View only: the artwork is not changed")
-                .changed()
-            {
-                self.toggle_flip();
-            }
-            let mut transparency = self.show_transparency;
-            if ui
-                .checkbox(&mut transparency, "Show transparency · Ctrl+Shift+T")
-                .on_hover_text(
-                    "Checkerboard behind transparent areas instead of white paper.                      View only: exports and the artwork are unchanged",
-                )
-                .changed()
-            {
-                self.set_show_transparency(transparency);
-            }
+            self.command_menu_item(ui, crate::commands::Action::RotateLeft);
+            self.command_menu_item(ui, crate::commands::Action::RotateRight);
+            self.command_menu_item(ui, crate::commands::Action::ResetRotation);
+            self.command_menu_item(ui, crate::commands::Action::FlipView);
+            self.command_menu_item(ui, crate::commands::Action::Transparency);
             ui.menu_button("Symmetry", |ui| self.symmetry_ui(ui));
             ui.menu_button("Grid and guides", |ui| self.guides_ui(ui));
             ui.separator();
@@ -892,9 +789,7 @@ impl Dudel {
         });
         self.open_capture_popup(&view_menu, crate::capture::Popup::ViewMenu);
         bounded_menu(ui, "Help", |ui| {
-            if menu_item(ui, "Keyboard shortcuts", "", true) {
-                self.shortcuts_window = true;
-            }
+            self.command_menu_item(ui, crate::commands::Action::Shortcuts);
             if menu_item(ui, "About Dudel", "", true) {
                 self.about_window = true;
             }
@@ -1225,9 +1120,11 @@ impl Dudel {
                                 let active = self.tool == Tool::Brush && self.brush_group == group;
                                 let response = icons::button(ui, group.icon(), side, active, true)
                                     .on_hover_text(format!(
-                                        "{} · B (tap B again to cycle groups)
+                                        "{} · {} (tap again to cycle groups)
 {}",
                                         group.name(),
+                                        self.shortcuts
+                                            .label(crate::commands::Action::Tool(Tool::Brush)),
                                         group.hint()
                                     ));
                                 if reveal && active {
@@ -1250,7 +1147,7 @@ impl Dudel {
                                 "{} · {}
 {}\nTap the shortcut to select; hold > 0.5 s to use temporarily",
                                 tool.name(),
-                                tool.shortcut(),
+                                self.shortcuts.label(crate::commands::Action::Tool(tool)),
                                 tool.target_hint(!self.input_stroke_target().is_raster())
                             ));
                         if reveal && self.tool == tool {
@@ -1278,7 +1175,7 @@ impl Dudel {
                 false,
                 self.history.can_redo() || self.render_queue.busy(),
             )
-            .on_hover_text("Redo · Ctrl+Shift+Z")
+            .on_hover_text(self.command_hint(crate::commands::Action::Redo, "Redo"))
             .clicked()
             {
                 self.redo();
@@ -1290,7 +1187,7 @@ impl Dudel {
                 false,
                 self.history.can_undo() || self.render_queue.busy(),
             )
-            .on_hover_text("Undo · Ctrl+Z")
+            .on_hover_text(self.command_hint(crate::commands::Action::Undo, "Undo"))
             .clicked()
             {
                 self.undo();
@@ -1698,15 +1595,19 @@ impl Dudel {
 
     fn status_view_buttons(&mut self, ui: &mut egui::Ui) {
         if icons::button(ui, Icon::Flip, 26.0, self.mirror, true)
-            .on_hover_text("Flip canvas horizontally · H (view only)")
+            .on_hover_text(self.command_hint(
+                crate::commands::Action::FlipView,
+                "Flip canvas horizontally (view only)",
+            ))
             .clicked()
         {
             self.toggle_flip();
         }
         if icons::button(ui, Icon::Transparency, 26.0, self.show_transparency, true)
-            .on_hover_text(
-                "Show transparency as a checkerboard · Ctrl+Shift+T (view only; exports unchanged)",
-            )
+            .on_hover_text(self.command_hint(
+                crate::commands::Action::Transparency,
+                "Show transparency as a checkerboard (view only; exports unchanged)",
+            ))
             .clicked()
         {
             self.set_show_transparency(!self.show_transparency);
@@ -1739,7 +1640,7 @@ impl Dudel {
         };
         ui.label(text).on_hover_text(format!(
             "Unsaved changes are backed up for crash recovery.{pending}\n\
-             This backup is not your project file: save with Ctrl+S to keep your work."
+             This backup is not your project file: use Save to keep your work."
         ));
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_secs(if fresh { 1 } else { 30 }));
@@ -1771,13 +1672,19 @@ impl Dudel {
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
                     if icons::button(ui, Icon::Transparency, 26.0, self.show_transparency, true)
-                        .on_hover_text("Show transparency as a checkerboard · Ctrl+Shift+T")
+                        .on_hover_text(self.command_hint(
+                            crate::commands::Action::Transparency,
+                            "Show transparency as a checkerboard",
+                        ))
                         .clicked()
                     {
                         self.set_show_transparency(!self.show_transparency);
                     }
                     if icons::button(ui, Icon::Flip, 26.0, self.mirror, true)
-                        .on_hover_text("Flip canvas horizontally · H (view only)")
+                        .on_hover_text(self.command_hint(
+                            crate::commands::Action::FlipView,
+                            "Flip canvas horizontally (view only)",
+                        ))
                         .clicked()
                     {
                         self.toggle_flip();
@@ -1988,7 +1895,8 @@ impl Dudel {
                             // scroll out of reach behind the navigator and color.
                             let total = ui.available_height();
                             if total < 360.0 {
-                                let inline_controls = total >= 200.0;
+                                // Leave room for search/filter controls and at least one layer row.
+                                let inline_controls = total >= 300.0;
                                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
                                 ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
                                 ui.spacing_mut().interact_size.y = 24.0;
@@ -2021,16 +1929,23 @@ impl Dudel {
                                     }
                                 });
                                 ui.horizontal(|ui| {
-                                    ui.label(section_title("LAYERS"));
+                                    if total < 200.0 {
+                                        ui.menu_button(section_title("LAYERS"), |ui| {
+                                            ui.set_width(280.0);
+                                            self.layer_navigation_ui(ui);
+                                        }).response.on_hover_text("Search layers, filter types and reveal the active layer");
+                                    } else {
+                                        ui.label(section_title("LAYERS"));
+                                    }
                                     self.layer_guide_controls(ui);
                                 });
-                                self.layers_ui(ui, inline_controls);
+                                self.layers_ui(ui, inline_controls, total >= 200.0);
                                 return;
                             }
                             let minimum = (if self.mask_controls_available() {
-                                240.0_f32
+                                300.0_f32
                             } else {
-                                180.0_f32
+                                250.0_f32
                             })
                             .min(total.max(0.0));
                             let height = self
@@ -2063,7 +1978,7 @@ impl Dudel {
                                         ui.label(section_title("LAYERS"));
                                         self.layer_guide_controls(ui);
                                     });
-                                    self.layers_ui(ui, true);
+                                    self.layers_ui(ui, true, true);
                                 });
                             let viewport_height = ui.available_height();
                             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -2173,6 +2088,8 @@ impl Dudel {
         self.new_canvas_ui(ctx);
         self.canvas_size_ui(ctx);
         self.adjustment_ui(ctx);
+        self.command_search_ui(ctx);
+        self.shortcut_capture_ui(ctx);
     }
 }
 

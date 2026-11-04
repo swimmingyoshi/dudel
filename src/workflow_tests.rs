@@ -2,12 +2,412 @@
 use crate::{Dudel, egui};
 
 struct Workspace {
+    modifiers: egui::Modifiers,
     ctx: egui::Context,
     app: Dudel,
     output: egui::FullOutput,
     time: f64,
     size: [f32; 2],
     viewport: egui::ViewportInfo,
+}
+
+#[test]
+fn batch_layer_ui_toggles_selection_applies_one_edit_and_clears_to_active() {
+    for size in [[1280., 800.], [960., 640.]] {
+        let mut w = Workspace::sized(size);
+        for _ in 0..2 {
+            w.app.doc.add_layer();
+        }
+        for (i, layer) in w.app.doc.layers.iter_mut().enumerate() {
+            layer.name = format!("Batch ink {i}");
+        }
+        w.app.inspector_override = Some(true);
+        w.settle();
+        w.click(w.text("Batch ink 2"));
+        w.modifiers = egui::Modifiers::CTRL;
+        w.click(w.text("Batch ink 1"));
+        w.modifiers = Default::default();
+        w.settle();
+        assert!(w.app.multiple_layers());
+        w.text("2 selected");
+        w.click(w.text("Batch"));
+        w.click(w.text("Hide selected"));
+        assert!(!w.app.doc.layers[1].visible && !w.app.doc.layers[2].visible);
+        assert!(w.app.doc.layers[0].visible);
+        w.app.undo();
+        finish_jobs(&mut w.app);
+        assert!(w.app.doc.layers.iter().all(|l| l.visible));
+        assert!(!w.app.history.can_undo());
+        w.settle();
+        w.click(w.text("Only active"));
+        assert!(!w.app.multiple_layers());
+    }
+}
+
+#[test]
+fn shortcut_capture_rejects_clipboard_and_clears_previous_candidate() {
+    use crate::{commands::Action, shortcuts::Chord};
+    let mut w = Workspace::sized([640., 400.]);
+    w.app.shortcut_editor.capture = Some(Action::NewLayer);
+    w.app.shortcut_editor.candidate = Some(Chord::new(egui::Key::F2, Default::default()));
+    let before = w.app.doc.clone();
+    w.settle();
+    w.frame(vec![egui::Event::Paste("clipboard text".into())]);
+    w.settle();
+    assert!(w.app.shortcut_editor.candidate.is_none());
+    w.text("Clipboard shortcuts keep their standard behavior");
+    w.click(w.text("Apply shortcut"));
+    assert!(w.app.shortcut_editor.capture.is_some());
+    w.key(egui::Key::Escape, Default::default());
+    w.settle();
+    assert!(crate::document::same_snapshot(&before, &w.app.doc));
+}
+
+#[test]
+fn shortcut_search_respects_text_focus_and_new_canvas_owns_its_frame() {
+    use crate::{commands::Action, shortcuts::Chord, tools::Tool};
+    let mut w = Workspace::new();
+    w.app.shortcuts = w
+        .app
+        .shortcuts
+        .changed(
+            Action::Search,
+            Some(vec![Chord::new(egui::Key::Q, Default::default())]),
+        )
+        .unwrap()
+        .changed(
+            Action::New,
+            Some(vec![Chord::new(egui::Key::F2, Default::default())]),
+        )
+        .unwrap();
+    w.app.settings_open = true;
+    w.app.settings_section = 4;
+    w.settle();
+    w.click(w.text("Find a command or shortcut"));
+    assert!(w.ctx.wants_keyboard_input());
+    w.key(egui::Key::Q, Default::default());
+    w.frame(vec![egui::Event::Text("q".into())]);
+    assert!(!w.app.command_search.open);
+    assert_eq!(w.app.shortcut_editor.filter, "q");
+    w.app.settings_open = false;
+    w.ctx.memory_mut(|m| {
+        if let Some(id) = m.focused() {
+            m.surrender_focus(id);
+        }
+    });
+    w.settle();
+    w.key(egui::Key::N, egui::Modifiers::CTRL);
+    assert!(!w.app.new_canvas);
+    w.frame(
+        [egui::Key::E, egui::Key::F2, egui::Key::Tab]
+            .into_iter()
+            .map(|key| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            })
+            .collect(),
+    );
+    assert!(w.app.new_canvas);
+    assert!(w.app.tool == Tool::Brush);
+}
+
+#[test]
+fn shortcut_queued_selection_and_shifted_zoom_are_dispatched() {
+    let mut w = Workspace::new();
+    w.key(egui::Key::A, egui::Modifiers::CTRL);
+    w.key(egui::Key::D, egui::Modifiers::CTRL);
+    finish_jobs(&mut w.app);
+    assert!(w.app.doc.selection.is_none() && w.app.doc.selection_mask.is_none());
+    w.app.undo();
+    finish_jobs(&mut w.app);
+    assert!(w.app.doc.selection.is_some());
+    let zoom = w.app.zoom;
+    w.key(
+        egui::Key::Plus,
+        egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+    );
+    assert!(w.app.zoom > zoom);
+}
+
+#[test]
+fn shortcut_editor_captures_conflicts_without_executing_then_rebinds_and_resets() {
+    use crate::{commands::Action, shortcuts::Chord};
+    let mut w = Workspace::sized([960., 640.]);
+    w.app.settings_open = true;
+    w.app.settings_section = 4;
+    w.app.shortcut_editor.filter = "New raster".into();
+    w.settle();
+    let default = w.app.shortcuts.label(Action::NewLayer);
+    w.click(w.text(&default));
+    w.settle();
+    w.text("Assign shortcut");
+    let before = w.app.doc.clone();
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.settle();
+    w.text("Ctrl+Z is already assigned to Undo");
+    assert!(crate::document::same_snapshot(&before, &w.app.doc));
+    assert_eq!(w.app.shortcuts.label(Action::NewLayer), default);
+    w.key(egui::Key::L, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    w.settle();
+    w.click(w.text("Apply shortcut"));
+    assert!(w.app.shortcut_editor.capture.is_none());
+    assert_eq!(
+        w.app.shortcuts.effective(Action::NewLayer),
+        vec![Chord::new(
+            egui::Key::L,
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT
+        )]
+    );
+    w.app.settings_open = false;
+    w.settle();
+    w.key(egui::Key::N, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    assert_eq!(w.app.doc.layers.len(), 1, "The old binding no longer runs");
+    w.key(egui::Key::L, egui::Modifiers::CTRL);
+    assert_eq!(w.app.doc.layers.len(), 1, "Modifiers match exactly");
+    w.key(egui::Key::L, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    finish_jobs(&mut w.app);
+    assert_eq!(w.app.doc.layers.len(), 2);
+    w.click(w.text("Layer"));
+    w.settle();
+    w.text("Ctrl+Shift+L");
+    w.key(egui::Key::Escape, Default::default());
+    w.app.settings_open = true;
+    w.settle();
+    w.click(w.text("Default"));
+    assert_eq!(w.app.shortcuts.label(Action::NewLayer), default);
+}
+
+#[test]
+fn shortcut_custom_tool_taps_holds_and_capture_escape_preserve_canvas_state() {
+    use crate::{commands::Action, shortcuts::Chord, tools::Tool};
+    let mut w = Workspace::new();
+    w.app.shortcuts = w
+        .app
+        .shortcuts
+        .changed(
+            Action::Tool(Tool::Eraser),
+            Some(vec![Chord::new(egui::Key::F2, egui::Modifiers::NONE)]),
+        )
+        .unwrap();
+    w.key(egui::Key::E, Default::default());
+    assert!(w.app.tool == Tool::Brush);
+    w.key(egui::Key::F2, Default::default());
+    assert!(w.app.tool == Tool::Eraser);
+    w.app.select_tool(Tool::Brush);
+    let event = |pressed| egui::Event::Key {
+        key: egui::Key::F2,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Default::default(),
+    };
+    w.frame(vec![event(true)]);
+    assert!(w.app.tool == Tool::Eraser);
+    w.time += 0.8;
+    w.frame(vec![event(false)]);
+    assert!(w.app.tool == Tool::Brush);
+    w.frame(vec![event(true)]);
+    w.app.shortcut_editor.capture = Some(Action::NewLayer);
+    w.frame(vec![event(false)]);
+    assert!(!w.ctx.input(|i| i.key_down(egui::Key::F2)));
+    w.key(egui::Key::Escape, Default::default());
+    w.key(egui::Key::F2, Default::default());
+    assert!(
+        w.app.tool == Tool::Eraser,
+        "Capture must not leave a tool key stuck"
+    );
+    w.app.select_all();
+    finish_jobs(&mut w.app);
+    let before = w.app.doc.clone();
+    w.app.shortcut_editor.capture = Some(Action::NewLayer);
+    w.settle();
+    let at = w.app.canvas_area.center();
+    let sample = crate::stroke::Sample {
+        x: at.x,
+        y: at.y,
+        pressure: 1.0,
+        ..Default::default()
+    };
+    w.frame_packets(
+        vec![],
+        &[
+            crate::input::Packet::Start(sample),
+            crate::input::Packet::End(sample),
+        ],
+    );
+    w.key(egui::Key::Tab, egui::Modifiers::CTRL);
+    w.key(egui::Key::Escape, Default::default());
+    assert!(w.app.shortcut_editor.capture.is_none());
+    assert!(crate::document::same_snapshot(&before, &w.app.doc));
+}
+
+#[test]
+fn shortcut_custom_search_and_panel_bindings_replace_defaults() {
+    use crate::{commands::Action, shortcuts::Chord};
+    let mut w = Workspace::new();
+    w.app.shortcuts = w
+        .app
+        .shortcuts
+        .changed(
+            Action::Search,
+            Some(vec![Chord::new(egui::Key::F3, egui::Modifiers::NONE)]),
+        )
+        .unwrap()
+        .changed(
+            Action::Panels,
+            Some(vec![Chord::new(egui::Key::F4, egui::Modifiers::NONE)]),
+        )
+        .unwrap();
+    let panels = w.app.show_panels;
+    w.key(egui::Key::Tab, Default::default());
+    assert_eq!(w.app.show_panels, panels);
+    w.key(egui::Key::F4, Default::default());
+    assert_eq!(w.app.show_panels, !panels);
+    w.key(egui::Key::K, egui::Modifiers::CTRL);
+    assert!(!w.app.command_search.open);
+    w.key(egui::Key::F3, Default::default());
+    assert!(w.app.command_search.open);
+    w.key(egui::Key::Escape, Default::default());
+}
+
+#[test]
+fn ux_command_search_runs_actions_and_preserves_selection_on_escape() {
+    for size in [[1280., 800.], [640., 400.]] {
+        let mut w = Workspace::sized(size);
+        w.app.select_all();
+        finish_jobs(&mut w.app);
+        w.key(egui::Key::K, egui::Modifiers::CTRL);
+        w.settle();
+        assert!(w.app.command_search.open);
+        let before = w.app.doc.clone();
+        let at = w.app.canvas_area.center();
+        let sample = crate::stroke::Sample {
+            x: at.x,
+            y: at.y,
+            pressure: 1.0,
+            ..Default::default()
+        };
+        w.frame_packets(
+            vec![],
+            &[
+                crate::input::Packet::Start(sample),
+                crate::input::Packet::End(sample),
+            ],
+        );
+        finish_jobs(&mut w.app);
+        assert!(
+            crate::document::same_snapshot(&before, &w.app.doc),
+            "Command search blocks pen packets"
+        );
+        w.frame(vec![egui::Event::Text("new raster".into())]);
+        w.settle();
+        w.text("New raster layer");
+        w.key(egui::Key::Enter, Default::default());
+        finish_jobs(&mut w.app);
+        assert!(!w.app.command_search.open);
+        assert_eq!(w.app.doc.layers.len(), 2);
+        w.app.undo();
+        finish_jobs(&mut w.app);
+        assert_eq!(w.app.doc.layers.len(), 1);
+        w.key(egui::Key::P, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+        w.settle();
+        assert!(w.app.command_search.open);
+        w.frame(vec![egui::Event::Text("no such command".into())]);
+        w.settle();
+        w.text("No matching commands. Try a tool name or action.");
+        w.key(egui::Key::Escape, Default::default());
+        assert!(!w.app.command_search.open);
+        assert!(
+            w.app.doc.selection.is_some(),
+            "Escape closes search, not the selection"
+        );
+        w.settle();
+        assert!(!w.ctx.wants_keyboard_input());
+    }
+}
+
+#[test]
+fn ux_command_search_keyboard_navigation_and_disabled_actions() {
+    let mut w = Workspace::new();
+    w.key(egui::Key::K, egui::Modifiers::CTRL);
+    w.settle();
+    w.frame(vec![egui::Event::Text("undo".into())]);
+    w.settle();
+    w.key(egui::Key::Enter, Default::default());
+    assert!(w.app.command_search.open);
+    assert!(w.ctx.wants_keyboard_input());
+    w.text("Nothing to undo");
+    w.key(egui::Key::Escape, Default::default());
+    w.key(egui::Key::K, egui::Modifiers::CTRL);
+    w.settle();
+    w.frame(vec![egui::Event::Text("mirror".into())]);
+    w.settle();
+    w.key(egui::Key::ArrowDown, Default::default());
+    w.key(egui::Key::ArrowUp, Default::default());
+    w.key(egui::Key::Enter, Default::default());
+    assert!(w.app.mirror, "First mirror result flips only the view");
+    assert!(!w.app.history.can_undo());
+}
+
+#[test]
+fn ux_layer_filter_finds_collapsed_children_and_reveals_active() {
+    for size in [[1280., 800.], [640., 400.]] {
+        let mut w = Workspace::sized(size);
+        w.app.inspector_override = Some(true);
+        w.app.tool_panel_override = Some(false);
+        w.app.doc.layers[0].name = "Blue ink".into();
+        w.app.doc.group_active().unwrap();
+        w.app.doc.layers[1].name = "Sketch folder".into();
+        w.app.doc.layers[1].collapsed = true;
+        w.app.doc.active = 0;
+        let original = w.app.doc.clone();
+        w.app.layer_navigation.query = "INK blue".into();
+        w.settle();
+        w.text("Blue ink");
+        assert!(crate::document::same_snapshot(&w.app.doc, &original));
+        w.app.layer_navigation.kind = crate::layer_navigation::Kind::Vector;
+        w.settle();
+        w.text("No matching layers");
+        assert_eq!(w.app.doc.active, 0);
+        w.click(w.text("Reveal"));
+        finish_jobs(&mut w.app);
+        w.settle();
+        assert!(!w.app.layer_navigation.active());
+        assert!(!w.app.doc.layers[1].collapsed);
+        assert_eq!(w.app.doc.active, 0);
+        w.text("Blue ink");
+        w.click(w.text("Types"));
+        w.click(w.text("Compact rows"));
+        w.key(egui::Key::Escape, Default::default());
+        w.settle();
+        assert!(w.app.layer_navigation.compact);
+        w.text("Blue ink");
+    }
+}
+
+#[test]
+fn ux_target_feedback_unlocks_and_deselects_through_undoable_actions() {
+    for size in [[1280., 800.], [640., 400.]] {
+        let mut w = Workspace::sized(size);
+        w.app.doc.layers[0].locked = true;
+        w.settle();
+        w.text("Layer locked");
+        w.click(w.text("Unlock layer"));
+        finish_jobs(&mut w.app);
+        assert!(!w.app.doc.layers[0].locked);
+        w.app.undo();
+        finish_jobs(&mut w.app);
+        assert!(w.app.doc.layers[0].locked);
+        w.app.select_all();
+        finish_jobs(&mut w.app);
+        w.settle();
+        w.click(w.text("Deselect"));
+        finish_jobs(&mut w.app);
+        assert!(w.app.doc.selection.is_none());
+    }
 }
 
 #[test]
@@ -1192,6 +1592,7 @@ impl Workspace {
     }
     fn sized(size: [f32; 2]) -> Self {
         let mut workspace = Self {
+            modifiers: Default::default(),
             ctx: egui::Context::default(),
             app: Dudel::default(),
             output: Default::default(),
@@ -1208,6 +1609,7 @@ impl Workspace {
     fn frame_packets(&mut self, events: Vec<egui::Event>, packets: &[crate::input::Packet]) {
         self.time += 0.05;
         let mut raw_input = egui::RawInput {
+            modifiers: self.modifiers,
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(self.size[0], self.size[1]),

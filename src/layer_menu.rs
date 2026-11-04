@@ -26,7 +26,13 @@ impl Dudel {
             Some(index) if app.doc.active != index => app.select_layer_target(index),
             _ => true,
         };
-        if item(ui, "New layer", "Ctrl+Shift+N", room) && at_row(self) {
+        if item(
+            ui,
+            "New layer",
+            &self.shortcuts.label(crate::commands::Action::NewLayer),
+            room,
+        ) && at_row(self)
+        {
             self.new_layer();
             ui.close();
         }

@@ -2,21 +2,25 @@
 
 Use `.dudel` for editable projects, PNG for sharing flattened artwork and PSD
 for taking layers to Photoshop, Live2D and other editors.
-This is the Windows 0.1 support scope; see [the release decision](RELEASE_DECISION.md).
+This describes the current development source, including changes after the
+accepted Windows 0.1.0 build. See [release notes](RELEASE_NOTES.md) for that
+distinction and [the release decision](RELEASE_DECISION.md) for packaged-build evidence.
 
 | Format | Open/import | Save/export | What is retained |
 | --- | --- | --- | --- |
 | Dudel `.dudel` | Yes, including supported older native readers | Yes | Editable layers, folders, masks and document state supported by this build |
 | PNG | Image import | Flattened opaque or transparent export | Pixels and print resolution; no editable layer hierarchy |
-| Clip Studio Paint `.clip` | Editable raster subset; optional saved-preview fallback | No | Raster and Gray layers, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
+| Clip Studio Paint `.clip` | Supported raster and vector subsets; optional saved-preview fallback | No | Raster and Gray layers, supported vector strokes, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
 | Photoshop `.psd` | RGB, grayscale, CMYK and Lab layers at 8, 16 and 32 bits; indexed, bitmap, duotone and multichannel images | 8-bit RGB layered export | Import: layers, groups, artboards, masks, vector shapes, gradient and pattern fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, layer effects (editable styles, or drawn as layers for Live2D) and the flattened image |
 | Indexed `.didx` | Experimental opt-in | Experimental opt-in | Development format; use ordinary `.dudel` for normal work |
 
-Native saves use v4 unless layer masks require v5. Opening v5 projects requires
-a mask-aware Dudel build; do not assume an older executable can read a newer file.
+Native saves use v4, v5 when layer masks are present, or v6 when layer effects,
+adjustment layers or non-default fill opacity are present, or v7 when vector
+layers are present. Older readers reject
+unsupported headers instead of silently dropping those features on resave.
 The supported document envelope is 1-16,384 pixels per side, at most 100,000,000 pixels
 in total (Clip Studio Paint's 10,000 x 10,000), 1,000 raster layers, 2,000 total layer/folder
 entries and folder depth ten (Photoshop's nesting limit). Stored pixels (painted tiles only)
@@ -66,7 +70,7 @@ and PSD source files, including renamed files recognized by their signatures.
 | Editing rulers, guides and light-table overlays | Omitted, listed in Import details |
 | Glow dodge, Add (glow), Through (pass-through folders) | Native Color dodge (glow), Add (glow) and Pass through |
 | Layer palette color labels | Ignored (a Layers-panel label; it does not change the picture) |
-| Vector layers drawn with plain round brushes | Drawn from their strokes into editable raster layers (CSP saves strokes, not pixels). Width follows each point's pen pressure and the brush's anti-aliasing level fades light strokes as CSP does; all of the owner's vector files match CSP's saved previews within one level on average. Strokes using textured, spray or watercolor brushes skip the layer |
+| Vector layers drawn with plain round brushes | Imported as editable vector strokes with a raster display cache (CSP saves strokes, not pixels). Width follows each point's pen pressure and the brush's anti-aliasing level fades light strokes as CSP does. Earlier raster-import comparisons matched the owner's vector previews within one level on average; retaining strokes does not establish broader brush compatibility. Strokes using textured, spray or watercolor brushes skip the layer |
 | Screentone (Tone) layers, as made by line-and-tone conversion or the Tone layer effect | Round dots, squares and lines at a set density are drawn as CSP draws them (each matched CSP's saved preview pixel for pixel on the owner's samples: round at 300 dpi, squares and lines at 600 dpi); other dot shapes, densities taken from the layer's colors, and dots under 2 px apart are drawn as black at the tone's dot density. Either way the tone shows through the layer's mask, which imports as an editable Dudel layer mask (Dudel draws no live screentone) |
 | Correction layers: Tone Curve (master curve with up to one middle point), Brightness/Contrast (contrast 0 or more), and Hue/Saturation/Luminosity | Imported as editable Dudel adjustment layers with their masks (Hue/Saturation/Luminosity uses CSP's own color model, also available as a Dudel adjustment); matched CSP's saved previews within half a level on the owner's gradient samples. Other settings and correction kinds skip the layer |
 | Text layers in one style | Drawn by Dudel as pixels with the system font they name, at their size and color, using CSP's own layout: wrapping to the text box, left, right or centered lines, vertical text and text turned half a turn (CSP does not save text pixels). On the owner's samples lines land within a pixel of CSP's preview; a right-aligned line in a box shorter than the line sat 3-4 px off. Several styles in one layer, missing fonts, other rotations and unchecked spacing settings skip the layer |
@@ -107,7 +111,7 @@ export PNG from CSP and keep the original `.clip` for editing.
 
 Open/drop `.psd` or `.psb` (Photoshop's large document format) or use File > Import >
 Photoshop document. The bounded reader
-implements PSD v1 RGB and grayscale, raw/PackBits/ZIP, and ZIP prediction. Supported 8-bit
+implements PSD and PSB, with raw/PackBits/ZIP and ZIP prediction. Supported
 raster layers retain offsets, alpha, opacity, visibility, clipping, blends (including
 Dissolve, and Linear/Color dodge saved with Transparency Shapes off as their glow
 forms), locks, isolated and pass-through groups, and simple raster masks. Plain RGB
@@ -131,12 +135,13 @@ Layer and vector masks keep their density and feather (a Gaussian blur of the fe
 radius); when a layer has both, the user mask Photoshop stores separately is used. They are not silently approximated as editable layers.
 
 Layer effects (layer styles) on ordinary layers import as Dudel layer effects, so they
-stay editable (fx in the layer properties). Where Dudel has no equivalent (shape and
-fill layers, whose effects follow the shape outline; fill opacity; folders) they become
-separate layers instead, as Photoshop's Layer > Layer Style > Create Layers does. Either
+stay editable (fx in the layer properties), including their fill opacity. Supported
+folder effects also remain editable when folder fill is 100%. Effects that follow
+a separate shape/fill outline, and folder effects with reduced fill, become separate
+layers instead, as Photoshop's Layer > Layer Style > Create Layers does. Either
 way they are drawn the same: drop shadows and outer glows under their layer, color and
 gradient overlays, inner shadows, inner glows and inside strokes clipped to it, and
-strokes (outside, inside or centred; color or gradient fill) where Photoshop draws
+strokes (outside, inside or centred; color, gradient or pattern fill) where Photoshop draws
 them; bevel and emboss (inner, outer, emboss and pillow; smooth or chisel) becomes a
 highlight and a shadow layer lit from the effect's angle and altitude. Effects on
 folders follow the folder's composited contents: their outer effects go under the
@@ -145,9 +150,9 @@ their layer ("Layer's Drop Shadow") and no longer follow edits to it. Several ef
 knockout and fill opacity are respected; shape and fill layers' effects follow the
 shape's outline. Shadows and glows use a Gaussian blur fitted to Photoshop's output
 (Photoshop does not document its blur), within about 5 levels on average in the test
-files; bevels are approximate (about 3 to 18 levels). Satin, stroke emboss, pattern
-overlays and pattern strokes, and noise gradients are skipped and named in Import
-details; contours other than linear, bevel textures and effect noise are drawn
+files; bevels are approximate (about 3 to 18 levels). Satin, pattern overlays and
+pattern strokes are supported. Stroke emboss and noise gradients are skipped and
+named in Import details; contours other than linear, bevel textures and effect noise are drawn
 without and noted.
 Adjustment layers import as Dudel adjustment layers, which recolor everything below them
 (or only their clipping base when clipped; inside a pass-through folder they reach
@@ -164,9 +169,9 @@ reference implementation measures them, so they are Dudel's own approximations: 
 psd-tools single-layer files and the ag-psd adjustment stack match, while strong
 settings can differ from Photoshop. Color lookup (3D LUT) layers, and the color-only
 kinds on grayscale documents, are left out and named in Import details. Imported adjustment layers are ordinary Dudel adjustment layers:
-their settings open in the Adjustment window (hue/saturation color ranges and
-gradient-map middle stops are kept but only the master settings and end colors
-are editable).
+their settings open in the Adjustment window. Hue/saturation color ranges and
+gradient-map middle stops are editable; Levels includes a histogram. The Layer
+menu also exposes adjustment creation and editing.
 Document-wide blocks after the layer list (patterns, text engine data, linked files)
 no longer block layered import; files with only a background open as one layer.
 
@@ -225,6 +230,9 @@ Failed, canceled and stale background loads preserve current artwork.
 
 ### Photoshop export
 
+Native vector layers export their rendered pixels; PSD export does not preserve
+Dudel's stroke recordings. Keep a `.dudel` project for editable native strokes.
+
 **File > Export Photoshop document (.psd)** writes an 8-bit RGB PSD with every
 layer and folder bottom first, as Photoshop does: names (Unicode), blend modes,
 opacity, clipping, visibility, transparency and pixel locks, open or closed
@@ -234,7 +242,8 @@ transparent pixels. Color dodge (glow) and Add (glow) are written as Photoshop's
 Color Dodge and Linear Dodge with Transparency Shapes off, which blend the same
 way. Layer effects are written as Photoshop layer styles, editable there: drop
 and inner shadows, outer and inner glows, strokes (color or gradient), color
-and gradient overlays, and bevel and emboss, with the keys Photoshop writes.
+and gradient overlays, satin, pattern overlays and pattern strokes, and bevel and
+emboss, with the keys Photoshop writes.
 Photoshop draws them with its own engine, so they can look slightly different
 from Dudel's drawing. A layer whose effects Photoshop cannot show (an effect in
 a glow blend mode, a glow or shadow painted with a gradient, or two glows or
@@ -242,6 +251,10 @@ bevels of one kind) has its effects written as the layers they draw instead,
 like Photoshop's Create Layers, and the status line names it. **File > Export
 PSD for Live2D (effects as layers)** draws every layer's effects that way, for
 apps that ignore layer styles, such as Live2D Cubism.
+When reduced fill and inside effects are drawn as pixels, they are combined with
+their owning layer and mask so the soft edge is applied once. The export report
+names these layers. Editable-style export retains the original fill and mask when
+Photoshop can represent the styles.
 Adjustment layers are written as Photoshop's own, editable there: levels,
 curves, brightness/contrast, exposure, hue/saturation, gradient map, color
 balance, vibrance, black & white, photo filter, channel mixer, selective color,

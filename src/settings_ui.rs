@@ -2,7 +2,7 @@
 use crate::{Dudel, egui};
 
 /// Settings pages: tab name, heading, introduction and what resetting does.
-const PAGES: [(&str, &str, &str, &str); 4] = [
+const PAGES: [(&str, &str, &str, &str); 5] = [
     (
         "Workspace",
         "Make room for your work",
@@ -27,11 +27,18 @@ const PAGES: [(&str, &str, &str, &str); 4] = [
         "Keep projects, exports and recovery files where you expect them.",
         "Save to Documents\\Dudel and its usual subfolders again. Files already saved stay where they are.",
     ),
+    (
+        "Shortcuts",
+        "Keyboard and tablet shortcuts",
+        "Bindings are saved with your settings and can be shared as profiles.",
+        "Restore every command's default shortcuts.",
+    ),
 ];
 
 /// One setting; searching matches its label and extra keywords.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Item {
+    Shortcuts,
     Panels,
     PanelLayout,
     ProjectLimit,
@@ -50,6 +57,7 @@ enum Item {
 
 impl Item {
     const ALL: &[Item] = &[
+        Item::Shortcuts,
         Item::Panels,
         Item::PanelLayout,
         Item::ProjectLimit,
@@ -67,6 +75,7 @@ impl Item {
     ];
     fn page(self) -> usize {
         match self {
+            Item::Shortcuts => 4,
             Item::Panels
             | Item::PanelLayout
             | Item::ProjectLimit
@@ -82,6 +91,9 @@ impl Item {
     /// Lowercase words a search can match.
     fn keywords(self) -> &'static str {
         match self {
+            Item::Shortcuts => {
+                "keyboard shortcuts bindings keys remap tablet express profile import export"
+            }
             Item::Panels => "show workspace panels hide sidebar inspector tool panel",
             Item::PanelLayout => "restore automatic panel layout reset sidebar",
             Item::ProjectLimit => "open project limit tabs memory documents",
@@ -190,6 +202,7 @@ impl Dudel {
 
     fn setting_ui(&mut self, ui: &mut egui::Ui, item: Item) {
         match item {
+            Item::Shortcuts => self.shortcut_settings_ui(ui),
             Item::Panels => {
                 ui.checkbox(&mut self.show_panels, "Show workspace panels");
             }
@@ -282,6 +295,10 @@ impl Dudel {
                 self.snapping = true;
             }
             2 => self.performance.open = false,
+            4 => {
+                self.apply_shortcuts(Default::default());
+                self.shortcut_editor.message = "Default shortcuts restored".into();
+            }
             _ => self.locations = Default::default(),
         }
         self.status = format!("{} settings reset", PAGES[page.min(PAGES.len() - 1)].0);

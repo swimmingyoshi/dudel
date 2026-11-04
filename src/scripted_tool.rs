@@ -18,6 +18,8 @@ pub(crate) const MAX_SOURCE: usize = 32 * 1024;
 const MAX_TRACKS: usize = 64;
 /// Points one call may return.
 const MAX_POINTS: usize = 4096;
+/// Native output across every track/hook of one input event (or catch-up).
+const MAX_DABS: usize = 4096;
 /// Script steps one call may take (a few milliseconds of work).
 const MAX_OPERATIONS: u64 = 200_000;
 /// Farther than this from the canvas a point is a script error.
@@ -130,14 +132,25 @@ impl ScriptedStroke {
         brush: &Brush,
         zoom: f32,
     ) -> Result<Vec<Sample>, String> {
+        let mut remaining = MAX_DABS;
+        self.sample_bounded(sample, brush, zoom, &mut remaining)
+    }
+
+    fn sample_bounded(
+        &mut self,
+        sample: Sample,
+        brush: &Brush,
+        zoom: f32,
+        remaining: &mut usize,
+    ) -> Result<Vec<Sample>, String> {
         let mut dabs = Vec::new();
         if !self.began {
             self.began = true;
             let points = self.call("begin", sample)?;
-            self.draw(points, sample, brush, zoom, &mut dabs)?;
+            self.draw(points, sample, brush, zoom, &mut dabs, remaining)?;
         }
         let points = self.call("point", sample)?;
-        self.draw(points, sample, brush, zoom, &mut dabs)?;
+        self.draw(points, sample, brush, zoom, &mut dabs, remaining)?;
         Ok(dabs)
     }
 
@@ -149,12 +162,15 @@ impl ScriptedStroke {
         brush: &Brush,
         zoom: f32,
     ) -> Result<Vec<Sample>, String> {
-        let mut dabs = self.sample(sample, brush, zoom)?;
+        let mut remaining = MAX_DABS;
+        let mut dabs = self.sample_bounded(sample, brush, zoom, &mut remaining)?;
         let points = self.call("end", sample)?;
-        self.draw(points, sample, brush, zoom, &mut dabs)?;
+        self.draw(points, sample, brush, zoom, &mut dabs, &mut remaining)?;
         for track in self.tracks.values_mut() {
             if let Some(last) = track.last.take() {
-                dabs.extend(track.stroke.finish_at_zoom(last, brush, zoom));
+                dabs.extend(track.stroke.bounded(&mut remaining, |stroke| {
+                    stroke.finish_at_zoom(last, brush, zoom)
+                })?);
                 track.stroke.reset();
             }
         }
@@ -168,12 +184,17 @@ impl ScriptedStroke {
             .any(|t| t.last.is_some() && t.stroke.lagging(tolerance, brush))
     }
     /// Stabilized lines eased toward their latest points.
-    pub(crate) fn catch_up(&mut self, fraction: f32, brush: &Brush) -> Vec<Sample> {
-        self.tracks
-            .values_mut()
-            .filter(|t| t.last.is_some())
-            .flat_map(|t| t.stroke.catch_up(fraction, brush))
-            .collect()
+    pub(crate) fn catch_up(&mut self, fraction: f32, brush: &Brush) -> Result<Vec<Sample>, String> {
+        let mut remaining = MAX_DABS;
+        let mut dabs = Vec::new();
+        for track in self.tracks.values_mut().filter(|t| t.last.is_some()) {
+            dabs.extend(
+                track
+                    .stroke
+                    .bounded(&mut remaining, |stroke| stroke.catch_up(fraction, brush))?,
+            );
+        }
+        Ok(dabs)
     }
 
     /// Run `name` (skipped when the script lacks an optional one) and read
@@ -210,6 +231,7 @@ impl ScriptedStroke {
         brush: &Brush,
         zoom: f32,
         dabs: &mut Vec<Sample>,
+        remaining: &mut usize,
     ) -> Result<(), String> {
         for point in points {
             if !self.tracks.contains_key(&point.track) && self.tracks.len() >= MAX_TRACKS {
@@ -225,11 +247,15 @@ impl ScriptedStroke {
                 ..base
             };
             if point.lift {
-                dabs.extend(track.stroke.finish_at_zoom(sample, brush, zoom));
+                dabs.extend(track.stroke.bounded(remaining, |stroke| {
+                    stroke.finish_at_zoom(sample, brush, zoom)
+                })?);
                 track.stroke.reset();
                 track.last = None;
             } else {
-                dabs.extend(track.stroke.sample_at_zoom(sample, brush, zoom));
+                dabs.extend(track.stroke.bounded(remaining, |stroke| {
+                    stroke.sample_at_zoom(sample, brush, zoom)
+                })?);
                 track.last = Some(sample);
             }
         }
@@ -561,6 +587,75 @@ mod tests {
         assert!(app.scripted_tool.is_some());
         app.select_tool(Tool::Brush);
         assert!(app.scripted_tool.is_none());
+
+        // A generated-work failure ends the tool and leaves already painted
+        // packets as one undoable stroke, with no partial over-budget packet.
+        app.doc = crate::document::Document::new(64, 64);
+        app.history = crate::document::History::new();
+        app.scripted_tool = Some(Active {
+            package: "dudel-scripted-tools".into(),
+            command: "bounded-test".into(),
+            label: "Bounded test".into(),
+            ast: compile("fn point(x, y, p) { if x > 20 { [[1000000, y]] } else { [[x, y]] } }")
+                .unwrap(),
+        });
+        stroke(&mut app);
+        assert!(app.scripted_tool.is_none() && app.script_stroke.is_none());
+        assert!(app.status.contains("too many brush dabs"), "{}", app.status);
+        assert!(app.doc.layers[0].pixels.rgba(32 * 64 + 12)[3] > 0);
+        assert_eq!(app.doc.layers[0].pixels.rgba(32 * 64 + 40)[3], 0);
+        app.undo();
+        assert!(!app.history.can_undo());
+        assert!((0..64 * 64).all(|i| app.doc.layers[0].pixels.rgba(i)[3] == 0));
+    }
+
+    #[test]
+    fn native_work_is_bounded_across_hooks_tracks_lift_and_catch_up() {
+        let brush = Brush {
+            size: 1.0,
+            spacing: 0.5,
+            pressure_size: false,
+            stabilization: 0.0,
+            ..Brush::default()
+        };
+        for source in [
+            // A small script can request millions of native dabs.
+            "fn point(x, y, p) { [[0, 0], [1000000, 0]] }",
+            // Every segment/track is modest, but their total is not.
+            "fn point(x, y, p) { let a = []; for i in 0..64 { a.push([0, 0, p, i]); a.push([40, 0, p, i]); } a }",
+            // The allowance spans begin and point, not each hook separately.
+            "fn begin(x, y, p) { [[0, 0], [1500, 0]] } fn point(x, y, p) { [[3000, 0]] }",
+        ] {
+            let mut tool = ScriptedStroke::new(compile(source).unwrap(), canvas());
+            let error = tool.sample(pen(1.0, 1.0), &brush, 1.0).err().unwrap();
+            assert!(error.contains("too many brush dabs"), "{error}");
+        }
+        let source = "fn point(x, y, p) { [[x, y]] } fn end(x, y, p) { [[3000, y]] }";
+        let mut tool = ScriptedStroke::new(compile(source).unwrap(), canvas());
+        tool.sample(pen(0.0, 0.0), &brush, 1.0).unwrap();
+        assert!(tool.finish(pen(1500.0, 0.0), &brush, 1.0).is_err());
+
+        // Identical timestamps leave a long pending stabilized tail without
+        // generating it during point(); both later generation paths are bounded.
+        let smooth = Brush {
+            stabilization: 50.0,
+            ..brush.clone()
+        };
+        for finish in [false, true] {
+            let mut tool =
+                ScriptedStroke::new(compile("fn point(x, y, p) { [[x, y]] }").unwrap(), canvas());
+            let mut at = pen(0.0, 0.0);
+            at.time = Some(1.0);
+            tool.sample(at, &smooth, 1.0).unwrap();
+            at.x = 1000000.0;
+            tool.sample(at, &smooth, 1.0).unwrap();
+            let result = if finish {
+                tool.finish(at, &smooth, 1.0)
+            } else {
+                tool.catch_up(1.0, &smooth)
+            };
+            assert!(result.err().unwrap().contains("too many brush dabs"));
+        }
     }
 
     #[test]

@@ -1479,7 +1479,7 @@ impl crate::Dudel {
     pub(crate) fn vector_stroke_blocker(&self) -> Option<&'static str> {
         self.vector_target()?;
         if self.doc.selection.is_some() || self.doc.selection_mask.is_some() {
-            Some("Vector layers draw without selections — deselect (Ctrl+D) to draw here")
+            Some("Vector layers draw without selections — deselect to draw here")
         } else if self.scripted_tool.is_some() {
             Some(
                 "Scripted tools draw on raster layers — rasterize this vector layer or pick another",

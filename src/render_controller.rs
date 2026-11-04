@@ -152,6 +152,10 @@ impl Dudel {
         }
     }
     pub(crate) fn step_canvas_layer(&mut self, up: bool) {
+        if self.multiple_layers() {
+            self.batch_layers(crate::layer_batch::Action::Step(up));
+            return;
+        }
         self.finish_layer_rename(true);
         self.close_input_gestures();
         if !self.render_queue.busy() {
@@ -876,7 +880,7 @@ impl Dudel {
                         && self.doc.selection_mask.is_some()
                     {
                         self.status
-                            .push_str(" · selection is empty (Ctrl+D to deselect)");
+                            .push_str(" · selection is empty (deselect to continue)");
                     }
                 }
                 Err(error) => self.status = error,

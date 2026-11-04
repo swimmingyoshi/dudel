@@ -1,7 +1,9 @@
 # Windows 0.1 release status
 
-Updated 2026-10-31 (0.1.0 rebuilt from current source; see the release
-decision for the evidence on this build). **Release preparation is complete and accepted.** The owner requested goal
+Updated 2026-11-04. **Release preparation for the 2026-10-31 packaged 0.1.0
+build is complete and accepted.** Later development changes are listed separately
+in [release notes](RELEASE_NOTES.md) and are not covered automatically by that
+acceptance. The owner requested goal
 completion using the existing testing, confirmed Artist 12 use and working
 Explorer previews. [RELEASE_DECISION.md](RELEASE_DECISION.md) defines the accepted
 scope and explicitly distinguishes unperformed diagnostics from passing tests.
@@ -33,12 +35,50 @@ previous build and its archives.
 | G3 artist workflow | Owner confirms Artist 12 works after repeated development testing and Explorer previews work with the DLL. Existing workflow and UI evidence is retained. Exact physical latency is not inferred. Independent first-use feedback remains post-publication. |
 | G4 release preparation | Both artifacts, ZIP/source integrity, notices and offline source rebuild pass. Static runtime/laptop evidence is reused. Final distribution files are checked against accepted inputs; website/store publication is a separate launch action. |
 
-The local Full run passed 916 default / 925 all-feature application tests, three
-DLL tests, 37 Python tests, both workspaces' formatting/lints and release builds.
-Both dedicated maximum fixtures passed. [Local evidence](benchmarks/release-stabilization-20261027.json).
-No full suite is repeated for release prose or packaging metadata.
+The 2026-10-31 rebuild passed local Full verification with 1,030 default /
+1,039 all-feature application tests, Clippy, Python checks and release builds,
+as recorded in [the release decision](RELEASE_DECISION.md). The earlier
+[2026-10-27 evidence](benchmarks/release-stabilization-20261027.json) records
+916 default / 925 all-feature tests, three DLL tests, 37 Python tests and both
+dedicated maximum fixtures; those are historical results, not counts for the
+rebuilt package or current HEAD.
+
+The 2026-11-02 review of `f21c494` passed Quick verification: 1,076 application
+tests (12 ignored), three DLL tests, 42 Python tests, formatting, default Clippy
+and the public-tree check. This was not a Full build, packaging acceptance,
+physical pen session or performance soak. See [stabilization plan](STABILIZATION_PLAN.md)
+for subsequent fixes and their separate verification.
+
+The stabilization fixes subsequently passed a complete Quick run in an isolated
+checkout: 1,079 application tests (12 ignored), three DLL tests, 42 Python tests,
+formatting, Clippy and public-tree checks. On 2026-11-03, integration with vector
+stages 1-3 through `7a30db3` passed 1,092 application tests (12 ignored) and
+formatting. Integrated Clippy was canceled while waiting for a concurrent release
+build, as further vector work continued; no complete Quick pass is claimed for
+that changing tree. [The plan](STABILIZATION_PLAN.md) records the scope and logs.
 
 ## Delivery and follow-ups
+
+The subsequent workflow improvements passed 1,109 default application tests
+(14 ignored), strict all-target Clippy, formatting, 42 Python tests and privacy
+checks on 2026-11-03. The 64 targeted workflow/controller checks also passed.
+See [the workflow plan](UX_WORKFLOW_PLAN.md) for scope and local evidence. This
+development verification does not replace the packaged-release acceptance above.
+
+The 2026-11-04 shortcut increment adds saved bindings, conflict detection,
+resets and profile import/export. Its final default-feature suite passed 1,118
+tests (14 ignored) with four test workers, including the corrected F6 focus
+navigation path. Strict all-target Clippy, formatting, source privacy scans and
+the development build passed. Native desktop and scaled compact shortcut UI
+captures were reviewed. The initial concurrent-run failures and final evidence are recorded in the
+[workflow plan](UX_WORKFLOW_PLAN.md); this remains source-development evidence.
+
+The subsequent multi-layer increment passed 1,125 default-feature application
+tests (14 ignored) with four workers, including selection UI, atomic batch
+edits, lock rejection and single-step undo. Strict all-target Clippy, formatting,
+public-tree checks, whitespace checks and the development build passed. Native
+desktop and scaled compact selection controls were visually reviewed. Details
+and validation logs are in the [workflow plan](UX_WORKFLOW_PLAN.md).
 
 - Prepare/upload the binary ZIP, source ZIP and both sidecars together. Include
   the release decision, known limits and support/reporting route on the download page.

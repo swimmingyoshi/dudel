@@ -518,7 +518,9 @@ pub(crate) fn draw(
     cancel: &impl Fn() -> bool,
 ) -> Result<[Vec<Layer>; 3], String> {
     let mut placed: [Vec<Layer>; 3] = Default::default();
-    let parts = draw_parts(effects, owner, fill, content, source, size, budget, cancel)?;
+    let parts = draw_parts(
+        effects, owner, fill, content, source, size, false, budget, cancel,
+    )?;
     for (effect, part) in effects.iter().zip(parts) {
         if let Some(mut layer) = part.layer {
             dress(&mut layer, effect, owner, opacity, part.clip);
@@ -601,6 +603,7 @@ fn draw_parts(
     content: Option<&[f32]>,
     source: Option<&[f32]>,
     size: [usize; 2],
+    local_inside: bool,
     budget: &mut usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<Vec<Part>, String> {
@@ -620,7 +623,17 @@ fn draw_parts(
         return Ok(empty());
     };
     let drawn = draw_rect(
-        effects, owner, fill, content, source, size, rect, None, budget, cancel,
+        effects,
+        owner,
+        fill,
+        content,
+        source,
+        size,
+        rect,
+        None,
+        local_inside,
+        budget,
+        cancel,
     )?;
     let Some(drawn) = drawn else {
         return Ok(empty());
@@ -657,6 +670,7 @@ fn draw_rect(
     [width, height]: [usize; 2],
     rect: [usize; 4],
     span: Option<[f64; 4]>,
+    local_inside: bool,
     budget: &mut usize,
     cancel: &impl Fn() -> bool,
 ) -> Result<Option<Vec<Drawn>>, String> {
@@ -726,7 +740,7 @@ fn draw_rect(
         let mut clip = false;
         if place == Place::Inside {
             for (c, a) in coverage.iter_mut().zip(&alpha.values) {
-                *c *= if clip_inside {
+                *c *= if clip_inside || local_inside {
                     f32::from(u8::from(*a > 0.0))
                 } else {
                     *a
@@ -734,7 +748,7 @@ fn draw_rect(
             }
             if clip_inside {
                 clip = true;
-            } else if !owner.clipped {
+            } else if !owner.clipped && !local_inside {
                 place = Place::Above;
             }
         }
@@ -832,11 +846,19 @@ struct Cached {
     pixels: crate::pixels::Pixels,
     mask: Option<crate::layer_mask::LayerMask>,
     clipped: bool,
-    /// The layer's fill opacity as a byte: it knocks out shadows and decides
-    /// whether inner effects clip to the layer.
-    fill: u8,
+    /// Exact fill opacity; the combined owner must distinguish changes even
+    /// when they round to the same byte in the effect coverage renderer.
+    fill: f32,
     size: [usize; 2],
     parts: Vec<Part>,
+    /// Reduced-fill owner and its inside effects, with coverage applied once.
+    combined: Option<Combined>,
+}
+
+#[derive(Clone)]
+struct Combined {
+    layer: Layer,
+    effects: Vec<Effect>,
 }
 const CACHED_LAYERS: usize = 8;
 /// Drawings kept of one layer's recent states.
@@ -906,9 +928,15 @@ fn fill_byte(layer: &Layer) -> u8 {
 }
 
 /// What besides pixels, mask and effects shows in a layer's drawing.
-type Look = (String, f32, bool);
+type Look = (String, f32, bool, BlendMode, bool);
 fn look(layer: &Layer) -> Look {
-    (layer.name.clone(), layer.opacity, layer.visible)
+    (
+        layer.name.clone(),
+        layer.opacity,
+        layer.visible,
+        layer.blend,
+        layer.csp_byte_opacity,
+    )
 }
 
 /// Whether two folder contents composite alike wherever their pixels do:
@@ -948,10 +976,30 @@ fn assemble(
     effects: &[Effect],
     layer: &Layer,
     loose: bool,
+    combined: Option<&Combined>,
 ) -> Option<[Vec<Layer>; 3]> {
     let mut used = vec![false; parts.len()];
     let mut placed: [Vec<Layer>; 3] = Default::default();
+    if let Some(combined) = combined {
+        if !loose && combined.effects != effects {
+            return None;
+        }
+        let mut owner = combined.layer.clone();
+        owner.name = layer.name.clone();
+        owner.opacity = layer.opacity;
+        owner.csp_byte_opacity = layer.csp_byte_opacity;
+        owner.visible = layer.visible;
+        owner.blend = layer.blend;
+        owner.clipped = layer.clipped;
+        owner.depth = layer.depth;
+        owner.locked = layer.locked;
+        owner.alpha_locked = layer.alpha_locked;
+        placed[Place::Inside as usize].push(owner);
+    }
     for (index, effect) in effects.iter().enumerate() {
+        if combined.is_some() && effect.place() == Place::Inside {
+            continue;
+        }
         let found = (0..parts.len())
             .find(|&k| !used[k] && same_drawing(&parts[k].effect, effect))
             .or_else(|| (loose && index < parts.len() && !used[index]).then_some(index));
@@ -979,7 +1027,7 @@ impl Cached {
             && self.pixels.shares(&layer.pixels)
             && crate::layer_mask::same_snapshot(&self.mask, &layer.mask)
             && self.clipped == layer.clipped
-            && self.fill == fill_byte(layer)
+            && self.fill == layer.fill
     }
     /// Its layers as `effects` on `layer`, with the generation identifying
     /// them: new whenever they are shown differently than last time.
@@ -989,7 +1037,7 @@ impl Cached {
         effects: &[Effect],
         loose: bool,
     ) -> Option<([Vec<Layer>; 3], u64)> {
-        let layers = assemble(&self.parts, effects, layer, loose)?;
+        let layers = assemble(&self.parts, effects, layer, loose, self.combined.as_ref())?;
         let shown = (effects.to_vec(), look(layer));
         if self.shown != shown {
             self.shown = shown;
@@ -1013,6 +1061,9 @@ impl Cache {
             .filter_map(|p| p.layer.as_ref())
         {
             layer.pixels.visit_allocations(&mut visit);
+        }
+        for combined in entries.iter().filter_map(|c| c.combined.as_ref()) {
+            combined.layer.pixels.visit_allocations(&mut visit);
         }
         let contents = self.1.lock().unwrap_or_else(|e| e.into_inner());
         for content in contents.iter() {
@@ -1153,13 +1204,18 @@ impl Cache {
             return Ok(found);
         }
         let parts = self.redraw(layer, effects, size, cancel)?;
+        let combined = self.combine_inside(layer, effects, &parts, size, cancel)?;
         let generation = tick();
-        let layers = assemble(&parts, effects, layer, false).expect("every effect was drawn");
+        let layers = assemble(&parts, effects, layer, false, combined.as_ref())
+            .expect("every effect was drawn");
         let bytes: usize = parts
             .iter()
             .filter_map(|p| p.layer.as_ref())
             .map(|l| l.pixels.payload_bound())
-            .sum();
+            .sum::<usize>()
+            + combined
+                .as_ref()
+                .map_or(0, |c| c.layer.pixels.payload_bound());
         // A drawing larger than the whole budget is used once, not kept.
         if bytes > RETAINED_LIMIT {
             return Ok((layers, generation));
@@ -1189,9 +1245,10 @@ impl Cache {
             pixels: layer.pixels.clone(),
             mask: layer.mask.clone(),
             clipped: layer.clipped,
-            fill: fill_byte(layer),
+            fill: layer.fill,
             size,
             parts,
+            combined,
         });
         drop(entries);
         {
@@ -1206,6 +1263,152 @@ impl Cache {
         enforce_budget(generation);
         Ok((layers, generation))
     }
+    /// Combine reduced fill and inside effects in layer space. Coverage and
+    /// mask apply only after blending there, so each soft edge is applied once.
+    fn combine_inside(
+        &self,
+        layer: &Layer,
+        effects: &[Effect],
+        parts: &[Part],
+        size: [usize; 2],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Option<Combined>, String> {
+        if layer.folder || layer.fill == 1.0 || !effects.iter().any(|e| e.place() == Place::Inside)
+        {
+            return Ok(None);
+        }
+        // The result cannot occupy more source tiles than the owner. Reserve
+        // that upper bound before allocating output, alongside the raw effects.
+        let part_bytes = parts
+            .iter()
+            .filter_map(|p| p.layer.as_ref())
+            .map(|l| l.pixels.payload_bound())
+            .sum::<usize>();
+        if part_bytes.saturating_add(layer.pixels.payload_bound()) > crate::document::MAX_PAYLOAD {
+            return Err("Layer effects exceed the memory budget".into());
+        }
+        let base = {
+            let entries = self.0.lock().unwrap_or_else(|e| e.into_inner());
+            entries
+                .iter()
+                .filter(|c| {
+                    c.id == layer.id
+                        && c.size == size
+                        && c.fill == layer.fill
+                        && c.clipped == layer.clipped
+                        && crate::layer_mask::same_snapshot(&c.mask, &layer.mask)
+                        && c.combined.as_ref().is_some_and(|c| c.effects == effects)
+                })
+                .max_by_key(|c| c.used)
+                .map(|c| {
+                    (
+                        c.pixels.clone(),
+                        c.parts.clone(),
+                        c.combined.as_ref().unwrap().layer.clone(),
+                    )
+                })
+        };
+        let (mut joined, mut regions) = match base {
+            Some((pixels, previous, joined)) => {
+                let mut regions = pixels.changed_regions(&layer.pixels, size[0], size[1]);
+                for (old, new) in previous
+                    .iter()
+                    .zip(parts)
+                    .filter(|(_, p)| p.place == Place::Inside)
+                {
+                    match (&old.layer, &new.layer) {
+                        (Some(a), Some(b)) => {
+                            regions.extend(a.pixels.changed_regions(&b.pixels, size[0], size[1]))
+                        }
+                        (Some(a), None) => regions.extend(a.pixels.nonzero_tiles(size[0], size[1])),
+                        (None, Some(b)) => regions.extend(b.pixels.nonzero_tiles(size[0], size[1])),
+                        (None, None) => {}
+                    }
+                }
+                (joined, regions)
+            }
+            None => {
+                let mut joined = Layer::raster(layer.name.clone(), size[0], size[1]);
+                // Expansion recognizes this as a replacement for the owner.
+                joined.id = layer.id;
+                (joined, layer.pixels.nonzero_tiles(size[0], size[1]))
+            }
+        };
+        regions.sort_unstable();
+        regions.dedup();
+        for rect in regions {
+            if cancel() {
+                return Err("Canceled".into());
+            }
+            let source = layer.pixels.region(size[0], rect);
+            let inside: Vec<_> = effects
+                .iter()
+                .zip(parts)
+                .filter(|(e, _)| e.place() == Place::Inside)
+                .filter_map(|(e, p)| {
+                    p.layer
+                        .as_ref()
+                        .map(|p| (e, p.pixels.region(size[0], rect)))
+                })
+                .collect();
+            let mut output = vec![0; source.len()];
+            let width = rect[2] - rect[0];
+            for (i, (src, dst)) in source
+                .chunks_exact(4)
+                .zip(output.chunks_exact_mut(4))
+                .enumerate()
+            {
+                if i % (width * 32) == 0 && cancel() {
+                    return Err("Canceled".into());
+                }
+                let at = (rect[1] + i / width) * size[0] + rect[0] + i % width;
+                let coverage = f32::from(src[3]) / 255.0 * layer.mask_coverage(at, size[0]);
+                if coverage == 0.0 {
+                    continue;
+                }
+                let mut alpha = layer.fill;
+                let mut color = [0, 1, 2].map(|c| f32::from(src[c]) / 255.0 * alpha);
+                for (effect, pixels) in &inside {
+                    let pixel = &pixels[i * 4..i * 4 + 4];
+                    let a = f32::from(pixel[3]) / 255.0 * effect.opacity;
+                    let top = [0, 1, 2].map(|c| f32::from(pixel[c]) / 255.0);
+                    let bottom = if alpha > 0.0 {
+                        color.map(|c| c / alpha)
+                    } else {
+                        [0.0; 3]
+                    };
+                    if let Some(glow) = effect.blend.glow_base() {
+                        let weighted = top.map(|c| c * a);
+                        let blended = glow.pixel(bottom, weighted);
+                        color = [0, 1, 2].map(|c| blended[c] * alpha + weighted[c] * (1.0 - alpha));
+                    } else {
+                        let blended = effect.blend.pixel(bottom, top);
+                        color = [0, 1, 2].map(|c| {
+                            color[c] * (1.0 - a)
+                                + top[c] * a * (1.0 - alpha)
+                                + blended[c] * a * alpha
+                        });
+                    }
+                    alpha = a + alpha * (1.0 - a);
+                }
+                if alpha > 0.0 {
+                    for c in 0..3 {
+                        dst[c] = (color[c] / alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+                    }
+                    dst[3] = (alpha * coverage * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            joined.pixels.writer().write_region(size[0], rect, &output);
+        }
+        if part_bytes.saturating_add(joined.pixels.payload_bound()) > crate::document::MAX_PAYLOAD {
+            return Err("Layer effects exceed the memory budget".into());
+        }
+        Ok(Some(Combined {
+            layer: joined,
+            effects: effects.to_vec(),
+        }))
+    }
+
     /// Draw `effects` for `layer`, reusing its most recent drawing: effects
     /// drawn the same way are kept, and where only some pixels changed they
     /// are redrawn just around those.
@@ -1225,7 +1428,7 @@ impl Cache {
                     c.id == layer.id
                         && c.size == size
                         && c.clipped == layer.clipped
-                        && c.fill == fill_byte(layer)
+                        && c.fill == layer.fill
                         && crate::layer_mask::same_snapshot(&c.mask, &layer.mask)
                 })
                 .max_by_key(|c| c.used)
@@ -1281,6 +1484,7 @@ impl Cache {
                             size,
                             window,
                             Some([0.0; 4]),
+                            layer.fill < 1.0 && !layer.folder,
                             &mut budget,
                             &cancel,
                         )?
@@ -1308,6 +1512,7 @@ impl Cache {
                 None,
                 None,
                 size,
+                layer.fill < 1.0 && !layer.folder,
                 &mut budget,
                 &cancel,
             )?;
@@ -1461,7 +1666,7 @@ fn expand_with(
             }
             start
         });
-        let [below, inside, above] = if effects.is_empty() {
+        let [below, mut inside, above] = if effects.is_empty() {
             layer.effect_cache.forget(layer.id);
             Default::default()
         } else if layer.folder && !layer.visible {
@@ -1495,7 +1700,11 @@ fn expand_with(
         if index == doc.active {
             out.active = out.layers.len();
         }
-        let mut owner = layer.clone();
+        let mut owner = if let Some(position) = inside.iter().position(|l| l.id == layer.id) {
+            inside.remove(position)
+        } else {
+            layer.clone()
+        };
         owner.effects.clear();
         // Fill fades the layer's own pixels, not its effects.
         owner.opacity *= owner.fill;
@@ -3667,6 +3876,152 @@ mod tests {
         let loaded = crate::storage::load_project(file.path()).unwrap();
         assert_eq!(loaded.layers[2].effects, doc.layers[2].effects);
         assert_eq!(loaded.composite_transparent(), doc.composite_transparent());
+    }
+
+    #[test]
+    fn reduced_fill_inside_effects_apply_soft_coverage_once() {
+        // Independent normal-blend oracle: local red fill, then green and
+        // blue overlays, finally the source alpha, mask and layer opacity.
+        for fill in [0.0f32, 0.25, 0.5, 0.9999, 1.0] {
+            for green in [0.0f32, 0.5, 1.0] {
+                for blue in [0.0f32, 0.5, 1.0] {
+                    let mut doc = Document::new(1, 1);
+                    let layer = &mut doc.layers[0];
+                    layer.pixels = vec![255, 0, 0, 128].into();
+                    layer.fill = fill;
+                    layer.opacity = 0.5;
+                    layer.mask = Some(crate::layer_mask::LayerMask {
+                        id: crate::document::LayerId::new(),
+                        enabled: true,
+                        linked: true,
+                        coverage: crate::layer_mask::Mask::new(1, 1, 200).unwrap(),
+                    });
+                    layer.effects = [(green, [0, 255, 0]), (blue, [0, 0, 255])]
+                        .into_iter()
+                        .map(|(opacity, color)| {
+                            LayerEffect::new(Effect {
+                                kind: Kind::ColorOverlay,
+                                paint: Paint::Color(color),
+                                blend: BlendMode::Normal,
+                                opacity,
+                            })
+                        })
+                        .collect();
+                    let weights = [
+                        fill * (1.0 - green) * (1.0 - blue),
+                        green * (1.0 - blue),
+                        blue,
+                    ];
+                    let alpha: f32 = weights.iter().sum();
+                    let mut expected = [0u8; 4];
+                    if alpha > 0.0 {
+                        for c in 0..3 {
+                            expected[c] = (weights[c] / alpha * 255.0).round() as u8;
+                        }
+                        expected[3] = (alpha * 128.0 * (200.0 / 255.0) * 0.5).round() as u8;
+                    }
+                    let actual = doc.composite_transparent();
+                    for c in 0..4 {
+                        assert!(
+                            actual[c].abs_diff(expected[c]) <= 1,
+                            "fill={fill}, green={green}, blue={blue}: {actual:?} != {expected:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reduced_fill_combination_tracks_cache_edits_masks_clipping_and_exports() {
+        let mut doc = Document::new(513, 2);
+        doc.layers[0].fill = 0.5;
+        doc.layers[0].effects = vec![overlay()];
+        for i in [1, 512] {
+            doc.layers[0]
+                .pixels
+                .writer()
+                .rgba_mut(i)
+                .copy_from_slice(&[255, 0, 0, 128]);
+        }
+        let first = expand(&doc, false, &|| false).unwrap();
+        assert_eq!(first.layers[0].pixels.rgba(1), [0, 0, 255, 128]);
+        let repeat = expand(&doc, false, &|| false).unwrap();
+        assert!(first.layers[0].pixels.shares(&repeat.layers[0].pixels));
+        let old = doc.clone();
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(1)
+            .copy_from_slice(&[0; 4]);
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(2)
+            .copy_from_slice(&[255, 0, 0, 64]);
+        let updated = expand(&doc, false, &|| false).unwrap();
+        let mut fresh = doc.clone();
+        fresh.layers[0].effect_cache = Cache::default();
+        assert_eq!(
+            updated.composite_transparent(),
+            fresh.composite_transparent()
+        );
+        assert_eq!(old.composite_transparent(), first.composite_transparent());
+        // Same geometry with a new effect opacity must recombine, not merely
+        // re-dress a cached layer; mask changes must invalidate it too.
+        doc.layers[0].effects[0].effect.opacity = 0.5;
+        doc.version = 2;
+        doc.layers[0].mask = Some(crate::layer_mask::LayerMask {
+            id: crate::document::LayerId::new(),
+            enabled: true,
+            linked: true,
+            coverage: crate::layer_mask::Mask::new(513, 2, 128).unwrap(),
+        });
+        let expected = doc.composite_transparent();
+        let dir = tempfile::tempdir().unwrap();
+        let native = dir.path().join("soft.dudel");
+        crate::storage::save_project(&native, &doc).unwrap();
+        assert_eq!(
+            crate::storage::load_project(&native)
+                .unwrap()
+                .composite_transparent(),
+            expected
+        );
+        for mode in [
+            crate::psd_export::Effects::Editable,
+            crate::psd_export::Effects::AsLayers,
+        ] {
+            let (written, _) = crate::psd_export::written(&doc, mode, &|| false).unwrap();
+            assert_eq!(written.composite_transparent(), expected);
+            let path = dir.path().join("soft.psd");
+            let bytes =
+                crate::psd_export::encode(&doc, mode, &std::sync::atomic::AtomicBool::new(false))
+                    .unwrap();
+            std::fs::write(&path, bytes).unwrap();
+            let loaded = crate::psd_import::import(&path, &|| false)
+                .unwrap()
+                .document;
+            for (a, b) in loaded.composite_transparent().iter().zip(&expected) {
+                assert!(a.abs_diff(*b) <= 2, "PSD {mode:?}: {a} != {b}");
+            }
+        }
+        // A combined owner still clips to its base and retains its folder depth.
+        let mut base = Layer::raster("base".into(), 513, 2);
+        base.pixels
+            .writer()
+            .rgba_mut(2)
+            .copy_from_slice(&[255, 255, 255, 255]);
+        doc.layers[0].clipped = true;
+        doc.layers.insert(0, base);
+        doc.active = 1;
+        let clipped = doc.composite_transparent();
+        assert_eq!(&clipped[512 * 4..512 * 4 + 4], &[0; 4]);
+        doc.group_active().unwrap();
+        let expanded = expand(&doc, false, &|| false).unwrap();
+        assert_eq!(
+            expanded.layers[expanded.active].depth,
+            doc.layers[doc.active].depth
+        );
     }
 
     #[test]
