@@ -2384,9 +2384,11 @@ fn main() -> eframe::Result {
                     };
                     layer.name = format!("{} 1", settings.name());
                     layer.adjustment = Some(adjustment::Adjustment::new(settings));
+                    // DUDEL_CAPTURE_CLIPPED shows the clipping group's rows.
+                    layer.clipped = std::env::var_os("DUDEL_CAPTURE_CLIPPED").is_some();
+                    app.adjustment_window_open = !layer.clipped;
                     app.doc.layers.push(layer);
                     app.doc.active = app.doc.layers.len() - 1;
-                    app.adjustment_window_open = true;
                 }
                 if capture_mask_feedback {
                     let id = app.doc.layers[0].mask.as_ref().unwrap().id;

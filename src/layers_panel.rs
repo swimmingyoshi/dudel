@@ -6,6 +6,46 @@ use crate::{
 };
 use egui::{Color32, FontId, Sense, Stroke, StrokeKind, pos2, vec2};
 
+/// The entry a clipped layer is clipped to: the next unclipped one below it
+/// in its folder.
+fn clip_base(doc: &crate::document::Document, index: usize) -> Option<usize> {
+    let depth = doc.layers[index].depth;
+    for below in (0..index).rev() {
+        let layer = &doc.layers[below];
+        if layer.depth < depth {
+            return None;
+        }
+        if layer.depth == depth && !layer.clipped {
+            return Some(below);
+        }
+    }
+    None
+}
+
+/// How many entries are clipped to this one.
+fn clipped_above(doc: &crate::document::Document, index: usize) -> usize {
+    let layer = &doc.layers[index];
+    if layer.clipped {
+        return 0;
+    }
+    let siblings = doc.layers[index + 1..]
+        .iter()
+        .take_while(|above| above.depth >= layer.depth)
+        .filter(|above| above.depth == layer.depth);
+    siblings.take_while(|above| above.clipped).count()
+}
+
+/// Whether this row joins the rows above and below it in a clipping group.
+fn clip_joins(doc: &crate::document::Document, index: usize) -> (bool, bool) {
+    let layer = &doc.layers[index];
+    let above = doc
+        .layers
+        .get(index + 1)
+        .is_some_and(|above| above.clipped && above.depth == layer.depth);
+    let below = layer.clipped && index > 0 && doc.layers[index - 1].depth == layer.depth;
+    (above, below)
+}
+
 const ROW_HEIGHT: f32 = 50.0;
 const FOLDER_ROW_HEIGHT: f32 = 40.0;
 const INDENT: f32 = 14.0;
@@ -948,7 +988,29 @@ impl Dudel {
         } else {
             visuals.extreme_bg_color.gamma_multiply(0.6)
         };
-        painter.rect_filled(rect, 6.0, fill);
+        // A clipping group reads as one block: its rows share their edges.
+        let (joins_above, joins_below) = if self.layer_navigation.active() {
+            (false, false)
+        } else {
+            clip_joins(&self.doc, index)
+        };
+        let gap = ui.spacing().item_spacing.y;
+        let round = |joined: bool| if joined { 0 } else { 6 };
+        painter.rect_filled(
+            rect,
+            egui::CornerRadius {
+                nw: round(joins_above),
+                ne: round(joins_above),
+                sw: round(joins_below),
+                se: round(joins_below),
+            },
+            fill,
+        );
+        if joins_below {
+            let seam =
+                egui::Rect::from_min_max(rect.left_bottom(), rect.right_bottom() + vec2(0.0, gap));
+            ui.painter().rect_filled(seam, 0.0, fill);
+        }
         let text = if selected {
             visuals.selection.stroke.color
         } else if shown {
@@ -992,22 +1054,38 @@ impl Dudel {
                 Stroke::new(1.0_f32, Color32::from_white_alpha(28)),
             );
         }
+        // The rail runs from each clipped row down to its base's thumbnail.
+        let rail = Stroke::new(2.0_f32, visuals.text_color());
         if layer.clipped {
-            painter.line_segment(
-                [
-                    pos2(x + 5.0, rect.top() + 6.0),
-                    pos2(x + 5.0, rect.center().y),
-                ],
-                Stroke::new(2.0_f32, weak),
-            );
+            let top = if joins_above {
+                rect.top()
+            } else if joins_below {
+                rect.center().y
+            } else {
+                rect.top() + 6.0
+            };
+            let bottom = if joins_below {
+                rect.bottom() + gap
+            } else {
+                rect.center().y
+            };
+            ui.painter()
+                .line_segment([pos2(x + 5.0, top), pos2(x + 5.0, bottom)], rail);
             painter.line_segment(
                 [
                     pos2(x + 5.0, rect.center().y),
                     pos2(x + 12.0, rect.center().y),
                 ],
-                Stroke::new(2.0_f32, weak),
+                rail,
             );
             x += 16.0;
+        } else if joins_above {
+            let tip = pos2(x + 5.0, rect.top() + 5.0);
+            painter.add(egui::Shape::convex_polygon(
+                vec![tip + vec2(-5.0, -5.0), tip + vec2(5.0, -5.0), tip],
+                rail.color,
+                Stroke::NONE,
+            ));
         }
         let thumb_side = height - 10.0;
         if layer.folder {
@@ -1240,8 +1318,16 @@ impl Dudel {
                 if items == 1 { "" } else { "s" }
             );
         }
+        // First, so that a narrow panel cuts off the details and not this.
         if layer.clipped {
-            summary.push_str(" · clipped");
+            summary = match clip_base(&self.doc, index) {
+                Some(base) => format!("Clipped to {} · {summary}", self.doc.layers[base].name),
+                None => format!("Clipped · {summary}"),
+            };
+        }
+        let clipped = clipped_above(&self.doc, index);
+        if clipped > 0 {
+            summary = format!("{clipped} clipped above · {summary}");
         }
         if !self.layer_navigation.compact {
             let mut job =
@@ -1566,6 +1652,48 @@ impl Dudel {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clipping_groups_find_their_base_and_join_their_rows() {
+        use super::{clip_base, clip_joins, clipped_above};
+        use crate::document::{Document, Layer};
+        let entry = |depth, clipped| {
+            let mut layer = Layer::raster("Layer".into(), 8, 8);
+            (layer.depth, layer.clipped) = (depth, clipped);
+            layer
+        };
+        let mut doc = Document::new(8, 8);
+        // Bottom to top: a base with two clipped layers, a plain layer, and a
+        // folder whose only child has nothing to clip to.
+        doc.layers = vec![
+            entry(0, false),
+            entry(0, true),
+            entry(0, true),
+            entry(0, false),
+            entry(1, true),
+            Layer::new_folder("Folder".into()),
+        ];
+        assert_eq!(clip_base(&doc, 1), Some(0));
+        assert_eq!(clip_base(&doc, 2), Some(0));
+        assert_eq!(clip_base(&doc, 4), None);
+        assert_eq!(clipped_above(&doc, 0), 2);
+        assert_eq!(clipped_above(&doc, 1), 0);
+        assert_eq!(clipped_above(&doc, 3), 0);
+        assert_eq!(clip_joins(&doc, 0), (true, false));
+        assert_eq!(clip_joins(&doc, 1), (true, true));
+        assert_eq!(clip_joins(&doc, 2), (false, true));
+        assert_eq!(clip_joins(&doc, 3), (false, false));
+        assert_eq!(clip_joins(&doc, 4), (false, false));
+        // A clipped folder counts for its base, past its own children, but
+        // those children's rows sit between them and nothing joins.
+        let mut folder = Layer::new_folder("Folder".into());
+        folder.clipped = true;
+        doc.layers = vec![entry(0, false), entry(1, false), folder, entry(0, true)];
+        assert_eq!(clip_base(&doc, 3), Some(0));
+        assert_eq!(clipped_above(&doc, 0), 2);
+        assert_eq!(clip_joins(&doc, 2), (true, false));
+        assert_eq!(clip_joins(&doc, 0), (false, false));
+    }
+
     fn pending_reordered_rows() -> (
         crate::Dudel,
         crate::document::LayerId,
