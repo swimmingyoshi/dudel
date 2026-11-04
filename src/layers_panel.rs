@@ -1402,6 +1402,8 @@ impl Dudel {
                 "Click to select · double-click to rename · drag to reorder or drop onto a folder · right-click for more",
             )
             .context_menu(|ui| {
+                self.new_layer_menu(ui, Some(index));
+                ui.separator();
                 ui.menu_button("Symmetry and guides", |ui| self.layer_guides_popup(ui, index));
                 ui.separator();
                 if ui.button("Rename").clicked() {
