@@ -562,7 +562,7 @@ Stage B - native layer effects:
 - [x] Eraser "Up to crossings"; Pointer picks and lassoes single lines, with move,
       reshape (Reach), size, taper, smooth, recolor and delete, each one undo step
 - [x] F resizes the brush or Reach (`src/quick_resize.rs`); new layers in the
-      Layers panel right-click menu (`src/layer_menu.rs`). Owner tried both
+      Layers panel right-click menu (`src/layer_menu.rs`). Owner confirmed F resize
 - [x] Line actions in command search; layer filter and multi-selection are per tab
 - [ ] Owner's pen pass of the whole vector workflow before the next candidate
 - Known limits for the release notes: Fill does not stop at vector line centres,
