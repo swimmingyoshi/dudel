@@ -20,12 +20,13 @@ documents only. Evidence on this build: local `scripts/Verify.ps1 -Mode Full`
 (1,137 default / 1,146 all-feature tests, three DLL tests, 42 Python tests, Clippy,
 release builds), the packaging gates and a packaged startup. All 16 of the owner's
 existing projects (formats v4 and v6) opened and composited. A real SVG export
-parsed as well-formed XML. The owner's pen pass on 2026-11-04 passed, but it came
-before selection limits, fill to line centres, line handles and SVG export, so
-those four have automated tests only. Not run on this build: hosted CI, the
-resource and two-hour studies, offline source rebuilds, the laptop install and
-opening an SVG in a vector editor. The tag `v0.1.0` still names the 2026-10-31
-source until it is moved with the release push. The paragraphs below describe
+parsed as well-formed XML. The owner's pen pass on 2026-11-04 passed, and a second on 2026-11-05 passed
+selection limits, fill to line centres, line handles and SVG export; it names no
+particular vector editor for the SVG. Hosted Windows CI passed on `e20c76b` (run
+41948291941), including the maximum project fixtures and candidate packaging. Not
+run on this build: hosted Linux CI, the resource and two-hour studies, offline
+source rebuilds and the laptop install. The tag
+`v0.1.0` names the final release-records commit. The paragraphs below describe
 earlier builds.
 
 **Rebuilt, 2026-10-31.** The first 0.1.0 build was prepared but never

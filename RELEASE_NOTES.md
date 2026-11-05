@@ -31,6 +31,8 @@ No earlier 0.1.0 build was published, so these changes are part of 0.1.0.
   Export** (now a submenu) writes vector lines as SVG.
 - F resizes the brush, eraser or reshape Reach by moving the pen. The right-click
   menu of the Layers panel now creates layers of every kind.
+- Clipped layers read as one block with their base in the Layers panel, and their
+  rows name it.
 - Custom shortcuts in **View > Settings > Shortcuts**, with conflict detection,
   per-command/all-command defaults, unbinding and `.dudelkeys` profile import/export.
   Menus, command search and tool hints share the saved bindings. Tool tap/hold
@@ -81,7 +83,7 @@ are recorded separately from packaged-release evidence in [release status](RELEA
   instead of briefly showing their neighbours' pictures.
 - New blend modes: Dissolve, Color dodge (glow), Add (glow), and Pass through for
   folders. CSP and PSD imports map them.
-- PSD export: File > Export Photoshop document (.psd) writes every layer and
+- PSD export: File > Export > Export Photoshop document writes every layer and
   folder with names, blend modes (glow modes included), opacity, clipping,
   visibility, locks, masks and adjustment layers, plus the flattened image.
   Layer effects stay editable as Photoshop layer styles; Export PSD for Live2D
@@ -233,6 +235,9 @@ one-command invocation. It is an engineering check, not release certification.
   reader. PNG export is a flattened sharing copy. Indexed `.didx` is experimental.
 - CSP and PSD import cover the subsets in [format support](FORMAT_SUPPORT.md).
   No general CSP/PSD compatibility or color-managed print fidelity is claimed.
+- Scattered or mirrored vector lines cannot use a selection. SVG export leaves out
+  raster layers, masks, effects and brush texture. PSD export writes vector layers
+  as rendered pixels.
 - The October 21 sustained study passed. The owner confirms working Artist 12
   use and Explorer previews on October 28. Precise physical latency, actual GPU
   commitment and some native OS workflow details remain unclaimed; see current

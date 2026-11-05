@@ -31,7 +31,9 @@ display or tablet.
   (mirror and radial), rulers and guides with stroke snapping.
 
 **Layers and editing**
-- Raster layers, recorded vector strokes, folders, clipping, blend modes and nondestructive **layer masks**.
+- Raster layers, **vector layers**, folders, clipping, blend modes and nondestructive **layer masks**.
+- Vector lines stay editable: pick them, then move, reshape, scale, rotate, smooth
+  or recolor them. Fill can run under line art to the line centres.
 - Editable **layer effects** (shadows, glows, strokes, overlays, bevel) and
   **adjustment layers** (levels, curves, hue/saturation and more, from PSD).
 - Selections (rectangle, lasso, polygon, magic wand) and free transform with
@@ -39,6 +41,7 @@ display or tablet.
   symmetric features such as eyes.
 - Adjustments and filters, including Rhai and WebAssembly extensions; API 2
   plugins contribute brush presets, tool presets, commands and panels.
+- **Command search** (`Ctrl+K`) and custom keyboard shortcuts.
 
 **Your work stays safe**
 - Editable `.dudel` projects with atomic saves, cancelable background saves and
@@ -47,7 +50,7 @@ display or tablet.
   boards that never become part of the artwork.
 - Per-canvas **timelapse** recording that plays back in the app and exports as GIF
   or PNG frames; portable UI themes.
-- PNG import/export and layered PSD export; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+- PNG import/export, layered PSD export and SVG export of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
   (PSD shapes, gradient fills, layer effects and adjustment layers included) and
   clearly identified flattened fallbacks.
 
@@ -155,7 +158,7 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   layer effects, adjustment layers or fill opacity are used, or v7 for vector
   layers; newer files need a compatible
   Dudel (older builds refuse them rather than drop that data). Indexed `.didx` storage is experimental.
-- CSP/PSD import is bounded to the documented raster subsets. Unsupported CSP
+- CSP/PSD import is bounded to the documented subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD
   layer features use the saved composite when available. Color-managed print
   workflows and universal format compatibility are not supported.

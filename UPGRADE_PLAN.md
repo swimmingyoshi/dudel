@@ -10,8 +10,8 @@ Any agent picking this up: read this first, update the checkboxes and the
 
 ## Base state
 
-- 0.1.0 source: tag `v0.1.0`, moved on 2026-10-31 from the unpublished first
-  build `67716b6` to the rebuilt release commit (see Last session).
+- 0.1.0 source: tag `v0.1.0`, moved on 2026-11-04 to the release records of the
+  unpublished rebuild from `bffcbea` (see Last session).
 - Determine unpublished work with `git log --oneline origin/master..HEAD` against
   the locally known remote ref; the dated handoffs below are not a live push status.
   Pushing starts hosted CI; ask the owner first.
@@ -36,7 +36,8 @@ The candidate upload will hit the same artifact quota until it resets.
 
 - [x] Remove runner path from benchmark JSON
 - [ ] Decide whether evidence/candidate uploads should be `continue-on-error`
-- [ ] One hosted run (both workflows) on the 2026-11-04 rebuild of 0.1.0, with the push
+- [x] One hosted Windows run on the 2026-11-04 rebuild of 0.1.0 passed (`e20c76b`,
+      run 41948291941). Hosted Linux did not run: the `linux` branch was not updated
 
 ## Goals (owner's list, 2026-10-28)
 
@@ -609,6 +610,11 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-11-05 (Claude, 0.1.0 rebuild): pushed `e20c76b`, the owner moved `v0.1.0`,
+  and hosted Windows CI passed. The owner's pen pass of selection limits, fill to
+  line centres, line handles and SVG export passed on 2026-11-05. The draft GitHub
+  release has the rebuilt ZIPs; only publishing is left.
 
 - 2026-10-31 (Claude, many-layer speed): see the Performance item in goal 5.
   Owner chose 0.1.0 (rebuilt from current code) for the first public release,

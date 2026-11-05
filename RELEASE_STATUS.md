@@ -1,6 +1,6 @@
 # Windows 0.1 release status
 
-Updated 2026-11-04. **Release preparation for the 2026-11-04 rebuild of 0.1.0 is
+Updated 2026-11-05. **Release preparation for the 2026-11-04 rebuild of 0.1.0 is
 complete.** It replaces the unpublished 2026-10-31 package and is built from
 `bffcbea`; its evidence and untested areas are in
 [the release decision](RELEASE_DECISION.md). The owner requested goal
@@ -10,8 +10,8 @@ scope and explicitly distinguishes unperformed diagnostics from passing tests.
 
 ## Release identity
 
-- Application source: commit `bffcbea`. The `v0.1.0` tag moves to it when the
-  release is pushed; until then the tag names the 2026-10-31 source.
+- Application source: commit `bffcbea`; later commits change documents only. The
+  `v0.1.0` tag names the final release-records commit.
 - Version/platform: 0.1.0, Windows x64, portable, unsigned.
 - Public-package name: `dudel-0.1.0-windows-x64.zip`.
 - Matching source: `dudel-0.1.0-windows-x64-source.zip`.
@@ -21,10 +21,12 @@ scope and explicitly distinguishes unperformed diagnostics from passing tests.
 
 The 2026-11-04 rebuild adds the vector, shortcut, search, layer and stabilization
 work in the release notes. It passed Full verification with 1,137 default / 1,146
-all-feature tests, three DLL tests and 42 Python tests. The owner's pen pass came
-before selection limits, fill to line centres, line handles and SVG export.
-Hosted CI has not run on it. The table and results below describe earlier builds
-unless they say otherwise.
+all-feature tests, three DLL tests and 42 Python tests. The owner's pen passes on
+2026-11-04 and 2026-11-05 passed, the second covering selection limits, fill to line
+centres, line handles and SVG export.
+Hosted Windows CI passed on `e20c76b` (run 41948291941), including the maximum
+project fixtures and candidate packaging. Hosted Linux did not run on it. The
+table and results below describe earlier builds unless they say otherwise.
 
 The 2026-10-31 rebuild adds the import, export, effects, adjustment and
 large-document work in the release notes. The earlier final build added path-remapped binaries, a fixed-layout brush toolbar and

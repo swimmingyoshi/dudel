@@ -2,14 +2,15 @@
 
 Use `.dudel` for editable projects, PNG for sharing flattened artwork and PSD
 for taking layers to Photoshop, Live2D and other editors.
-This describes the current development source, including changes after the
-accepted Windows 0.1.0 build. See [release notes](RELEASE_NOTES.md) for that
-distinction and [the release decision](RELEASE_DECISION.md) for packaged-build evidence.
+This describes Windows 0.1.0 as rebuilt on 2026-11-04. See
+[release notes](RELEASE_NOTES.md) for its changes and
+[the release decision](RELEASE_DECISION.md) for packaged-build evidence.
 
 | Format | Open/import | Save/export | What is retained |
 | --- | --- | --- | --- |
 | Dudel `.dudel` | Yes, including supported older native readers | Yes | Editable layers, folders, masks and document state supported by this build |
 | PNG | Image import | Flattened opaque or transparent export | Pixels and print resolution; no editable layer hierarchy |
+| SVG | No | Vector line export | Each line of the shown vector layers as a path: stroked center lines for even widths, outlines for lines shaped by pressure or taper. Raster layers, masks, effects and brush texture are left out |
 | Clip Studio Paint `.clip` | Supported raster and vector subsets; optional saved-preview fallback | No | Raster and Gray layers, supported vector strokes, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
 | JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
@@ -233,7 +234,7 @@ Failed, canceled and stale background loads preserve current artwork.
 Native vector layers export their rendered pixels; PSD export does not preserve
 Dudel's stroke recordings. Keep a `.dudel` project for editable native strokes.
 
-**File > Export Photoshop document (.psd)** writes an 8-bit RGB PSD with every
+**File > Export > Export Photoshop document** writes an 8-bit RGB PSD with every
 layer and folder bottom first, as Photoshop does: names (Unicode), blend modes,
 opacity, clipping, visibility, transparency and pixel locks, open or closed
 folders (pass-through included), and layer masks (disabled ones stay disabled).
@@ -248,8 +249,8 @@ Photoshop draws them with its own engine, so they can look slightly different
 from Dudel's drawing. A layer whose effects Photoshop cannot show (an effect in
 a glow blend mode, a glow or shadow painted with a gradient, or two glows or
 bevels of one kind) has its effects written as the layers they draw instead,
-like Photoshop's Create Layers, and the status line names it. **File > Export
-PSD for Live2D (effects as layers)** draws every layer's effects that way, for
+like Photoshop's Create Layers, and the status line names it. **File > Export >
+Export PSD for Live2D** draws every layer's effects that way, for
 apps that ignore layer styles, such as Live2D Cubism.
 When reduced fill and inside effects are drawn as pixels, they are combined with
 their owning layer and mask so the soft edge is applied once. The export report
@@ -350,7 +351,7 @@ artwork exports or timelapse.
 
 ## Portable project packages
 
-File > Export project package writes a ZIP with project.dudel, manifest.json, a
+File > Export > Export project package writes a ZIP with project.dudel, manifest.json, a
 flattened preview, reference images, and layer/mask PNGs in directories matching
 the layer folders. Import validates and stages a new project in the configured
 Projects folder and never replaces an existing project.

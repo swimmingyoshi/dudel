@@ -213,6 +213,11 @@ it and double-click to remove it. Hue/saturation exposes individual color ranges
 gradient maps have editable middle stops, and Levels shows a histogram. The Layer
 menu also provides adjustment actions.
 
+**Clipping:** the clip button in the layer action row limits a layer or adjustment
+to the layer below it. The Layers panel joins clipped rows to their base with a
+rail and an arrow. A clipped row reads "Clipped to" its base, and the base says
+how many layers are clipped above it.
+
 **Masks:** a masked layer shows its mask thumbnail beside the artwork. Click the
 mask thumbnail (or **Mask** under the layer properties) to paint the mask: the
 targeted thumbnail gets an accent outline and the options bar shows **Mask**. Paint
@@ -318,7 +323,7 @@ writes each line of the shown vector layers as a path for Illustrator or Inkscap
 raster layers, masks, effects and brush texture are left out. **Export Photoshop
 document (.psd)** keeps the layers, folders, masks and adjustment layers for
 Photoshop and other editors, with layer effects as editable layer styles.
-**Export PSD for Live2D (effects as layers)** draws the effects into
+**Export PSD for Live2D** draws the effects into
 layers instead, since Live2D Cubism ignores layer styles.
 Export creates a copy;
 continue saving the `.dudel` project for later editing. **File > Import > PNG as
@@ -339,7 +344,7 @@ layer's area is selected, so **Ctrl+T** transforms it straight away, and each
 image is one undo step. **Edit > Paste as reference image** puts the clipboard
 image on a new reference layer instead.
 
-**File > Export project package (.zip)** writes a portable copy: the exact
+**File > Export > Export project package (.zip)** writes a portable copy: the exact
 project, every layer and mask as a full-canvas PNG in folders that mirror your
 layer folders, the reference images, a flattened preview and a `manifest.json`.
 **File > Import > Project package** unpacks it into your Projects folder (never

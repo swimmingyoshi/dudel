@@ -1,6 +1,6 @@
 # Release acceptance checklist
 
-Current decision, 2026-10-28: Windows 0.1 preparation is accepted under
+Current decision, 2026-11-04: Windows 0.1 preparation is accepted under
 [RELEASE_DECISION.md](RELEASE_DECISION.md). The dated development entries below
 are history; their former pending tasks are not a fresh test request.
 
@@ -9,8 +9,8 @@ the latest packaged workflow handoff and the older frozen performance study.
 Detailed dated checkpoints below remain evidence for their identified builds.
 
 Final 0.1.0 build (rebuilt 2026-11-04): source `bffcbea`. The executable SHA-256
-begins `D53A9ED9`; the thumbnail DLL begins `A0FCCA48`. Before publication: move the
-`v0.1.0` tag and run hosted CI once. See RELEASE_DECISION.md.
+begins `D53A9ED9`; the thumbnail DLL begins `A0FCCA48`. Hosted Windows CI passed,
+as did the owner's pen tests. See RELEASE_DECISION.md.
 
 Previous unpublished build (rebuilt 2026-10-31): tag `v0.1.0`. The executable SHA-256
 begins `A3F989AF`; the thumbnail DLL begins `6302A480`. The evidence on this
