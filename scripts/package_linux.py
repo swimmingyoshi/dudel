@@ -68,8 +68,13 @@ def package(glibc):
     cargo_config_before = sha(cargo_config_path)
     # Keep this machine's folders out of the shipped binary: panic locations would
     # otherwise name the user profile through the Cargo/rustup homes and the checkout.
+    # The target folder needs its own entry: CARGO_TARGET_DIR can sit outside the
+    # checkout, and generated bindings are compiled from there.
+    metadata_text = run("cargo", "metadata", "--locked", "--format-version", "1")
+    metadata = json.loads(metadata_text)
     cargo_home = os.environ.get("CARGO_HOME") or str(Path.home() / ".cargo")
-    remapping = {str(REPOSITORY): "/dudel", cargo_home: "/cargo", run("rustc", "--print", "sysroot"): "/rustc"}
+    remapping = {str(REPOSITORY): "/dudel", metadata["target_directory"]: "/target", cargo_home: "/cargo",
+                 run("rustc", "--print", "sysroot"): "/rustc"}
     if any("'" in path for path in remapping):
         raise SystemExit("Build paths cannot contain apostrophes.")
     flags = ", ".join(f"'--remap-path-prefix={path}={target}'" for path, target in remapping.items())
@@ -79,8 +84,6 @@ def package(glibc):
     after = source_identity()
     if before != after or sha(cargo_config_path) != cargo_config_before:
         raise SystemExit("Source changed during build; rerun against a stable workspace.")
-    metadata_text = run("cargo", "metadata", "--locked", "--format-version", "1")
-    metadata = json.loads(metadata_text)
     root = next(p for p in metadata["packages"]
                 if p["name"] == "dudel" and Path(p["manifest_path"]) == REPOSITORY / "Cargo.toml")
     name = f'dudel-{root["version"]}-linux-x64'
@@ -95,6 +98,9 @@ def package(glibc):
     ceiling = glibc_ceiling(executable)
     if ceiling > tuple(int(part) for part in glibc.split(".")):
         raise SystemExit(f"Executable needs glibc {ceiling}, newer than the {glibc} requested")
+    # check_public_tree.py only knows Windows profiles and this checkout's own path.
+    if str(Path.home()).encode() in executable.read_bytes():
+        raise SystemExit("Executable names the build account's home folder")
     python = sys.executable
     subprocess.run([python, "scripts/check_public_tree.py", "--binary", str(executable)], cwd=REPOSITORY, check=True)
 
