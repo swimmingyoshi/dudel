@@ -1120,12 +1120,10 @@ impl Queue {
                         // The recording joins the layer before history keeps it.
                         if changed
                             && let Some(record) = active.record.take()
-                            && let Some(vector) = doc
-                                .layers
-                                .get_mut(active.settings.layer)
-                                .and_then(|layer| layer.vector.as_mut())
+                            && let Some(rect) =
+                                crate::vector_layer::land_stroke(doc, active.settings.layer, record)
                         {
-                            vector.strokes.push(record);
+                            progress.damage.include(rect);
                         }
                         if changed && let Some(cursor) = history.begin_settle(doc) {
                             active.operation = Operation::Compact(Box::new(cursor));

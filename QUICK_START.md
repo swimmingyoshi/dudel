@@ -150,14 +150,22 @@ old size back. Holding F and letting go also keeps it.
 
 Right-click a layer, or the space below the layers, and choose **New vector
 layer**. Its strokes stay editable: Dudel keeps each one as a line and redraws
-the layer from them. CSP vector layers import the same way. Vector layers draw
-without selections, so deselect first. Fill and other pixel tools need a raster
-layer. The Eraser's **Up to crossings** option removes a line only as far as the
-lines that cross it.
+the layer from them. CSP vector layers import the same way. A selection limits
+drawing and erasing here too: a line keeps the part that fits inside, stays
+editable, and its round end stops at the edge (scattered or mirrored lines cannot use
+one). Fill and other pixel tools need a raster layer. The Eraser's
+**Up to crossings** option removes a line only as far as the lines that cross it.
+
+To color under line art, fill on a raster layer with **Stop at line centres**
+turned on. The fill runs under the lines to their middles, leaving no gap. It
+uses every shown vector layer, or only the chosen one when the fill reference is
+a vector layer.
 
 Use **Pointer (O)** to edit single lines. Click a line to pick it, or drag around
 lines on empty canvas to lasso them; hold Shift to add to the lasso. Drag a picked
-line to move it, or set **Drag a line to: Reshape** to bend it: the grabbed point
+line to move it, or drag the box around the pick: corners scale from the opposite
+corner, and the round handle above it rotates (Shift steps by 15°). Set **Drag a
+line to: Reshape** to bend a line instead: the grabbed point
 follows the pointer and the line around it follows less over the **Reach** shown
 by the circle. F resizes the Reach. The Pointer panel changes the picked lines'
 Size, Taper, Smooth and color; Delete removes them and Esc deselects. Each change
@@ -304,11 +312,13 @@ current file flush, before publication. If publication has already passed that
 fence, the save may finish and report success. Canceling a save also cancels a
 waiting New/Open/Close action; the current artwork stays open.
 
-**File > Export PNG** flattens the image onto white paper. **File > Export
-transparent PNG** keeps composited transparency. **File > Export Photoshop
+**File > Export > Export PNG** flattens the image onto white paper. **Export
+transparent PNG** keeps composited transparency. **Export vector lines as SVG**
+writes each line of the shown vector layers as a path for Illustrator or Inkscape;
+raster layers, masks, effects and brush texture are left out. **Export Photoshop
 document (.psd)** keeps the layers, folders, masks and adjustment layers for
 Photoshop and other editors, with layer effects as editable layer styles.
-**File > Export PSD for Live2D (effects as layers)** draws the effects into
+**Export PSD for Live2D (effects as layers)** draws the effects into
 layers instead, since Live2D Cubism ignores layer styles.
 Export creates a copy;
 continue saving the `.dudel` project for later editing. **File > Import > PNG as

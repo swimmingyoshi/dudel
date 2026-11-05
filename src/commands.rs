@@ -22,6 +22,7 @@ pub(crate) enum Action {
     ExportPng(bool),
     ExportPsd,
     ExportLive2d,
+    ExportSvg,
     Undo,
     Redo,
     NewLayer,
@@ -128,6 +129,13 @@ pub(crate) const COMMANDS: &[Command] = &[
         "",
         "file photoshop effects as layers",
         Action::ExportLive2d
+    ),
+    command!(
+        "export.svg",
+        "Export vector lines as SVG…",
+        "",
+        "file vector paths illustrator inkscape",
+        Action::ExportSvg
     ),
     command!("edit.undo", "Undo", "Ctrl+Z", "edit revert", Action::Undo),
     command!(
@@ -538,6 +546,9 @@ impl Dudel {
             {
                 Some("Pick vector lines with the Pointer first")
             }
+            Action::ExportSvg if !self.doc.layers.iter().any(|l| l.vector.is_some()) => {
+                Some("No vector layers to export")
+            }
             Action::LineDrag(_) if self.vector_target().is_none() => {
                 Some("Select a vector layer first")
             }
@@ -570,6 +581,7 @@ impl Dudel {
             Action::ExportPng(transparent) => self.export(transparent),
             Action::ExportPsd => self.export_psd(crate::psd_export::Effects::Editable),
             Action::ExportLive2d => self.export_psd(crate::psd_export::Effects::AsLayers),
+            Action::ExportSvg => self.export_svg(),
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::NewLayer => self.new_layer(),

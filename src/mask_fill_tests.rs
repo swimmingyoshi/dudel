@@ -254,6 +254,7 @@ fn advanced_fill_matches_independent_opaque_grayscale_raster_with_selection_and_
                     close_gap: 1,
                     expand,
                     fill_edges: false,
+                    line_centres: false,
                 },
                 ..request()
             };
@@ -332,6 +333,7 @@ fn locks_hidden_stale_invalid_and_canceled_mask_operations_publish_nothing() {
                 close_gap: 9,
                 expand: 0,
                 fill_edges: false,
+                line_centres: false,
             },
             ..request()
         },

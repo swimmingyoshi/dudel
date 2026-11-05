@@ -162,6 +162,7 @@ mod snapshot_memory;
 mod storage;
 mod stroke;
 mod stroke_buffer;
+mod svg_export;
 mod symmetry;
 mod tabs;
 mod themes;

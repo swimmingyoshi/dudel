@@ -1,7 +1,8 @@
 //! Single lines on a vector layer, handled with the Pointer tool (O): a
 //! press on a line picks it (Shift adds or removes it), a lasso drawn from
 //! empty canvas picks the lines inside it, dragging moves the picked lines,
-//! and the tool panel resizes, smooths, tapers, recolors or deletes them.
+//! the box around them scales and rotates them, and the tool panel resizes,
+//! smooths, tapers, recolors or deletes them.
 //! The pick follows the strokes themselves, so undo or other edits that
 //! replace a line simply drop it from the pick.
 use crate::{
@@ -16,6 +17,10 @@ use std::sync::Arc;
 
 /// How far from a line, in screen points, a press still picks it.
 const REACH: f32 = 6.0;
+/// How far from a handle, in screen points, a press still grabs it.
+const HANDLE_REACH: f32 = 9.0;
+/// How far the rotate handle stands off the box, in screen points.
+const ROTATE_GAP: f32 = 22.0;
 /// Largest line size the panel sets, in canvas pixels.
 pub(crate) const MAX_SIZE: f32 = 300.0;
 
@@ -115,6 +120,47 @@ fn bend_weights(points: &[[f32; 2]], at: [f32; 2], reach: f32) -> Vec<f32> {
         .collect()
 }
 
+/// A handle of the box around the picked lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Handle {
+    /// Scales about the opposite corner; corners run clockwise from the top left.
+    Corner(usize),
+    /// Turns about the box's middle (Shift steps by 15°).
+    Rotate,
+}
+
+/// What a handle drag maps each point through.
+fn handle_map(
+    handle: Handle,
+    pivot: [f32; 2],
+    grab: [f32; 2],
+    offset: [f32; 2],
+    step: bool,
+) -> Box<dyn Fn(f32, f32) -> [f32; 2]> {
+    let from = [grab[0] - pivot[0], grab[1] - pivot[1]];
+    let to = [from[0] + offset[0], from[1] + offset[1]];
+    let [px, py] = pivot;
+    match handle {
+        Handle::Corner(_) => {
+            let reach = (from[0] * from[0] + from[1] * from[1]).max(1e-3);
+            let scale = ((from[0] * to[0] + from[1] * to[1]) / reach).clamp(0.02, 50.0);
+            Box::new(move |x, y| [px + (x - px) * scale, py + (y - py) * scale])
+        }
+        Handle::Rotate => {
+            let mut turn = to[1].atan2(to[0]) - from[1].atan2(from[0]);
+            if step {
+                let step = 15f32.to_radians();
+                turn = (turn / step).round() * step;
+            }
+            let (sin, cos) = turn.sin_cos();
+            Box::new(move |x, y| {
+                let (dx, dy) = (x - px, y - py);
+                [px + dx * cos - dy * sin, py + dx * sin + dy * cos]
+            })
+        }
+    }
+}
+
 /// Picked lines being dragged: they move live, in one undo step.
 struct Drag {
     grab: [f32; 2],
@@ -128,6 +174,10 @@ struct Drag {
     checkpointed: bool,
     /// Set when the drag bends one line instead of moving the pick.
     bend: Option<Bend>,
+    /// Set when the drag scales or turns the pick, with the point it pivots on.
+    handle: Option<(Handle, [f32; 2])>,
+    /// Shift is down.
+    step: bool,
 }
 
 fn union(a: Option<[usize; 4]>, b: Option<[usize; 4]>) -> Option<[usize; 4]> {
@@ -205,12 +255,58 @@ impl Dudel {
     pub(crate) fn line_grabs(&self, view: View, pos: Pos2) -> bool {
         self.vector_pick.drag.is_some()
             || self.vector_pick.lasso.is_some()
+            || self.handle_at(view, pos).is_some()
             || self.vector_target().is_some_and(|index| {
                 self.pointer_lasso
                     || self
                         .line_at(index, view.to_doc(pos), REACH / self.zoom)
                         .is_some()
             })
+    }
+    /// The box around the picked lines' middles, in canvas pixels, kept
+    /// open a little so that a straight line still has one.
+    fn picked_box(&self) -> Option<[f32; 4]> {
+        let size = [self.doc.width, self.doc.height];
+        let lines = self.picked_lines();
+        let mut points = lines.iter().flat_map(|l| l.path(size)).copied();
+        let [x, y] = points.next()?;
+        let [left, top, right, bottom] = points.fold([x, y, x, y], |b, [x, y]| {
+            [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]
+        });
+        let margin = 6.0 / self.zoom.max(1e-3);
+        Some([left - margin, top - margin, right + margin, bottom + margin])
+    }
+    /// The picked lines' handles on screen, when they can be used.
+    pub(crate) fn line_handles(&self, view: View) -> Option<Vec<(Handle, Pos2)>> {
+        if self.tool != crate::tools::Tool::Pointer
+            || self.line_drag != LineDrag::Move
+            || self.vector_pick.drag.is_some()
+            || self.vector_pick.lasso.is_some()
+        {
+            return None;
+        }
+        let [left, top, right, bottom] = self.picked_box()?;
+        let corners = [[left, top], [right, top], [right, bottom], [left, bottom]]
+            .map(|[x, y]| view.to_screen(egui::pos2(x, y)));
+        let edge = corners[0] + (corners[1] - corners[0]) * 0.5;
+        let middle = corners[0] + (corners[2] - corners[0]) * 0.5;
+        let up = (edge - middle).normalized();
+        let mut handles: Vec<_> = (0..4).map(|i| (Handle::Corner(i), corners[i])).collect();
+        handles.push((Handle::Rotate, edge + up * ROTATE_GAP));
+        Some(handles)
+    }
+    /// The handle at `pos` and the canvas point its drag pivots on.
+    fn handle_at(&self, view: View, pos: Pos2) -> Option<(Handle, [f32; 2])> {
+        let handles = self.line_handles(view)?;
+        let &(handle, _) = handles
+            .iter()
+            .find(|(_, spot)| spot.distance(pos) <= HANDLE_REACH)?;
+        let [left, top, right, bottom] = self.picked_box()?;
+        let pivot = match handle {
+            Handle::Corner(i) => [[right, bottom], [left, bottom], [left, top], [right, top]][i],
+            Handle::Rotate => [(left + right) / 2.0, (top + bottom) / 2.0],
+        };
+        Some((handle, pivot))
     }
     fn line_edit_blocker(&self, index: usize) -> Option<&'static str> {
         if self.doc.layers[index].locked {
@@ -250,6 +346,13 @@ impl Dudel {
                 };
             }
             self.vector_pick.lines = self.picked_lines();
+            if let Some(handle) = self.handle_at(view, pos) {
+                match self.line_edit_blocker(index) {
+                    Some(blocker) => self.status = blocker.into(),
+                    None => self.start_line_drag(index, at, Some(handle)),
+                }
+                return true;
+            }
             let Some(hit) = self.line_at(index, at, REACH / self.zoom) else {
                 if self.pointer_lasso {
                     self.vector_pick.lasso = Some(Lasso {
@@ -282,42 +385,7 @@ impl Dudel {
                 // Only the grabbed line bends, and it becomes the pick.
                 self.vector_pick.lines = vec![hit.clone()];
             }
-            let strokes = self.doc.layers[index]
-                .vector
-                .as_ref()
-                .unwrap()
-                .strokes
-                .clone();
-            let moving: Vec<usize> = strokes
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| self.vector_pick.lines.iter().any(|l| Arc::ptr_eq(l, s)))
-                .map(|(i, _)| i)
-                .collect();
-            let size = [self.doc.width, self.doc.height];
-            let drawn = moving
-                .iter()
-                .map(|&i| strokes[i].bounds(size))
-                .fold(None, union);
-            let bend = (self.line_drag == LineDrag::Reshape).then(|| {
-                let base = Arc::new(strokes[moving[0]].densified(BEND_SPACING));
-                let weights = bend_weights(&base.control_points(), [at.x, at.y], self.bend_reach);
-                Bend {
-                    index: moving[0],
-                    base,
-                    weights,
-                }
-            });
-            self.vector_pick.drag = Some(Drag {
-                grab: [at.x, at.y],
-                offset: [0.0; 2],
-                before: strokes,
-                moving,
-                drawn,
-                applied: [0.0; 2],
-                checkpointed: false,
-                bend,
-            });
+            self.start_line_drag(index, at, None);
             return true;
         }
         if let Some(lasso) = &mut self.vector_pick.lasso {
@@ -335,10 +403,52 @@ impl Dudel {
             return false;
         };
         drag.offset = [at.x - drag.grab[0], at.y - drag.grab[1]];
+        drag.step = shift;
         if end {
             self.finish_line_drag();
         }
         true
+    }
+    /// Start dragging the picked lines from `at`.
+    fn start_line_drag(&mut self, index: usize, at: Pos2, handle: Option<(Handle, [f32; 2])>) {
+        let strokes = self.doc.layers[index]
+            .vector
+            .as_ref()
+            .unwrap()
+            .strokes
+            .clone();
+        let moving: Vec<usize> = strokes
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| self.vector_pick.lines.iter().any(|l| Arc::ptr_eq(l, s)))
+            .map(|(i, _)| i)
+            .collect();
+        let size = [self.doc.width, self.doc.height];
+        let drawn = moving
+            .iter()
+            .map(|&i| strokes[i].bounds(size))
+            .fold(None, union);
+        let bend = (handle.is_none() && self.line_drag == LineDrag::Reshape).then(|| {
+            let base = Arc::new(strokes[moving[0]].densified(BEND_SPACING));
+            let weights = bend_weights(&base.control_points(), [at.x, at.y], self.bend_reach);
+            Bend {
+                index: moving[0],
+                base,
+                weights,
+            }
+        });
+        self.vector_pick.drag = Some(Drag {
+            grab: [at.x, at.y],
+            offset: [0.0; 2],
+            before: strokes,
+            moving,
+            drawn,
+            applied: [0.0; 2],
+            checkpointed: false,
+            bend,
+            handle,
+            step: false,
+        });
     }
     /// Move the dragged lines to where the pointer is (once a frame).
     pub(crate) fn apply_line_drag(&mut self) {
@@ -363,13 +473,17 @@ impl Dudel {
         drag.applied = drag.offset;
         let size = [self.doc.width, self.doc.height];
         let [dx, dy] = drag.offset;
+        let map: Box<dyn Fn(f32, f32) -> [f32; 2]> = match drag.handle {
+            Some((handle, pivot)) => handle_map(handle, pivot, drag.grab, drag.offset, drag.step),
+            None => Box::new(move |x, y| [x + dx, y + dy]),
+        };
         let mut strokes = drag.before.clone();
         let mut lines = Vec::new();
         let mut drawn = None;
         for &i in &drag.moving {
             let moved = Arc::new(match &drag.bend {
                 Some(bend) if bend.index == i => bend.base.displaced(&bend.weights, [dx, dy]),
-                _ => drag.before[i].mapped(&|x, y| [x + dx, y + dy], size),
+                _ => drag.before[i].mapped(&map, size),
             });
             drawn = union(drawn, moved.bounds(size));
             strokes[i] = moved.clone();
@@ -446,10 +560,15 @@ impl Dudel {
         {
             self.history.settle(&self.doc);
             let count = drag.moving.len();
+            let verb = match drag.handle {
+                Some((Handle::Corner(_), _)) => "Scaled",
+                Some((Handle::Rotate, _)) => "Rotated",
+                None => "Moved",
+            };
             self.status = if drag.bend.is_some() {
                 "Reshaped the line".into()
             } else {
-                format!("Moved {count} line{}", if count == 1 { "" } else { "s" })
+                format!("{verb} {count} line{}", if count == 1 { "" } else { "s" })
             };
         }
     }
@@ -582,6 +701,30 @@ impl Dudel {
         }
         for line in &picked {
             outline(line, 1.5, accent);
+        }
+        if let Some(handles) = self.line_handles(view) {
+            let dark = egui::Stroke::new(3.0_f32, Color32::from_black_alpha(90));
+            let light = egui::Stroke::new(1.0_f32, accent);
+            let mut frame: Vec<Pos2> = handles[..4].iter().map(|h| h.1).collect();
+            frame.push(frame[0]);
+            let stem = [frame[0] + (frame[1] - frame[0]) * 0.5, handles[4].1];
+            for stroke in [dark, light] {
+                painter.add(Shape::line(frame.clone(), stroke));
+                painter.line_segment(stem, stroke);
+            }
+            for (handle, spot) in handles {
+                match handle {
+                    Handle::Corner(_) => {
+                        let square = egui::Rect::from_center_size(spot, egui::vec2(9.0, 9.0));
+                        painter.rect_filled(square, 1.0, Color32::WHITE);
+                        painter.rect_stroke(square, 1.0, light, egui::StrokeKind::Middle);
+                    }
+                    Handle::Rotate => {
+                        painter.circle_filled(spot, 5.0, Color32::WHITE);
+                        painter.circle_stroke(spot, 5.0, light);
+                    }
+                }
+            }
         }
         if self.line_drag == LineDrag::Reshape
             && self.vector_target().is_some()

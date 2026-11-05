@@ -1499,8 +1499,39 @@ impl Document {
         if opacity == 0.0 {
             return Ok(false);
         }
+        // A vector layer chosen as the reference is all the walls there are.
+        let wall_layer = reference_layer.filter(|layer| layer.vector.is_some());
+        let lines_only = options.line_centres && wall_layer.is_some();
+        let walls = if options.line_centres {
+            let mut walls = vec![0u64; (self.width * self.height).div_ceil(64)];
+            for (index, layer) in self.layers.iter().enumerate() {
+                let chosen = wall_layer.map_or(self.shown(index), |wall| wall.id == layer.id);
+                if let Some(vector) = layer.vector.as_ref().filter(|_| chosen) {
+                    crate::fill::check_cancel(cancel)?;
+                    vector.mark_centres(&mut walls, [self.width, self.height]);
+                }
+            }
+            if crate::fill::contains(&walls, y * self.width + x) {
+                return Ok(false);
+            }
+            Some(walls)
+        } else {
+            None
+        };
         let reference = match source {
             crate::fill::Source::Active => self.layers[self.active].pixels.clone(),
+            crate::fill::Source::Visible if options.line_centres => {
+                // The lines' own pixels must not stop the fill short of their middles.
+                let mut plain = self.clone();
+                for layer in plain.layers.iter_mut().filter(|l| l.vector.is_some()) {
+                    layer.visible = false;
+                }
+                plain
+                    .composite_bounds_checked([0, 0, self.width, self.height], true, || {
+                        crate::fill::check_cancel(cancel)
+                    })?
+                    .into()
+            }
             crate::fill::Source::Visible => self
                 .composite_bounds_checked([0, 0, self.width, self.height], true, || {
                     crate::fill::check_cancel(cancel)
@@ -1532,7 +1563,10 @@ impl Document {
                     .selection_mask
                     .as_ref()
                     .is_none_or(|m| m.at(index % self.width, index / self.width) > 0)
-                && equivalent(&reference.rgba(index))
+                && walls
+                    .as_ref()
+                    .is_none_or(|walls| !crate::fill::contains(walls, index))
+                && (lines_only || equivalent(&reference.rgba(index)))
         };
         if options == crate::fill::Options::default() {
             let mut writer = layer.pixels.writer();
@@ -1561,14 +1595,17 @@ impl Document {
             )?;
             return Ok(changed);
         }
-        let mask = crate::fill::region_mask(
+        let mut mask = crate::fill::region_mask(
             [self.width, self.height],
             seed / 4,
             options,
             eligible,
             cancel,
         )?;
-        let edges = if options.fill_edges && options.expand >= 0 {
+        if let Some(walls) = &walls {
+            crate::fill::reach_walls(&mut mask, walls, [self.width, self.height], cancel)?;
+        }
+        let edges = if options.fill_edges && options.expand >= 0 && walls.is_none() {
             Some(crate::fill::soft_edges(
                 [self.width, self.height],
                 &mask,

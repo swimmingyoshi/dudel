@@ -318,6 +318,41 @@ impl VectorLayer {
         Ok(())
     }
 
+    /// Mark the middles of the layer's lines in `walls`, one bit a pixel. The
+    /// marks join diagonally, which still stops a four-connected fill.
+    pub(crate) fn mark_centres(&self, walls: &mut [u64], size: [usize; 2]) {
+        let mut mark = |x: i64, y: i64| {
+            if x >= 0 && y >= 0 && (x as usize) < size[0] && (y as usize) < size[1] {
+                crate::fill::visit(walls, y as usize * size[0] + x as usize);
+            }
+        };
+        for run in self.strokes.iter().flat_map(|stroke| stroke.runs(size)) {
+            let last = run.len().saturating_sub(1);
+            for i in 0..=last {
+                let (a, b) = (run[i], run[(i + 1).min(last)]);
+                let (mut x, mut y) = (a[0].floor() as i64, a[1].floor() as i64);
+                let (end_x, end_y) = (b[0].floor() as i64, b[1].floor() as i64);
+                let (dx, dy) = ((end_x - x).abs(), -(end_y - y).abs());
+                let (step_x, step_y) = ((end_x - x).signum(), (end_y - y).signum());
+                let mut error = dx + dy;
+                loop {
+                    mark(x, y);
+                    if x == end_x && y == end_y {
+                        break;
+                    }
+                    if 2 * error >= dy {
+                        error += dy;
+                        x += step_x;
+                    }
+                    if 2 * error <= dx {
+                        error += dx;
+                        y += step_y;
+                    }
+                }
+            }
+        }
+    }
+
     /// The layer's pixels: every stroke painted in order onto a clear layer.
     pub(crate) fn render(
         &self,
@@ -495,27 +530,73 @@ impl Stroke {
     /// line's dense points, or a stroke's dabs. `None` for strokes whose
     /// dabs are not one line (scattered or mirrored).
     fn cut_points(&self) -> Option<Vec<(Sample, f32)>> {
-        if self.csp.is_some() {
-            return Some(self.line());
-        }
-        if self.brush.scatter > 0.0 || self.symmetry.active() || self.cut_zoom().is_none() {
+        if self.csp.is_none()
+            && (self.brush.scatter > 0.0 || self.symmetry.active() || self.cut_zoom().is_none())
+        {
             return None;
+        }
+        Some(self.sized_line())
+    }
+    /// The line's points, each with the radius drawn there.
+    fn sized_line(&self) -> Vec<(Sample, f32)> {
+        if self.csp.is_some() {
+            return self.line();
         }
         let half = self.brush.size * 0.5;
         let pressure_size = self.brush.pressure_size;
-        Some(
-            self.dabs()
-                .into_iter()
-                .map(|d| {
-                    let scale = if pressure_size {
-                        d.pressure.max(0.05)
-                    } else {
-                        1.0
-                    };
-                    (d, half * scale)
+        self.dabs()
+            .into_iter()
+            .map(|d| {
+                let scale = if pressure_size {
+                    d.pressure.max(0.05)
+                } else {
+                    1.0
+                };
+                (d, half * scale)
+            })
+            .collect()
+    }
+    /// The line as unbroken runs of (x, y, radius), including its symmetry
+    /// copies. A stroke lifted partway (a `Reset`) makes a new run.
+    pub(crate) fn runs(&self, size: [usize; 2]) -> Vec<Vec<[f32; 3]>> {
+        let mut copies: Vec<Vec<Vec<[f32; 3]>>> = Vec::new();
+        for (dab, radius) in self.sized_line() {
+            let spots = self.symmetry.copies(dab.x, dab.y, size[0], size[1]);
+            copies.resize_with(copies.len().max(spots.len()), Vec::new);
+            for (runs, ([x, y], _)) in copies.iter_mut().zip(spots) {
+                let joined = runs
+                    .last()
+                    .and_then(|run: &Vec<[f32; 3]>| run.last())
+                    .is_some_and(|p| (p[0] - x).hypot(p[1] - y) <= (radius * 8.0).max(8.0));
+                if !joined {
+                    runs.push(Vec::new());
+                }
+                runs.last_mut().unwrap().push([x, y, radius]);
+            }
+        }
+        copies.into_iter().flatten().collect()
+    }
+    /// The parts of the stroke that `selected` holds: its dabs that fit
+    /// inside whole, so that the line's round ends reach the edge and stop
+    /// there (or, in a selection narrower than the line, its dabs centered
+    /// inside). `None` when the stroke cannot be cut.
+    fn inside(&self, selected: &dyn Fn(f32, f32) -> bool) -> Option<Vec<Stroke>> {
+        let points = self.cut_points()?;
+        let fits = |s: &Sample, r: f32| {
+            selected(s.x, s.y)
+                && (0..8).all(|i| {
+                    let (sin, cos) = (i as f32 * std::f32::consts::FRAC_PI_4).sin_cos();
+                    selected(s.x + r * cos, s.y + r * sin)
                 })
-                .collect(),
-        )
+        };
+        let mut removed: Vec<bool> = points.iter().map(|(s, r)| !fits(s, *r)).collect();
+        if removed.iter().all(|r| *r) {
+            removed = points.iter().map(|(s, _)| !selected(s.x, s.y)).collect();
+        }
+        if !removed.contains(&true) {
+            return Some(vec![self.clone().fresh()]);
+        }
+        Some(self.rebuild(&points, &removed))
     }
     fn cut_zoom(&self) -> Option<f32> {
         self.commands.iter().find_map(|c| match c {
@@ -1158,6 +1239,47 @@ fn smooth_path(points: &[[f64; 2]], radius: f64) -> Vec<[f64; 2]> {
 }
 
 /// Give layer `index` these strokes and the pixels they paint.
+/// Whether (`x`, `y`) in canvas pixels is in the selection (with none, all
+/// of the canvas is). Soft selections count from half coverage.
+fn selected_at(doc: &Document, x: f32, y: f32) -> bool {
+    if x < 0.0 || y < 0.0 || x >= doc.width as f32 || y >= doc.height as f32 {
+        return false;
+    }
+    let (x, y) = (x as usize, y as usize);
+    doc.selection.is_none_or(|s| s.contains(x, y))
+        && doc
+            .selection_mask
+            .as_ref()
+            .is_none_or(|m| m.at(x, y) >= 128)
+}
+
+/// Add a finished stroke to its vector layer. Inside a selection it becomes
+/// the parts of it that fit there, and the layer is redrawn to match; returns
+/// the rectangle redrawn.
+pub(crate) fn land_stroke(
+    doc: &mut Document,
+    index: usize,
+    record: Arc<Stroke>,
+) -> Option<[usize; 4]> {
+    let size = [doc.width, doc.height];
+    let pieces = (doc.selection.is_some() || doc.selection_mask.is_some())
+        .then(|| record.inside(&|x, y| selected_at(doc, x, y)))
+        .flatten();
+    let layer = doc.layers.get_mut(index)?;
+    let vector = layer.vector.as_mut()?;
+    let Some(pieces) = pieces else {
+        vector.strokes.push(record);
+        return None;
+    };
+    vector.strokes.extend(pieces.into_iter().map(Arc::new));
+    let rect = record.bounds(size)?;
+    let vector = vector.clone();
+    vector
+        .redraw(&mut layer.pixels, rect, size, &|| false)
+        .ok()?;
+    Some(rect)
+}
+
 pub(crate) fn redraw_layer(
     doc: &mut Document,
     index: usize,
@@ -1478,8 +1600,10 @@ impl crate::Dudel {
     /// Why the stroke about to start cannot go on this vector layer.
     pub(crate) fn vector_stroke_blocker(&self) -> Option<&'static str> {
         self.vector_target()?;
-        if self.doc.selection.is_some() || self.doc.selection_mask.is_some() {
-            Some("Vector layers draw without selections — deselect to draw here")
+        if (self.doc.selection.is_some() || self.doc.selection_mask.is_some())
+            && (self.brush.scatter > 0.0 || self.active_symmetry().active())
+        {
+            Some("Scattered or mirrored lines cannot stop at a selection — deselect to draw here")
         } else if self.scripted_tool.is_some() {
             Some(
                 "Scripted tools draw on raster layers — rasterize this vector layer or pick another",
@@ -1567,6 +1691,7 @@ impl crate::Dudel {
                 };
                 [dab.x, dab.y, erase.brush.size * 0.5 * scale]
             })
+            .filter(|&[x, y, _]| selected_at(&self.doc, x, y))
             .collect();
         let hit: Vec<Arc<Stroke>> = vector
             .strokes
@@ -1833,11 +1958,11 @@ mod tests {
     }
 
     #[test]
-    fn vector_layers_refuse_pixel_edits_and_drawing_through_selections() {
+    fn vector_layers_refuse_pixel_edits_and_scattered_lines_in_selections() {
         let mut app = app();
         stroke(&mut app, [8.0, 14.0], [88.0, 14.0]);
         assert!(app.doc.paint_blocker().unwrap().contains("vector layer"));
-        // A selection would clip strokes their recording cannot repeat.
+        // A scattered line has no single path to stop at the selection.
         app.doc.selection = Some(crate::selection::Selection {
             left: 0,
             top: 0,
@@ -2677,6 +2802,271 @@ mod tests {
                 .fold(f32::MAX, f32::min)
         });
         assert!(far.fold(0.0, f32::max) < 1.0);
+    }
+
+    #[test]
+    fn selections_limit_vector_lines_and_the_vector_eraser() {
+        let mut app = app();
+        app.brush.size = 6.0;
+        app.brush.taper_out = 0.0;
+        app.brush.pressure_size = false;
+        app.doc.selection = Some(crate::selection::Selection {
+            left: 30,
+            top: 0,
+            right: 60,
+            bottom: 64,
+        });
+        straight(&mut app, 20.0);
+        // The part inside stays an editable line, and only that was drawn.
+        let vector = layer(&app).vector.as_ref().unwrap();
+        assert_eq!(vector.strokes.len(), 1, "{}", app.status);
+        let path = vector.strokes[0].path([96, 64]);
+        assert!(
+            path.iter().all(|p| p[0] >= 33.0 && p[0] <= 57.0),
+            "{path:?}"
+        );
+        consistent(&app);
+        assert_eq!(alpha(&app, 20, 20), 0);
+        assert_eq!(alpha(&app, 70, 20), 0);
+        assert!(alpha(&app, 45, 20) > 0);
+        assert!(
+            (0..96)
+                .filter(|&x| alpha(&app, x, 20) > 0)
+                .all(|x| (30..60).contains(&x))
+        );
+        // Undo takes the whole stroke back in one step.
+        app.undo();
+        app.flush_render_queue();
+        assert!(layer(&app).vector.as_ref().unwrap().strokes.is_empty());
+        assert_eq!(alpha(&app, 45, 20), 0);
+        // A line past the selection is erased only inside it.
+        app.doc.selection = None;
+        straight(&mut app, 20.0);
+        app.doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 48,
+            bottom: 64,
+        });
+        app.select_tool(Tool::Eraser);
+        app.brush.size = 12.0;
+        app.brush.scatter = 0.0;
+        drag(&mut app, [40.0, 8.0], [40.0, 32.0], egui::Modifiers::NONE);
+        drag(&mut app, [56.0, 8.0], [56.0, 32.0], egui::Modifiers::NONE);
+        consistent(&app);
+        assert_eq!(alpha(&app, 40, 20), 0);
+        assert!(alpha(&app, 56, 20) > 0);
+    }
+
+    #[test]
+    fn a_selection_narrower_than_the_line_still_keeps_its_middle() {
+        let mut app = app();
+        app.brush.size = 20.0;
+        app.brush.taper_out = 0.0;
+        app.doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 18,
+            right: 96,
+            bottom: 22,
+        });
+        straight(&mut app, 20.0);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+        consistent(&app);
+    }
+
+    #[test]
+    fn line_centres_stop_a_fill_under_the_line() {
+        // A raster layer beneath a box of vector lines.
+        let mut app = app();
+        app.brush.size = 4.0;
+        app.brush.taper_out = 0.0;
+        for (from, to) in [
+            ([20.0, 10.0], [70.0, 10.0]),
+            ([70.0, 10.0], [70.0, 50.0]),
+            ([70.0, 50.0], [20.0, 50.0]),
+            ([20.0, 50.0], [20.0, 10.0]),
+        ] {
+            app.brush.stabilization = 0.0;
+            app.brush.scatter = 0.0;
+            stroke_line(&mut app, from, to);
+        }
+        let lines = app.doc.active;
+        app.doc.active = 0;
+        let vectors = app.doc.layers[lines].vector.clone();
+        let request = |source| crate::fill::Request {
+            point: [45, 30],
+            color: [10, 200, 40],
+            opacity: 1.0,
+            tolerance: 0,
+            source,
+            options: crate::fill::Options {
+                line_centres: true,
+                ..Default::default()
+            },
+        };
+        let filled = |doc: &Document, x: usize, y: usize| doc.layers[0].pixels.rgba(y * 96 + x)[3];
+        for source in [
+            crate::fill::Source::Active,
+            crate::fill::Source::Visible,
+            crate::fill::Source::Layer(app.doc.layers[lines].id),
+        ] {
+            let mut doc = app.doc.clone();
+            assert!(
+                doc.fill_request(request(source), None).unwrap(),
+                "{source:?}"
+            );
+            // Right up to and under the line's middle, and not past it.
+            assert_eq!(filled(&doc, 45, 30), 255, "{source:?}");
+            assert_eq!(filled(&doc, 45, 11), 255, "{source:?}");
+            assert_eq!(filled(&doc, 45, 10), 255, "{source:?}");
+            assert_eq!(filled(&doc, 45, 9), 0, "{source:?}");
+            assert_eq!(filled(&doc, 10, 30), 0, "{source:?}");
+            assert_eq!(doc.layers[lines].vector, vectors, "{source:?}");
+        }
+        // A click on a line has nothing to fill; a hidden layer is no wall.
+        let mut doc = app.doc.clone();
+        let on_line = crate::fill::Request {
+            point: [45, 10],
+            ..request(crate::fill::Source::Active)
+        };
+        assert!(!doc.fill_request(on_line, None).unwrap());
+        doc.layers[lines].visible = false;
+        assert!(
+            doc.fill_request(request(crate::fill::Source::Active), None)
+                .unwrap()
+        );
+        assert_eq!(filled(&doc, 10, 30), 255);
+    }
+
+    #[test]
+    fn handles_scale_and_rotate_picked_lines() {
+        let mut app = app();
+        app.brush.size = 4.0;
+        app.brush.taper_out = 0.0;
+        app.brush.pressure_size = false;
+        straight(&mut app, 30.0);
+        app.select_tool(Tool::Pointer);
+        drag(&mut app, [48.0, 30.0], [48.0, 30.0], egui::Modifiers::NONE);
+        assert_eq!(app.picked_lines().len(), 1);
+        let extent = |app: &Dudel| {
+            let path = app.picked_lines()[0].path([96, 64]).to_vec();
+            let span = |axis: usize| {
+                let values = path.iter().map(|p| p[axis]);
+                values.clone().fold(f32::MIN, f32::max) - values.fold(f32::MAX, f32::min)
+            };
+            [span(0), span(1)]
+        };
+        let [wide, _] = extent(&app);
+        let view = app.view(app.canvas_area);
+        let spot = |handle| {
+            let screen = app
+                .line_handles(view)
+                .unwrap()
+                .iter()
+                .find(|h| h.0 == handle)
+                .unwrap()
+                .1;
+            let doc = view.to_doc(screen);
+            [doc.x, doc.y]
+        };
+        // The bottom right corner, halfway toward the top left one.
+        let (corner, opposite) = (
+            spot(crate::vector_pick::Handle::Corner(2)),
+            spot(crate::vector_pick::Handle::Corner(0)),
+        );
+        let middle = [
+            (corner[0] + opposite[0]) / 2.0,
+            (corner[1] + opposite[1]) / 2.0,
+        ];
+        drag(&mut app, corner, middle, egui::Modifiers::NONE);
+        consistent(&app);
+        assert_eq!(layer(&app).vector.as_ref().unwrap().strokes.len(), 1);
+        assert!((extent(&app)[0] - wide / 2.0).abs() < 1.5, "{}", app.status);
+        assert_eq!(app.picked_lines()[0].brush.size, 2.0);
+        // One undo step, and the pick lets go of the scaled line.
+        app.undo();
+        app.flush_render_queue();
+        assert!(
+            (layer(&app).vector.as_ref().unwrap().strokes[0]
+                .path([96, 64])
+                .len() as f32)
+                > 0.0
+        );
+        assert_eq!(
+            layer(&app).vector.as_ref().unwrap().strokes[0].brush.size,
+            4.0
+        );
+        // A quarter turn about the middle stands the line up.
+        drag(&mut app, [48.0, 30.0], [48.0, 30.0], egui::Modifiers::NONE);
+        let view = app.view(app.canvas_area);
+        let handles = app.line_handles(view).unwrap();
+        let rotate = handles
+            .iter()
+            .find(|h| h.0 == crate::vector_pick::Handle::Rotate)
+            .unwrap()
+            .1;
+        let from = view.to_doc(rotate);
+        let center = [48.0, 30.0];
+        let [dx, dy] = [from.x - center[0], from.y - center[1]];
+        drag(
+            &mut app,
+            [from.x, from.y],
+            [center[0] - dy, center[1] + dx],
+            egui::Modifiers::NONE,
+        );
+        consistent(&app);
+        let [across, down] = extent(&app);
+        assert!(across < 3.0 && (down - wide).abs() < 3.0, "{across} {down}");
+        // A click on a handle changes nothing.
+        let before = layer(&app).vector.clone();
+        let view = app.view(app.canvas_area);
+        let screen = app.line_handles(view).unwrap()[0].1;
+        let doc = view.to_doc(screen);
+        drag(
+            &mut app,
+            [doc.x, doc.y],
+            [doc.x, doc.y],
+            egui::Modifiers::NONE,
+        );
+        assert_eq!(layer(&app).vector, before);
+    }
+
+    #[test]
+    fn vector_layers_export_to_svg() {
+        let mut app = app();
+        app.brush.size = 6.0;
+        app.brush.taper_out = 0.0;
+        app.brush.pressure_size = false;
+        app.color = [200, 40, 30];
+        straight(&mut app, 20.0);
+        app.doc.layers[app.doc.active].name = "Ink & <line>".into();
+        let (svg, lines) = crate::svg_export::encode(&app.doc);
+        assert_eq!(lines, 1);
+        assert!(svg.starts_with("<svg "), "{svg}");
+        assert!(svg.contains(r#"viewBox="0 0 96 64""#));
+        assert!(svg.contains("Ink &amp; &lt;line&gt;"));
+        // One width: a stroked center line.
+        assert!(
+            svg.contains(r##"stroke="#c8281e" stroke-width="6""##),
+            "{svg}"
+        );
+        assert!(svg.trim_end().ends_with("</svg>"));
+        // Pressure gives an outline; a hidden layer exports nothing.
+        app.brush.pressure_size = true;
+        stroke(&mut app, [8.0, 40.0], [88.0, 44.0]);
+        let (svg, lines) = crate::svg_export::encode(&app.doc);
+        assert_eq!(lines, 2);
+        assert!(svg.contains(r##"fill="#c8281e""##), "{svg}");
+        assert!(svg.contains(" A") || svg.contains("A"));
+        let active = app.doc.active;
+        app.doc.layers[active].visible = false;
+        assert_eq!(crate::svg_export::encode(&app.doc).1, 0);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("lines.svg");
+        app.doc.layers[active].visible = true;
+        app.export_svg_to(&path);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("<path"));
+        assert!(app.status.contains("2 vector line"), "{}", app.status);
     }
 
     #[test]

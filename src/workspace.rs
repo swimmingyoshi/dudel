@@ -452,13 +452,17 @@ impl Dudel {
                     self.import_package();
                 }
             });
-            self.command_menu_item(ui, crate::commands::Action::ExportPng(false));
-            self.command_menu_item(ui, crate::commands::Action::ExportPng(true));
-            self.command_menu_item(ui, crate::commands::Action::ExportPsd);
-            self.command_menu_item(ui, crate::commands::Action::ExportLive2d);
-            if menu_item(ui, "Export project package (.zip)…", "", true) {
-                self.export_package();
-            }
+            bounded_menu(ui, "Export", |ui| {
+                self.command_menu_item(ui, crate::commands::Action::ExportPng(false));
+                self.command_menu_item(ui, crate::commands::Action::ExportPng(true));
+                self.command_menu_item(ui, crate::commands::Action::ExportPsd);
+                self.command_menu_item(ui, crate::commands::Action::ExportLive2d);
+                self.command_menu_item(ui, crate::commands::Action::ExportSvg);
+                ui.separator();
+                if menu_item(ui, "Export project package (.zip)…", "", true) {
+                    self.export_package();
+                }
+            });
             ui.separator();
             if menu_item(ui, "Minimize window", "", true) {
                 ui.ctx()

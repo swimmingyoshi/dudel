@@ -564,10 +564,13 @@ Stage B - native layer effects:
 - [x] F resizes the brush or Reach (`src/quick_resize.rs`); new layers in the
       Layers panel right-click menu (`src/layer_menu.rs`). Owner confirmed F resize
 - [x] Line actions in command search; layer filter and multi-selection are per tab
-- [ ] Owner's pen pass of the whole vector workflow before the next candidate
-- Known limits for the release notes: Fill does not stop at vector line centres,
-  selections do not limit vector drawing, no SVG export, no scale/rotate handles
-  for picked lines; PSD export writes the rendered pixels.
+- [x] Owner's pen pass of the vector workflow (2026-11-04), before the items below
+- [x] Fill stops at line centres; selections limit vector lines and the vector
+      eraser by cutting lines to what fits; handles scale and rotate picked lines;
+      SVG export (`src/svg_export.rs`), with exports moved to File > Export
+- Known limits: scattered or mirrored lines refuse selections. SVG leaves out
+  raster layers, masks, effects and brush texture. PSD export writes rendered
+  pixels, because the format has no editable brush strokes.
 
 ## Before pushing (next candidate)
 

@@ -27,6 +27,9 @@ the identity or acceptance of the previously prepared ZIPs.
 - Vector line editing with the Pointer: pick or lasso single lines, move, reshape
   with a Reach, resize, taper, smooth, recolor and delete them, on native and CSP
   strokes. The Eraser can stop at crossing lines.
+- Selections limit vector drawing and erasing; Fill can stop at vector line
+  centres and run under them; a box scales and rotates picked lines; and **File >
+  Export** (now a submenu) writes vector lines as SVG.
 - F resizes the brush, eraser or reshape Reach by moving the pen. The right-click
   menu of the Layers panel now creates layers of every kind.
 - Custom shortcuts in **View > Settings > Shortcuts**, with conflict detection,

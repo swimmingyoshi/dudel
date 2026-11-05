@@ -16,6 +16,8 @@ pub struct Options {
     pub expand: i8,
     /// Preserve soft linework while replacing the background at its edge.
     pub fill_edges: bool,
+    /// Stop at the middles of vector lines, passing under the lines themselves.
+    pub line_centres: bool,
 }
 impl Options {
     pub(crate) fn validate(self) -> Result<(), String> {
@@ -252,6 +254,21 @@ pub(crate) fn region_mask(
     Ok(connected)
 }
 
+/// Let `region` take the wall pixels touching it, so that no seam stays
+/// unpainted down the middle of a line.
+pub(crate) fn reach_walls(
+    region: &mut [u64],
+    walls: &[u64],
+    dimensions: [usize; 2],
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    let grown = morphology(region, dimensions[0], dimensions[1], 1, true, cancel)?;
+    for ((word, grown), wall) in region.iter_mut().zip(grown).zip(walls) {
+        *word |= grown & wall;
+    }
+    Ok(())
+}
+
 fn distance(pixel: [u8; 4], seed: [u8; 4]) -> u8 {
     (0..3).fold(pixel[3].abs_diff(seed[3]), |distance, c| {
         let a = u16::from(pixel[c]) * u16::from(pixel[3]) / 255;
@@ -427,6 +444,11 @@ impl Dudel {
         ui.add_enabled_ui(self.input_stroke_target().is_raster(), |ui| {
             ui.checkbox(&mut self.fill_options.fill_edges, "Fill to edges")
                 .on_hover_text("Fill beneath soft outlines without a pale seam. Follows up to 16 pixels of soft edging, stopping when the boundary fades toward another region. Applies to artwork, not mask coverage.");
+            let lines = self.doc.layers.iter().any(|layer| layer.vector.is_some());
+            ui.add_enabled_ui(lines, |ui| {
+                ui.checkbox(&mut self.fill_options.line_centres, "Stop at line centres")
+                    .on_hover_text("Vector lines stop the fill at their middles, so color runs under them with no gap. Uses every shown vector layer, or only the chosen one when the reference is a vector layer.");
+            });
         });
         ui.add(egui::Slider::new(&mut self.fill_options.close_gap, 0..=8).text("Close gaps (px)"))
             .on_hover_text("Closes small breaks in outlines. Larger values can skip narrow areas.");
@@ -785,6 +807,7 @@ fn benchmark_advanced() -> Result<Vec<serde_json::Value>, String> {
                             close_gap: 1,
                             expand,
                             fill_edges: false,
+                            line_centres: false,
                         },
                     },
                     None,
@@ -1404,11 +1427,13 @@ mod tests {
                 close_gap: 9,
                 expand: 0,
                 fill_edges: false,
+                line_centres: false,
             },
             Options {
                 close_gap: 1,
                 expand: 17,
                 fill_edges: false,
+                line_centres: false,
             },
         ] {
             let before = doc.clone();
@@ -1435,6 +1460,7 @@ mod tests {
                 close_gap: 1,
                 expand: 1,
                 fill_edges: false,
+                line_centres: false,
             },
             |index| {
                 if index == 300 {
@@ -1478,6 +1504,7 @@ mod tests {
                         close_gap: 255,
                         expand: 0,
                         fill_edges: false,
+                        line_centres: false,
                     }
                 })
                 .is_err()
@@ -1544,6 +1571,7 @@ mod tests {
                 close_gap: 1,
                 expand,
                 fill_edges: false,
+                line_centres: false,
             },
         }
     }
@@ -1594,6 +1622,7 @@ mod tests {
                         close_gap: 1,
                         expand: 1,
                         fill_edges: false,
+                        line_centres: false,
                     },
                 })
                 .unwrap();
