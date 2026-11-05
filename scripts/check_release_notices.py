@@ -4,7 +4,7 @@ provenance hashes, binary/source notice parity and carry-over from a reviewed ca
 
 Usage: python scripts/check_release_notices.py CANDIDATE_NAME REVIEWED_CANDIDATE_NAME
 """
-import hashlib, json, sys, zipfile
+import hashlib, json, sys, tarfile, zipfile
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -13,12 +13,25 @@ name, reviewed = sys.argv[1], sys.argv[2]
 sha = lambda b: hashlib.sha256(b).hexdigest().upper()
 problems, facts = [], {}
 
+class Tarball:
+    """The parts of ZipFile used here; reading to the end checks the gzip CRC."""
+    def __init__(self, path):
+        with tarfile.open(path) as tar:
+            self.members = {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
+    def namelist(self): return list(self.members)
+    def read(self, name): return self.members[name]
+    def testzip(self): return None
+
+def open_archive(n):
+    tarball = releases / f"{n}.tar.gz"
+    return (tarball, Tarball) if tarball.exists() else (releases / f"{n}.zip", zipfile.ZipFile)
+
 def zip_of(n, suffix=""):
-    p = releases / f"{n}{suffix}.zip"
-    side = (releases / f"{n}{suffix}.zip.sha256").read_text().split()[0].upper()
+    p, reader = open_archive(f"{n}{suffix}")
+    side = p.with_name(f"{p.name}.sha256").read_text().split()[0].upper()
     digest = sha(p.read_bytes())
     if digest != side: problems.append(f"{p.name}: sidecar mismatch")
-    z = zipfile.ZipFile(p)
+    z = reader(p)
     bad = z.testzip()
     if bad: problems.append(f"{p.name}: CRC failure at {bad}")
     return z, digest
@@ -101,7 +114,8 @@ for f in ("OFL.txt", "UFL.txt", "Hack-Regular.txt", "emoji-icon-font-mit-license
     if f"third-party-licenses/epaint_default_fonts-0.33.3/fonts/{f}" not in b: problems.append(f"font terms missing: {f}")
 
 # Carry-over from the reviewed candidate
-rz = zipfile.ZipFile(releases / f"{reviewed}.zip")
+reviewed_path, reviewed_reader = open_archive(reviewed)
+rz = reviewed_reader(reviewed_path)
 r = files(rz, f"{reviewed}/")
 r_notices = {k: sha(v) for k, v in r.items() if k.startswith("third-party-licenses/")}
 c_notices = {k: sha(v) for k, v in b.items() if k.startswith("third-party-licenses/")}

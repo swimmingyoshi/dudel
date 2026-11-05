@@ -30,6 +30,22 @@ def check_thumbnail_dependencies(metadata, lock_path):
         raise ValueError(f"Thumbnail dependencies absent from vendored app inventory: {missing}")
 
 
+def linux_building(build):
+    return ("# Build Dudel from matching source\n\n"
+            "Dudel is GPL-3.0-only; see LICENSE. Official prebuilt downloads may be sold. "
+            "This source is available to build without paying for a prebuilt executable.\n\n"
+            f'Tested compiler: `{build["rustc"]}`. Install Rust, a C compiler and pkg-config, plus the Wayland, '
+            "xkbcommon and X11 development libraries listed in `.github/workflows/linux.yml`. Extract the complete "
+            "archive, including `.cargo` and `vendor`, then run from this folder:\n\n```sh\n"
+            "cargo build --release --locked --offline --bin dudel\n./target/release/dudel\n```\n\n"
+            "Dependencies are vendored with their original sources/licenses, so Cargo does not need the network "
+            "after the compiler and libraries are installed. A plain build needs the glibc of the machine that "
+            f'built it. The packaged binary was linked with cargo-zigbuild for `{build["target"]}` so it also runs '
+            "on older systems. `SOURCE_BUILD.json` records matching binary/source identities. Different toolchains "
+            "and build environments can change binary bytes.\n\n"
+            "Development checks: `cargo test --locked --offline`; full checks: `./scripts/verify.sh full`.\n")
+
+
 def bundle(repository, destination, binary, metadata_path):
     repository, destination, binary = (p.resolve() for p in (repository, destination, binary))
     if not destination.is_relative_to(repository / "artifacts" / "releases"):
@@ -135,7 +151,7 @@ def bundle(repository, destination, binary, metadata_path):
            "Every resolved registry package has a declared license and at least one collected notice/license file. "
            "This does not replace the release review of bundled subcomponents.\n"), encoding="utf-8")
     (destination / "SOURCE_BUILD.json").write_text(json.dumps(build, indent=2) + "\n", encoding="utf-8")
-    (destination / "BUILDING.md").write_text(
+    (destination / "BUILDING.md").write_text(linux_building(build) if build.get("platform") == "linux" else
         "# Build Dudel from matching source\n\n"
         "Dudel is GPL-3.0-only; see LICENSE. Official prebuilt downloads may be sold. "
         "This source is available to build without paying for a prebuilt executable.\n\n"

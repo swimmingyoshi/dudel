@@ -78,6 +78,20 @@ and binary/source notice parity. It also reports whether the notices are byte-id
 to an earlier reviewed candidate, so subcomponent reviews only need repeating for
 changed files.
 
+## Linux packages
+
+`python scripts/package_linux.py` makes `dudel-VERSION-linux-x64.tar.gz`, its matching
+source ZIP and SHA-256 sidecars under `artifacts/releases/`, with the same source,
+notice and path checks as `Package.ps1`. Linux is experimental: `RELEASE_ACCEPTANCE.json`
+does not cover it and `BUILD.json` says so. Run it from a clean checkout, since it
+packages whatever is in the working tree.
+
+It needs `cargo-zigbuild` and `zig` on PATH, because a plain `cargo build` ties the
+binary to the build machine's glibc. The default target is glibc 2.31; `--glibc`
+changes it, and the script refuses a binary that needs anything newer. Windows
+candidates and Linux packages share the source checks: `check_source_archive.py`
+rebuilds offline, and `check_release_notices.py` accepts a `.tar.gz` candidate.
+
 ## Release channel
 
 The owner selected **our own website/store** on 2026-10-18. Official paid builds
