@@ -36,7 +36,7 @@ The candidate upload will hit the same artifact quota until it resets.
 
 - [x] Remove runner path from benchmark JSON
 - [ ] Decide whether evidence/candidate uploads should be `continue-on-error`
-- [ ] One hosted run (both workflows) on the next candidate, after the quota resets
+- [ ] One hosted run (both workflows) on the 2026-11-04 rebuild of 0.1.0, with the push
 
 ## Goals (owner's list, 2026-10-28)
 

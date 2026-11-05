@@ -5,10 +5,9 @@ existing automated, performance and owner workflow evidence, within the limits
 in [the release decision](RELEASE_DECISION.md). This document does not imply that
 the package has been uploaded to a public store.
 
-## Current development changes after packaged 0.1.0 (2026-11-04)
+## Added in the 2026-11-04 rebuild of 0.1.0
 
-These changes are in source after the accepted `v0.1.0` tag. They do not change
-the identity or acceptance of the previously prepared ZIPs.
+No earlier 0.1.0 build was published, so these changes are part of 0.1.0.
 
 - Layer effects draw in the background and reuse regional drawings and recent
   undo states. Large brush dabs use parallel row bands.
