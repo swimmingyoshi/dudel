@@ -2,7 +2,7 @@
 
 Usage: python scripts/check_public_tree.py                  # every tracked file
        python scripts/check_public_tree.py --binary PATH ...  # built exe/dll files
-       python scripts/check_public_tree.py --archive ZIP ...  # release ZIPs, minus third-party trees
+       python scripts/check_public_tree.py --archive FILE ...  # release ZIPs/tarballs, minus third-party trees
 
 Built-in rules reject Windows user-profile paths and this checkout's absolute path.
 Owner-specific terms (private note names and similar) come from a deny-list kept
@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -59,7 +60,14 @@ def scan(data, checks):
 
 
 def archive_members(path):
-    """(label, bytes) for each first-party file in a release ZIP with one top-level folder."""
+    """(label, bytes) for each first-party file in a release archive with one top-level folder."""
+    if str(path).endswith(".tar.gz"):
+        with tarfile.open(path) as archive:
+            for info in archive:
+                inner = info.name.split("/", 1)[-1]
+                if info.isfile() and not inner.startswith(THIRD_PARTY):
+                    yield f"{Path(path).name}:{inner}", archive.extractfile(info).read()
+        return
     with zipfile.ZipFile(path) as archive:
         for info in archive.infolist():
             inner = info.filename.split("/", 1)[-1]
