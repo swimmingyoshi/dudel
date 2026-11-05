@@ -10,6 +10,24 @@ The accepted application source is the `v0.1.0` tag of the public repository.
 [RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins both binary hashes, and
 release packaging refuses different executable or DLL bytes.
 
+**Rebuilt again, 2026-11-04.** The 2026-10-31 build was never published either.
+The owner kept the version at 0.1.0 and asked for this rebuild, which adds vector
+layers and line editing, SVG export, command search, custom shortcuts, layer
+filtering, multi-layer batches, editing feedback and the stabilization fixes (see
+[release notes](RELEASE_NOTES.md)). The current binaries are EXE `D53A9ED9...725ECD30`
+and DLL `A0FCCA48...EE41DEC1`, built from `bffcbea`; later commits change
+documents only. Evidence on this build: local `scripts/Verify.ps1 -Mode Full`
+(1,137 default / 1,146 all-feature tests, three DLL tests, 42 Python tests, Clippy,
+release builds), the packaging gates and a packaged startup. All 16 of the owner's
+existing projects (formats v4 and v6) opened and composited. A real SVG export
+parsed as well-formed XML. The owner's pen pass on 2026-11-04 passed, but it came
+before selection limits, fill to line centres, line handles and SVG export, so
+those four have automated tests only. Not run on this build: hosted CI, the
+resource and two-hour studies, offline source rebuilds, the laptop install and
+opening an SVG in a vector editor. The tag `v0.1.0` still names the 2026-10-31
+source until it is moved with the release push. The paragraphs below describe
+earlier builds.
+
 **Rebuilt, 2026-10-31.** The first 0.1.0 build was prepared but never
 published; the owner held it back until CSP and PSD import were solid, then
 asked for 0.1.0 to be rebuilt from current source. The rebuild adds wider
