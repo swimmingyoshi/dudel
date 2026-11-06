@@ -1599,6 +1599,10 @@ impl crate::Dudel {
     }
     /// Why the stroke about to start cannot go on this vector layer.
     pub(crate) fn vector_stroke_blocker(&self) -> Option<&'static str> {
+        let blocker = self.input_paint_blocker();
+        if self.input_stroke_target().is_raster() && blocker == Some(crate::text_layer::BLOCKER) {
+            return blocker;
+        }
         self.vector_target()?;
         if (self.doc.selection.is_some() || self.doc.selection_mask.is_some())
             && (self.brush.scatter > 0.0 || self.active_symmetry().active())

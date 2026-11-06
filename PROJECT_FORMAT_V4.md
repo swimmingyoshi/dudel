@@ -1,6 +1,6 @@
 # Dudel project container v4
 
-The project and recovery writer selects v4, v5, v6 or v7 according to the features
+The project and recovery writer selects v4, v5, v6, v7 or v8 according to the features
 present, as described below. Document schema is 1, or 2 with masks.
 v1 JSON, v2 gzip JSON and v3 dense binary projects remain readable and are
 converted on the next save. Old applications do not understand the v4 header.
@@ -15,11 +15,13 @@ seven bytes `DUDL\x04\r\n`, followed by exactly one gzip member. Projects with l
 masks use `DUDL\x05\r\n` (schema version 2), and projects where any layer has layer
 effects (even switched off), an adjustment layer or non-default fill opacity use `DUDL\x06\r\n` (schema
 version 1 or 2). Vector layers require `DUDL\x07\r\n`, taking precedence over
-the other headers. They retain stroke recordings as metadata and rendered raster
-tiles for display. The layout after the header is the same. Builds that predate a
+those headers. They retain stroke recordings as metadata and rendered raster
+tiles for display. Text layers require `DUDL\x08\r\n`, taking precedence over all
+the others. They retain their words and layout as metadata and rendered raster tiles
+for display, so opening a project never needs its fonts. The layout after the header is the same. Builds that predate a
 header refuse the file instead of opening it without data they do not know, so a
-resave there cannot silently drop masks, effects, adjustments, fill opacity or
-vector recordings. Its payload is:
+resave there cannot silently drop masks, effects, adjustments, fill opacity,
+vector recordings or text. Its payload is:
 
 1. Metadata byte length (1 to 16,777,216), then that many UTF-8 JSON bytes.
 2. For each raster layer in metadata stack order: tile count, then that many tile

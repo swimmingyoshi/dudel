@@ -15,6 +15,8 @@ pub const MASK_MAGIC: &[u8] = b"DUDL\x05\r\n";
 pub const STYLE_MAGIC: &[u8] = b"DUDL\x06\r\n";
 /// Projects with vector layers; older builds would drop their strokes.
 pub const VECTOR_MAGIC: &[u8] = b"DUDL\x07\r\n";
+/// Projects with text layers; older builds would drop their words.
+pub const TEXT_MAGIC: &[u8] = b"DUDL\x08\r\n";
 /// Which header a project was read from.
 #[derive(Clone, Copy, PartialEq)]
 enum Container {
@@ -24,7 +26,9 @@ enum Container {
 }
 /// The header `doc` is saved with.
 pub(crate) fn magic(doc: &Document) -> &'static [u8] {
-    if doc.layers.iter().any(|l| l.vector.is_some()) {
+    if doc.layers.iter().any(|l| l.text.is_some()) {
+        TEXT_MAGIC
+    } else if doc.layers.iter().any(|l| l.vector.is_some()) {
         VECTOR_MAGIC
     } else if doc
         .layers
@@ -126,7 +130,7 @@ pub(crate) fn decode_masked(reader: impl Read) -> Result<Document, String> {
 pub(crate) fn decode_styled(reader: impl Read) -> Result<Document, String> {
     decode_inner(reader, None, Container::Styled)
 }
-/// v7 is laid out as v6; only its header differs.
+/// v7 and v8 are laid out as v6; only their headers differ.
 pub(crate) fn decode_vector(reader: impl Read) -> Result<Document, String> {
     decode_inner(reader, None, Container::Styled)
 }

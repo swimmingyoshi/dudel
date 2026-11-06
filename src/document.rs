@@ -175,6 +175,10 @@ pub struct Layer {
     /// (`vector_layer`), and other pixel edits are refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vector: Option<crate::vector_layer::VectorLayer>,
+    /// A text layer keeps its words and layout; its pixels are that text
+    /// drawn once (`text_layer`), and other pixel edits are refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) text: Option<crate::text_layer::TextLayer>,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -255,6 +259,7 @@ impl Default for Layer {
             effect_cache: Default::default(),
             adjustment: None,
             vector: None,
+            text: None,
             pixels: Default::default(),
             display_reference: None,
         }
@@ -742,6 +747,12 @@ impl Document {
                 }
                 vector.validate()?;
             }
+            if let Some(text) = &layer.text {
+                if layer.folder || layer.adjustment.is_some() || layer.vector.is_some() {
+                    return Err("Only raster layers can be text layers".into());
+                }
+                text.validate()?;
+            }
             if layer.name.len() > 4096
                 || (layer.folder && layer.csp_byte_opacity)
                 || !layer.opacity.is_finite()
@@ -819,6 +830,9 @@ impl Document {
     }
     pub fn paint_blocker_for(&self, index: usize) -> Option<&'static str> {
         self.raster_blocker_for(index).or_else(|| {
+            if self.layers[index].text.is_some() {
+                return Some(crate::text_layer::BLOCKER);
+            }
             self.layers[index].vector.as_ref().map(|_| {
                 "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels"
             })
@@ -2235,6 +2249,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.effects != b.effects
             || a.adjustment != b.adjustment
             || !crate::vector_layer::same(&a.vector, &b.vector)
+            || a.text != b.text
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
         {
             return None;

@@ -18,7 +18,10 @@
 //! downward, turned a quarter clockwise. CSP does not kern. Checked against
 //! CSP's saved previews at 600 dpi: horizontal, vertical, turned, wrapped,
 //! left-, right- and center-aligned Tahoma lines.
-use crate::{pixels::Pixels, text_render::Block};
+use crate::{
+    pixels::Pixels,
+    text_render::{Align, Block, Measure},
+};
 use ab_glyph::FontVec;
 
 /// A text layer as CSP laid it out.
@@ -200,12 +203,18 @@ pub(crate) fn render(
         em: (text.size / 72.0 * dpi) as f32,
         color: text.color,
         vertical: text.vertical,
-        align: text.align,
+        align: match text.align {
+            1 => Align::Right,
+            2 => Align::Center,
+            _ => Align::Left,
+        },
         start: text.start,
         along: text.along,
         down: text.down,
-        span: text.span,
-        thickness: text.thickness,
+        measure: Measure::Given {
+            span: text.span,
+            thickness: text.thickness,
+        },
         wrap: text.wrap,
         kerning: false,
     };

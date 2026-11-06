@@ -55,6 +55,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && a.effects == b.effects
                 && a.adjustment == b.adjustment
                 && crate::vector_layer::same(&a.vector, &b.vector)
+                && a.text == b.text
                 && crate::layer_mask::same_snapshot(&a.mask, &b.mask)
                 && a.pixels.shares(&b.pixels)
         })

@@ -163,6 +163,10 @@ mod tests {
         assert_eq!(preview.dimensions(), (256, 128));
         assert_eq!(preview.get_pixel(10, 64).0, [200, 10, 10]);
         assert_eq!(preview.get_pixel(240, 64).0, [255, 255, 255]);
+        // Text projects carry the same preview under their own header.
+        let mut text = bytes.clone();
+        text[..7].copy_from_slice(crate::tile_project::TEXT_MAGIC);
+        assert_eq!(read(&text), read(&bytes));
         let loaded = crate::storage::load_project(&path).unwrap();
         assert_eq!(loaded.layers[0].pixels.rgba(0), [200, 10, 10, 255]);
     }

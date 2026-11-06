@@ -165,6 +165,7 @@ mod stroke_buffer;
 mod svg_export;
 mod symmetry;
 mod tabs;
+mod text_layer;
 mod text_render;
 mod themes;
 mod thumbnails;

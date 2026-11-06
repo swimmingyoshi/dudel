@@ -164,19 +164,20 @@ pub fn load_project(path: &Path) -> Result<Document, String> {
     let mut reader = std::io::BufReader::new(file);
     use std::io::BufRead;
     let prefix = reader.fill_buf().map_err(|e| e.to_string())?;
+    let v8 = prefix.starts_with(crate::tile_project::TEXT_MAGIC);
     let v7 = prefix.starts_with(crate::tile_project::VECTOR_MAGIC);
     let v6 = prefix.starts_with(crate::tile_project::STYLE_MAGIC);
     let v5 = prefix.starts_with(crate::tile_project::MASK_MAGIC);
     let v4 = prefix.starts_with(crate::tile_project::MAGIC);
     let v3 = prefix.starts_with(crate::binary_project::MAGIC);
-    if v7 || v6 || v5 || v4 || v3 {
+    if v8 || v7 || v6 || v5 || v4 || v3 {
         // Decoding is bounded by the document payload budget; this only stops
         // reading files no Dudel save could have produced.
         if size > 4 << 30 {
             return Err("Binary project exceeds file limit".into());
         }
         reader.consume(crate::tile_project::MAGIC.len());
-        return if v7 {
+        return if v8 || v7 {
             crate::tile_project::decode_vector(reader)
         } else if v6 {
             crate::tile_project::decode_styled(reader)
@@ -331,7 +332,9 @@ pub fn read_recovery(path: &Path) -> Result<Recovery, String> {
         let original_path = serde_json::from_slice(&metadata).map_err(|e| e.to_string())?;
         let mut magic = vec![0; crate::binary_project::MAGIC.len()];
         reader.read_exact(&mut magic).map_err(|e| e.to_string())?;
-        let document = if magic == crate::tile_project::VECTOR_MAGIC {
+        let document = if magic == crate::tile_project::TEXT_MAGIC
+            || magic == crate::tile_project::VECTOR_MAGIC
+        {
             crate::tile_project::decode_vector(reader)?
         } else if magic == crate::tile_project::STYLE_MAGIC {
             crate::tile_project::decode_styled(reader)?

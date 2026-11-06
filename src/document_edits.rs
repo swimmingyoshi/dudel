@@ -84,7 +84,17 @@ pub enum Edit {
     NewFolder,
     /// A new, empty vector layer above the target, with this identity.
     NewVector(crate::document::LayerId),
-    /// Keep a vector layer's pixels and drop its strokes.
+    /// A new text layer above the target, with this identity.
+    NewText {
+        id: crate::document::LayerId,
+        text: Box<crate::text_layer::TextLayer>,
+    },
+    /// Give a text layer this text and draw it.
+    SetText {
+        target: crate::document::LayerId,
+        text: Box<crate::text_layer::TextLayer>,
+    },
+    /// Keep a vector or text layer's pixels and drop what they were drawn from.
     Rasterize(crate::document::LayerId),
     /// Give a vector layer's strokes (those in the selection, or all) this
     /// color and/or brush, and redraw them.
@@ -241,8 +251,28 @@ impl Edit {
             0
         }
     }
+    /// Edits that would change a text layer's pixels without its record, which
+    /// stay refused until transforms can carry text along.
+    fn text_blocker(&self, doc: &Document) -> Option<&'static str> {
+        let active = doc.layers.get(doc.active).is_some_and(|l| l.text.is_some());
+        let refused = match self {
+            Self::Transform(_)
+            | Self::TransformTarget { .. }
+            | Self::MoveTarget { .. }
+            | Self::AffineTarget { .. }
+            | Self::AffineSettingsTarget { .. }
+            | Self::Clear { .. }
+            | Self::ClearTarget { .. } => active,
+            Self::Rotate(_) | Self::CanvasSize(_) | Self::CropCanvas => {
+                doc.layers.iter().any(|l| l.text.is_some())
+            }
+            _ => false,
+        };
+        refused.then_some(crate::text_layer::BLOCKER)
+    }
     pub fn validate_arguments(&self) -> Result<(), String> {
         match self {
+            Self::NewText { text, .. } | Self::SetText { text, .. } => text.validate(),
             Self::LayerBatch(batch) => batch.validate(),
             Self::MaskTransform { operation, .. } => operation.validate(),
             Self::LayerMask {
@@ -354,6 +384,9 @@ impl Edit {
         crate::fill::check_cancel(cancel)?;
         self.validate_arguments()?;
         source.validate()?;
+        if let Some(blocker) = self.text_blocker(source) {
+            return Err(blocker.into());
+        }
         let mut doc = source.clone();
         let mut outcome = Outcome {
             changed: true,
@@ -579,6 +612,30 @@ impl Edit {
                 layer.name = format!("Vector {}", count + 1);
                 layer.vector = Some(Default::default());
             }
+            Self::NewText { id, text } => {
+                if doc.layers.iter().any(|layer| layer.id == *id) {
+                    return Err("Layer identity is already present".into());
+                }
+                let count = doc.layers.iter().filter(|l| l.text.is_some()).count();
+                doc.insert_layer_above()?;
+                let index = doc.active;
+                doc.layers[index].id = *id;
+                doc.layers[index].name = format!("Text {}", count + 1);
+                let cancelled = || crate::fill::check_cancel(cancel).is_err();
+                crate::text_layer::set(&mut doc, index, (**text).clone(), &cancelled)?;
+            }
+            Self::SetText { target, text } => {
+                let index = Self::resolve(&Target::Identity(*target), &doc)?;
+                if doc.layers[index].text.is_none() {
+                    return Err("Select a text layer to change its text".into());
+                }
+                if doc.layers[index].locked {
+                    return Err("Layer is locked — unlock it to change its text".into());
+                }
+                let cancelled = || crate::fill::check_cancel(cancel).is_err();
+                outcome.changed =
+                    crate::text_layer::set(&mut doc, index, (**text).clone(), &cancelled)?;
+            }
             Self::VectorStyle {
                 target,
                 color,
@@ -593,7 +650,8 @@ impl Edit {
             }
             Self::Rasterize(target) => {
                 let index = Self::resolve(&Target::Identity(*target), &doc)?;
-                outcome.changed = doc.layers[index].vector.take().is_some();
+                let layer = &mut doc.layers[index];
+                outcome.changed = layer.vector.take().is_some() | layer.text.take().is_some();
                 outcome.redraw = false;
             }
             Self::FolderTarget {

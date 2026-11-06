@@ -157,8 +157,25 @@ fn load(face: &Face) -> Option<Arc<FontVec>> {
     Some(font)
 }
 
+/// Tests name this font to get `test_font`, so that they don't depend on what
+/// the machine has installed.
+#[cfg(test)]
+pub(crate) const TEST_FONT: &str = "Dudel Test Font";
+
+/// The font built into egui, which every platform has.
+#[cfg(test)]
+pub(crate) fn test_font() -> FontVec {
+    let fonts = eframe::egui::FontDefinitions::default();
+    let data = fonts.font_data["Ubuntu-Light"].font.to_vec();
+    FontVec::try_from_vec(data).unwrap()
+}
+
 /// The installed font whose full name (or family and style) is `name`.
 pub(crate) fn find_font(name: &str) -> Option<Arc<FontVec>> {
+    #[cfg(test)]
+    if name == TEST_FONT {
+        return Some(Arc::new(test_font()));
+    }
     load(faces().iter().find(|f| f.names.iter().any(|n| n == name))?)
 }
 
@@ -174,6 +191,25 @@ pub(crate) fn missing_characters(string: &str, font: &FontVec) -> Vec<char> {
     missing
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Align {
+    Left,
+    Right,
+    Center,
+}
+
+/// How long and thick a block's lines are.
+#[derive(Clone, Copy)]
+pub(crate) enum Measure {
+    /// Set by whoever laid the text out: the length lines align within and
+    /// the thickness of all lines together.
+    Given { span: f64, thickness: f64 },
+    /// From the font: lines this multiple of its line height apart, aligned
+    /// within the wrap width, or the longest line when nothing wraps.
+    Natural { line_spacing: f64 },
+}
+
 /// Text laid out as a block on the canvas.
 pub(crate) struct Block<'a> {
     pub(crate) string: &'a str,
@@ -181,16 +217,14 @@ pub(crate) struct Block<'a> {
     pub(crate) em: f32,
     pub(crate) color: [u8; 3],
     pub(crate) vertical: bool,
-    /// 0 left, 1 right, 2 centered.
-    pub(crate) align: u32,
+    pub(crate) align: Align,
     /// Canvas pixels: where the first line's start and top meet, the unit
-    /// vectors along the lines and down across them, the length lines align
-    /// within, the thickness of all lines together and the room lines wrap to.
+    /// vectors along the lines and down across them, and the room lines wrap
+    /// to.
     pub(crate) start: [f64; 2],
     pub(crate) along: [f64; 2],
     pub(crate) down: [f64; 2],
-    pub(crate) span: f64,
-    pub(crate) thickness: f64,
+    pub(crate) measure: Measure,
     pub(crate) wrap: f64,
     pub(crate) kerning: bool,
 }
@@ -262,20 +296,33 @@ fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
         }
         lines.push(line);
     }
-    let line_height = (block.thickness / lines.len() as f64) as f32;
+    let length = |line: &String| f64::from(advance(&scaled, line.trim_end(), block.kerning));
+    let (span, line_height) = match block.measure {
+        Measure::Given { span, thickness } => (span, (thickness / lines.len() as f64) as f32),
+        Measure::Natural { line_spacing } => {
+            let span = if block.wrap.is_finite() {
+                block.wrap
+            } else {
+                lines.iter().map(length).fold(0.0, f64::max)
+            };
+            let natural = scaled.height() + scaled.line_gap();
+            (span, natural * line_spacing as f32)
+        }
+    };
     let mut placed = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        let used = f64::from(advance(&scaled, line.trim_end(), block.kerning));
+        let used = length(line);
         let offset = match block.align {
-            1 => block.span - used,
-            2 => (block.span - used) / 2.0,
-            _ => 0.0,
+            Align::Right => span - used,
+            Align::Center => (span - used) / 2.0,
+            Align::Left => 0.0,
         } as f32;
         let top = line_height * index as f32;
-        let baseline = if block.vertical {
-            top + 0.88 * block.em
-        } else {
-            top + line_height + scaled.descent()
+        let baseline = match block.measure {
+            _ if block.vertical => top + 0.88 * block.em,
+            Measure::Given { .. } => top + line_height + scaled.descent(),
+            // Extra spacing goes below a line, so the first stays at the top.
+            Measure::Natural { .. } => top + scaled.ascent(),
         };
         let mut pen = offset;
         let mut last = None;
@@ -459,13 +506,6 @@ pub(crate) fn render(
 mod tests {
     use super::*;
 
-    /// A font every platform has: the one built into egui.
-    fn font() -> FontVec {
-        let fonts = eframe::egui::FontDefinitions::default();
-        let data = fonts.font_data["Ubuntu-Light"].font.to_vec();
-        FontVec::try_from_vec(data).unwrap()
-    }
-
     fn block<'a>(string: &'a str, angle: f64) -> Block<'a> {
         let (sin, cos) = angle.to_radians().sin_cos();
         Block {
@@ -473,19 +513,21 @@ mod tests {
             em: 60.0,
             color: [10, 20, 30],
             vertical: false,
-            align: 0,
+            align: Align::Left,
             start: [150.0, 150.0],
             along: [cos, sin],
             down: [-sin, cos],
-            span: 200.0,
-            thickness: 80.0,
+            measure: Measure::Given {
+                span: 200.0,
+                thickness: 80.0,
+            },
             wrap: f64::INFINITY,
             kerning: false,
         }
     }
 
     fn draw(block: &Block) -> Vec<u8> {
-        let pixels = render(block, &font(), [400, 400], &|| false).unwrap();
+        let pixels = render(block, &test_font(), [400, 400], &|| false).unwrap();
         (0..400 * 400).map(|p| pixels.rgba(p)[3]).collect()
     }
 
@@ -558,7 +600,7 @@ mod tests {
                 edge.start = start;
                 let clipped = draw(&edge);
                 edge.start = start.map(|v| v + MARGIN as f64);
-                let whole = render(&edge, &font(), [LARGE, LARGE], &|| false).unwrap();
+                let whole = render(&edge, &test_font(), [LARGE, LARGE], &|| false).unwrap();
                 for y in 0..400 {
                     for x in 0..400 {
                         let expected = whole.rgba((y + MARGIN) * LARGE + x + MARGIN)[3];
@@ -578,7 +620,7 @@ mod tests {
 
     #[test]
     fn kerning_only_moves_glyphs_when_asked() {
-        let font = font();
+        let font = test_font();
         let scale = font_scale(&font, 60.0).unwrap();
         let pens = |kerning| {
             let mut text = block("AVAVAV", 0.0);
@@ -590,8 +632,55 @@ mod tests {
     }
 
     #[test]
+    fn natural_lines_follow_the_font_and_alignment() {
+        let font = test_font();
+        let scale = font_scale(&font, 60.0).unwrap();
+        let scaled = font.as_scaled(scale);
+        let natural = scaled.height() + scaled.line_gap();
+        let lines = |align, line_spacing: f64| {
+            let mut text = block("Wide line\nhi", 0.0);
+            text.align = align;
+            text.measure = Measure::Natural { line_spacing };
+            let placed = layout(&text, &font, scale);
+            let (first, last) = (placed.first().unwrap(), placed.last().unwrap());
+            // The first glyph of the second line.
+            let second = &placed[placed.len() - 2];
+            (first.baseline, last.baseline, second.pen)
+        };
+        let (first, second, _) = lines(Align::Left, 1.0);
+        assert_eq!(first, scaled.ascent());
+        assert!((second - first - natural).abs() < 0.01);
+        let (spaced_first, spaced_second, _) = lines(Align::Left, 2.0);
+        assert_eq!(spaced_first, first);
+        assert!((spaced_second - spaced_first - 2.0 * natural).abs() < 0.01);
+        let (_, _, left) = lines(Align::Left, 1.0);
+        let (_, _, center) = lines(Align::Center, 1.0);
+        let (_, _, right) = lines(Align::Right, 1.0);
+        assert_eq!(left, 0.0);
+        assert!(center > 0.0);
+        assert!((right - 2.0 * center).abs() < 0.01);
+    }
+
+    #[test]
+    fn natural_lines_wrap_and_align_within_the_box() {
+        let font = test_font();
+        let scale = font_scale(&font, 60.0).unwrap();
+        let mut text = block("one two three", 0.0);
+        text.measure = Measure::Natural { line_spacing: 1.0 };
+        text.wrap = 150.0;
+        text.align = Align::Right;
+        let placed = layout(&text, &font, scale);
+        let rows: std::collections::BTreeSet<_> =
+            placed.iter().map(|p| p.baseline.to_bits()).collect();
+        assert!(rows.len() >= 2);
+        let scaled = font.as_scaled(scale);
+        let end = placed.last().unwrap();
+        assert!((end.pen + scaled.h_advance(end.id) - 150.0).abs() < 0.5);
+    }
+
+    #[test]
     fn missing_characters_are_named_once() {
-        let font = font();
+        let font = test_font();
         assert_eq!(missing_characters("a b\nc", &font), Vec::<char>::new());
         assert_eq!(
             missing_characters("a\u{1F7D8}b\u{1F7D8}", &font),
@@ -601,7 +690,7 @@ mod tests {
 
     #[test]
     fn cancelling_stops_the_drawing() {
-        let result = render(&block("Hemlo", 0.0), &font(), [400, 400], &|| true);
+        let result = render(&block("Hemlo", 0.0), &test_font(), [400, 400], &|| true);
         assert_eq!(result.err().as_deref(), Some("Text drawing canceled"));
     }
 }

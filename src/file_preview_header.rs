@@ -8,13 +8,13 @@ pub const MAX_SIDE: u32 = 256;
 /// Bytes needed to find any preview: magic, gzip header and a full FEXTRA.
 pub const PREFIX_LIMIT: usize = 7 + 10 + 2 + u16::MAX as usize;
 
-/// The PNG or JPEG preview of a v4-v7 project, from the first
+/// The PNG or JPEG preview of a v4-v8 project, from the first
 /// `PREFIX_LIMIT` bytes of the file; None for any other file.
 pub fn read(file: &[u8]) -> Option<&[u8]> {
     let magic = file.get(..7)?;
     if !matches!(
         magic,
-        b"DUDL\x04\r\n" | b"DUDL\x05\r\n" | b"DUDL\x06\r\n" | b"DUDL\x07\r\n"
+        b"DUDL\x04\r\n" | b"DUDL\x05\r\n" | b"DUDL\x06\r\n" | b"DUDL\x07\r\n" | b"DUDL\x08\r\n"
     ) {
         return None;
     }

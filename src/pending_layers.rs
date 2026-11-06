@@ -60,6 +60,8 @@ struct Entry {
     mask: Option<MaskProperties>,
     /// Vector layers refuse pixel edits other than their strokes.
     vector: bool,
+    /// Text layers refuse pixel edits.
+    text: bool,
 }
 
 #[cfg(test)]
@@ -468,6 +470,7 @@ impl PendingLayers {
                 clipped: false,
                 mask: None,
                 vector: false,
+                text: false,
             },
         );
         crate::document::validate_folder_depths(
@@ -582,6 +585,7 @@ impl PendingLayers {
                     blend: layer.blend,
                     clipped: layer.clipped,
                     vector: layer.vector.is_some(),
+                    text: layer.text.is_some(),
                 })
                 .collect(),
         }
@@ -623,6 +627,7 @@ impl PendingLayers {
                 clipped: false,
                 mask: None,
                 vector: false,
+                text: false,
             },
         );
         Ok(updated)
@@ -631,6 +636,9 @@ impl PendingLayers {
     /// checked separately against the authoritative document.
     pub fn paint_blocker(&self, id: LayerId) -> Option<&'static str> {
         let blocker = self.target_blocker(id, crate::paint_target::Target::Raster, false);
+        if blocker.is_none() && self.entries.iter().any(|e| e.id == id && e.text) {
+            return Some(crate::text_layer::BLOCKER);
+        }
         if blocker.is_none() && self.entries.iter().any(|e| e.id == id && e.vector) {
             return Some(
                 "This is a vector layer — draw on it with the brush, or rasterize it (Layer menu) to edit its pixels",

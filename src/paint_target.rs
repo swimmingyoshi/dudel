@@ -32,6 +32,8 @@ impl Target {
             Some("Unlock the layer before painting")
         } else if !doc.shown(index) {
             Some("Show the layer and its folder before painting")
+        } else if self.is_raster() && layer.text.is_some() {
+            Some(crate::text_layer::BLOCKER)
         } else if self.is_raster() && erase && layer.alpha_locked {
             Some("Unlock transparency before erasing")
         } else {

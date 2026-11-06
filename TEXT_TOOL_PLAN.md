@@ -1,6 +1,6 @@
 # Text tool plan (0.2)
 
-Status: stage 0 done on 2026-11-06. The owner accepted all four decisions below on
+Status: stages 0 and 1 done on 2026-11-06. The owner accepted all four decisions below on
 2026-11-05. Tick stages off here as they land.
 
 ## Goal
@@ -93,20 +93,26 @@ the point: those transforms rasterize (see stage 3).
 
 ### Stage 1: record, file format and history
 
-- [ ] `src/text_layer.rs`: the record, `validate()` and `same()`. Validation limits
-      string length, font name length and text size, needs finite numbers and unit
-      vectors, and must return an error on damaged data rather than panic. The size
-      limit matters: turned text rasterizes each glyph's full width in one buffer.
-- [ ] `Layer.text` in `src/document.rs`, with validation beside the vector check. A
-      layer can't be both vector and text. `paint_blocker_for` gets a text message,
-      and comparison at the `vector_layer::same` call includes text.
-- [ ] **Format v8.** Add `TEXT_MAGIC = b"DUDL\x08\r\n"`, chosen in `tile_project.rs`
-      ahead of `VECTOR_MAGIC`, or a v7 build would open the file and drop the text.
-      Update `storage.rs` (both reader sites), `file_preview_header.rs` (the Explorer
-      thumbnail DLL shares it) and `PROJECT_FORMAT_V4.md`.
-- [ ] `document_edits.rs`: `NewText` and `SetText`, and reuse the rasterize edit.
-      Merging down clears `text` as it clears `vector` (`transform.rs`).
-- [ ] Rendering runs on the existing edit queue and is cancelled by newer edits.
+- [x] `src/text_layer.rs`: the record and `validate()`, which limits string length,
+      font name length and text size, needs finite numbers and unit vectors, and
+      returns an error on damaged data. The size limit (8,192 px) matters: turned
+      text rasterizes each glyph's full width in one buffer. Plain `==` compares
+      records, so no separate `same()` was needed.
+- [x] `Layer.text` in `src/document.rs`, with validation beside the vector check. A
+      layer can't be both vector and text, and comparisons include text.
+- [x] **Format v8.** `TEXT_MAGIC = b"DUDL\x08\r\n"` outranks `VECTOR_MAGIC`, so a v7
+      build can't open the file and drop the text. Both `storage.rs` readers,
+      `file_preview_header.rs` (shared with the Explorer DLL) and
+      `PROJECT_FORMAT_V4.md` are updated.
+- [x] `document_edits.rs`: `NewText` and `SetText`, and the rasterize edit covers
+      text. Merging down clears `text` as it clears `vector`.
+- [x] Pixel edits are refused, so words and pixels can't drift apart.
+      `paint_target::blocker` stops strokes, lasso and transform previews on the
+      layer's raster, while its mask stays editable. `text_blocker` in
+      `document_edits.rs` stops Move, transforms and Clear.
+- [x] Text draws on the existing edit queue and undoes through it. `SetText` takes
+      the edit's cancel flag; whether live typing needs newer edits to cancel older
+      ones is a stage 2 question.
 
 ### Stage 2: the tool
 
@@ -126,7 +132,9 @@ the point: those transforms rasterize (see stage 3).
       `Ctrl+Enter`, and restore on Escape. A new layer left empty is removed.
 - [ ] Session state joins `project_session!` in `tabs.rs`, or it leaks between tabs.
 - [ ] Layers panel: a "Text" row label and type filter (`layers_panel.rs`,
-      `layer_navigation.rs`), and an editing-strip action to rasterize.
+      `layer_navigation.rs`), and an editing-strip action to rasterize. The Layer
+      menu's **Rasterize layer** (`workspace.rs`) only enables for vector layers so
+      far, and the refusal message already sends people there.
 
 ### Stage 3: moving and transforming
 
@@ -134,7 +142,9 @@ the point: those transforms rasterize (see stage 3).
       double-clicking opens the editor. Drawing tools never move it.
 - [ ] Move, rotate, flip and uniform scale keep text editable, through a `follow`
       equivalent in the `document_edits.rs` transform paths. Canvas resize, crop and
-      rotate do too.
+      rotate do too. Stage 1 refuses all of these in `text_blocker`, and refuses canvas
+      changes for the whole document while any text layer exists. Remove those
+      refusals here; they must not ship.
 - [ ] Non-uniform scale, skew, perspective and mesh ask first, then rasterize.
 - [ ] **Missing font.** Pixels stay, and the editor says which font is missing and
       asks for a replacement. A whole-pixel move just shifts pixels. A transform that
