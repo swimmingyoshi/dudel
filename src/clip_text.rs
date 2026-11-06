@@ -18,8 +18,8 @@
 //! downward, turned a quarter clockwise. CSP does not kern. Checked against
 //! CSP's saved previews at 600 dpi: horizontal, vertical, turned, wrapped,
 //! left-, right- and center-aligned Tahoma lines.
-use crate::pixels::Pixels;
-use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
+use crate::{pixels::Pixels, text_render::Block};
+use ab_glyph::FontVec;
 
 /// A text layer as CSP laid it out.
 #[derive(Debug, Clone, PartialEq)]
@@ -186,90 +186,8 @@ pub(crate) fn parse(string: &[u8], attributes: &[u8]) -> Result<Text, String> {
     })
 }
 
-/// Font files installed on this system.
-fn font_files() -> Vec<std::path::PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(windows) = std::env::var_os("WINDIR") {
-        dirs.push(std::path::PathBuf::from(windows).join("Fonts"));
-    }
-    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        dirs.push(std::path::PathBuf::from(local).join("Microsoft/Windows/Fonts"));
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = std::path::PathBuf::from(home);
-        dirs.extend([
-            home.join("Library/Fonts"),
-            home.join(".local/share/fonts"),
-            home.join(".fonts"),
-        ]);
-    }
-    dirs.extend(
-        [
-            "/Library/Fonts",
-            "/System/Library/Fonts",
-            "/usr/share/fonts",
-            "/usr/local/share/fonts",
-        ]
-        .map(std::path::PathBuf::from),
-    );
-    let mut files = Vec::new();
-    let mut pending = dirs;
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                ["ttf", "otf", "ttc", "otc"].contains(&e.to_ascii_lowercase().as_str())
-            }) {
-                files.push(path);
-            }
-        }
-    }
-    files
-}
-
-/// The installed font whose full name (or family and style) is `name`.
-pub(crate) fn find_font(name: &str) -> Option<FontVec> {
-    for path in font_files() {
-        let Ok(data) = std::fs::read(&path) else {
-            continue;
-        };
-        let faces = ttf_parser::fonts_in_collection(&data).unwrap_or(1);
-        for index in 0..faces {
-            let Ok(face) = ttf_parser::Face::parse(&data, index) else {
-                continue;
-            };
-            // Names come in several languages; any of them may be the one
-            // CSP saved.
-            let named = |id: u16| -> Vec<String> {
-                face.names()
-                    .into_iter()
-                    .filter(|n| n.name_id == id)
-                    .filter_map(|n| n.to_string())
-                    .collect()
-            };
-            let styles = named(ttf_parser::name_id::SUBFAMILY);
-            let matches = named(ttf_parser::name_id::FULL_NAME)
-                .iter()
-                .any(|full| full == name)
-                || named(ttf_parser::name_id::FAMILY).iter().any(|family| {
-                    styles
-                        .iter()
-                        .any(|style| format!("{family} {style}") == name)
-                });
-            if matches {
-                return FontVec::try_from_vec_and_index(data, index).ok();
-            }
-        }
-    }
-    None
-}
-
-/// The text in its color over the whole canvas, at the canvas `dpi`.
+/// Draw the text in its color over the whole canvas, at the canvas `dpi`, as
+/// CSP laid it out. CSP sizes the em square and does not kern.
 pub(crate) fn render(
     text: &Text,
     font: &FontVec,
@@ -277,89 +195,21 @@ pub(crate) fn render(
     canvas: [usize; 2],
     cancelled: &impl Fn() -> bool,
 ) -> Result<Pixels, String> {
-    let [width, height] = canvas;
-    // CSP sizes the em square; ab_glyph scales ascent to descent.
-    let em = (text.size / 72.0 * dpi) as f32;
-    let units = font.units_per_em().ok_or("Unusable font")?;
-    let scale = PxScale::from(em * (font.ascent_unscaled() - font.descent_unscaled()) / units);
-    let scaled = font.as_scaled(scale);
-    let advance = |s: &str| -> f32 {
-        s.chars()
-            .map(|c| scaled.h_advance(scaled.glyph_id(c)))
-            .sum()
+    let block = Block {
+        string: &text.string,
+        em: (text.size / 72.0 * dpi) as f32,
+        color: text.color,
+        vertical: text.vertical,
+        align: text.align,
+        start: text.start,
+        along: text.along,
+        down: text.down,
+        span: text.span,
+        thickness: text.thickness,
+        wrap: text.wrap,
+        kerning: false,
     };
-    // Lines wrap at spaces to the box; trailing spaces never wrap.
-    let mut lines = Vec::new();
-    for paragraph in text.string.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split_inclusive(' ') {
-            let candidate = format!("{line}{word}");
-            if !line.is_empty() && f64::from(advance(candidate.trim_end())) > text.wrap {
-                lines.push(std::mem::take(&mut line));
-                line = word.to_owned();
-            } else {
-                line = candidate;
-            }
-        }
-        lines.push(line);
-    }
-    let line_height = (text.thickness / lines.len() as f64) as f32;
-    let mut coverage = vec![0f32; width * height];
-    for (index, line) in lines.iter().enumerate() {
-        let used = f64::from(advance(line.trim_end()));
-        let offset = match text.align {
-            1 => text.span - used,
-            2 => (text.span - used) / 2.0,
-            _ => 0.0,
-        } as f32;
-        let top = line_height * index as f32;
-        let baseline = if text.vertical {
-            top + 0.88 * em
-        } else {
-            top + line_height + scaled.descent()
-        };
-        let mut pen = offset;
-        for c in line.chars() {
-            if cancelled() {
-                return Err("Text drawing canceled".into());
-            }
-            let id = scaled.glyph_id(c);
-            let glyph = id.with_scale_and_position(scale, point(pen, baseline));
-            pen += scaled.h_advance(id);
-            let Some(outline) = font.outline_glyph(glyph) else {
-                continue;
-            };
-            let bounds = outline.px_bounds();
-            outline.draw(|gx, gy, value| {
-                // The middle of this pixel along and across the text.
-                let a = f64::from(bounds.min.x + gx as f32) + 0.5;
-                let d = f64::from(bounds.min.y + gy as f32) + 0.5;
-                let x = (text.start[0] + text.along[0] * a + text.down[0] * d).floor();
-                let y = (text.start[1] + text.along[1] * a + text.down[1] * d).floor();
-                if x >= 0.0 && y >= 0.0 && (x as usize) < width && (y as usize) < height {
-                    let cell = &mut coverage[y as usize * width + x as usize];
-                    *cell = (*cell + value).min(1.0);
-                }
-            });
-        }
-    }
-    let mut pixels = Pixels::sparse(width, height);
-    let mut writer = pixels.writer();
-    let mut row = vec![0u8; width * 4];
-    for (y, line) in coverage.chunks_exact(width).enumerate() {
-        if line.iter().all(|v| *v == 0.0) {
-            continue;
-        }
-        row.fill(0);
-        for (pixel, value) in row.chunks_exact_mut(4).zip(line) {
-            let alpha = (value * 255.0).round() as u8;
-            if alpha != 0 {
-                pixel.copy_from_slice(&[text.color[0], text.color[1], text.color[2], alpha]);
-            }
-        }
-        writer.write_region(width, [0, y, width, y + 1], &row);
-    }
-    Ok(pixels)
+    crate::text_render::render(&block, font, canvas, cancelled)
 }
 
 #[cfg(test)]

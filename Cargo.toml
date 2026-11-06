@@ -32,8 +32,9 @@ rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled
 # Already built for `image`; converts CMYK Photoshop files through their profile.
 moxcms = "=0.8.1"
 zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
-# Already built for egui; draw CSP text layers with the system font they name.
+# Already built for egui; draw text with installed fonts.
 ab_glyph = "=0.2.32"
+ab_glyph_rasterizer = "=0.1.10"
 ttf-parser = "=0.25.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]

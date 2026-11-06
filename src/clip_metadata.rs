@@ -649,16 +649,9 @@ fn document_features_mode(db: &Connection, report: &mut Report, study: bool) -> 
                 ))
             },
         )?;
-        let mut fonts: BTreeMap<String, Option<std::sync::Arc<ab_glyph::FontVec>>> =
-            BTreeMap::new();
         for (id, string, attributes) in candidates {
             let text = crate::clip_text::parse(&string, &attributes).and_then(|text| {
-                let font = fonts
-                    .entry(text.font.clone())
-                    .or_insert_with(|| {
-                        crate::clip_text::find_font(&text.font).map(std::sync::Arc::new)
-                    })
-                    .clone()
+                let font = crate::text_render::find_font(&text.font)
                     .ok_or_else(|| format!("font {} is not installed", text.font))?;
                 Ok((text, font))
             });
@@ -2387,6 +2380,18 @@ fn prepare_document_mode(
             "Text drawn by Dudel with the font it names, as pixels on an ordinary layer (CSP does not save text pixels; edges can differ slightly): {}.",
             name_list(&written)
         ));
+    }
+    for (entry, _) in &kept {
+        if let Some((text, font)) = report.texts.get(&entry.id) {
+            let missing = crate::text_render::missing_characters(&text.string, font);
+            if !missing.is_empty() {
+                notes.push(format!(
+                    "{} uses characters its font does not have, which show as empty boxes: {}",
+                    name_of(entry.id),
+                    missing.iter().collect::<String>()
+                ));
+            }
+        }
     }
     let drawn: Vec<String> = kept
         .iter()
