@@ -1,0 +1,87 @@
+name: Tester feedback
+description: Tell us how your first session with Dudel went
+title: "Tester feedback: "
+labels: ["tester feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Dudel. Short answers are fine, and you can skip anything
+        that doesn't apply. This page is public, so leave out anything private.
+  - type: input
+    id: tablet
+    attributes:
+      label: Tablet or pen display
+      description: Model and driver version if you know it. Write "mouse" if you had no tablet.
+      placeholder: Wacom Intuos S, driver 6.4
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Computer
+      description: Operating system and graphics card, if you know it.
+      placeholder: Windows 11, RTX 3060
+    validations:
+      required: true
+  - type: input
+    id: usual
+    attributes:
+      label: Which drawing apps do you normally use?
+      placeholder: Clip Studio Paint, Krita, Procreate
+  - type: dropdown
+    id: pen
+    attributes:
+      label: Did your pen work?
+      options:
+        - Pressure, eraser and buttons all worked
+        - Pressure worked, but something else didn't
+        - No pressure
+        - I didn't use a pen
+    validations:
+      required: true
+  - type: dropdown
+    id: lag
+    attributes:
+      label: Did the line keep up with your pen?
+      options:
+        - Yes, it felt immediate
+        - Slight lag, but it didn't bother me
+        - Lag got in the way of drawing
+        - I didn't use a pen
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What did you reach for that wasn't there?
+      description: Tools, shortcuts or settings you expected from other apps.
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What was confusing or annoying?
+  - type: textarea
+    id: liked
+    attributes:
+      label: What felt good?
+  - type: textarea
+    id: files
+    attributes:
+      label: Saving, exporting and opening files
+      description: Did anything look wrong? Did a .psd or .clip file lose anything?
+  - type: dropdown
+    id: again
+    attributes:
+      label: Would you draw in Dudel again?
+      options:
+        - "Yes"
+        - Maybe, once a few things are fixed
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: What would make it a yes, or a stronger yes?

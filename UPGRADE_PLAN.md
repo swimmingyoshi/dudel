@@ -10,8 +10,8 @@ Any agent picking this up: read this first, update the checkboxes and the
 
 ## Base state
 
-- 0.1.0 source: tag `v0.1.0`, moved on 2026-11-04 to the release records of the
-  unpublished rebuild from `bffcbea` (see Last session).
+- 0.1.0 source: tag `v0.1.0`, on the release records of the rebuild from `bffcbea`,
+  published as a GitHub pre-release on 2026-11-05 (see Last session).
 - Determine unpublished work with `git log --oneline origin/master..HEAD` against
   the locally known remote ref; the dated handoffs below are not a live push status.
   Pushing starts hosted CI; ask the owner first.
@@ -573,6 +573,11 @@ Stage B - native layer effects:
   raster layers, masks, effects and brush texture. PSD export writes rendered
   pixels, because the format has no editable brush strokes.
 
+### 10. Text tool (0.2 candidate, 2026-11-05)
+
+Design, stages and the owner's open decisions are in
+[TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md).
+
 ## Before pushing (next candidate)
 
 - [x] Review follow-ups (2026-10-29, Claude), each with a regression test:
@@ -610,6 +615,12 @@ Earlier batch (2026-10-28): gates and `Verify.ps1 -Mode Full` passed; owner's
 tablet pass for items 1-3; `psd_import.rs` and `extension_api.rs` reviewed.
 
 ## Last session
+
+- 2026-11-05 (Claude, launch prep): 0.1.0 is a public pre-release, but nobody
+  outside the project has tried it. Added TESTER_GUIDE.md and a feedback form, and
+  updated the GitHub description, topics and Discussions. Text tool designed in
+  TEXT_TOOL_PLAN.md; no code yet. `origin/linux` has two packaging commits not on
+  master, including the LINUX_PORT.md update.
 
 - 2026-11-05 (Claude, 0.1.0 rebuild): pushed `e20c76b`, the owner moved `v0.1.0`,
   and hosted Windows CI passed. The owner's pen pass of selection limits, fill to

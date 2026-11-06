@@ -83,6 +83,9 @@ in `%LOCALAPPDATA%\Dudel`. To uninstall, delete the folder; your projects stay.
 Each release also publishes a matching **source ZIP** with vendored dependencies
 and build instructions.
 
+**Linux (experimental):** download `dudel-<version>-linux-x64.tar.gz`, extract it
+and run `./dudel`. Pen pressure needs a Wayland session.
+
 **Tested on** Windows 11 x64 (desktop RTX 3060 and an Intel UHD laptop) with an
 XP-Pen Artist 12. Minimum Windows, RAM and GPU requirements have not been
 established yet; see [tested systems](RELEASE_NOTES.md#tested-systems-and-prerequisites).
@@ -190,6 +193,9 @@ matching-source ZIPs with checksums and third-party notices; see
 and [the Linux port](LINUX_PORT.md).
 
 ## Reporting problems and contributing
+
+Trying Dudel for the first time? The [30-minute test](TESTER_GUIDE.md) says what to
+try and how to send feedback.
 
 Open an issue with the bug-report template. Include the version and build hash
 from `BUILD.json`, your Windows version, GPU and tablet drivers, display scaling,

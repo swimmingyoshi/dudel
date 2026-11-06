@@ -90,10 +90,13 @@ public-tree checks, whitespace checks and the development build passed. Native
 desktop and scaled compact selection controls were visually reviewed. Details
 and validation logs are in the [workflow plan](UX_WORKFLOW_PLAN.md).
 
-- Prepare/upload the binary ZIP, source ZIP and both sidecars together. Include
+- 0.1.0 was published on 2026-11-05 as a GitHub pre-release, with Windows and
+  experimental Linux packages. For later releases, upload the binary ZIP, source
+  ZIP and both sidecars together. Include
   the release decision, known limits and support/reporting route on the download page.
 - The own-site/store channel is selected; the website/domain and purchase setup
-  are not configured by this repository. **No public launch has been performed.**
+  are not configured by this repository. The pre-release has not been announced;
+  first testers are the next step ([tester guide](TESTER_GUIDE.md)).
 - Windows/Linux hosted verification steps passed on `0d8e429`. Their artifact
   uploads failed due to GitHub storage quota. This does not invalidate the
   independently verified local release files. [CI/package evidence](benchmarks/release-candidate-20261027.json).
