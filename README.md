@@ -144,7 +144,7 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
 | Write or install extensions | [Plugin development](PLUGIN_DEVELOPMENT.md) · [Rhai SDK](plugins/SDK.md) · [WASM SDK](plugins/WASM_SDK.md) |
 | Check tablet validation | [XP-Pen Artist 12 record](XP_PEN_VALIDATION.md) |
 | Build, package and verify releases | [Distribution](DISTRIBUTION.md) · [Testing](TESTING.md) · [Release checklist](RELEASE_CHECKLIST.md) |
-| Follow the project's status and plans | [Release status](RELEASE_STATUS.md) · [Delivery plan](DELIVERY_PLAN.md) · [Roadmap](ROADMAP.md) |
+| Follow the project's status and plans | [Release status](RELEASE_STATUS.md) · [0.2.0 plan](UPGRADE_PLAN.md) · [Workflow priorities](UX_WORKFLOW_PLAN.md) · [Historical 0.1 delivery plan](DELIVERY_PLAN.md) |
 | Track the Linux port | [Linux port](LINUX_PORT.md) |
 | Read engineering notes and measurements | [`research/`](research/) · [`benchmarks/`](benchmarks/) |
 

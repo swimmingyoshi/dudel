@@ -1,6 +1,8 @@
 # Animation timelines and frames
 
-Status: proposed follow-up. Editable animation is separate from timelapse recording.
+Status: deferred beyond 0.2.0. This proposal is retained for future planning;
+it is not part of the current release scope in [UPGRADE_PLAN.md](../UPGRADE_PLAN.md).
+Editable animation is separate from timelapse recording.
 
 ## Scope
 

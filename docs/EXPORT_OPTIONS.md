@@ -1,5 +1,25 @@
 # Export options
 
+Current 0.1 behavior is documented below. The following are proposed 0.2.0
+workflow goals, tracked by [UPGRADE_PLAN.md](../UPGRADE_PLAN.md):
+
+- [ ] Provide one discoverable export flow with format-specific options.
+- [ ] Let artists choose JPEG quality and matte/background color; keep PNG and
+      lossless WebP transparency behavior clear. Explain GIF's palette and
+      transparency limits and BMP/JPEG flattening before writing.
+- [ ] Preview the conversion (including flattening/transparency loss) before
+      the file is written, with a clear cancel path.
+- [ ] Add **Export again** using the previous format, destination policy and
+      settings. Prompt before overwriting and protect unrelated files.
+- [ ] Keep exports tied to a captured document snapshot. Cancellation,
+      encoder failure and disk errors leave the document and existing output
+      intact; test that repeated export does not mark the project saved/dirty.
+- [ ] Decide which settings persist globally and which are per project or
+      per export. Avoid placing export preferences in artwork document data.
+
+These items are release goals, not implemented behavior. The current options
+and conversion behavior are:
+
 Choose **Export image** or **Export image with transparency**, then select a file type in the save dialog or enter its extension.
 
 | Format | Behavior |

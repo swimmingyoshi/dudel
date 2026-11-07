@@ -1,4 +1,9 @@
-# Workflow improvements — 2026-11-03
+# Workflow improvements and 0.2.0 priorities
+
+Updated 2026-11-07. The implemented workflow below records development changes
+and their original evidence. The active next steps for 0.2.0 are the pen quick
+menu and export workflow in [UPGRADE_PLAN.md](UPGRADE_PLAN.md). Do not interpret
+historical test totals here as verification of the 0.2.0 release candidate.
 
 This work covers the first three priorities from the workflow review and the
 subsequent shortcut increment below. It changes
@@ -136,12 +141,33 @@ The active row remains distinct and the controls fit the compact inspector.
 These are source-development checks, not new package acceptance or physical-pen
 measurements.
 
-## Subsequent increments
+## 0.2.0 next increments
 
-1. Add a configurable quick menu near the pen using existing favorite brushes.
-2. Consolidate export settings, preview conversion behavior before writing, and
-   support repeating the previous export.
-3. Add named workspace layouts and optional pen-friendly control density.
+### Pen quick menu — release priority
+
+- [ ] Put a compact configurable menu near the canvas for favorite brushes and
+      a small set of common actions. Reuse existing favorite brushes and command
+      actions so the menu does not create a second source of truth.
+- [ ] Define pen-sized targets, placement near an edge/corner, open/close and
+      dismissal gestures, and behavior while drawing, panning or using a text
+      editor. Closed-menu input must pass through to the canvas normally.
+- [ ] Check keyboard focus, accessibility labels, project-tab isolation and
+      compact window sizes. The menu is preference/workspace UI state, not
+      artwork project data.
+- [ ] Owner's pen review on the current candidate before release.
+
+### Export workflow — release priority
+
+See [export options](docs/EXPORT_OPTIONS.md) for the detailed behavior to
+implement. Keep one captured document revision for each export; failure or
+cancellation must not change the project or replace a protected destination.
+
+### Named workspaces — stretch goal
+
+- [ ] Consider named workspace layouts and optional pen-friendly control density
+      after the release priorities are complete. Do not block 0.2.0 on this.
+
+## Reprioritization evidence
 
 Before reprioritizing, observe artists finding a layer in a crowded document,
 switching between artwork and masks, and exporting successive revisions. Record

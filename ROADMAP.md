@@ -1,9 +1,11 @@
-> Historical roadmap. Follow [DELIVERY_PLAN.md](DELIVERY_PLAN.md) for current priorities and gates.
+> Historical product roadmap. Follow [UPGRADE_PLAN.md](UPGRADE_PLAN.md) for the
+> current 0.2.0 priorities and release gates. [DELIVERY_PLAN.md](DELIVERY_PLAN.md)
+> records the completed 0.1 release preparation.
 
 # Dudel product goal
 
-The earlier roadmap below is retained as context; [DELIVERY_PLAN.md](DELIVERY_PLAN.md)
-is the current plan.
+The earlier roadmap below is retained as context; the current release plan is
+[UPGRADE_PLAN.md](UPGRADE_PLAN.md).
 The user has confirmed working pressure on their XP-Pen Artist 12 with installed drivers.
 
 Build an extensible, reliable desktop painting application in Rust for tablet

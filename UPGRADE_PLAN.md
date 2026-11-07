@@ -1,9 +1,81 @@
-# Dudel 0.2 upgrade plan and handoff
+# Dudel 0.2.0 plan and handoff
 
-Updated 2026-11-03. This file is the working checklist for the post-0.1.0 work.
-The current review follow-ups and their verification are tracked in
-[STABILIZATION_PLAN.md](STABILIZATION_PLAN.md). Dated results below remain
-historical evidence for the builds they identify.
+Updated 2026-11-07. This is the authoritative scope and release checklist for
+the next release after the published 0.1.0 pre-release. [RELEASE_STATUS.md](RELEASE_STATUS.md)
+records 0.1.0 acceptance; [DELIVERY_PLAN.md](DELIVERY_PLAN.md) is historical.
+The dated implementation notes later in this file preserve evidence for the
+builds they identify and do not by themselves define the 0.2.0 scope.
+
+## 0.2.0 goal and scope
+
+Make the new editable text workflow reliable for tablet artists, make image
+exports easy to configure and repeat, and put frequent brush actions within
+easy reach of the pen. Editable animation is deferred to a later release; its
+separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
+
+### Release priorities
+
+1. **Text completion.** Shaping, vertical text and formatting are implemented.
+   Remaining: resolve right-to-left mixed-direction line ordering and caret
+   accuracy or document a clear supported boundary; keep finishing responsive
+   when the last render is slow (Done waits for the final drawing, measured at
+   7.2 s for 2,000 px text at 100 MP) while preserving the newest draft on
+   finish/cancel/tab changes; and validate missing-font handling, save/reopen
+   and export. The owner confirmed Japanese IME and Up/Down across wrapped lines
+   on 2026-11-07; the touch keyboard is optional, behind a button. The detailed
+   checklist is [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text creation, editing,
+   transforms, CSP text import, rustybuzz shaping, vertical layout and
+   formatting (family and style, bold/italic/underline, strikethrough, letter
+   and line spacing, justify, outline, box) are implemented in the current
+   development source, at 671bb79; they are not evidence of a released 0.2.0.
+2. **Export workflow.** Consolidate image export choices, expose useful format
+   settings such as JPEG quality and matte color, explain format conversions
+   before writing, and support repeating the previous export. Preserve the
+   document snapshot and protect destinations on cancellation or failure. Track
+   detailed tasks in [docs/EXPORT_OPTIONS.md](docs/EXPORT_OPTIONS.md).
+3. **Pen quick menu.** Add a configurable, compact menu near the canvas/pen for
+   favorite brushes and a small set of common actions. Reuse existing favorite
+   brush data and commands; define tap targets, dismissal, placement and compact
+   window behavior in [UX_WORKFLOW_PLAN.md](UX_WORKFLOW_PLAN.md).
+
+Named workspace layouts are a stretch goal after these priorities. Do not expand
+0.2.0 into editable animation, rich text, editable PSD text, broad format parity,
+or a general plugin API expansion.
+
+### Release gates
+
+- Text can be created, edited, shaped, transformed, saved and reopened without
+  changing its appearance unexpectedly; unsupported direction/layout behavior
+  is bounded and explained.
+- Slow text rendering does not lose the latest edit or make ordinary finishing
+  actions appear hung. Confirm the behavior on large text and while switching
+  tabs or projects.
+- Export settings preview any flattening/transparency conversion before output;
+  repeated exports reuse the intended settings and never alter project state.
+- The quick menu works with pen and mouse, stays usable in compact windows, and
+  does not intercept canvas gestures when closed.
+- Update release notes, quick start and format documentation for the final
+  behavior and limits. Record which checks are automated, manual and still open.
+- Run the repository release verification and package acceptance for one frozen
+  0.2.0 candidate. Do not treat earlier 0.1.0 evidence as a result for changed
+  code; reuse it only where the behavior and inputs are unchanged.
+
+## Shipped in 0.1.0 and current development state
+
+- 0.1.0 was published as a GitHub pre-release on 2026-11-05. It includes the
+  previously accepted painting, document, vector, plugin and workflow features;
+  see [RELEASE_STATUS.md](RELEASE_STATUS.md) for package identity and evidence.
+- Text layers, on-canvas editing, transforms, editable CSP text, shaping,
+  vertical layout and image/video format support have landed in development
+  commits after the 0.1.0 package. They are 0.2.0 candidate work, not released
+  features. Record new verification below without rewriting historical counts.
+- The old goals and handoff entries below are retained as implementation
+  history. Mark remaining follow-ups against the three priorities above.
+
+## Historical implementation checklist and handoff
+
+The sections below preserve the post-0.1.0 task history. The current review
+follow-ups and their verification are tracked in [STABILIZATION_PLAN.md](STABILIZATION_PLAN.md).
 Any agent picking this up: read this first, update the checkboxes and the
 "Last session" notes as you go, and keep [DELIVERY_PLAN.md](DELIVERY_PLAN.md) for
 0.1 history only.
@@ -573,10 +645,13 @@ Stage B - native layer effects:
   raster layers, masks, effects and brush texture. PSD export writes rendered
   pixels, because the format has no editable brush strokes.
 
-### 10. Text tool (0.2 candidate, 2026-11-05)
+### 10. Text tool (0.2.0 priority, implementation in development source)
 
 Design, stages and the owner's open decisions are in
-[TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md).
+[TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text layers, on-canvas editing,
+transforms, editable CSP text, rustybuzz shaping and vertical layout have since
+landed in development commits. Remaining completion items and manual acceptance
+are listed in that plan; none imply these features shipped in 0.1.0.
 
 ## Before pushing (next candidate)
 

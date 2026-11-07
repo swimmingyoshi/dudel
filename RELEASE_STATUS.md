@@ -118,3 +118,14 @@ preparation goal to the final deliverables and states the separate launch action
 Historical results retain their original build identities. This release decision
 uses those results through explicit evidence review; it does not rewrite them
 as measurements of a different binary or claim every old checklist entry passed.
+
+## Next release: 0.2.0 (planning updated 2026-11-07)
+
+The authoritative next-release scope is [UPGRADE_PLAN.md](UPGRADE_PLAN.md):
+complete editable text, improve the export workflow, and add a pen quick menu.
+Editable animation is deferred; see [the animation proposal](docs/ANIMATION_PLAN.md).
+Text layers and the newer image/video export support have landed in development
+source after the accepted 0.1.0 package. They remain candidate work until a
+frozen 0.2.0 build passes its release gates. The plan distinguishes current
+source features from published-package evidence and lists the remaining manual
+review and documentation work.

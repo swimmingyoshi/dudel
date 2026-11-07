@@ -1,7 +1,11 @@
-# Text tool plan (0.2)
+# Text tool plan (0.2.0)
 
-Status: stages 0 to 5 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
-2026-11-05. Tick stages off here as they land.
+This is the detailed text workstream for [UPGRADE_PLAN.md](UPGRADE_PLAN.md).
+The implementation through stage 5 is present in current development source,
+including shaping and vertical text. This does not mean the workflow has passed
+its final manual acceptance. The remaining release work is right-to-left mixed
+direction behavior, finishing responsiveness and focused tablet/input review.
+The owner accepted the four design decisions below on 2026-11-05.
 
 ## Goal
 
@@ -214,8 +218,28 @@ the point: those transforms rasterize (see stage 3).
       keeps every combination from mirroring the glyphs.
 - [x] Boxes wrap CJK between characters, keeping basic Japanese line-break rules, and
       Latin still at spaces.
-- [ ] Right-to-left text shapes correctly within a run, but a line isn't reordered for
-      mixed directions, and carets in it are approximate. Tate-chu-yoko isn't done.
+- [ ] Define and implement the supported right-to-left boundary. Shaping works
+      within a run, but a line is not reordered for mixed directions and carets
+      are approximate. Test selection, caret movement and visual ordering; if
+      full bidi is out of scope, explain the limitation in the UI/docs.
+- [ ] Consider tate-chu-yoko only if the supported manga workflow needs it; it
+      is not currently required for 0.2.0.
+
+### 0.2.0 completion work
+
+- [ ] Keep finish/Done, tab switching and project close responsive while a large
+      text render is pending. Preserve the newest draft, cancellation semantics
+      and the one-session/one-undo-step guarantee. The current implementation
+      waits for the final render; a 2,000 px text render on a 100 MP canvas was
+      measured at 7.2 seconds during development.
+- [x] Owner's check on 2026-11-07: Japanese IME composition works, and Up/Down
+      across wrapped lines works for them. The touch keyboard is optional: Windows
+      doesn't offer it for Dudel's controls, so a **Touch keyboard** button shows it.
+- [ ] Owner's pen pass on the current candidate: create, select and move text;
+      type Japanese; finish/cancel; test missing-font replacement; open and edit
+      CSP text; save/reopen; and export a text layer.
+- [ ] Update quick start, release notes and format support for actual shipped
+      behavior and the chosen bidi boundary.
 
 ### Not in 0.2
 
