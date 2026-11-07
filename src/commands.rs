@@ -105,14 +105,14 @@ pub(crate) const COMMANDS: &[Command] = &[
     ),
     command!(
         "export.png",
-        "Export PNG…",
+        "Export image…",
         "",
-        "file image opaque background",
+        "file image png jpeg jpg webp bmp gif opaque background",
         Action::ExportPng(false)
     ),
     command!(
         "export.transparent_png",
-        "Export transparent PNG…",
+        "Export image with transparency…",
         "",
         "file image alpha no background",
         Action::ExportPng(true)

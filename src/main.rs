@@ -987,6 +987,10 @@ impl Dudel {
             locations::Kind::Exports,
             rfd::AsyncFileDialog::new()
                 .add_filter("PNG", &["png"])
+                .add_filter("WebP (lossless)", &["webp"])
+                .add_filter("JPEG (opaque, quality 92)", &["jpg", "jpeg"])
+                .add_filter("BMP (opaque)", &["bmp"])
+                .add_filter("GIF (256 colors)", &["gif"])
                 .set_file_name(format!("{name}.png")),
         );
         self.ask_save_file(dialog, move |app, path| app.export_to(path, transparent));

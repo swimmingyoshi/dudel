@@ -48,9 +48,9 @@ display or tablet.
   recovery copies; undo/redo throughout.
 - Tabs for several projects, a separate preview window, reference images and
   boards that never become part of the artwork.
-- Per-canvas **timelapse** recording that plays back in the app and exports as GIF
+- Per-canvas **timelapse** recording that plays back in the app and exports as GIF or MP4 (FFmpeg required)
   or PNG frames; portable UI themes.
-- PNG import/export, layered PSD export and SVG export of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+- PNG import/export, JPEG, lossless WebP, BMP and GIF image export, layered PSD export and SVG export of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
   (PSD shapes, gradient fills, layer effects and adjustment layers included) and
   clearly identified flattened fallbacks.
 

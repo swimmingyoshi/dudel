@@ -15,6 +15,10 @@ pub(crate) enum ExportKind {
     Png {
         transparent: bool,
     },
+    Raster {
+        format: image::ImageFormat,
+        transparent: bool,
+    },
     Psd {
         effects: crate::psd_export::Effects,
     },
@@ -25,6 +29,12 @@ impl ExportKind {
     fn label(self) -> &'static str {
         match self {
             Self::Png { .. } => "PNG",
+            Self::Raster { format, .. } => match format {
+                image::ImageFormat::Jpeg => "JPEG",
+                image::ImageFormat::WebP => "WebP",
+                image::ImageFormat::Bmp => "BMP",
+                _ => "GIF",
+            },
             Self::Psd { .. } => "PSD",
             Self::Package => "Project package",
         }
@@ -129,6 +139,59 @@ fn write_png_with_hook(
     })
 }
 
+fn raster_destination(path: &Path, format: image::ImageFormat) -> Result<(), String> {
+    if image::ImageFormat::from_path(path).ok() != Some(format) {
+        return Err("Export filename does not match the selected format".into());
+    }
+    match std::fs::File::open(path) {
+        Ok(mut file) => {
+            if file.metadata().map_err(|e| e.to_string())?.len() > 0 {
+                let mut header = [0; 32];
+                let count = file.read(&mut header).map_err(|e| e.to_string())?;
+                if image::guess_format(&header[..count]).ok() != Some(format) {
+                    return Err(
+                        "Export destination is not the same image format; choose a new filename"
+                            .into(),
+                    );
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    Ok(())
+}
+
+fn write_raster(
+    doc: &Document,
+    path: &Path,
+    format: image::ImageFormat,
+    transparent: bool,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    doc.validate()?;
+    raster_destination(path, format)?;
+    let check = || crate::fill::check_cancel(Some(cancel));
+    let opaque = matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Bmp);
+    let rgba =
+        doc.composite_bounds_checked([0, 0, doc.width, doc.height], transparent && !opaque, check)?;
+    let image = image::RgbaImage::from_raw(doc.width as u32, doc.height as u32, rgba)
+        .ok_or("Invalid export dimensions")?;
+    crate::storage::atomic_stream(path, |file| {
+        check()?;
+        let image = image::DynamicImage::ImageRgba8(image);
+        if format == image::ImageFormat::Jpeg {
+            image::codecs::jpeg::JpegEncoder::new_with_quality(file, 92)
+                .encode_image(&image::DynamicImage::ImageRgb8(image.to_rgb8()))
+                .map_err(|e| e.to_string())?;
+        } else {
+            image.write_to(file, format).map_err(|e| e.to_string())?;
+        }
+        check()?;
+        raster_destination(path, format)
+    })
+}
+
 impl Dudel {
     pub(crate) fn export_to(&mut self, path: PathBuf, transparent: bool) {
         if self.adjustment.is_some() {
@@ -139,11 +202,32 @@ impl Dudel {
             self.status = "An image export is already running".into();
             return;
         }
-        if let Err(error) = destination(&path) {
+        let format = match image::ImageFormat::from_path(&path) {
+            Ok(
+                format @ (image::ImageFormat::Png
+                | image::ImageFormat::Jpeg
+                | image::ImageFormat::WebP
+                | image::ImageFormat::Bmp
+                | image::ImageFormat::Gif),
+            ) => format,
+            _ => {
+                self.status = "Choose PNG, JPEG, WebP, BMP or GIF for image export".into();
+                return;
+            }
+        };
+        if let Err(error) = raster_destination(&path, format) {
             self.status = format!("Export failed: {error}");
             return;
         }
-        self.export_snapshot_or_queue(path, ExportKind::Png { transparent });
+        let kind = if format == image::ImageFormat::Png {
+            ExportKind::Png { transparent }
+        } else {
+            ExportKind::Raster {
+                format,
+                transparent,
+            }
+        };
+        self.export_snapshot_or_queue(path, kind);
     }
     pub(crate) fn export_psd_to(&mut self, path: PathBuf, effects: crate::psd_export::Effects) {
         if let Err(error) = psd_destination(&path) {
@@ -189,6 +273,22 @@ impl Dudel {
         document: Document,
     ) {
         match kind {
+            ExportKind::Raster {
+                format,
+                transparent,
+            } => self.start_export_worker(
+                path,
+                document,
+                kind,
+                if matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Bmp) {
+                    "Transparency flattened onto the canvas background.".into()
+                } else {
+                    String::new()
+                },
+                move |document, path, cancel| {
+                    write_raster(document, path, format, transparent, cancel)
+                },
+            ),
             ExportKind::Package => self.start_package_snapshot(path, document),
             ExportKind::Psd { effects } => {
                 let note = crate::psd_export::notes(&document, effects).join(" ");
@@ -324,6 +424,43 @@ mod tests {
         }
     }
     use super::*;
+
+    #[test]
+    fn common_formats_roundtrip_and_protect_destinations() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut doc = Document::new(3, 2);
+        doc.layers[0]
+            .pixels
+            .writer()
+            .rgba_mut(0)
+            .copy_from_slice(&[25, 90, 170, 128]);
+        for (ext, format) in [
+            ("jpg", image::ImageFormat::Jpeg),
+            ("webp", image::ImageFormat::WebP),
+            ("bmp", image::ImageFormat::Bmp),
+            ("gif", image::ImageFormat::Gif),
+        ] {
+            let path = dir.path().join(format!("image.{ext}"));
+            let cancel = AtomicBool::new(false);
+            write_raster(&doc, &path, format, true, &cancel).unwrap();
+            let decoded = image::open(&path).unwrap().to_rgba8();
+            assert_eq!(decoded.dimensions(), (3, 2));
+            if format == image::ImageFormat::WebP {
+                assert_eq!(decoded.as_raw(), &doc.composite_transparent());
+            }
+            if matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Bmp) {
+                assert!(decoded.pixels().all(|p| p[3] == 255));
+            }
+            let before = std::fs::read(&path).unwrap();
+            cancel.store(true, Ordering::Relaxed);
+            assert!(write_raster(&doc, &path, format, false, &cancel).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            std::fs::write(&path, b"DUDL source bytes").unwrap();
+            cancel.store(false, Ordering::Relaxed);
+            assert!(write_raster(&doc, &path, format, false, &cancel).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), b"DUDL source bytes");
+        }
+    }
 
     fn queued_taper() -> (Dudel, Document) {
         let (mut app, expected) = crate::edit_order_tests::pending_taper();

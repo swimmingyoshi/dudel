@@ -615,6 +615,166 @@ fn export_gif(
     gif_destination(destination)
 }
 
+fn mp4_destination(path: &Path) -> Result<(), String> {
+    use std::io::Read;
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("mp4"))
+    {
+        return Err("Choose a .mp4 filename".into());
+    }
+    match std::fs::File::open(path) {
+        Ok(mut file) => {
+            if file.metadata().map_err(|e| e.to_string())?.len() != 0 {
+                let mut header = [0; 12];
+                file.read_exact(&mut header)
+                    .map_err(|_| "Destination is not MP4; choose a new filename")?;
+                if &header[4..8] != b"ftyp" {
+                    return Err("Destination is not MP4; choose a new filename".into());
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    Ok(())
+}
+
+/// Stream bounded decoded frames to an external encoder, publishing only on success.
+fn export_mp4(
+    root: &Path,
+    frames: usize,
+    fps: u32,
+    side: u32,
+    destination: &Path,
+    control: &crate::plugins::FilterControl,
+) -> Result<(), String> {
+    use std::{
+        io::{Read, Seek, Write},
+        process::{Command, Stdio},
+    };
+    if frames == 0
+        || frames > MAX_FRAMES
+        || !(1..=30).contains(&fps)
+        || !(1..=MAX_SIDE).contains(&side)
+    {
+        return Err("Invalid video export settings".into());
+    }
+    crate::fill::check_cancel(Some(&control.cancel))?;
+    mp4_destination(destination)?;
+    let first = read_frame(root, 0)?;
+    let dimensions = first.dimensions();
+    let scale = (side as f64 / dimensions.0.max(dimensions.1) as f64).min(1.0);
+    let width = ((dimensions.0 as f64 * scale).round() as u32).max(1);
+    let height = ((dimensions.1 as f64 * scale).round() as u32).max(1);
+    drop(first);
+    crate::storage::atomic_stream(destination, |file| {
+        let mut errors = tempfile::tempfile().map_err(|e| e.to_string())?;
+        let mut command = Command::new("ffmpeg");
+        command
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-f",
+                "rawvideo",
+                "-pixel_format",
+                "rgba",
+                "-video_size",
+                &format!("{width}x{height}"),
+                "-framerate",
+                &fps.to_string(),
+                "-i",
+                "pipe:0",
+                "-an",
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=white",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+frag_keyframe+empty_moov",
+                "-f",
+                "mp4",
+                "pipe:1",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::from(file.try_clone().map_err(|e| e.to_string())?))
+            .stderr(Stdio::from(errors.try_clone().map_err(|e| e.to_string())?));
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().map_err(|e| {
+            format!("Could not start FFmpeg. Install FFmpeg with libx264 and add it to PATH: {e}")
+        })?;
+        let mut input = child.stdin.take().ok_or("FFmpeg input unavailable")?;
+        let result = std::thread::scope(|scope| {
+            let writer = scope.spawn(move || -> Result<(), String> {
+                for index in 0..frames {
+                    crate::fill::check_cancel(Some(&control.cancel))?;
+                    let frame = read_frame(root, index)?;
+                    if frame.dimensions() != dimensions {
+                        return Err("Recording frames have different sizes".into());
+                    }
+                    let frame = image::imageops::resize(
+                        &frame,
+                        width,
+                        height,
+                        image::imageops::FilterType::Triangle,
+                    );
+                    let repeats = if index + 1 == frames { 1 + 2 * fps } else { 1 };
+                    for _ in 0..repeats {
+                        crate::fill::check_cancel(Some(&control.cancel))?;
+                        input.write_all(frame.as_raw()).map_err(|e| e.to_string())?;
+                    }
+                    control.progress.store(index + 1, Ordering::Relaxed);
+                }
+                Ok(())
+            });
+            let status = loop {
+                if control.cancel.load(Ordering::Relaxed) {
+                    let _ = child.kill();
+                }
+                match child.try_wait() {
+                    Ok(Some(status)) => break Ok(status),
+                    Ok(None) => std::thread::sleep(Duration::from_millis(30)),
+                    Err(e) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break Err(e.to_string());
+                    }
+                }
+            };
+            let written = writer
+                .join()
+                .map_err(|_| "Video frame worker failed".to_string())?;
+            crate::fill::check_cancel(Some(&control.cancel))?;
+            let status = status?;
+            if !status.success() {
+                errors.rewind().map_err(|e| e.to_string())?;
+                let mut message = String::new();
+                errors
+                    .take(8192)
+                    .read_to_string(&mut message)
+                    .map_err(|e| e.to_string())?;
+                return Err(format!("FFmpeg failed: {message}"));
+            }
+            written
+        });
+        result?;
+        crate::fill::check_cancel(Some(&control.cancel))?;
+        mp4_destination(destination)
+    })
+}
+
 fn decode_preview(root: &Path, index: usize) -> Result<egui::ColorImage, String> {
     let image = read_frame(root, index)?;
     let size = [image.width() as usize, image.height() as usize];
@@ -815,7 +975,7 @@ impl Dudel {
         if let Some(export) = self.timelapse.export.take_if(|w| w.is_finished()) {
             let t = &mut self.timelapse;
             match export.join() {
-                Ok(Ok(())) => t.message = "Animated GIF exported".into(),
+                Ok(Ok(())) => t.message = "Timelapse exported".into(),
                 Ok(Err(e)) => {
                     t.exported = None;
                     t.message = format!("Export: {e}");
@@ -861,7 +1021,7 @@ impl Dudel {
                     Err(e) => app.timelapse.message = format!("Open recording: {e}"),
                 });
             }
-            Some(Action::Export) => {
+            Some(Action::Export(video)) => {
                 let name = source
                     .as_ref()
                     .and_then(|(root, _)| root.file_name())
@@ -869,16 +1029,24 @@ impl Dudel {
                 let dialog = self.dialog_in(
                     crate::locations::Kind::Exports,
                     rfd::AsyncFileDialog::new()
-                        .add_filter("Animated GIF", &["gif"])
-                        .set_file_name(format!("{name}.gif")),
+                        .add_filter(
+                            if video { "MP4 video" } else { "Animated GIF" },
+                            if video { &["mp4"] } else { &["gif"] },
+                        )
+                        .set_file_name(format!("{name}.{}", if video { "mp4" } else { "gif" })),
                 );
-                self.ask_save_file(dialog, |app, path| app.start_gif_export(path));
+                self.ask_save_file(dialog, move |app, path| {
+                    app.start_timelapse_export(path, video)
+                });
             }
             None => {}
         }
     }
 
-    fn start_gif_export(&mut self, path: PathBuf) {
+    fn start_timelapse_export(&mut self, path: PathBuf, video: bool) {
+        if self.timelapse.export.is_some() {
+            return;
+        }
         let Some((root, frames)) = self.timelapse_source() else {
             return;
         };
@@ -889,9 +1057,13 @@ impl Dudel {
         t.exported = Some(path.clone());
         let control = t.export_control.clone();
         t.export = Some(std::thread::spawn(move || {
-            export_gif(&root, frames, fps, side, &path, &control)
+            if video {
+                export_mp4(&root, frames, fps, side, &path, &control)
+            } else {
+                export_gif(&root, frames, fps, side, &path, &control)
+            }
         }));
-        t.message = "Exporting GIF in the background…".into();
+        t.message = "Exporting timelapse in the background…".into();
     }
 
     /// Advance playback and keep the shown frame decoded.
@@ -1100,7 +1272,7 @@ impl Dudel {
                     }
                 });
                 ui.add(egui::Slider::new(&mut t.prefs.fps, 1..=30).text("frames per second"))
-                    .on_hover_text("Playback speed for the preview and the GIF");
+                    .on_hover_text("Playback speed for the preview and exported timelapse");
                 ui.label(
                     egui::RichText::new(format!(
                         "{} long at this speed, holding the finished artwork for 2 s.",
@@ -1127,7 +1299,16 @@ impl Dudel {
                         .add_enabled(!busy, egui::Button::new("Export GIF…"))
                         .clicked()
                     {
-                        action = Some(Action::Export);
+                        action = Some(Action::Export(false));
+                    }
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Export MP4\u{2026}"))
+                        .on_hover_text(
+                            "H.264 video; requires FFmpeg with libx264 installed on PATH",
+                        )
+                        .clicked()
+                    {
+                        action = Some(Action::Export(true));
                     }
                     if ui
                         .button("Show frames")
@@ -1215,7 +1396,7 @@ impl Dudel {
 /// A timelapse button that needs a file dialog, asked after the window draws.
 enum Action {
     Open,
-    Export,
+    Export(bool),
 }
 
 #[cfg(test)]
@@ -1235,6 +1416,75 @@ mod tests {
         } else {
             image.to_rgb8()
         }
+    }
+
+    #[test]
+    #[ignore = "requires ffmpeg with libx264 and ffprobe on PATH"]
+    fn mp4_export_dimensions_duration_and_cancellation() {
+        let dir = tempfile::tempdir().unwrap();
+        for index in 0..3 {
+            write_png(
+                &image::RgbImage::from_pixel(7, 5, image::Rgb([index as u8 * 100, 50, 25])),
+                &frame_path(dir.path(), index),
+            )
+            .unwrap();
+        }
+        let path = dir.path().join("video.mp4");
+        export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).unwrap();
+        let probe = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        let value: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+        assert_eq!(value["streams"][0]["codec_name"], "h264");
+        assert_eq!(value["streams"][0]["width"], 8);
+        assert_eq!(value["streams"][0]["height"], 6);
+        let duration: f64 = value["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((duration - 2.3).abs() < 0.15, "{duration}");
+        let original = std::fs::read(&path).unwrap();
+        let control = crate::plugins::FilterControl::default();
+        control.cancel.store(true, Ordering::Relaxed);
+        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &control).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        // A malformed sequence must not publish an otherwise valid partial video.
+        write_png(&image::RgbImage::new(9, 5), &frame_path(dir.path(), 1)).unwrap();
+        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        for index in 0..100 {
+            write_png(
+                &image::RgbImage::new(64, 64),
+                &frame_path(dir.path(), index),
+            )
+            .unwrap();
+        }
+        let control = crate::plugins::FilterControl::default();
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| export_mp4(dir.path(), 100, 10, 960, &path, &control));
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while control.progress.load(Ordering::Relaxed) == 0 && !worker.is_finished() {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            control.cancel.store(true, Ordering::Relaxed);
+            assert!(worker.join().unwrap().is_err());
+        });
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        std::fs::write(&path, b"DUDL source bytes").unwrap();
+        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"DUDL source bytes");
     }
 
     #[test]
