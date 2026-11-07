@@ -1302,6 +1302,9 @@ impl Dudel {
                 if count == 1 { "" } else { "s" }
             );
         }
+        if layer.text.is_some() {
+            summary = format!("Text · {summary}");
+        }
         if layer.folder {
             let items = self.doc.layers[self.doc.block(index)]
                 .iter()

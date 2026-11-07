@@ -31,6 +31,9 @@ macro_rules! register_project_extras {
         if let Some(preview) = &project.affine_preview {
             preview.register_allocations(registry);
         }
+        if let Some(edit) = &project.text_edit {
+            registry.add_document(edit.source());
+        }
         if let Some(job) = &project.paste_job {
             registry.add_document(&job.source);
         }
@@ -204,6 +207,8 @@ project_session! {
     references: crate::references::References,
     reference_layers: crate::reference_layers::State,
     vector_pick: crate::vector_pick::Pick,
+    text_edit: Option<crate::text_tool::Editing>,
+    text_drag: Option<crate::text_tool::Drag>,
     layer_navigation: crate::layer_navigation::Navigation,
     layer_selection: crate::layer_batch::Selection,
     recording: crate::timelapse::Recording,

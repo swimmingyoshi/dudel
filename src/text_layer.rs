@@ -13,7 +13,7 @@ pub(crate) const BLOCKER: &str =
     "This is a text layer — edit its text, or rasterize it (Layer menu) to edit its pixels";
 
 /// Longest text in bytes. A thousand layers of it still fit project metadata.
-const MAX_TEXT: usize = 8192;
+pub(crate) const MAX_TEXT: usize = 8192;
 const MAX_FONT_NAME: usize = 256;
 /// Largest em square in pixels. Turned text rasterizes a glyph's whole width
 /// at once, so this also bounds that buffer.
@@ -71,21 +71,19 @@ impl TextLayer {
         Ok(())
     }
 
-    /// The text in its color over the whole canvas.
-    pub(crate) fn render(
-        &self,
-        canvas: [usize; 2],
-        cancelled: &impl Fn() -> bool,
-    ) -> Result<Pixels, String> {
-        let font = crate::text_render::find_font(&self.font)
-            .ok_or_else(|| format!("The font {} is not installed", self.font))?;
+    fn font(&self) -> Result<std::sync::Arc<ab_glyph::FontVec>, String> {
+        crate::text_render::find_font(&self.font)
+            .ok_or_else(|| format!("The font {} is not installed", self.font))
+    }
+
+    fn block(&self) -> Block<'_> {
         let measure = match self.csp {
             Some([span, thickness]) => Measure::Given { span, thickness },
             None => Measure::Natural {
                 line_spacing: self.line_spacing,
             },
         };
-        let block = Block {
+        Block {
             string: &self.string,
             em: self.size as f32,
             color: self.color,
@@ -97,8 +95,44 @@ impl TextLayer {
             measure,
             wrap: self.wrap.unwrap_or(f64::INFINITY),
             kerning: self.csp.is_none(),
-        };
-        crate::text_render::render(&block, &font, canvas, cancelled)
+        }
+    }
+
+    /// The text in its color over the whole canvas.
+    pub(crate) fn render(
+        &self,
+        canvas: [usize; 2],
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Pixels, String> {
+        crate::text_render::render(&self.block(), &*self.font()?, canvas, cancelled)
+    }
+
+    /// How long and how tall the text is, in canvas pixels.
+    pub(crate) fn extent(&self) -> Result<[f64; 2], String> {
+        crate::text_render::extent(&self.block(), &*self.font()?)
+    }
+
+    /// The characters this text's font can't draw.
+    pub(crate) fn missing_characters(&self) -> Vec<char> {
+        self.font().map_or_else(
+            |_| Vec::new(),
+            |font| crate::text_render::missing_characters(&self.string, &font),
+        )
+    }
+}
+
+/// Carry every text layer along when the whole canvas moves or turns. The
+/// layers' pixels have already moved, so nothing is redrawn: the record only
+/// has to say the same thing as the pixels.
+pub(crate) fn follow_canvas(
+    doc: &mut Document,
+    place: &dyn Fn([f64; 2]) -> [f64; 2],
+    turn: &dyn Fn([f64; 2]) -> [f64; 2],
+) {
+    for text in doc.layers.iter_mut().filter_map(|l| l.text.as_mut()) {
+        text.start = place(text.start);
+        text.along = turn(text.along);
+        text.down = turn(text.down);
     }
 }
 
@@ -376,12 +410,72 @@ mod tests {
                 target,
                 whole_layer: true,
             },
-            Edit::Rotate(1),
-            Edit::CropCanvas,
         ];
         for edit in refused {
             assert_eq!(edit.prepare(&doc).err().as_deref(), Some(BLOCKER));
         }
+    }
+
+    /// The layer's pixels must match what its record would draw now.
+    fn assert_record_matches_pixels(doc: &Document) {
+        let layer = &doc.layers[doc.active];
+        let drawn = layer
+            .text
+            .as_ref()
+            .unwrap()
+            .render([doc.width, doc.height], &|| false)
+            .unwrap();
+        let differing = (0..doc.width * doc.height)
+            .filter(|p| drawn.rgba(*p) != layer.pixels.rgba(*p))
+            .count();
+        assert_eq!(differing, 0);
+    }
+
+    #[test]
+    fn canvas_turns_carry_text_along() {
+        for turns in 1..4 {
+            let (doc, outcome) = Edit::Rotate(turns).prepare(&document()).unwrap();
+            assert!(outcome.changed);
+            assert_record_matches_pixels(&doc);
+            let (doc, _) = Edit::Rotate(4 - turns).prepare(&doc).unwrap();
+            let text = doc.layers[doc.active].text.as_ref().unwrap();
+            assert_eq!(text.start, [20.0, 20.0]);
+            assert_eq!(text.along, [1.0, 0.0]);
+            assert_eq!(text.down, [0.0, 1.0]);
+            doc.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn canvas_size_and_crop_carry_text_along() {
+        let source = document();
+        let settings = crate::canvas_size::Settings {
+            width: 400,
+            height: 300,
+            anchor: [1, 1],
+            dpi: None,
+        };
+        let (grown, _) = Edit::CanvasSize(settings).prepare(&source).unwrap();
+        let offset = settings.offset(source.width, source.height);
+        let text = grown.layers[grown.active].text.as_ref().unwrap();
+        assert_eq!(
+            text.start,
+            [20.0 + offset[0] as f64, 20.0 + offset[1] as f64]
+        );
+        assert_record_matches_pixels(&grown);
+
+        let mut selected = source.clone();
+        selected.selection = Some(crate::selection::Selection {
+            left: 10,
+            top: 5,
+            right: 290,
+            bottom: 190,
+        });
+        let (cropped, outcome) = Edit::CropCanvas.prepare(&selected).unwrap();
+        assert!(outcome.changed);
+        let text = cropped.layers[cropped.active].text.as_ref().unwrap();
+        assert_eq!(text.start, [10.0, 15.0]);
+        assert_record_matches_pixels(&cropped);
     }
 
     #[test]

@@ -27,6 +27,7 @@ impl Dudel {
                     && !self.stroking
                     && !self.render_queue.busy()
                     && self.opacity_edit.is_none()
+                    && self.text_edit.is_none()
                     && revision == self.revision
                     && layer_index < self.doc.layers.len() =>
             {

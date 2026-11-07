@@ -41,6 +41,8 @@ pub enum Icon {
     Global,
     Guide,
     Pointer,
+    /// The Text tool: a capital T.
+    Text,
     Image,
     Transparency,
     /// Layer effects: a sparkle.
@@ -249,6 +251,11 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 p(0.55, 0.60),
                 p(0.76, 0.60),
             ]);
+        }
+        Icon::Text => {
+            polyline(&[p(0.2, 0.28), p(0.2, 0.16), p(0.8, 0.16), p(0.8, 0.28)]);
+            polyline(&[p(0.5, 0.16), p(0.5, 0.84)]);
+            polyline(&[p(0.38, 0.84), p(0.62, 0.84)]);
         }
         Icon::Move => {
             polyline(&[p(0.5, 0.12), p(0.5, 0.88)]);

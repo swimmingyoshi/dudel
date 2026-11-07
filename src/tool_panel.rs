@@ -221,6 +221,7 @@ impl Dudel {
                 Tool::Lasso if self.lasso.erase => "LASSO ERASER",
                 Tool::Lasso => "LASSO FILL",
                 Tool::Move => "MOVE",
+                Tool::Text => "TEXT",
                 Tool::Pointer => "CANVAS",
             }));
         });
@@ -388,6 +389,9 @@ impl Dudel {
                 {
                     self.toggle_free_transform();
                 }
+            }
+            Tool::Text => {
+                ui.label("Font, size and alignment are in the bar above the canvas.");
             }
             Tool::Pointer => self.pointer_panel_ui(ui),
         }

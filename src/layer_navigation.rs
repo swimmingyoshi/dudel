@@ -7,16 +7,18 @@ pub(crate) enum Kind {
     All,
     Raster,
     Vector,
+    Text,
     Adjustment,
     Folder,
     Reference,
 }
 
 impl Kind {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::All,
         Self::Raster,
         Self::Vector,
+        Self::Text,
         Self::Adjustment,
         Self::Folder,
         Self::Reference,
@@ -26,6 +28,7 @@ impl Kind {
             Self::All => "All types",
             Self::Raster => "Raster",
             Self::Vector => "Vector",
+            Self::Text => "Text",
             Self::Adjustment => "Adjustment",
             Self::Folder => "Folders",
             Self::Reference => "References",
@@ -59,6 +62,8 @@ impl Navigation {
             Kind::Adjustment
         } else if layer.vector.is_some() {
             Kind::Vector
+        } else if layer.text.is_some() {
+            Kind::Text
         } else {
             Kind::Raster
         };

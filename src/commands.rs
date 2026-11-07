@@ -27,6 +27,7 @@ pub(crate) enum Action {
     Redo,
     NewLayer,
     NewVector,
+    NewText,
     NewFolder,
     Duplicate,
     Group,
@@ -158,6 +159,13 @@ pub(crate) const COMMANDS: &[Command] = &[
         "",
         "add editable lines strokes",
         Action::NewVector
+    ),
+    command!(
+        "layer.new_text",
+        "New text layer",
+        "",
+        "add type words lettering font",
+        Action::NewText
     ),
     command!(
         "layer.new_folder",
@@ -377,6 +385,13 @@ pub(crate) const COMMANDS: &[Command] = &[
         Action::Tool(Tool::Move)
     ),
     command!(
+        "tool.text",
+        "Text tool",
+        "T",
+        "type words lettering font",
+        Action::Tool(Tool::Text)
+    ),
+    command!(
         "tool.pointer",
         "Pointer tool",
         "O",
@@ -520,7 +535,7 @@ impl Dudel {
             Action::Redo if !self.history.can_redo() && !self.render_queue.busy() => {
                 Some("Nothing to redo")
             }
-            Action::NewLayer | Action::NewVector if !self.doc.has_room(1, 1) => {
+            Action::NewLayer | Action::NewVector | Action::NewText if !self.doc.has_room(1, 1) => {
                 Some("Layer limit reached")
             }
             Action::NewFolder | Action::Group if !self.doc.has_room(0, 1) => {
@@ -586,6 +601,10 @@ impl Dudel {
             Action::Redo => self.redo(),
             Action::NewLayer => self.new_layer(),
             Action::NewVector => self.create_vector_layer(),
+            Action::NewText => {
+                self.select_tool(Tool::Text);
+                self.status = "Click the canvas to type, or drag a box".into();
+            }
             Action::NewFolder => self.new_folder(),
             Action::Duplicate => self.duplicate_layer(),
             Action::Group => self.group_into_folder(),

@@ -32,6 +32,9 @@ pub struct Preferences {
     pub secondary: [u8; 3],
     #[serde(default)]
     pub recent_colors: Vec<[u8; 3]>,
+    /// What new text looks like.
+    #[serde(default)]
+    pub text: crate::text_tool::Style,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,
@@ -134,6 +137,7 @@ impl Preferences {
         p.current_brush.favorite = p.brushes[p.selected_brush].favorite;
         p.recent.truncate(10);
         p.recent_colors.truncate(16);
+        p.text.sanitize();
         p.storage.sanitize();
         for name in &mut p.tools.group_presets {
             name.truncate(256);
@@ -175,6 +179,7 @@ mod tests {
             recent: vec!["painting.dudel".into()],
             secondary: [1, 2, 3],
             recent_colors: vec![[9, 9, 9]],
+            text: Default::default(),
             show_transparency: true,
             tools: ToolPrefs {
                 brush_group: crate::brush::BrushGroup::Airbrush,

@@ -1807,7 +1807,7 @@ impl crate::Dudel {
             "The strokes already look like that",
         );
     }
-    /// Turn the active vector layer into an ordinary raster layer.
+    /// Turn the active vector or text layer into an ordinary raster layer.
     pub(crate) fn rasterize_layer(&mut self) {
         let Some(target) = self.input_target() else {
             return;
@@ -1816,7 +1816,7 @@ impl crate::Dudel {
         self.dispatch_document_edit(
             crate::document_edits::Edit::Rasterize(target),
             "Rasterized the layer",
-            "The layer is not a vector layer",
+            "The layer is not a vector or text layer",
         );
     }
     /// Add an empty vector layer above the selected one.

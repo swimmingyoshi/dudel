@@ -1,6 +1,6 @@
 # Text tool plan (0.2)
 
-Status: stages 0 and 1 done on 2026-11-06. The owner accepted all four decisions below on
+Status: stages 0, 1 and 2 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
 2026-11-05. Tick stages off here as they land.
 
 ## Goal
@@ -116,35 +116,46 @@ the point: those transforms rasterize (see stage 3).
 
 ### Stage 2: the tool
 
-- [ ] `Tool::Text` on `T`, which is free (`Ctrl+T` stays Free transform). `Tool::ALL`
-      grows to nine, and the rail and `tool_shift` size themselves from it. Add it to
-      the shortcut editor and to command search with a `layer.new_text` action.
-- [ ] Click for point text, or drag for a wrapping box. Clicking an existing text
-      layer's box edits it.
-- [ ] The editor opens with focus. `wants_keyboard_input` already keeps canvas
-      shortcuts out of a focused text field; check tool keys, Space, `R` and `F`.
-- [ ] `text_render::faces` reads every font file on first use, so start it off the
-      UI thread when the tool is chosen. Fonts installed later need a restart, or a
-      rescan added here.
-- [ ] Options bar: font (searchable, with a preview), size in px and pt, color (the
-      foreground chip), alignment and line spacing.
-- [ ] A whole editing session is **one undo step**. Commit on clicking away or
-      `Ctrl+Enter`, and restore on Escape. A new layer left empty is removed.
-- [ ] Session state joins `project_session!` in `tabs.rs`, or it leaks between tabs.
-- [ ] Layers panel: a "Text" row label and type filter (`layers_panel.rs`,
-      `layer_navigation.rs`), and an editing-strip action to rasterize. The Layer
-      menu's **Rasterize layer** (`workspace.rs`) only enables for vector layers so
-      far, and the refusal message already sends people there.
+- [x] `Tool::Text` on `T` (`Ctrl+T` stays Free transform), with a rail button, the
+      shortcut editor, and `tool.text` and `layer.new_text` in command search. `src/text_tool.rs`
+      holds the tool.
+- [x] Click for point text, or drag for a wrapping box. Clicking an existing text
+      layer's box edits it, and so does **Edit text** in the options bar. Locked and
+      hidden text can't be clicked into. Without its font, a layer is found by its pixels.
+- [x] The editor opens with focus. Workflow tests type `B`, `E`, `R`, `F` and Space
+      through real egui input, and none of them reach the canvas.
+- [x] `text_render::warm_up` reads the fonts on one background thread when the tool's
+      options first show. Fonts installed later still need a restart.
+- [x] Options bar: font (searchable, each name drawn in its own font), size in px and
+      pt, color (the foreground chip), alignment and line spacing. Changing these with
+      a text layer selected opens that layer for editing.
+- [x] A whole editing session is **one undo step**, through the same gesture
+      checkpoint as the opacity slider. Commit on clicking away, **Done**, `Ctrl+Enter`
+      or any other edit, and restore on Escape. Text left empty is removed, including
+      existing text that was emptied.
+- [x] Session state joins `project_session!` in `tabs.rs`. Switching tabs finishes
+      the text first, so a parked tab never holds an open session.
+- [x] Layers panel: a "Text" row label and type filter, a **Rasterize** button in the
+      editing strip, and the Layer menu's **Rasterize layer** now takes text.
+- [x] egui's fonts have no CJK, so the editor adds an installed CJK font the first
+      time it opens. The canvas never needed this.
+- [x] Typing draws on one long-lived background thread, and a newer keystroke stops
+      the drawing in progress. One redraw measured 24 ms for a paragraph on a 2k canvas,
+      236 ms at 100 MP and 7.2 s for 2,000 px text at 100 MP, which the UI thread can't
+      absorb. Finishing a session waits for the last drawing, so that extreme text can
+      still pause once on **Done**.
+- [ ] Owner's pass with the pen: see Testing.
 
 ### Stage 3: moving and transforming
 
 - [ ] Pointer (`O`) picks a text box and moves it, in line with other objects, and
       double-clicking opens the editor. Drawing tools never move it.
 - [ ] Move, rotate, flip and uniform scale keep text editable, through a `follow`
-      equivalent in the `document_edits.rs` transform paths. Canvas resize, crop and
-      rotate do too. Stage 1 refuses all of these in `text_blocker`, and refuses canvas
-      changes for the whole document while any text layer exists. Remove those
-      refusals here; they must not ship.
+      equivalent in the `document_edits.rs` transform paths. Stage 1 refuses these in
+      `text_blocker`. Remove those refusals here; they must not ship.
+- [x] Canvas resize, crop and rotate carry text along (`text_layer::follow_canvas`,
+      done early in stage 2). Only the record changes, because the pixels have already
+      moved, and tests check that the record redraws exactly those pixels.
 - [ ] Non-uniform scale, skew, perspective and mesh ask first, then rasterize.
 - [ ] **Missing font.** Pixels stay, and the editor says which font is missing and
       asks for a replacement. A whole-pixel move just shifts pixels. A transform that

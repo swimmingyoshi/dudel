@@ -3657,3 +3657,168 @@ fn settings_search_finds_settings_across_pages_by_keyword() {
     w.click(w.text("Reset this page…"));
     assert!(w.app.dialogs.open(), "resetting asks first");
 }
+
+impl Workspace {
+    /// The Text tool on a blank project, with a font every machine has.
+    fn text_tool() -> Self {
+        let mut w = Self::new();
+        w.app.text_style.font = crate::text_render::TEST_FONT.into();
+        w.key(egui::Key::T, egui::Modifiers::NONE);
+        w.settle();
+        assert!(w.app.tool == crate::tools::Tool::Text);
+        w
+    }
+    fn press_text_tool(&mut self, from: [f32; 2], to: [f32; 2]) {
+        let sample = |p: [f32; 2]| {
+            let at = self
+                .app
+                .view(self.app.canvas_area)
+                .to_screen(egui::pos2(p[0], p[1]));
+            crate::stroke::Sample {
+                x: at.x,
+                y: at.y,
+                ..Default::default()
+            }
+        };
+        let (from, to) = (sample(from), sample(to));
+        self.frame_packets(
+            vec![egui::Event::PointerMoved(egui::pos2(to.x, to.y))],
+            &[
+                crate::input::Packet::Start(from),
+                crate::input::Packet::End(to),
+            ],
+        );
+        self.settle();
+    }
+    fn type_text(&mut self, words: &str) {
+        self.frame(vec![egui::Event::Text(words.into())]);
+        self.app.settle_text_draft();
+    }
+    fn draft(&self) -> String {
+        let index = self.app.doc.active;
+        let text = self.app.doc.layers[index].text.as_ref();
+        text.map_or_else(String::new, |text| text.string.clone())
+    }
+}
+
+#[test]
+fn typing_in_the_text_tool_draws_live_and_finishes_as_one_step() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.text("Edit text");
+    assert!(w.ctx.wants_keyboard_input(), "the editor opens with focus");
+    w.type_text("Hem");
+    w.type_text("lo");
+    assert_eq!(w.draft(), "Hemlo", "the canvas follows typing");
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    assert!(w.app.text_edit.is_none());
+    assert_eq!(w.draft(), "Hemlo");
+    assert_eq!(w.app.doc.layers.len(), 2);
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    assert_eq!(
+        w.app.doc.layers.len(),
+        1,
+        "one undo removes the whole session"
+    );
+}
+
+#[test]
+fn tool_and_view_keys_type_into_the_text_editor() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    let zoom = w.app.zoom;
+    for (key, letter) in [
+        (egui::Key::B, "b"),
+        (egui::Key::E, "e"),
+        (egui::Key::R, "r"),
+        (egui::Key::F, "f"),
+        (egui::Key::Space, " "),
+    ] {
+        let event = |pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+        w.frame(vec![event(true), egui::Event::Text(letter.into())]);
+        w.frame(vec![event(false)]);
+        w.app.settle_text_draft();
+        assert!(w.app.tool == crate::tools::Tool::Text, "{letter}");
+        assert!(w.app.quick_resize.is_none(), "{letter}");
+    }
+    assert_eq!(w.draft(), "berf ");
+    assert_eq!(w.app.zoom, zoom);
+}
+
+#[test]
+fn escape_leaves_the_project_as_it_was() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    w.key(egui::Key::Escape, egui::Modifiers::NONE);
+    w.settle();
+    assert!(w.app.text_edit.is_none());
+    assert_eq!(w.app.doc.layers.len(), 1);
+    assert!(!w.app.history.can_undo());
+    assert!(!w.app.modified);
+}
+
+#[test]
+fn clicking_away_finishes_and_clicking_text_edits_it() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    let far = [w.app.doc.width as f32 - 5.0, w.app.doc.height as f32 - 5.0];
+    w.press_text_tool(far, far);
+    assert!(w.app.text_edit.is_none());
+    assert_eq!(w.draft(), "Hemlo");
+    w.press_text_tool([50.0, 50.0], [50.0, 50.0]);
+    assert!(w.app.text_edit.is_some(), "a click on text edits it");
+    assert_eq!(w.app.doc.layers.len(), 2, "and adds no layer");
+    w.type_text("!");
+    assert!(w.draft().contains('!'));
+}
+
+#[test]
+fn another_tool_finishes_open_text() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    w.click(w.text("Done"));
+    assert!(w.app.text_edit.is_none());
+    w.press_text_tool([50.0, 50.0], [50.0, 50.0]);
+    w.type_text("!");
+    w.app.select_tool(crate::tools::Tool::Brush);
+    w.settle();
+    assert!(
+        w.app.text_edit.is_none(),
+        "leaving the tool finishes the text"
+    );
+    assert!(w.draft().contains('!'));
+}
+
+#[test]
+fn text_layers_can_be_rasterized_from_the_editing_strip_and_painted_on() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    w.settle();
+    assert_eq!(w.app.doc.paint_blocker(), Some(crate::text_layer::BLOCKER));
+    w.click(w.text("Rasterize"));
+    assert!(w.app.doc.layers[w.app.doc.active].text.is_none());
+    assert_eq!(w.app.doc.paint_blocker(), None);
+}
+
+#[test]
+fn text_options_stay_on_screen_at_compact_sizes() {
+    for size in [[1280.0, 720.0], [960.0, 700.0], [720.0, 560.0]] {
+        let mut w = Workspace::sized(size);
+        w.app.text_style.font = crate::text_render::TEST_FONT.into();
+        w.key(egui::Key::T, egui::Modifiers::NONE);
+        w.settle();
+        let at = w.text("Right");
+        assert!(at.x < size[0], "{size:?}");
+    }
+}

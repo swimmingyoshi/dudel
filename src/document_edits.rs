@@ -252,7 +252,7 @@ impl Edit {
         }
     }
     /// Edits that would change a text layer's pixels without its record, which
-    /// stay refused until transforms can carry text along.
+    /// stay refused until layer transforms can carry text along.
     fn text_blocker(&self, doc: &Document) -> Option<&'static str> {
         let active = doc.layers.get(doc.active).is_some_and(|l| l.text.is_some());
         let refused = match self {
@@ -263,9 +263,6 @@ impl Edit {
             | Self::AffineSettingsTarget { .. }
             | Self::Clear { .. }
             | Self::ClearTarget { .. } => active,
-            Self::Rotate(_) | Self::CanvasSize(_) | Self::CropCanvas => {
-                doc.layers.iter().any(|l| l.text.is_some())
-            }
             _ => false,
         };
         refused.then_some(crate::text_layer::BLOCKER)
@@ -415,16 +412,19 @@ impl Edit {
             }
             Self::CanvasSize(settings) => {
                 (doc, outcome.changed) = crate::canvas_size::resize(source, *settings, cancel)?;
-                let [x, y] = settings
-                    .offset(source.width, source.height)
-                    .map(|v| v as f32);
+                let offset = settings.offset(source.width, source.height);
+                let [x, y] = offset.map(|v| v as f32);
                 crate::vector_layer::follow_canvas(source, &mut doc, &|a, b| [a + x, b + y])?;
+                let [x, y] = offset.map(|v| v as f64);
+                crate::text_layer::follow_canvas(&mut doc, &|p| [p[0] + x, p[1] + y], &|v| v);
             }
             Self::CropCanvas => {
                 (doc, outcome.changed) = crate::canvas_size::crop(source, cancel)?;
                 if let Some(s) = source.selection {
                     let [x, y] = [s.left as f32, s.top as f32];
                     crate::vector_layer::follow_canvas(source, &mut doc, &|a, b| [a - x, b - y])?;
+                    let [x, y] = [s.left as f64, s.top as f64];
+                    crate::text_layer::follow_canvas(&mut doc, &|p| [p[0] - x, p[1] - y], &|v| v);
                 }
             }
             Self::SelectionRectangle { rectangle, mode } => {
@@ -896,6 +896,20 @@ impl Edit {
                         _ => [x, y],
                     };
                     crate::vector_layer::follow_canvas(source, &mut doc, &map)?;
+                    let (w, h) = (source.width as f64, source.height as f64);
+                    let place = move |[x, y]: [f64; 2]| match turns {
+                        1 => [h - y, x],
+                        2 => [w - x, h - y],
+                        3 => [y, w - x],
+                        _ => [x, y],
+                    };
+                    let turn = move |[x, y]: [f64; 2]| match turns {
+                        1 => [-y, x],
+                        2 => [-x, -y],
+                        3 => [y, -x],
+                        _ => [x, y],
+                    };
+                    crate::text_layer::follow_canvas(&mut doc, &place, &turn);
                 }
                 if let Some(guides) = &mut doc.guides {
                     guides.map_canvas(*source.canvas_frame, *doc.canvas_frame);

@@ -167,6 +167,7 @@ mod symmetry;
 mod tabs;
 mod text_layer;
 mod text_render;
+mod text_tool;
 mod themes;
 mod thumbnails;
 mod tile_project;
@@ -304,6 +305,13 @@ struct Dudel {
     opacity_edit: Option<layers_panel::OpacityEdit>,
     opacity_preview_modified: Option<(u64, bool)>,
     effects_edit: Option<effects_panel::Edit>,
+    text_edit: Option<text_tool::Editing>,
+    text_drag: Option<text_tool::Drag>,
+    text_style: text_tool::Style,
+    text_drawer: text_tool::Drawer,
+    font_list: text_tool::FontList,
+    /// Whether the floating text editor can show CJK yet.
+    text_editor_fonts: bool,
     adjustment_edit: Option<adjustment_panel::Edit>,
     /// Adjustment settings last sent through the busy render queue.
     adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
@@ -579,6 +587,12 @@ impl Default for Dudel {
             opacity_edit: None,
             opacity_preview_modified: None,
             effects_edit: None,
+            text_edit: None,
+            text_drag: None,
+            text_style: Default::default(),
+            text_drawer: Default::default(),
+            font_list: Default::default(),
+            text_editor_fonts: false,
             adjustment_edit: None,
             adjustment_sent: None,
             adjustment_window_open: false,
@@ -869,6 +883,7 @@ impl Dudel {
         self.recent = p.recent;
         self.secondary = p.secondary;
         self.recent_colors = p.recent_colors;
+        self.text_style = p.text;
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
         // The current brush decides the group, so the two never disagree.
@@ -921,6 +936,7 @@ impl Dudel {
             recent: self.recent.clone(),
             secondary: self.secondary,
             recent_colors: self.recent_colors.clone(),
+            text: self.text_style.clone(),
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
@@ -1268,6 +1284,7 @@ impl eframe::App for Dudel {
             && !self.render_queue.busy()
             && self.opacity_edit.is_none()
             && self.effects_edit.is_none()
+            && self.text_edit.is_none()
             && self.adjustment_edit.is_none()
             && packets.is_empty()
             && self.adjustment.is_none()

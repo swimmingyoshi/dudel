@@ -223,6 +223,9 @@ impl Dudel {
     pub(crate) fn editing_target_ui(&mut self, ui: &mut egui::Ui) {
         let reference = self.reference_layers.active.is_some();
         let raster = self.input_stroke_target().is_raster();
+        let text = self
+            .input_layer()
+            .is_some_and(|i| self.doc.layers[i].text.is_some());
         let target = if reference {
             "Reference"
         } else if !raster {
@@ -232,6 +235,8 @@ impl Dudel {
             .is_some_and(|i| self.doc.layers[i].vector.is_some())
         {
             "Vector artwork"
+        } else if text {
+            "Text"
         } else {
             "Artwork"
         };
@@ -252,6 +257,9 @@ impl Dudel {
             if (reference || !raster) && ui.small_button("Switch to artwork").clicked() {
                 self.deselect_reference();
                 self.focus_current_mask(false);
+            }
+            if text && !reference && raster && ui.small_button("Rasterize").clicked() {
+                self.rasterize_layer();
             }
             if let Some(feedback) = self.editing_feedback() {
                 ui.colored_label(ui.visuals().warn_fg_color, feedback.message);

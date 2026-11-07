@@ -176,6 +176,7 @@ impl Dudel {
         self.finish_opacity_edit();
         self.finish_effects_edit();
         self.finish_adjustment_edit();
+        self.finish_text_edit();
         self.selection_drag = None;
         self.finish_move_drag();
         self.finish_affine_preview();
@@ -418,7 +419,9 @@ impl Dudel {
             }
         }
         if key(Modifiers::NONE, Key::Escape) {
-            if self.affine_preview.is_some() {
+            if self.text_edit.is_some() || self.text_drag.is_some() {
+                self.cancel_text_edit();
+            } else if self.affine_preview.is_some() {
                 self.cancel_affine_preview();
             } else if self.move_drag.is_some() || self.pending_move.is_some() {
                 self.cancel_move_drag();
@@ -436,7 +439,9 @@ impl Dudel {
                 self.set_selection(None);
             }
         }
-        if key(Modifiers::NONE, Key::Delete) || key(Modifiers::NONE, Key::Backspace) {
+        if self.text_edit.is_none()
+            && (key(Modifiers::NONE, Key::Delete) || key(Modifiers::NONE, Key::Backspace))
+        {
             if self.tool == Tool::Pointer && !self.picked_lines().is_empty() {
                 self.delete_picked_lines();
             } else {
@@ -534,6 +539,7 @@ impl Dudel {
                 egui::Frame::NONE.fill(crate::color_wheel::color32(self.theme.canvas_background)),
             )
             .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
+        self.text_editor(ctx);
         self.finish_navigator_paint(ctx);
     }
 
@@ -666,6 +672,7 @@ impl Dudel {
                 input::Packet::Move(s) => (*s, false, false),
                 input::Packet::End(s) => (*s, false, true),
                 input::Packet::Cancel => {
+                    self.text_drag = None;
                     self.cancel_ruler_drag();
                     if let Some(drag) = self.guide_drag.take()
                         && drag.index < self.guide_lines.len()
@@ -828,6 +835,10 @@ impl Dudel {
                     end,
                     can_start,
                 );
+                continue;
+            }
+            if self.tool == Tool::Text && navigation_allowed && !picking {
+                self.text_packet([at.x, at.y], start, end, on_workspace);
                 continue;
             }
             if self.tool == Tool::Move && navigation_allowed && !picking {
@@ -1548,6 +1559,7 @@ impl Dudel {
         if self.active_symmetry().active() {
             self.paint_symmetry_guide(&painter, view);
         }
+        self.paint_text_overlay(&painter, view);
         crate::guides::paint_lines(
             &painter,
             view,
@@ -1616,6 +1628,7 @@ impl Dudel {
                 }
             }
             Tool::Move => ctx.set_cursor_icon(CursorIcon::Move),
+            Tool::Text => ctx.set_cursor_icon(CursorIcon::Text),
             Tool::Pointer => ctx.set_cursor_icon(CursorIcon::Default),
             Tool::Fill | Tool::Picker | Tool::Select | Tool::Lasso => {
                 ctx.set_cursor_icon(CursorIcon::Crosshair)

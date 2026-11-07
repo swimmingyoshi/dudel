@@ -10,7 +10,7 @@ use ab_glyph::{
 use ab_glyph_rasterizer::{Rasterizer, point as raster_point};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, Once, OnceLock},
 };
 
 /// Loaded fonts kept for reuse, in file bytes; the newest always stays.
@@ -157,6 +157,69 @@ fn load(face: &Face) -> Option<Arc<FontVec>> {
     Some(font)
 }
 
+/// Start reading the font index in the background, once per run. One thread
+/// for the life of the app, so it doesn't add up the way short-lived ones do.
+pub(crate) fn warm_up() {
+    static STARTED: Once = Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("font index".into())
+            .spawn(|| {
+                faces();
+            });
+    });
+}
+
+/// Whether fonts can be looked up without waiting for the index.
+pub(crate) fn ready() -> bool {
+    cfg!(test) || FACES.get().is_some()
+}
+
+/// One name for each installed face, sorted. Empty until the index is ready.
+pub(crate) fn font_names() -> &'static [String] {
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    let Some(faces) = FACES.get() else {
+        return &[];
+    };
+    NAMES.get_or_init(|| {
+        let mut names: Vec<String> = faces
+            .iter()
+            .filter_map(|face| {
+                let ascii = face.names.iter().find(|n| n.is_ascii());
+                ascii.or(face.names.first()).cloned()
+            })
+            .collect();
+        names.sort_by_cached_key(|name| name.to_lowercase());
+        names.dedup();
+        names
+    })
+}
+
+/// A sensible font for new text.
+pub(crate) fn default_font() -> Option<String> {
+    let names = font_names();
+    [
+        "Segoe UI",
+        "Arial",
+        "Noto Sans",
+        "DejaVu Sans",
+        "Liberation Sans",
+    ]
+    .iter()
+    .find_map(|wanted| names.iter().find(|name| name == wanted))
+    .or(names.first())
+    .cloned()
+}
+
+/// An installed font's file and its face index in that file.
+pub(crate) fn font_file(name: &str) -> Option<(Vec<u8>, u32)> {
+    let face = FACES
+        .get()?
+        .iter()
+        .find(|f| f.names.iter().any(|n| n == name))?;
+    Some((std::fs::read(&face.path).ok()?, face.index))
+}
+
 /// Tests name this font to get `test_font`, so that they don't depend on what
 /// the machine has installed.
 #[cfg(test)]
@@ -276,17 +339,15 @@ fn advance(font: &PxScaleFont<&FontVec>, line: &str, kerning: bool) -> f32 {
         .sum()
 }
 
-/// Where every glyph goes in text space. Shaping belongs here: nothing after
-/// this knows how glyphs were chosen or spaced.
-fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
-    let scaled = font.as_scaled(scale);
+/// A block's lines, the length they align within and how far apart they sit.
+fn arrange(block: &Block, scaled: &PxScaleFont<&FontVec>) -> (Vec<String>, f64, f32) {
     // Lines wrap at spaces to the box; trailing spaces never wrap.
     let mut lines = Vec::new();
     for paragraph in block.string.split('\n') {
         let mut line = String::new();
         for word in paragraph.split_inclusive(' ') {
             let candidate = format!("{line}{word}");
-            let length = advance(&scaled, candidate.trim_end(), block.kerning);
+            let length = advance(scaled, candidate.trim_end(), block.kerning);
             if !line.is_empty() && f64::from(length) > block.wrap {
                 lines.push(std::mem::take(&mut line));
                 line = word.to_owned();
@@ -296,7 +357,7 @@ fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
         }
         lines.push(line);
     }
-    let length = |line: &String| f64::from(advance(&scaled, line.trim_end(), block.kerning));
+    let length = |line: &String| f64::from(advance(scaled, line.trim_end(), block.kerning));
     let (span, line_height) = match block.measure {
         Measure::Given { span, thickness } => (span, (thickness / lines.len() as f64) as f32),
         Measure::Natural { line_spacing } => {
@@ -309,6 +370,26 @@ fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
             (span, natural * line_spacing as f32)
         }
     };
+    (lines, span, line_height)
+}
+
+/// How long and how tall a block is, in canvas pixels.
+pub(crate) fn extent(block: &Block, font: &FontVec) -> Result<[f64; 2], String> {
+    let scaled = font.as_scaled(font_scale(font, block.em)?);
+    let (lines, span, line_height) = arrange(block, &scaled);
+    let gaps = (lines.len() - 1) as f64;
+    Ok([
+        span,
+        f64::from(line_height) * gaps + f64::from(scaled.height()),
+    ])
+}
+
+/// Where every glyph goes in text space. Shaping belongs here: nothing after
+/// this knows how glyphs were chosen or spaced.
+fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
+    let scaled = font.as_scaled(scale);
+    let (lines, span, line_height) = arrange(block, &scaled);
+    let length = |line: &String| f64::from(advance(&scaled, line.trim_end(), block.kerning));
     let mut placed = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         let used = length(line);

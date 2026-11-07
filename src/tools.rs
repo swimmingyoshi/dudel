@@ -31,11 +31,13 @@ pub enum Tool {
     /// Fills or erases a drawn shape; the mode lives in `lasso_paint::Options`.
     Lasso,
     Move,
+    /// Adds and edits text layers.
+    Text,
     /// Moves guide lines and the symmetry center and pans the view; never paints.
     Pointer,
 }
 impl Tool {
-    pub const ALL: [Tool; 8] = [
+    pub const ALL: [Tool; 9] = [
         Tool::Brush,
         Tool::Eraser,
         Tool::Fill,
@@ -43,6 +45,7 @@ impl Tool {
         Tool::Select,
         Tool::Lasso,
         Tool::Move,
+        Tool::Text,
         Tool::Pointer,
     ];
     pub fn name(self) -> &'static str {
@@ -54,6 +57,7 @@ impl Tool {
             Self::Select => "Selection",
             Self::Lasso => "Lasso",
             Self::Move => "Move",
+            Self::Text => "Text",
             Self::Pointer => "Pointer",
         }
     }
@@ -68,6 +72,7 @@ impl Tool {
             Self::Select => Key::M,
             Self::Lasso => Key::L,
             Self::Move => Key::V,
+            Self::Text => Key::T,
             Self::Pointer => Key::O,
         }
     }
@@ -80,6 +85,7 @@ impl Tool {
             Self::Select => Icon::Select,
             Self::Lasso => Icon::LassoFill,
             Self::Move => Icon::Move,
+            Self::Text => Icon::Text,
             Self::Pointer => Icon::Pointer,
         }
     }
@@ -93,6 +99,9 @@ impl Tool {
                 "Rectangle, lasso, polygon or magic wand · Deselect removes the selection · Delete clears"
             }
             Self::Move => "Drag to move the selection, or the whole active layer",
+            Self::Text => {
+                "Click to type a line, or drag a box that wraps · click text to edit it · Ctrl+Enter finishes · Esc cancels"
+            }
             Self::Lasso => {
                 "Draw a freehand, rectangle or ellipse shape to fill or erase · tap its shortcut again to switch fill/erase · Esc cancels"
             }

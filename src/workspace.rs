@@ -595,6 +595,7 @@ impl Dudel {
                 });
             });
             self.command_menu_item(ui, crate::commands::Action::NewVector);
+            self.command_menu_item(ui, crate::commands::Action::NewText);
             let vector = self
                 .input_layer()
                 .and_then(|i| self.doc.layers.get(i))
@@ -605,7 +606,11 @@ impl Dudel {
             if menu_item(ui, "Apply current brush to vector strokes", "", vector) {
                 self.restyle_vector(false);
             }
-            if menu_item(ui, "Rasterize layer", "", vector) {
+            let editable = self
+                .input_layer()
+                .and_then(|i| self.doc.layers.get(i))
+                .is_some_and(|l| l.vector.is_some() || l.text.is_some());
+            if menu_item(ui, "Rasterize layer", "", editable) {
                 self.rasterize_layer();
             }
             self.command_menu_item(ui, crate::commands::Action::Effects);
@@ -924,6 +929,7 @@ impl Dudel {
                         self.guides_ui(ui);
                     });
                 }
+                Tool::Text => self.text_options_ui(ui, narrow),
                 Tool::Brush | Tool::Eraser => {
                     self.brush_picker_ui(ui, (bar_width * 0.16).clamp(90.0, 192.0));
                     self.quick_color_ui(ui);
@@ -1504,7 +1510,7 @@ impl Dudel {
         response.on_hover_text(format!("{name}\nChoose a brush or open brush settings"));
     }
 
-    fn quick_color_ui(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn quick_color_ui(&mut self, ui: &mut egui::Ui) {
         let color = self.paint_color();
         let masked = !self.input_stroke_target().is_raster();
         let label = if masked { "Coverage" } else { "Color" };

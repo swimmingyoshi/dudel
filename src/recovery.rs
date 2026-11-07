@@ -119,6 +119,7 @@ impl Dudel {
             && !self.symmetry_drag
             && !self.render_queue.busy()
             && self.opacity_edit.is_none()
+            && self.text_edit.is_none()
             && let Some(path) = self.recovery_path.clone()
         {
             let mut document = self.doc.clone();
