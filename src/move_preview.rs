@@ -485,6 +485,27 @@ impl Engine {
             doc.layers[before.active].vector = None;
         }
     }
+    /// Bring a text layer along the way the finished move or transform moved
+    /// its pixels. Text that can't follow stays as those pixels.
+    pub(crate) fn follow_text(&self, doc: &mut Document) {
+        let before = &self.original;
+        if !self.paint_target.is_raster() {
+            return;
+        }
+        let matrix = match self.applied_affine {
+            Some(affine) => match affine.mapping {
+                crate::affine::Mapping::Affine(matrix) => Some(matrix),
+                _ => None,
+            },
+            None => {
+                let [x, y] = self.applied.map(|v| v as f64);
+                Some(crate::affine::Matrix([1.0, 0.0, 0.0, 1.0, x, y]))
+            }
+        };
+        if crate::text_layer::carry(before, doc, matrix, None).is_err() {
+            doc.layers[before.active].text = None;
+        }
+    }
     pub(crate) fn register_allocations(&self, registry: &mut crate::snapshot_memory::Registry) {
         registry.add_document(&self.original);
         registry.add_document(&self.expected);

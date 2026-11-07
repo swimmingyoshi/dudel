@@ -117,6 +117,13 @@ pub(crate) fn measure_target(
     ))
 }
 
+/// A transform closed before its effect on text could be asked about.
+pub(crate) struct HeldTransform {
+    target: crate::document::LayerId,
+    settings: crate::affine::Settings,
+    question: String,
+}
+
 pub(crate) struct Preview {
     target: crate::document::LayerId,
     paint_target: crate::paint_target::Target,
@@ -1939,7 +1946,9 @@ impl Dudel {
             return;
         }
         let paint_target = self.input_stroke_target();
-        if let Some(blocker) = self.stroke_target_blocker(paint_target, false) {
+        let blocker = self.stroke_target_blocker(paint_target, false);
+        let paired = self.affine_settings.mirror.is_some();
+        if let Some(blocker) = crate::text_layer::whole_layer_blocker(blocker, &self.doc, paired) {
             self.status = blocker.into();
             return;
         }
@@ -1984,9 +1993,12 @@ impl Dudel {
                 self.status = "Transform target is no longer active".into();
                 return;
             }
-            if let Some(blocker) = preview
+            let blocker = preview
                 .paint_target
-                .blocker(&self.doc, self.doc.active, false)
+                .blocker(&self.doc, self.doc.active, false);
+            let paired = self.affine_settings.mirror.is_some();
+            if let Some(blocker) =
+                crate::text_layer::whole_layer_blocker(blocker, &self.doc, paired)
             {
                 self.status = blocker.into();
                 return;
@@ -2074,7 +2086,112 @@ impl Dudel {
         }
         self.affine_preview = Some(preview);
     }
+    /// Whether the open transform's result is on the layer.
+    #[cfg(test)]
+    pub(crate) fn affine_preview_settled(&self) -> bool {
+        self.affine_preview
+            .as_ref()
+            .and_then(|preview| preview.session.as_ref())
+            .is_some_and(|session| session.engine.finished())
+    }
+    /// Why applying the open transform would cost a text layer its words.
+    pub(crate) fn transform_rasterizes_text(&self) -> Option<String> {
+        let preview = self.affine_preview.as_ref()?;
+        let layer = self.doc.layers.iter().find(|l| l.id == preview.target)?;
+        let text = layer
+            .text
+            .as_ref()
+            .filter(|_| preview.paint_target.is_raster())?;
+        let shape = || {
+            "This transform bends the text out of shape, so it can't stay editable. \
+             It will become plain pixels."
+                .to_string()
+        };
+        let crate::affine::Mapping::Affine(matrix) =
+            self.affine_settings.mapping(&self.doc).ok()?
+        else {
+            return Some(shape());
+        };
+        let Some(mapped) = text.mapped(matrix) else {
+            return Some(shape());
+        };
+        let redraws = !crate::text_layer::whole_pixel(matrix);
+        (redraws && mapped.extent().is_err()).then(|| {
+            format!(
+                "The font {} isn't installed, so this text can't be redrawn. \
+                 Cancel and choose another font with the Text tool, or let it become plain pixels.",
+                text.font
+            )
+        })
+    }
+    /// Apply the open transform, asking first if that rasterizes text.
+    pub(crate) fn apply_affine_preview(&mut self) {
+        let Some(question) = self.transform_rasterizes_text() else {
+            self.finish_affine_preview();
+            return;
+        };
+        self.confirm("Rasterize text?", question, "Rasterize and apply", |app| {
+            app.text_transform_confirmed = true;
+            app.finish_affine_preview();
+        });
+    }
+    /// Ask about a transform set aside by `finish_affine_preview`, once
+    /// nothing else is asking.
+    pub(crate) fn ask_about_held_transform(&mut self) {
+        if self.dialogs.open() || self.unsaved_action.is_some() {
+            return;
+        }
+        let Some(held) = self.held_transform.take() else {
+            return;
+        };
+        let question = format!(
+            "{} Apply the transform you left open, or Cancel to leave the text as it is.",
+            held.question
+        );
+        self.confirm(
+            "Apply transform to text?",
+            question,
+            "Rasterize and apply",
+            move |app| app.apply_held_transform(held.target, held.settings),
+        );
+    }
+    fn apply_held_transform(
+        &mut self,
+        target: crate::document::LayerId,
+        settings: crate::affine::Settings,
+    ) {
+        let Some(index) = self.doc.layers.iter().position(|l| l.id == target) else {
+            self.status = "The text layer is no longer there".into();
+            return;
+        };
+        if self.select_layer_target(index) {
+            self.dispatch_document_edit(
+                Edit::AffineSettingsTarget {
+                    target,
+                    settings: Box::new(settings),
+                },
+                "Transform applied",
+                "Transform unchanged",
+            );
+        }
+    }
+    /// Close the transform. Whatever closed it can't wait for an answer, so a
+    /// transform that would rasterize text is set aside, leaving the words
+    /// alone, and the artist is asked straight after.
     pub(crate) fn finish_affine_preview(&mut self) {
+        let confirmed = std::mem::take(&mut self.text_transform_confirmed);
+        if !confirmed
+            && let Some(question) = self.transform_rasterizes_text()
+            && let Some(preview) = &self.affine_preview
+        {
+            self.held_transform = Some(HeldTransform {
+                target: preview.target,
+                settings: self.affine_settings,
+                question,
+            });
+            self.cancel_affine_preview();
+            return;
+        }
         let Some(mut preview) = self.affine_preview.take() else {
             return;
         };
@@ -2356,7 +2473,7 @@ impl Dudel {
     /// Ctrl+T: start free transform from any tool, or apply the open one.
     pub(crate) fn toggle_free_transform(&mut self) {
         if self.affine_preview.is_some() {
-            self.finish_affine_preview();
+            self.apply_affine_preview();
         } else {
             self.affine_settings = crate::affine::Settings {
                 sampling: self.affine_settings.sampling,

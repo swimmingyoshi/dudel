@@ -1,5 +1,6 @@
 //! CSP text layers. CSP saves a text layer's words and layout but not its
-//! pixels, so Dudel draws the text itself with the same system font.
+//! pixels, so Dudel draws the text itself with the same system font, and the
+//! layer stays editable. Its record keeps CSP's layout until the first edit.
 //!
 //! `TextLayerAttributes` holds a few sections of character runs and then a
 //! run of little-endian (tag, byte length, data) records: 0x1F the font's
@@ -18,11 +19,7 @@
 //! downward, turned a quarter clockwise. CSP does not kern. Checked against
 //! CSP's saved previews at 600 dpi: horizontal, vertical, turned, wrapped,
 //! left-, right- and center-aligned Tahoma lines.
-use crate::{
-    pixels::Pixels,
-    text_render::{Align, Block, Measure},
-};
-use ab_glyph::FontVec;
+use crate::{text_layer::TextLayer, text_render::Align};
 
 /// A text layer as CSP laid it out.
 #[derive(Debug, Clone, PartialEq)]
@@ -189,36 +186,30 @@ pub(crate) fn parse(string: &[u8], attributes: &[u8]) -> Result<Text, String> {
     })
 }
 
-/// Draw the text in its color over the whole canvas, at the canvas `dpi`, as
-/// CSP laid it out. CSP sizes the em square and does not kern.
-pub(crate) fn render(
-    text: &Text,
-    font: &FontVec,
-    dpi: f64,
-    canvas: [usize; 2],
-    cancelled: &impl Fn() -> bool,
-) -> Result<Pixels, String> {
-    let block = Block {
-        string: &text.string,
-        em: (text.size / 72.0 * dpi) as f32,
-        color: text.color,
-        vertical: text.vertical,
-        align: match text.align {
-            1 => Align::Right,
-            2 => Align::Center,
-            _ => Align::Left,
-        },
-        start: text.start,
-        along: text.along,
-        down: text.down,
-        measure: Measure::Given {
-            span: text.span,
-            thickness: text.thickness,
-        },
-        wrap: text.wrap,
-        kerning: false,
-    };
-    crate::text_render::render(&block, font, canvas, cancelled)
+impl Text {
+    /// The layer's text at the canvas `dpi`. CSP sizes the em square, and its
+    /// layout stays until the first edit, so the text draws as CSP laid it out.
+    pub(crate) fn record(&self, dpi: f64) -> TextLayer {
+        TextLayer {
+            string: self.string.clone(),
+            font: self.font.clone(),
+            size: self.size / 72.0 * dpi,
+            color: self.color,
+            align: match self.align {
+                1 => Align::Right,
+                2 => Align::Center,
+                _ => Align::Left,
+            },
+            vertical: self.vertical,
+            wrap: Some(self.wrap),
+            box_height: None,
+            line_spacing: 1.0,
+            start: self.start,
+            along: self.along,
+            down: self.down,
+            csp: Some([self.span, self.thickness]),
+        }
+    }
 }
 
 #[cfg(test)]

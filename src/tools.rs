@@ -106,7 +106,7 @@ impl Tool {
                 "Draw a freehand, rectangle or ellipse shape to fill or erase · tap its shortcut again to switch fill/erase · Esc cancels"
             }
             Self::Pointer => {
-                "Move guide lines and the symmetry center, even when locked · drag empty canvas to pan"
+                "Move guide lines, text and the symmetry center, even when locked · double-click text to edit it · drag empty canvas to pan"
             }
         }
     }

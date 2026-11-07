@@ -1,6 +1,6 @@
 # Text tool plan (0.2)
 
-Status: stages 0, 1 and 2 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
+Status: stages 0 to 4 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
 2026-11-05. Tick stages off here as they land.
 
 ## Goal
@@ -47,12 +47,12 @@ the point: those transforms rasterize (see stage 3).
 
 ## Decisions
 
-1. **Where is the text typed?** Decided: a small floating editor beside the
-   text box, with the real result updating live on the canvas. egui's `TextEdit`
-   then provides IME, selection and clipboard for free. Typing directly on the
-   canvas feels nicer but needs a custom caret and selection that follow zoom and
-   rotation, plus our own IME handling. It can replace the floating editor later
-   without changing the file format.
+1. **Where is the text typed?** Decided: directly on the canvas. The owner first
+   chose a floating editor, then asked on 2026-11-06, after trying it, to lose it and
+   edit by selecting the text. An invisible `TextEdit` at the caret keeps egui's IME,
+   selection and clipboard, and `text_tool.rs` draws the caret and selection from its
+   cursor. Up and Down move by typed lines, not wrapped ones, because the field
+   doesn't wrap the way the canvas does.
 2. **Is kerning needed in the first release?** Decided: yes, by adding
    `rustybuzz` in stage 5, before 0.2 ships. `ab_glyph` has no shaping and reads only
    the old `kern` table. Stage 0 measured that on a Windows 11 system: of 170
@@ -120,7 +120,7 @@ the point: those transforms rasterize (see stage 3).
       shortcut editor, and `tool.text` and `layer.new_text` in command search. `src/text_tool.rs`
       holds the tool.
 - [x] Click for point text, or drag for a wrapping box. Clicking an existing text
-      layer's box edits it, and so does **Edit text** in the options bar. Locked and
+      layer's box edits it. Locked and
       hidden text can't be clicked into. Without its font, a layer is found by its pixels.
 - [x] The editor opens with focus. Workflow tests type `B`, `E`, `R`, `F` and Space
       through real egui input, and none of them reach the canvas.
@@ -137,8 +137,11 @@ the point: those transforms rasterize (see stage 3).
       the text first, so a parked tab never holds an open session.
 - [x] Layers panel: a "Text" row label and type filter, a **Rasterize** button in the
       editing strip, and the Layer menu's **Rasterize layer** now takes text.
-- [x] egui's fonts have no CJK, so the editor adds an installed CJK font the first
-      time it opens. The canvas never needed this.
+- [x] Typing lands on the canvas, with a blinking caret. A press places the caret, a drag
+      selects, and **Done** and **Cancel** sit in the options bar for pen-only use.
+- [x] A dragged box keeps the size it was drawn at (`box_height`) and its corner resizes
+      it. Text past the bottom makes the box taller rather than being cut off.
+- [x] The wheel over the font button steps through fonts, like the blend box.
 - [x] Typing draws on one long-lived background thread, and a newer keystroke stops
       the drawing in progress. One redraw measured 24 ms for a paragraph on a 2k canvas,
       236 ms at 100 MP and 7.2 s for 2,000 px text at 100 MP, which the UI thread can't
@@ -148,25 +151,36 @@ the point: those transforms rasterize (see stage 3).
 
 ### Stage 3: moving and transforming
 
-- [ ] Pointer (`O`) picks a text box and moves it, in line with other objects, and
-      double-clicking opens the editor. Drawing tools never move it.
-- [ ] Move, rotate, flip and uniform scale keep text editable, through a `follow`
-      equivalent in the `document_edits.rs` transform paths. Stage 1 refuses these in
-      `text_blocker`. Remove those refusals here; they must not ship.
+- [x] Pointer (`O`) takes hold of a text box from any layer and moves it through the
+      Move tool's path, shows its outline, and double-clicking opens the editor.
+      Drawing tools never move it, and the Pointer still pans away from text.
+- [x] Move, rotate, flip and uniform scale keep text editable. `TextLayer::mapped` is
+      the one rule for what a record can follow, and `text_layer::carry` applies it on
+      every path: queued edits, the live preview engine and the question below. Text is
+      redrawn from its new record, so it stays crisp and comes back after leaving the
+      canvas. Flipped text keeps a mirrored `along`.
 - [x] Canvas resize, crop and rotate carry text along (`text_layer::follow_canvas`,
       done early in stage 2). Only the record changes, because the pixels have already
       moved, and tests check that the record redraws exactly those pixels.
-- [ ] Non-uniform scale, skew, perspective and mesh ask first, then rasterize.
-- [ ] **Missing font.** Pixels stay, and the editor says which font is missing and
-      asks for a replacement. A whole-pixel move just shifts pixels. A transform that
-      needs a redraw asks to choose a font or rasterize.
+- [x] Non-uniform scale, skew, perspective and mesh ask on Apply, then rasterize in the
+      same undo step. Closing the project (window, tab, New, Open) asks before anything
+      closes. Actions that can't wait, such as undo or another tool, set the transform
+      aside with the words intact and ask straight after. Esc and **Cancel** just cancel.
+- [x] Still refused, on purpose: Clear on text, moving or transforming with a selection
+      (text moves whole, so the message says to deselect), and mirror pairs (a record
+      can't describe the reflected copy).
+- [x] **Missing font.** Pixels stay, and the editor says which font is missing and
+      takes a replacement. A whole-pixel move or flip just shifts pixels. A transform
+      that needs a redraw asks, offering to cancel and choose a font or to rasterize.
 
 ### Stage 4: editable CSP text
 
-- [ ] `clip_metadata.rs` keeps the parsed text as a `TextLayer`, with `csp` holding
-      CSP's layout so the first render still matches its preview. Layers CSP's
-      importer already skips stay skipped.
-- [ ] The first edit clears `csp` and switches to Dudel's own layout.
+- [x] CSP text imports as a text layer, with `csp` holding CSP's layout so that it
+      draws as before. `clip_text::Text::record` is the one path, and layers the importer
+      skips stay skipped. Text too large for a record stays as pixels.
+- [x] Opening text calls `TextLayer::released`, which works out Dudel's own layout from
+      CSP's without the lines moving, and it only takes effect at the first change.
+      Opening and closing imported text leaves it exactly as it was.
 
 ### Stage 5: shaping and vertical text
 

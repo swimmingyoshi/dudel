@@ -1,6 +1,8 @@
-//! The Text tool. A click starts a line and a drag starts a box that wraps; a
-//! click on existing text edits it. The words are typed in a small floating
-//! editor while the real result redraws on the canvas.
+//! The Text tool. A click starts a line and a drag starts a box of that size,
+//! which lines wrap in; a click on existing text edits it. Typing lands on the
+//! canvas. An invisible text field at the caret does the typing, so IME,
+//! selection, clipboard and undo while typing all come from egui, and this
+//! file draws the caret and selection from its cursor.
 //!
 //! An editing session changes the document directly under one history
 //! checkpoint, so it undoes in one step however much was typed. Anything else
@@ -26,6 +28,8 @@ use std::{
 
 /// On-screen pixels a press must travel to draw a box rather than click.
 const BOX_DRAG: f32 = 8.0;
+/// Seconds between two presses of a double-click.
+const DOUBLE_CLICK: f64 = 0.4;
 /// On-screen pixels around text that still count as clicking it.
 const HIT_MARGIN: f64 = 6.0;
 const PREVIEW_SIZE: [usize; 2] = [300, 28];
@@ -33,15 +37,12 @@ const PREVIEW_SIZE: [usize; 2] = [300, 28];
 const PREVIEW_LIMIT: usize = 256;
 /// Font previews drawn per frame, so that scrolling the list stays smooth.
 const PREVIEWS_PER_FRAME: usize = 2;
-/// Fonts that let the floating editor show Japanese, Chinese and Korean.
-const CJK_FONTS: [&str; 6] = [
-    "Yu Gothic",
-    "Meiryo",
-    "MS Gothic",
-    "Microsoft YaHei",
-    "Noto Sans CJK JP",
-    "Noto Sans JP",
-];
+/// On-screen pixels around the box's resize corner that still grab it.
+const HANDLE_REACH: f64 = 10.0;
+/// Smallest box side a drag leaves, in canvas pixels.
+const MIN_BOX: f64 = 8.0;
+/// Wheel travel that moves one font along.
+const FONT_WHEEL_STEP: f32 = 40.0;
 
 /// Longest a finished session waits for its last drawing.
 const DRAW_TIMEOUT: Duration = Duration::from_secs(120);
@@ -230,6 +231,18 @@ pub(crate) struct Editing {
     missing: Vec<char>,
     /// The draft's length and height, when its font is installed.
     extent: Option<[f64; 2]>,
+    /// Where the caret can stand in the draft.
+    carets: Vec<text_render::Caret>,
+    /// The field's cursor as last seen: where it is, and the selection's other end.
+    cursor: [usize; 2],
+    /// A cursor for the field to take, set by a press on the canvas.
+    place_cursor: Option<[usize; 2]>,
+    /// The field still holds an earlier session's state.
+    fresh: bool,
+    /// A press on the text is dragging out a selection from this character.
+    selecting: Option<usize>,
+    /// A press on the corner is resizing the box.
+    resizing: bool,
 }
 
 impl Editing {
@@ -240,6 +253,50 @@ impl Editing {
     fn contains(&self, at: [f64; 2], margin: f64) -> bool {
         self.extent
             .is_some_and(|extent| within(&self.draft, extent, at, margin))
+    }
+    /// The character a canvas point is nearest to.
+    fn caret_at(&self, at: [f64; 2]) -> usize {
+        let [along, down] = self.draft.text_point(at);
+        let score = |caret: &text_render::Caret| {
+            let line = (down - down.clamp(caret.top, caret.top + caret.height)).abs();
+            (line, (along - caret.along).abs())
+        };
+        let closest = self.carets.iter().enumerate().min_by(|a, b| {
+            let (a, b) = (score(a.1), score(b.1));
+            a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1))
+        });
+        closest.map_or(0, |(index, _)| index)
+    }
+    /// The canvas point in the middle of the caret before character `index`.
+    #[cfg(test)]
+    pub(crate) fn caret_position(&self, index: usize) -> [f32; 2] {
+        let caret = self.carets[index];
+        let at = self
+            .draft
+            .canvas_point(caret.along, caret.top + caret.height / 2.0);
+        at.map(|v| v as f32)
+    }
+    /// The selected characters, first to last.
+    #[cfg(test)]
+    pub(crate) fn selected(&self) -> [usize; 2] {
+        let [a, b] = self.cursor;
+        [a.min(b), a.max(b)]
+    }
+    /// The box's resize corner, on the canvas. Lines have no box to resize.
+    fn handle(&self) -> Option<[f64; 2]> {
+        let extent = self.extent?;
+        self.draft.wrap?;
+        Some(self.draft.canvas_point(extent[0], extent[1]))
+    }
+    fn resize_to(&mut self, at: [f64; 2]) {
+        let [width, height] = self.draft.text_point(at);
+        self.draft.wrap = Some(width.max(MIN_BOX));
+        self.draft.box_height = Some(height.max(MIN_BOX));
+    }
+    /// Fit caret and outline to the draft, right away, while drawing catches up.
+    fn measure(&mut self) {
+        self.extent = self.draft.extent().ok();
+        self.carets = self.draft.carets().unwrap_or_default();
     }
 }
 
@@ -299,6 +356,7 @@ fn preview_image(name: &str) -> Option<egui::ColorImage> {
         align: Align::Left,
         vertical: false,
         wrap: None,
+        box_height: None,
         line_spacing: 1.0,
         start: [2.0, 2.0],
         along: [1.0, 0.0],
@@ -320,21 +378,49 @@ fn preview_image(name: &str) -> Option<egui::ColorImage> {
 pub(crate) struct FontList {
     search: String,
     previews: HashMap<String, Option<egui::TextureHandle>>,
+    /// Wheel travel over the font button not yet spent on a step.
+    wheel: f32,
+    /// The first row the open list showed last.
+    #[cfg(test)]
+    pub(crate) first_row: usize,
 }
 
 impl Dudel {
     /// Canvas input for the Text tool.
     pub(crate) fn text_packet(&mut self, at: [f32; 2], start: bool, end: bool, on_workspace: bool) {
+        let point = at.map(f64::from);
+        let scale = 1.0 / f64::from(self.zoom.max(1e-3));
         if start && on_workspace {
-            let point = at.map(f64::from);
-            let margin = HIT_MARGIN / f64::from(self.zoom.max(1e-3));
             match &mut self.text_edit {
-                // A press on the text goes back to typing; anywhere else
-                // finishes it, and only the next press starts something new.
-                Some(edit) if edit.contains(point, margin) => edit.focus = true,
+                Some(edit)
+                    if edit.handle().is_some_and(|[x, y]| {
+                        (x - point[0]).hypot(y - point[1]) <= HANDLE_REACH * scale
+                    }) =>
+                {
+                    edit.resizing = true;
+                }
+                // A press on the text places the caret; anywhere else finishes
+                // it, and only the next press starts something new.
+                Some(edit) if edit.contains(point, HIT_MARGIN * scale) => {
+                    let caret = edit.caret_at(point);
+                    edit.selecting = Some(caret);
+                    edit.place_cursor = Some([caret, caret]);
+                    edit.focus = true;
+                }
                 Some(_) => self.finish_text_edit(),
                 None => self.text_drag = Some(Drag { from: at, to: at }),
             }
+        }
+        if let Some(edit) = &mut self.text_edit {
+            if edit.resizing {
+                edit.resize_to(point);
+                edit.resizing = !end;
+                edit.focus = true;
+            } else if let Some(anchor) = edit.selecting {
+                edit.place_cursor = Some([edit.caret_at(point), anchor]);
+                edit.selecting = edit.selecting.filter(|_| !end);
+            }
+            return;
         }
         let Some(drag) = &mut self.text_drag else {
             return;
@@ -348,19 +434,29 @@ impl Dudel {
     }
 
     fn place_text(&mut self, drag: Drag) {
-        let [from, to] = [drag.from, drag.to].map(|p| p.map(f64::from));
+        // Whole pixels, so that text lands the same way each time it is drawn.
+        let [from, to] = [drag.from, drag.to].map(|p| p.map(|v| f64::from(v).round()));
         let [width, height] = [self.doc.width as f64, self.doc.height as f64];
         let left = from[0].min(to[0]);
         let top = from[1].min(to[1]);
         let span = (to[0] - from[0]).abs();
         let travelled = (to[0] - from[0]).hypot(to[1] - from[1]) as f32;
-        if travelled * self.zoom >= BOX_DRAG && span >= 1.0 {
-            self.begin_new_text([left, top], Some(span));
+        if travelled * self.zoom >= BOX_DRAG {
+            let tall = (to[1] - from[1]).abs();
+            self.begin_new_text(
+                [left, top],
+                Some(span.max(MIN_BOX)),
+                Some(tall.max(MIN_BOX)),
+            );
         } else if let Some(index) = self.text_at(from) {
             self.begin_text_edit(index);
+            if let Some(edit) = &mut self.text_edit {
+                let caret = edit.caret_at(from);
+                edit.place_cursor = Some([caret, caret]);
+            }
         } else {
             let start = [from[0].clamp(0.0, width), from[1].clamp(0.0, height)];
-            self.begin_new_text(start, None);
+            self.begin_new_text(start, None, None);
         }
     }
 
@@ -395,6 +491,38 @@ impl Dudel {
         })
     }
 
+    /// Whether a Pointer press here would take hold of text, rather than pan.
+    pub(crate) fn pointer_grabs_text(&self, at: egui::Pos2) -> bool {
+        self.picked_lines().is_empty() && self.text_at([f64::from(at.x), f64::from(at.y)]).is_some()
+    }
+
+    /// A Pointer press: text under it is selected, ready to move, and a second
+    /// press opens the editor. True when the press is used up.
+    pub(crate) fn pointer_text_press(&mut self, at: [f32; 2], now: f64) -> bool {
+        let found = self.text_at(at.map(f64::from));
+        let Some(index) = found.filter(|_| self.picked_lines().is_empty()) else {
+            self.text_click = None;
+            return false;
+        };
+        let id = self.doc.layers[index].id;
+        let last = self.text_click.replace((id, now));
+        if last.is_some_and(|(layer, time)| layer == id && now - time <= DOUBLE_CLICK) {
+            self.text_click = None;
+            self.select_tool(Tool::Text);
+            self.begin_text_edit(index);
+            return true;
+        }
+        if self.doc.layers[index].locked {
+            self.status = "Layer is locked — unlock it to move its text".into();
+            return true;
+        }
+        if !self.select_paint_target(index, None) {
+            return true;
+        }
+        self.text_moving = true;
+        false
+    }
+
     /// The installed font new text uses, choosing one if the remembered font
     /// is unset or not on this computer.
     fn ready_text_font(&mut self) -> bool {
@@ -421,7 +549,12 @@ impl Dudel {
     }
 
     /// Start a session on a new, empty text layer above the selected one.
-    pub(crate) fn begin_new_text(&mut self, start: [f64; 2], wrap: Option<f64>) {
+    pub(crate) fn begin_new_text(
+        &mut self,
+        start: [f64; 2],
+        wrap: Option<f64>,
+        box_height: Option<f64>,
+    ) {
         if !self.doc.has_room(1, 1) {
             self.status = "Layer limit reached".into();
             return;
@@ -439,6 +572,7 @@ impl Dudel {
             align: Align::Left,
             vertical: false,
             wrap,
+            box_height,
             line_spacing: 1.0,
             start,
             along: [1.0, 0.0],
@@ -493,6 +627,9 @@ impl Dudel {
         let Some(text) = self.doc.layers[self.doc.active].text.clone() else {
             return;
         };
+        // Nothing redraws until something changes, so opening imported text
+        // and closing it again leaves it exactly as CSP laid it out.
+        let text = text.released();
         let before = self.doc.clone();
         let modified = self.modified;
         self.history.begin_gesture_checkpoint(&self.doc);
@@ -515,6 +652,7 @@ impl Dudel {
                 draft.font
             )
         });
+        let end = draft.string.chars().count();
         self.text_edit = Some(Editing {
             target,
             created,
@@ -528,7 +666,16 @@ impl Dudel {
             focus: true,
             error,
             extent: extent.ok(),
+            carets: Vec::new(),
+            cursor: [end, end],
+            place_cursor: Some([end, end]),
+            fresh: true,
+            selecting: None,
+            resizing: false,
         });
+        if let Some(edit) = &mut self.text_edit {
+            edit.measure();
+        }
         self.status = "Type your text · Ctrl+Enter finishes · Esc cancels".into();
     }
 
@@ -542,6 +689,7 @@ impl Dudel {
             return;
         }
         edit.attempted = edit.draft.clone();
+        edit.measure();
         match edit.draft.validate() {
             Ok(()) => edit.pending = Some(self.text_drawer.draw(edit.draft.clone(), canvas)),
             Err(error) => {
@@ -580,11 +728,12 @@ impl Dudel {
         };
         let text = finished.text;
         let extent = text.extent().ok();
-        let old = edit.extent.zip(self.doc.layers[index].text.as_ref());
-        let old = old.map(|(extent, text)| reach(text, extent, canvas));
+        let old = self.doc.layers[index].text.as_ref().and_then(|text| {
+            let extent = text.extent().ok()?;
+            Some(reach(text, extent, canvas))
+        });
         edit.error = None;
         edit.missing = text.missing_characters();
-        edit.extent = extent;
         if self.doc.layers[index].text.as_ref() == Some(&text) {
             return;
         }
@@ -674,34 +823,7 @@ impl Dudel {
         }
     }
 
-    /// egui's own fonts have no CJK, so the editor would show empty boxes for
-    /// what the canvas draws correctly. Add an installed one, once.
-    fn load_text_editor_fonts(&mut self, ctx: &egui::Context) {
-        if self.text_editor_fonts || !text_render::ready() {
-            return;
-        }
-        self.text_editor_fonts = true;
-        let Some((name, (bytes, index))) = CJK_FONTS
-            .iter()
-            .find_map(|name| Some((*name, text_render::font_file(name)?)))
-        else {
-            return;
-        };
-        let mut data = egui::FontData::from_owned(bytes);
-        data.index = index;
-        ctx.add_font(egui::epaint::text::FontInsert::new(
-            name,
-            data,
-            [egui::FontFamily::Proportional, egui::FontFamily::Monospace]
-                .map(|family| egui::epaint::text::InsertFontFamily {
-                    family,
-                    priority: egui::epaint::text::FontPriority::Lowest,
-                })
-                .to_vec(),
-        ));
-    }
-
-    /// The floating editor, while a session is open.
+    /// While a session is open: the invisible field that takes the typing.
     pub(crate) fn text_editor(&mut self, ctx: &egui::Context) {
         if self.text_edit.is_none() {
             return;
@@ -710,10 +832,8 @@ impl Dudel {
             self.finish_text_edit();
             return;
         }
-        self.load_text_editor_fonts(ctx);
         self.take_drawn_text(false);
-        let area = self.canvas_area;
-        let view = self.view(area);
+        let view = self.view(self.canvas_area);
         let color = self.color;
         let Some(edit) = &mut self.text_edit else {
             return;
@@ -729,43 +849,56 @@ impl Dudel {
                 done = i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter);
             });
         }
-        let bottom = corners(&edit.draft, edit.extent.unwrap_or([0.0, edit.draft.size]))[3];
-        let below = view.to_screen(egui::pos2(bottom[0] as f32, bottom[1] as f32));
-        egui::Window::new("Edit text")
-            .id(egui::Id::new(("text editor", edit.target)))
-            .collapsible(false)
-            .resizable(false)
-            .default_pos(below + egui::vec2(0.0, 12.0))
-            .constrain_to(area)
+        let id = egui::Id::new("text tool field");
+        if std::mem::take(&mut edit.fresh) {
+            egui::TextEdit::store_state(ctx, id, Default::default());
+        }
+        if let Some([primary, secondary]) = edit.place_cursor.take() {
+            let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+            let cursor = |index| egui::text::CCursor::new(index);
+            state
+                .cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::two(
+                    cursor(secondary),
+                    cursor(primary),
+                )));
+            egui::TextEdit::store_state(ctx, id, state);
+            edit.cursor = [primary, secondary];
+        }
+        // The field sits at the caret, which is where the IME puts its window.
+        let caret = edit
+            .carets
+            .get(edit.cursor[0])
+            .map_or(edit.draft.start, |c| {
+                edit.draft.canvas_point(c.along, c.top + c.height)
+            });
+        let at = view.to_screen(egui::pos2(caret[0] as f32, caret[1] as f32));
+        egui::Area::new(egui::Id::new("text tool input"))
+            .fixed_pos(at)
+            .interactable(false)
+            .constrain(false)
             .show(ctx, |ui| {
-                ui.set_width(280.0);
-                let field = ui.add(
-                    egui::TextEdit::multiline(&mut edit.draft.string)
-                        .id(egui::Id::new("text editor field"))
-                        .hint_text("Type here")
-                        .desired_rows(3)
-                        .desired_width(f32::INFINITY),
-                );
-                if edit.focus {
-                    field.request_focus();
-                    edit.focus = false;
+                let visuals = ui.visuals_mut();
+                visuals.text_cursor.stroke = egui::Stroke::NONE;
+                visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
+                visuals.selection.stroke = egui::Stroke::NONE;
+                let output = egui::TextEdit::multiline(&mut edit.draft.string)
+                    .id(id)
+                    .frame(false)
+                    .text_color(egui::Color32::TRANSPARENT)
+                    .desired_rows(1)
+                    .desired_width(4096.0)
+                    .show(ui);
+                let idle = ctx.memory(|m| m.focused().is_none()) && !egui::Popup::is_any_open(ctx);
+                if std::mem::take(&mut edit.focus) || idle {
+                    output.response.request_focus();
+                }
+                if let Some(range) = output.cursor_range {
+                    edit.cursor = [range.primary.index, range.secondary.index];
                 }
                 while edit.draft.string.len() > MAX_TEXT {
                     edit.draft.string.pop();
                 }
-                if let Some(error) = &edit.error {
-                    ui.colored_label(ui.visuals().warn_fg_color, error);
-                } else if !edit.missing.is_empty() {
-                    let missing: String = edit.missing.iter().take(12).collect();
-                    ui.colored_label(
-                        ui.visuals().warn_fg_color,
-                        format!("This font can't draw: {missing}"),
-                    );
-                }
-                ui.horizontal(|ui| {
-                    done |= ui.button("Done").on_hover_text("Ctrl+Enter").clicked();
-                    canceled |= ui.button("Cancel").on_hover_text("Esc").clicked();
-                });
             });
         self.draw_text_draft();
         if canceled {
@@ -774,20 +907,27 @@ impl Dudel {
             self.finish_text_edit();
         } else if self.text_edit.as_ref().is_some_and(|e| e.pending.is_some()) {
             ctx.request_repaint_after(Duration::from_millis(16));
+        } else {
+            // The caret blinks.
+            ctx.request_repaint_after(Duration::from_millis(500));
         }
     }
 
-    /// The outline of the text being edited, or the box being dragged.
+    /// The box and caret of the text being edited, or the box being dragged.
     pub(crate) fn paint_text_overlay(&self, painter: &egui::Painter, view: &crate::view::View) {
         let screen = |p: [f64; 2]| view.to_screen(egui::pos2(p[0] as f32, p[1] as f32));
         let outline = if let Some(drag) = &self.text_drag {
             let [a, b] = [drag.from, drag.to].map(|p| p.map(f64::from));
             Some([a, [b[0], a[1]], b, [a[0], b[1]]])
+        } else if let Some(edit) = &self.text_edit {
+            let extent = edit.extent.unwrap_or([0.0, edit.draft.size]);
+            Some(corners(&edit.draft, extent))
+        } else if self.tool == Tool::Pointer && !self.text_moving {
+            // The Pointer shows which object it has hold of.
+            self.selected_text()
+                .and_then(|(_, text)| Some(corners(text, text.extent().ok()?)))
         } else {
-            self.text_edit.as_ref().map(|edit| {
-                let extent = edit.extent.unwrap_or([0.0, edit.draft.size]);
-                corners(&edit.draft, extent)
-            })
+            None
         };
         let Some(outline) = outline else {
             return;
@@ -805,6 +945,77 @@ impl Dudel {
             5.0,
             5.0,
         ));
+        if let Some(edit) = &self.text_edit {
+            self.paint_text_caret(painter, edit, &screen, points[3]);
+        }
+    }
+
+    fn paint_text_caret(
+        &self,
+        painter: &egui::Painter,
+        edit: &Editing,
+        screen: &dyn Fn([f64; 2]) -> egui::Pos2,
+        below: egui::Pos2,
+    ) {
+        use egui::{Color32, Stroke};
+        let text = &edit.draft;
+        let [primary, secondary] = edit.cursor;
+        let (first, last) = (primary.min(secondary), primary.max(secondary));
+        for pair in edit
+            .carets
+            .get(first..=last.min(edit.carets.len().saturating_sub(1)))
+            .unwrap_or(&[])
+            .windows(2)
+        {
+            if pair[0].top == pair[1].top {
+                let (a, b) = (pair[0], pair[1]);
+                let quad = [
+                    text.canvas_point(a.along, a.top),
+                    text.canvas_point(b.along, a.top),
+                    text.canvas_point(b.along, a.top + a.height),
+                    text.canvas_point(a.along, a.top + a.height),
+                ]
+                .map(screen)
+                .to_vec();
+                painter.add(egui::Shape::convex_polygon(
+                    quad,
+                    Color32::from_rgba_unmultiplied(75, 150, 255, 90),
+                    Stroke::NONE,
+                ));
+            }
+        }
+        let time = painter.ctx().input(|i| i.time);
+        if let Some(caret) = edit.carets.get(primary)
+            && first == last
+            && time.rem_euclid(1.0) < 0.5
+        {
+            let top = screen(text.canvas_point(caret.along, caret.top));
+            let foot = screen(text.canvas_point(caret.along, caret.top + caret.height));
+            painter.line_segment([top, foot], Stroke::new(3.0_f32, Color32::WHITE));
+            painter.line_segment([top, foot], Stroke::new(1.5_f32, Color32::BLACK));
+        }
+        if let Some(handle) = edit.handle() {
+            let rect = egui::Rect::from_center_size(screen(handle), egui::vec2(9.0, 9.0));
+            painter.rect_filled(rect, 1.0, Color32::WHITE);
+            painter.rect_stroke(
+                rect,
+                1.0,
+                Stroke::new(1.0_f32, Color32::BLACK),
+                egui::StrokeKind::Middle,
+            );
+        }
+        let warning = edit.error.clone().or_else(|| {
+            let missing: String = edit.missing.iter().take(12).collect();
+            (!missing.is_empty()).then(|| format!("This font can't draw: {missing}"))
+        });
+        if let Some(warning) = warning {
+            let font = egui::FontId::proportional(13.0);
+            let at = below + egui::vec2(0.0, 8.0);
+            let galley = painter.layout_no_wrap(warning, font, Color32::WHITE);
+            let back = egui::Rect::from_min_size(at, galley.size()).expand(4.0);
+            painter.rect_filled(back, 3.0, Color32::from_black_alpha(190));
+            painter.galley(at, galley, Color32::WHITE);
+        }
     }
 
     /// The text the options bar shows and changes: the open session, else a
@@ -849,9 +1060,13 @@ impl Dudel {
             style.font.as_str()
         };
         let label: String = label.chars().take(22).collect();
-        ui.menu_button(label, |ui| self.font_menu_ui(ui, &mut style))
+        let button = ui
+            .menu_button(label, |ui| self.font_menu_ui(ui, &mut style))
             .response
-            .on_hover_text("Font");
+            .on_hover_text("Font · scroll to step through fonts");
+        if button.hovered() {
+            self.step_font_with_wheel(ui, &mut style);
+        }
         ui.add(
             egui::DragValue::new(&mut style.size)
                 .range(1.0..=8192.0)
@@ -898,12 +1113,38 @@ impl Dudel {
         if style != original {
             self.set_text_style(style);
         }
-        if self.text_edit.is_none()
-            && let Some((index, _)) = self.selected_text()
-            && ui.button("Edit text").clicked()
-        {
-            self.begin_text_edit(index);
+        // A pen display may have no keyboard to finish with.
+        if self.text_edit.is_some() {
+            if ui.button("Done").on_hover_text("Ctrl+Enter").clicked() {
+                self.finish_text_edit();
+            } else if ui.button("Cancel").on_hover_text("Esc").clicked() {
+                self.cancel_text_edit();
+            }
         }
+    }
+
+    /// The wheel over the font button moves through the fonts, as it does over
+    /// the blend box. Wheel up moves up the list.
+    fn step_font_with_wheel(&mut self, ui: &mut egui::Ui, style: &mut Style) {
+        let delta = ui.input_mut(|i| {
+            let delta = i.raw_scroll_delta.y;
+            i.raw_scroll_delta = egui::Vec2::ZERO;
+            i.smooth_scroll_delta = egui::Vec2::ZERO;
+            delta
+        });
+        self.font_list.wheel += delta;
+        let steps = (self.font_list.wheel / FONT_WHEEL_STEP).trunc();
+        self.font_list.wheel -= steps * FONT_WHEEL_STEP;
+        let names = text_render::font_names();
+        if steps == 0.0 || names.is_empty() {
+            return;
+        }
+        let current = names
+            .iter()
+            .position(|name| *name == style.font)
+            .unwrap_or(0);
+        let next = (current as i64 - steps as i64).clamp(0, names.len() as i64 - 1);
+        style.font.clone_from(&names[next as usize]);
     }
 
     fn font_menu_ui(&mut self, ui: &mut egui::Ui, style: &mut Style) {
@@ -939,6 +1180,10 @@ impl Dudel {
             .max_height(320.0)
             .auto_shrink([false, false])
             .show_rows(ui, height, found.len(), |ui, rows| {
+                #[cfg(test)]
+                {
+                    self.font_list.first_row = rows.start;
+                }
                 for name in &found[rows] {
                     let size = egui::vec2(PREVIEW_SIZE[0] as f32, height);
                     let (rect, row) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -1034,7 +1279,7 @@ mod tests {
     #[test]
     fn a_whole_session_is_one_undo_step() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         for words in ["H", "He", "Hem", "Heml", "Hemlo"] {
             typed(&mut app, words);
             assert!(ink(&app) > 0, "drawn live");
@@ -1053,7 +1298,7 @@ mod tests {
     #[test]
     fn escape_changes_nothing() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         let saved = app.doc.clone();
@@ -1073,7 +1318,7 @@ mod tests {
     fn new_text_left_empty_disappears_without_history() {
         for words in ["", "  \n "] {
             let mut app = app();
-            app.begin_new_text([20.0, 20.0], None);
+            app.begin_new_text([20.0, 20.0], None, None);
             assert_eq!(app.doc.layers.len(), 2);
             typed(&mut app, words);
             app.finish_text_edit();
@@ -1085,7 +1330,7 @@ mod tests {
     #[test]
     fn emptying_existing_text_removes_the_layer_in_one_step() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         let index = app.doc.active;
@@ -1102,7 +1347,7 @@ mod tests {
     #[test]
     fn reopening_without_changes_adds_no_history() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         app.modified = false;
@@ -1116,7 +1361,7 @@ mod tests {
     #[test]
     fn other_edits_close_the_session_first() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.undo();
         assert!(app.text_edit.is_none());
@@ -1126,7 +1371,7 @@ mod tests {
     #[test]
     fn locked_text_stays_as_it_is() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         let index = app.doc.active;
@@ -1136,10 +1381,39 @@ mod tests {
         assert!(app.status.contains("locked"));
     }
 
+    fn imported(app: &mut Dudel) -> usize {
+        app.begin_new_text([40.0, 30.0], Some(220.0), None);
+        typed(app, "Hemlo");
+        app.finish_text_edit();
+        let index = app.doc.active;
+        app.doc.layers[index].text.as_mut().unwrap().csp = Some([110.0, 60.0]);
+        app.history = crate::document::History::new();
+        app.modified = false;
+        index
+    }
+
+    #[test]
+    fn opening_imported_text_changes_nothing_until_it_is_edited() {
+        let mut app = app();
+        let index = imported(&mut app);
+        let pixels = app.doc.layers[index].pixels.clone();
+        app.begin_text_edit(index);
+        app.finish_text_edit();
+        let layer = &app.doc.layers[index];
+        assert!(layer.text.as_ref().unwrap().csp.is_some());
+        assert!(layer.pixels == pixels && !app.modified && !app.history.can_undo());
+        app.begin_text_edit(index);
+        typed(&mut app, "Hemlo!");
+        app.finish_text_edit();
+        assert!(app.doc.layers[index].text.as_ref().unwrap().csp.is_none());
+        app.undo();
+        assert!(app.doc.layers[index].text.as_ref().unwrap().csp.is_some());
+    }
+
     #[test]
     fn a_missing_font_keeps_the_pixels_and_says_so() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         let index = app.doc.active;
@@ -1162,10 +1436,10 @@ mod tests {
     fn clicks_find_the_topmost_visible_text_and_nothing_else() {
         let mut app = app();
         app.zoom = 1.0;
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Lower");
         app.finish_text_edit();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Upper");
         app.finish_text_edit();
         assert_eq!(app.text_at([30.0, 40.0]), Some(2));
@@ -1189,12 +1463,59 @@ mod tests {
         app.text_packet([280.0, 190.0], false, true, true);
         assert!(app.text_edit.is_none());
         assert_eq!(app.doc.layers.len(), 2);
-        app.text_packet([200.0, 150.0], true, false, true);
+        app.text_packet([200.0, 190.0], true, false, true);
         app.text_packet([120.0, 100.0], false, false, true);
         app.text_packet([120.0, 100.0], false, true, true);
         let edit = app.text_edit.as_ref().unwrap();
         assert_eq!(edit.draft.wrap, Some(80.0));
+        assert_eq!(edit.draft.box_height, Some(90.0));
         assert_eq!(edit.draft.start, [120.0, 100.0]);
+        assert_eq!(
+            edit.extent.unwrap(),
+            [80.0, 90.0],
+            "the box is what was drawn"
+        );
+    }
+
+    #[test]
+    fn the_corner_resizes_a_box_and_lines_have_no_corner() {
+        let mut app = app();
+        app.zoom = 1.0;
+        app.begin_new_text([20.0, 20.0], None, None);
+        assert!(app.text_edit.as_ref().unwrap().handle().is_none());
+        app.finish_text_edit();
+        app.begin_new_text([20.0, 20.0], Some(100.0), Some(60.0));
+        typed(&mut app, "Hemlo");
+        app.text_packet([120.0, 80.0], true, false, true);
+        app.text_packet([220.0, 150.0], false, false, true);
+        app.text_packet([220.0, 150.0], false, true, true);
+        let edit = app.text_edit.as_ref().unwrap();
+        assert_eq!(edit.draft.wrap, Some(200.0));
+        assert_eq!(edit.draft.box_height, Some(130.0));
+        app.finish_text_edit();
+        assert_eq!(undo_depth(&mut app), 1, "all of it is one step");
+    }
+
+    #[test]
+    fn presses_on_the_text_place_the_caret_and_drags_select() {
+        let mut app = app();
+        app.zoom = 1.0;
+        app.begin_new_text([20.0, 20.0], None, None);
+        typed(&mut app, "Hemlo");
+        let edit = app.text_edit.as_ref().unwrap();
+        let carets = edit.carets.clone();
+        assert_eq!(carets.len(), 6);
+        let at = |index: usize| [(20.0 + carets[index].along) as f32, 40.0];
+        app.text_packet(at(1), true, false, true);
+        app.text_packet(at(1), false, true, true);
+        assert_eq!(app.text_edit.as_ref().unwrap().place_cursor, Some([1, 1]));
+        app.text_packet(at(1), true, false, true);
+        app.text_packet(at(4), false, false, true);
+        app.text_packet(at(4), false, true, true);
+        let edit = app.text_edit.as_ref().unwrap();
+        assert_eq!(edit.place_cursor, Some([4, 1]));
+        assert!(edit.selecting.is_none());
+        assert_eq!(app.doc.layers.len(), 2, "no new layer");
     }
 
     #[test]
@@ -1209,7 +1530,7 @@ mod tests {
     fn the_foreground_color_recolors_open_text_only() {
         let mut app = app();
         app.color = [10, 20, 30];
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         app.finish_text_edit();
         let index = app.doc.active;
@@ -1235,7 +1556,7 @@ mod tests {
     #[test]
     fn typing_never_waits_and_finishing_keeps_the_newest_draft() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         for words in ["H", "He", "Hem"] {
             app.text_edit.as_mut().unwrap().draft.string = words.into();
             app.draw_text_draft();
@@ -1249,7 +1570,7 @@ mod tests {
     #[test]
     fn escape_ignores_a_drawing_still_running() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         app.text_edit.as_mut().unwrap().draft.string = "Hemlo".into();
         app.draw_text_draft();
         app.cancel_text_edit();
@@ -1261,7 +1582,7 @@ mod tests {
     #[test]
     fn switching_tabs_finishes_the_text_and_keeps_tabs_apart() {
         let mut app = app();
-        app.begin_new_text([20.0, 20.0], None);
+        app.begin_new_text([20.0, 20.0], None, None);
         typed(&mut app, "Hemlo");
         assert!(app.prepare_tab_for_open());
         assert!(app.text_edit.is_none());
@@ -1293,6 +1614,7 @@ mod tests {
                 align: Align::Left,
                 vertical: false,
                 wrap: Some(canvas[0] as f64 * 0.8),
+                box_height: None,
                 line_spacing: 1.0,
                 start: [100.0, 100.0],
                 along: [angle.cos(), angle.sin()],
@@ -1341,6 +1663,7 @@ mod tests {
             align: Align::Left,
             vertical: false,
             wrap: None,
+            box_height: None,
             line_spacing: 1.0,
             start: [-10.0, 180.0],
             along: [1.0, 0.0],

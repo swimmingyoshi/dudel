@@ -899,7 +899,7 @@ impl Dudel {
             if self.affine_preview.is_some() {
                 ui.label(egui::RichText::new("Free transform").strong());
                 if ui.button("Apply").on_hover_text("Enter").clicked() {
-                    self.finish_affine_preview();
+                    self.apply_affine_preview();
                 }
                 if ui.button("Cancel").on_hover_text("Esc").clicked() {
                     self.cancel_affine_preview();

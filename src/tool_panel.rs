@@ -504,7 +504,7 @@ impl Dudel {
     fn transform_actions_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("Apply").on_hover_text("Enter").clicked() {
-                self.finish_affine_preview();
+                self.apply_affine_preview();
             }
             if ui.button("Cancel").on_hover_text("Esc").clicked() {
                 self.cancel_affine_preview();

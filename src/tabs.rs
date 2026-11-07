@@ -209,6 +209,7 @@ project_session! {
     vector_pick: crate::vector_pick::Pick,
     text_edit: Option<crate::text_tool::Editing>,
     text_drag: Option<crate::text_tool::Drag>,
+    held_transform: Option<crate::affine_preview::HeldTransform>,
     layer_navigation: crate::layer_navigation::Navigation,
     layer_selection: crate::layer_batch::Selection,
     recording: crate::timelapse::Recording,

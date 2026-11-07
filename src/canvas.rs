@@ -394,7 +394,7 @@ impl Dudel {
         }
         if self.affine_preview.is_some() {
             if key(Modifiers::NONE, Key::Enter) {
-                self.finish_affine_preview();
+                self.apply_affine_preview();
             }
             for (modifiers, step) in [(Modifiers::NONE, 1.0), (Modifiers::SHIFT, 10.0)] {
                 for (arrow, dx, dy) in [
@@ -530,6 +530,8 @@ impl Dudel {
             && self.guide_cursor(area, &view, origin).is_none()
             && !self.reference_grabs(view, origin)
             && !self.line_grabs(view, origin)
+            && !self.text_moving
+            && !self.pointer_grabs_text(view.to_doc(origin))
     }
     pub(crate) fn canvas(&mut self, ctx: &egui::Context, packets: &[input::Packet]) {
         self.tab_bar(ctx);
@@ -540,6 +542,7 @@ impl Dudel {
             )
             .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
         self.text_editor(ctx);
+        self.ask_about_held_transform();
         self.finish_navigator_paint(ctx);
     }
 
@@ -673,6 +676,7 @@ impl Dudel {
                 input::Packet::End(s) => (*s, false, true),
                 input::Packet::Cancel => {
                     self.text_drag = None;
+                    self.text_moving = false;
                     self.cancel_ruler_drag();
                     if let Some(drag) = self.guide_drag.take()
                         && drag.index < self.guide_lines.len()
@@ -775,7 +779,20 @@ impl Dudel {
                 }
                 continue;
             }
+            if start {
+                self.text_moving = false;
+            }
+            if self.tool == Tool::Pointer
+                && start
+                && on_canvas
+                && navigation_allowed
+                && !picking
+                && self.pointer_text_press([at.x, at.y], ctx.input(|i| i.time))
+            {
+                continue;
+            }
             if navigation_allowed
+                && !self.text_moving
                 && self.vector_pick_packet(
                     view,
                     pos,
@@ -841,7 +858,7 @@ impl Dudel {
                 self.text_packet([at.x, at.y], start, end, on_workspace);
                 continue;
             }
-            if self.tool == Tool::Move && navigation_allowed && !picking {
+            if (self.tool == Tool::Move || self.text_moving) && navigation_allowed && !picking {
                 if start && on_canvas {
                     self.start_move_drag(at);
                 }
@@ -864,6 +881,7 @@ impl Dudel {
                 if end {
                     self.apply_move();
                     self.finish_move_drag();
+                    self.text_moving = false;
                     moved = false;
                 }
                 continue;
@@ -1107,7 +1125,8 @@ impl Dudel {
             return;
         } // A released move is retrying a full queue.
         self.deferred_move_ticket = None;
-        if let Some(blocker) = self.stroke_target_blocker(paint_target, false) {
+        let blocker = self.stroke_target_blocker(paint_target, false);
+        if let Some(blocker) = crate::text_layer::whole_layer_blocker(blocker, &self.doc, false) {
             self.status = blocker.into();
         } else if paint_target.is_raster() && self.input_alpha_locked() {
             self.status = "Turn off Lock transparency to move pixels".into();
@@ -1139,9 +1158,10 @@ impl Dudel {
                 self.status = "Move target is no longer active".into();
                 return;
             }
-            if let Some(blocker) = pending
+            let blocker = pending
                 .paint_target
-                .blocker(&self.doc, self.doc.active, false)
+                .blocker(&self.doc, self.doc.active, false);
+            if let Some(blocker) = crate::text_layer::whole_layer_blocker(blocker, &self.doc, false)
             {
                 self.status = blocker.into();
                 return;

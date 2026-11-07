@@ -251,21 +251,23 @@ impl Edit {
             0
         }
     }
-    /// Edits that would change a text layer's pixels without its record, which
-    /// stay refused until layer transforms can carry text along.
+    /// Edits that would change a text layer's pixels without its record.
     fn text_blocker(&self, doc: &Document) -> Option<&'static str> {
-        let active = doc.layers.get(doc.active).is_some_and(|l| l.text.is_some());
-        let refused = match self {
+        use crate::text_layer::{BLOCKER, whole_layer_blocker};
+        if !doc.layers.get(doc.active).is_some_and(|l| l.text.is_some()) {
+            return None;
+        }
+        match self {
+            Self::Clear { .. } | Self::ClearTarget { .. } => Some(BLOCKER),
+            Self::AffineSettingsTarget { settings, .. } => {
+                whole_layer_blocker(Some(BLOCKER), doc, settings.mirror.is_some())
+            }
             Self::Transform(_)
             | Self::TransformTarget { .. }
             | Self::MoveTarget { .. }
-            | Self::AffineTarget { .. }
-            | Self::AffineSettingsTarget { .. }
-            | Self::Clear { .. }
-            | Self::ClearTarget { .. } => active,
-            _ => false,
-        };
-        refused.then_some(crate::text_layer::BLOCKER)
+            | Self::AffineTarget { .. } => whole_layer_blocker(Some(BLOCKER), doc, false),
+            _ => None,
+        }
     }
     pub fn validate_arguments(&self) -> Result<(), String> {
         match self {
@@ -822,6 +824,8 @@ impl Edit {
                 outcome.changed = doc.transform_active_control(*transform, cancel)?;
                 if outcome.changed {
                     crate::vector_layer::follow(source, &mut doc, &flip(source, *transform))?;
+                    let matrix = Some(flip_matrix(source, *transform));
+                    crate::text_layer::carry(source, &mut doc, matrix, cancel)?;
                 }
             }
             Self::MoveTarget { target, offset } => {
@@ -839,6 +843,9 @@ impl Edit {
                 if outcome.changed {
                     let [x, y] = offset.map(|v| v as f32);
                     crate::vector_layer::follow(source, &mut doc, &|a, b| [a + x, b + y])?;
+                    let [x, y] = offset.map(|v| v as f64);
+                    let matrix = crate::affine::Matrix([1.0, 0.0, 0.0, 1.0, x, y]);
+                    crate::text_layer::carry(source, &mut doc, Some(matrix), cancel)?;
                 }
             }
             Self::AffineTarget {
@@ -854,6 +861,7 @@ impl Edit {
                     let map =
                         |x: f32, y: f32| matrix.point(f64::from(x), f64::from(y)).map(|v| v as f32);
                     crate::vector_layer::follow(source, &mut doc, &map)?;
+                    crate::text_layer::carry(source, &mut doc, Some(*matrix), cancel)?;
                 }
             }
             Self::AffineSettingsTarget { target, settings } => {
@@ -868,6 +876,11 @@ impl Edit {
                 )?;
                 if outcome.changed {
                     crate::vector_layer::follow_settings(source, &mut doc, settings)?;
+                    let matrix = match settings.mapping(source)? {
+                        crate::affine::Mapping::Affine(matrix) => Some(matrix),
+                        _ => None,
+                    };
+                    crate::text_layer::carry(source, &mut doc, matrix, cancel)?;
                 }
             }
             Self::TransformTarget { target, transform } => {
@@ -877,6 +890,8 @@ impl Edit {
                 outcome.changed = doc.transform_active_control(*transform, cancel)?;
                 if outcome.changed {
                     crate::vector_layer::follow(source, &mut doc, &flip(source, *transform))?;
+                    let matrix = Some(flip_matrix(source, *transform));
+                    crate::text_layer::carry(source, &mut doc, matrix, cancel)?;
                 }
             }
             Self::Rotate(turns) => {
@@ -973,6 +988,17 @@ fn flip(doc: &Document, transform: crate::transform::Transform) -> impl Fn(f32, 
         Transform::FlipVertical => [x, sy - y],
         Transform::RotateHalfTurn => [sx - x, sy - y],
     }
+}
+/// `flip` as a matrix, for records that keep directions as well as points.
+fn flip_matrix(doc: &Document, transform: crate::transform::Transform) -> crate::affine::Matrix {
+    use crate::transform::Transform;
+    let b = crate::affine::Settings::bounds(doc);
+    let (sx, sy) = ((b.left + b.right) as f64, (b.top + b.bottom) as f64);
+    crate::affine::Matrix(match transform {
+        Transform::FlipHorizontal => [-1.0, 0.0, 0.0, 1.0, sx, 0.0],
+        Transform::FlipVertical => [1.0, 0.0, 0.0, -1.0, 0.0, sy],
+        Transform::RotateHalfTurn => [-1.0, 0.0, 0.0, -1.0, sx, sy],
+    })
 }
 fn current_selection(
     doc: &Document,

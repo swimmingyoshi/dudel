@@ -39,6 +39,22 @@ impl Dudel {
             self.status = "A canvas action is already waiting for the save".into();
             return false;
         }
+        // Replacing the project can wait, so this asks before anything closes.
+        if let Some(question) = self.transform_rasterizes_text() {
+            let question = format!("{question} Apply it to continue, or Cancel to stay here.");
+            self.confirm(
+                "Rasterize text?",
+                question,
+                "Rasterize and apply",
+                move |app| {
+                    app.text_transform_confirmed = true;
+                    app.finish_affine_preview();
+                    app.flush_render_queue();
+                    app.request_replace(action);
+                },
+            );
+            return false;
+        }
         self.finish_layer_rename(true);
         self.cancel_gestures();
         self.track_guide_changes();

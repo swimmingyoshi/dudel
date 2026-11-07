@@ -907,6 +907,7 @@ impl Queue {
                 } else if movement.engine.net_changed && movement.checkpointed {
                     // Vector strokes follow before history keeps the result.
                     movement.engine.follow_vector(doc);
+                    movement.engine.follow_text(doc);
                     progress.damage.include([0, 0, doc.width, doc.height]);
                     if let Some(mut cursor) = history.begin_settle(doc) {
                         cursor.prefer_smaller_full_snapshot();

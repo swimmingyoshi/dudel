@@ -134,6 +134,13 @@ impl Dudel {
             then: Box::new(then),
         });
     }
+    /// Answer the open question with yes, as its first button does.
+    #[cfg(test)]
+    pub(crate) fn accept_confirmation(&mut self) {
+        if let Some(confirm) = self.dialogs.confirm.take() {
+            (confirm.then)(self);
+        }
+    }
     /// Drop open questions unanswered, as closing the window does.
     pub(crate) fn dismiss_dialogs(&mut self) {
         self.dialogs = Dialogs::default();

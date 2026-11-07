@@ -211,15 +211,6 @@ pub(crate) fn default_font() -> Option<String> {
     .cloned()
 }
 
-/// An installed font's file and its face index in that file.
-pub(crate) fn font_file(name: &str) -> Option<(Vec<u8>, u32)> {
-    let face = FACES
-        .get()?
-        .iter()
-        .find(|f| f.names.iter().any(|n| n == name))?;
-    Some((std::fs::read(&face.path).ok()?, face.index))
-}
-
 /// Tests name this font to get `test_font`, so that they don't depend on what
 /// the machine has installed.
 #[cfg(test)]
@@ -308,6 +299,14 @@ impl Block<'_> {
     }
 }
 
+/// Where the caret stands before a character, in text space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Caret {
+    pub(crate) along: f64,
+    pub(crate) top: f64,
+    pub(crate) height: f64,
+}
+
 /// One glyph and where it sits in text space.
 struct Placed {
     id: GlyphId,
@@ -384,13 +383,26 @@ pub(crate) fn extent(block: &Block, font: &FontVec) -> Result<[f64; 2], String> 
     ])
 }
 
+/// A block's line count, with its font's natural line pitch and glyph height.
+pub(crate) fn line_metrics(block: &Block, font: &FontVec) -> Result<(usize, f64, f64), String> {
+    let scaled = font.as_scaled(font_scale(font, block.em)?);
+    let (lines, _, _) = arrange(block, &scaled);
+    let height = f64::from(scaled.height());
+    Ok((lines.len(), height + f64::from(scaled.line_gap()), height))
+}
+
 /// Where every glyph goes in text space. Shaping belongs here: nothing after
 /// this knows how glyphs were chosen or spaced.
-fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
+fn layout(block: &Block, font: &FontVec, scale: PxScale) -> (Vec<Placed>, Vec<Caret>) {
     let scaled = font.as_scaled(scale);
     let (lines, span, line_height) = arrange(block, &scaled);
     let length = |line: &String| f64::from(advance(&scaled, line.trim_end(), block.kerning));
     let mut placed = Vec::new();
+    // One caret per character and one at the end. Wrapped lines lose no
+    // characters, and a line break is a character of its own.
+    let mut carets = Vec::new();
+    let mut source = block.string.chars().peekable();
+    let height = f64::from(scaled.height());
     for (index, line) in lines.iter().enumerate() {
         let used = length(line);
         let offset = match block.align {
@@ -407,17 +419,37 @@ fn layout(block: &Block, font: &FontVec, scale: PxScale) -> Vec<Placed> {
         };
         let mut pen = offset;
         let mut last = None;
+        let caret = |pen: f32| Caret {
+            along: f64::from(pen),
+            top: f64::from(top),
+            height,
+        };
         for c in line.chars() {
             let id = scaled.glyph_id(c);
             if let Some(last) = last.filter(|_| block.kerning) {
                 pen += scaled.kern(last, id);
             }
             last = Some(id);
+            carets.push(caret(pen));
+            source.next();
             placed.push(Placed { id, pen, baseline });
             pen += scaled.h_advance(id);
         }
+        match source.peek() {
+            Some('\n') => {
+                carets.push(caret(pen));
+                source.next();
+            }
+            None => carets.push(caret(pen)),
+            Some(_) => {}
+        }
     }
-    placed
+    (placed, carets)
+}
+
+/// Where the caret stands before each character of a block, and at its end.
+pub(crate) fn carets(block: &Block, font: &FontVec) -> Result<Vec<Caret>, String> {
+    Ok(layout(block, font, font_scale(font, block.em)?).1)
 }
 
 /// How much of each pixel the text covers, over the part of the canvas it
@@ -511,7 +543,7 @@ pub(crate) fn render(
     let factor = scaled.scale_factor();
     let mut drawn = Vec::new();
     let mut rect = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-    for placed in layout(block, font, scale) {
+    for placed in layout(block, font, scale).0 {
         let glyph = placed
             .id
             .with_scale_and_position(scale, point(placed.pen, placed.baseline));
@@ -706,7 +738,7 @@ mod tests {
         let pens = |kerning| {
             let mut text = block("AVAVAV", 0.0);
             text.kerning = kerning;
-            let placed = layout(&text, &font, scale);
+            let placed = layout(&text, &font, scale).0;
             placed.last().unwrap().pen
         };
         assert!(pens(true) <= pens(false));
@@ -722,7 +754,7 @@ mod tests {
             let mut text = block("Wide line\nhi", 0.0);
             text.align = align;
             text.measure = Measure::Natural { line_spacing };
-            let placed = layout(&text, &font, scale);
+            let placed = layout(&text, &font, scale).0;
             let (first, last) = (placed.first().unwrap(), placed.last().unwrap());
             // The first glyph of the second line.
             let second = &placed[placed.len() - 2];
@@ -750,7 +782,7 @@ mod tests {
         text.measure = Measure::Natural { line_spacing: 1.0 };
         text.wrap = 150.0;
         text.align = Align::Right;
-        let placed = layout(&text, &font, scale);
+        let placed = layout(&text, &font, scale).0;
         let rows: std::collections::BTreeSet<_> =
             placed.iter().map(|p| p.baseline.to_bits()).collect();
         assert!(rows.len() >= 2);

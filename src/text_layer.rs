@@ -3,6 +3,7 @@
 //! masks and export need nothing new, and a project looks the same on a computer
 //! without its font: opening never redraws text.
 use crate::{
+    affine::Matrix,
     document::Document,
     pixels::Pixels,
     text_render::{Align, Block, Measure},
@@ -11,6 +12,9 @@ use crate::{
 /// Why a text layer's pixels can't be edited directly.
 pub(crate) const BLOCKER: &str =
     "This is a text layer — edit its text, or rasterize it (Layer menu) to edit its pixels";
+
+/// Why part of a text layer can't be moved or transformed.
+pub(crate) const DESELECT: &str = "Deselect first: text moves and transforms as a whole";
 
 /// Longest text in bytes. A thousand layers of it still fit project metadata.
 pub(crate) const MAX_TEXT: usize = 8192;
@@ -33,6 +37,9 @@ pub(crate) struct TextLayer {
     pub(crate) vertical: bool,
     /// The box width lines wrap at, or None for lines that end only at breaks.
     pub(crate) wrap: Option<f64>,
+    /// The height the box was drawn at. Text past it makes the box taller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) box_height: Option<f64>,
     /// A multiple of the font's own line height.
     pub(crate) line_spacing: f64,
     /// Canvas pixels: where the first line starts, and the unit vectors along
@@ -57,6 +64,9 @@ impl TextLayer {
             || self.font.len() > MAX_FONT_NAME
             || !inside(self.size, 1.0..=MAX_SIZE)
             || self.wrap.is_some_and(|w| !inside(w, 1.0..=MAX_POSITION))
+            || self
+                .box_height
+                .is_some_and(|h| !inside(h, 1.0..=MAX_POSITION))
             || !inside(self.line_spacing, 0.5..=5.0)
             || !position(self.start)
             || !unit(self.along)
@@ -107,9 +117,91 @@ impl TextLayer {
         crate::text_render::render(&self.block(), &*self.font()?, canvas, cancelled)
     }
 
+    /// This text in Dudel's own layout, for editing: imported text leaves CSP's
+    /// measurements behind without its lines moving.
+    pub(crate) fn released(&self) -> Self {
+        let Some([span, thickness]) = self.csp else {
+            return self.clone();
+        };
+        let mut text = Self {
+            csp: None,
+            ..self.clone()
+        };
+        let mut drop = 0.0;
+        if let Ok((lines, pitch, height)) = self
+            .font()
+            .and_then(|font| crate::text_render::line_metrics(&self.block(), &font))
+        {
+            let spacing = (thickness / lines as f64 / pitch).clamp(0.5, 5.0);
+            text.line_spacing = spacing;
+            // CSP hangs a line from its bottom and Dudel from its top.
+            if !self.vertical {
+                drop = pitch * spacing - height;
+            }
+        }
+        // CSP aligns within the laid-out length, and Dudel within the box.
+        let room = self.wrap.unwrap_or(span) - span;
+        let back = match self.align {
+            Align::Left => 0.0,
+            Align::Center => room / 2.0,
+            Align::Right => room,
+        };
+        for axis in 0..2 {
+            text.start[axis] += self.down[axis] * drop - self.along[axis] * back;
+        }
+        text
+    }
+
+    /// This text after a transform, or None when the record can't say the
+    /// same thing as the transformed pixels. Moves, turns, flips and uniform
+    /// scales keep lines straight and evenly sized; anything else doesn't.
+    pub(crate) fn mapped(&self, matrix: Matrix) -> Option<Self> {
+        let [a, b, c, d, _, _] = matrix.0;
+        let (across, scale) = (c.hypot(d), a.hypot(b));
+        let uniform = (scale - across).abs() <= 1e-6 * scale.max(across);
+        if !uniform || (a * c + b * d).abs() > 1e-6 * scale * across {
+            return None;
+        }
+        let turn = |[x, y]: [f64; 2]| [(a * x + c * y) / scale, (b * x + d * y) / scale];
+        let text = Self {
+            size: self.size * scale,
+            wrap: self.wrap.map(|wrap| wrap * scale),
+            box_height: self.box_height.map(|height| height * scale),
+            start: matrix.point(self.start[0], self.start[1]),
+            along: turn(self.along),
+            down: turn(self.down),
+            csp: self.csp.map(|csp| csp.map(|v| v * scale)),
+            ..self.clone()
+        };
+        text.validate().is_ok().then_some(text)
+    }
+
     /// How long and how tall the text is, in canvas pixels.
     pub(crate) fn extent(&self) -> Result<[f64; 2], String> {
-        crate::text_render::extent(&self.block(), &*self.font()?)
+        let [length, height] = crate::text_render::extent(&self.block(), &*self.font()?)?;
+        Ok([length, height.max(self.box_height.unwrap_or(0.0))])
+    }
+
+    /// Where the caret stands before each character, and at the end.
+    pub(crate) fn carets(&self) -> Result<Vec<crate::text_render::Caret>, String> {
+        crate::text_render::carets(&self.block(), &*self.font()?)
+    }
+
+    /// A point in text space, in canvas pixels.
+    pub(crate) fn canvas_point(&self, along: f64, down: f64) -> [f64; 2] {
+        [
+            self.start[0] + self.along[0] * along + self.down[0] * down,
+            self.start[1] + self.along[1] * along + self.down[1] * down,
+        ]
+    }
+
+    /// A canvas point in text space: along the lines and down across them.
+    pub(crate) fn text_point(&self, at: [f64; 2]) -> [f64; 2] {
+        let offset = [at[0] - self.start[0], at[1] - self.start[1]];
+        [
+            offset[0] * self.along[0] + offset[1] * self.along[1],
+            offset[0] * self.down[0] + offset[1] * self.down[1],
+        ]
     }
 
     /// The characters this text's font can't draw.
@@ -119,6 +211,70 @@ impl TextLayer {
             |font| crate::text_render::missing_characters(&self.string, &font),
         )
     }
+}
+
+/// Whether a transform lands every pixel exactly on another pixel, so that
+/// moved pixels are as good as a redraw.
+pub(crate) fn whole_pixel(matrix: Matrix) -> bool {
+    let [a, b, c, d, x, y] = matrix.0;
+    [a, b, c, d].iter().all(|v| [0.0, 1.0, -1.0].contains(v))
+        && x.fract() == 0.0
+        && y.fract() == 0.0
+}
+
+/// Text layers move and transform whole. `blocker` is why the target can't
+/// take pixels: for a text layer that holds only with a selection, or for
+/// `paired` transforms, whose reflected copy a record can't describe.
+pub(crate) fn whole_layer_blocker(
+    blocker: Option<&'static str>,
+    doc: &Document,
+    paired: bool,
+) -> Option<&'static str> {
+    match blocker {
+        Some(reason) if reason == BLOCKER => {
+            if paired {
+                Some(BLOCKER)
+            } else if doc.selection.is_some() || doc.selection_mask.is_some() {
+                Some(DESELECT)
+            } else {
+                None
+            }
+        }
+        other => other,
+    }
+}
+
+/// Bring the active text layer along after its pixels were transformed from
+/// `before` into `doc`: redrawn crisply from its new record when possible, and
+/// otherwise left as the pixels the transform made. None means a transform no
+/// record can describe.
+pub(crate) fn carry(
+    before: &Document,
+    doc: &mut Document,
+    matrix: Option<Matrix>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    let index = before.active;
+    let Some(text) = &before.layers[index].text else {
+        return Ok(());
+    };
+    let Some((matrix, text)) = matrix.and_then(|m| Some((m, text.mapped(m)?))) else {
+        doc.layers[index].text = None;
+        return Ok(());
+    };
+    let stopped = || crate::fill::check_cancel(cancel).is_err();
+    match text.render([doc.width, doc.height], &stopped) {
+        Ok(pixels) => {
+            doc.layers[index].pixels = pixels;
+            doc.layers[index].text = Some(text);
+        }
+        Err(_) => {
+            crate::fill::check_cancel(cancel)?;
+            // Without its font, only exact pixels still match the record.
+            doc.layers[index].text = whole_pixel(matrix).then_some(text);
+        }
+    }
+    Ok(())
 }
 
 /// Carry every text layer along when the whole canvas moves or turns. The
@@ -167,6 +323,7 @@ mod tests {
             align: Align::Left,
             vertical: false,
             wrap: None,
+            box_height: None,
             line_spacing: 1.0,
             start: [20.0, 20.0],
             along: [1.0, 0.0],
@@ -396,15 +553,6 @@ mod tests {
             Some(BLOCKER)
         );
         let refused = [
-            Edit::MoveTarget {
-                target,
-                offset: [5, 5],
-            },
-            Edit::TransformTarget {
-                target,
-                transform: crate::transform::Transform::FlipHorizontal,
-            },
-            Edit::Transform(crate::transform::Transform::FlipHorizontal),
             Edit::Clear { whole_layer: true },
             Edit::ClearTarget {
                 target,
@@ -476,6 +624,257 @@ mod tests {
         let text = cropped.layers[cropped.active].text.as_ref().unwrap();
         assert_eq!(text.start, [10.0, 15.0]);
         assert_record_matches_pixels(&cropped);
+    }
+
+    fn moved(doc: &Document, offset: [i64; 2]) -> Document {
+        let target = doc.layers[doc.active].id;
+        Edit::MoveTarget { target, offset }.prepare(doc).unwrap().0
+    }
+
+    fn transformed(doc: &Document, settings: crate::affine::Settings) -> Document {
+        let target = doc.layers[doc.active].id;
+        let settings = Box::new(settings);
+        Edit::AffineSettingsTarget { target, settings }
+            .prepare(doc)
+            .unwrap()
+            .0
+    }
+
+    fn record(doc: &Document) -> &TextLayer {
+        doc.layers[doc.active].text.as_ref().unwrap()
+    }
+
+    #[test]
+    fn moves_keep_text_editable_and_bring_back_what_left_the_canvas() {
+        let doc = moved(&document(), [30, 15]);
+        assert_eq!(record(&doc).start, [50.0, 35.0]);
+        assert_record_matches_pixels(&doc);
+        let before = ink(&document(), document().active);
+        let gone = moved(&doc, [-120, 0]);
+        assert!(ink(&gone, gone.active) < before);
+        let back = moved(&gone, [90, -15]);
+        assert_eq!(record(&back).start, [20.0, 20.0]);
+        assert_eq!(ink(&back, back.active), before, "redrawn from the record");
+    }
+
+    #[test]
+    fn flips_and_half_turns_keep_text_editable() {
+        use crate::transform::Transform;
+        for (transform, start, along, down) in [
+            (
+                Transform::FlipHorizontal,
+                [280.0, 20.0],
+                [-1.0, 0.0],
+                [0.0, 1.0],
+            ),
+            (
+                Transform::FlipVertical,
+                [20.0, 180.0],
+                [1.0, 0.0],
+                [0.0, -1.0],
+            ),
+            (
+                Transform::RotateHalfTurn,
+                [280.0, 180.0],
+                [-1.0, 0.0],
+                [0.0, -1.0],
+            ),
+        ] {
+            let source = document();
+            let flipped = Edit::Transform(transform).prepare(&source).unwrap().0;
+            let text = record(&flipped);
+            assert_eq!((text.start, text.along, text.down), (start, along, down));
+            assert_record_matches_pixels(&flipped);
+            flipped.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn uniform_scale_and_rotation_redraw_crisply() {
+        let mut settings = crate::affine::Settings {
+            scale_percent: [200.0, 200.0],
+            ..Default::default()
+        };
+        let doc = transformed(&document(), settings);
+        assert_eq!(record(&doc).size, 80.0);
+        assert_record_matches_pixels(&doc);
+        settings.scale_percent = [100.0, 100.0];
+        settings.angle_degrees = 30.0;
+        let doc = transformed(&doc, settings);
+        assert_eq!(record(&doc).size, 80.0);
+        assert!((record(&doc).along[1] - 0.5).abs() < 1e-9);
+        assert_record_matches_pixels(&doc);
+    }
+
+    #[test]
+    fn boxes_scale_with_their_text() {
+        let mut source = document();
+        let active = source.active;
+        source.layers[active].text.as_mut().unwrap().wrap = Some(100.0);
+        let doc = transformed(
+            &source,
+            crate::affine::Settings {
+                scale_percent: [50.0, 50.0],
+                ..Default::default()
+            },
+        );
+        assert_eq!(record(&doc).wrap, Some(50.0));
+    }
+
+    #[test]
+    fn transforms_a_record_cannot_describe_leave_plain_pixels() {
+        let stretched = crate::affine::Settings {
+            scale_percent: [200.0, 100.0],
+            ..Default::default()
+        };
+        let warped = crate::affine::Settings {
+            warp: Some(crate::affine::Warp::Corners([
+                [0.0, 0.0],
+                [300.0, 20.0],
+                [280.0, 200.0],
+                [10.0, 180.0],
+            ])),
+            ..Default::default()
+        };
+        for settings in [stretched, warped] {
+            let doc = transformed(&document(), settings);
+            assert!(doc.layers[doc.active].text.is_none());
+            assert!(ink(&doc, doc.active) > 0);
+        }
+    }
+
+    #[test]
+    fn a_size_past_the_limit_cannot_stay_text() {
+        let mut source = text("Hemlo");
+        source.size = 8000.0;
+        let double = Matrix([2.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        assert!(source.mapped(double).is_none());
+    }
+
+    #[test]
+    fn without_its_font_only_whole_pixel_moves_stay_text() {
+        let mut source = document();
+        let active = source.active;
+        source.layers[active].text.as_mut().unwrap().font = "No Such Font".into();
+        let shifted = moved(&source, [10, 0]);
+        assert_eq!(record(&shifted).start, [30.0, 20.0]);
+        assert!(ink(&shifted, shifted.active) > 0);
+        let turned = transformed(
+            &source,
+            crate::affine::Settings {
+                angle_degrees: 30.0,
+                ..Default::default()
+            },
+        );
+        assert!(turned.layers[turned.active].text.is_none());
+    }
+
+    #[test]
+    fn text_refuses_partial_moves_and_mirror_pairs() {
+        let mut doc = document();
+        let target = doc.layers[doc.active].id;
+        let settings = crate::affine::Settings {
+            mirror: Some(crate::affine::Mirror {
+                center: [150.0, 100.0],
+                angle_degrees: 0.0,
+            }),
+            ..Default::default()
+        };
+        let edit = Edit::AffineSettingsTarget {
+            target,
+            settings: Box::new(settings),
+        };
+        assert_eq!(edit.prepare(&doc).err().as_deref(), Some(BLOCKER));
+        doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 50,
+            bottom: 50,
+        });
+        for edit in [
+            Edit::MoveTarget {
+                target,
+                offset: [1, 0],
+            },
+            Edit::Transform(crate::transform::Transform::FlipHorizontal),
+        ] {
+            assert_eq!(edit.prepare(&doc).err().as_deref(), Some(DESELECT));
+        }
+    }
+
+    /// The rectangle `doc`-sized pixels have ink in.
+    fn ink_box(text: &TextLayer, canvas: [usize; 2]) -> [usize; 4] {
+        let pixels = text.render(canvas, &|| false).unwrap();
+        let mut found = [usize::MAX, usize::MAX, 0, 0];
+        for y in 0..canvas[1] {
+            for x in 0..canvas[0] {
+                if pixels.rgba(y * canvas[0] + x)[3] > 64 {
+                    found = [
+                        found[0].min(x),
+                        found[1].min(y),
+                        found[2].max(x),
+                        found[3].max(y),
+                    ];
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn imported_layout_is_kept_until_editing_and_then_stays_put() {
+        for (align, lines) in [
+            (Align::Left, "Hemlo\nHemlo"),
+            (Align::Center, "Hemlo\nHe"),
+            (Align::Right, "Hemlo\nHe"),
+        ] {
+            let mut imported = text(lines);
+            imported.align = align;
+            imported.start = [40.0, 30.0];
+            imported.wrap = Some(220.0);
+            // Lines a little apart, as CSP lays them out.
+            imported.csp = Some([110.0, 120.0]);
+            let released = imported.released();
+            assert!(released.csp.is_none());
+            released.validate().unwrap();
+            let [before, after] = [&imported, &released].map(|t| ink_box(t, [320, 240]));
+            for side in 0..4 {
+                assert!(
+                    before[side].abs_diff(after[side]) <= 4,
+                    "{align:?} {before:?} {after:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_box_keeps_its_size_and_grows_with_its_text() {
+        let mut boxed = text("Hemlo");
+        boxed.wrap = Some(200.0);
+        boxed.box_height = Some(150.0);
+        assert_eq!(boxed.extent().unwrap(), [200.0, 150.0]);
+        boxed.string = "Hemlo\n".repeat(10);
+        assert!(boxed.extent().unwrap()[1] > 150.0);
+        let double = Matrix([2.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(boxed.mapped(double).unwrap().box_height, Some(300.0));
+    }
+
+    #[test]
+    fn every_character_has_a_caret_on_its_line() {
+        let mut wrapped = text("one two\nthree");
+        wrapped.wrap = Some(90.0);
+        let carets = wrapped.carets().unwrap();
+        assert_eq!(carets.len(), "one two\nthree".chars().count() + 1);
+        assert_eq!(carets[0].along, 0.0);
+        assert!(carets[1].along > 0.0);
+        let tops: Vec<f64> = carets.iter().map(|c| c.top).collect();
+        assert!(tops.windows(2).all(|t| t[0] <= t[1]), "lines run downward");
+        assert!(carets.last().unwrap().top > carets[0].top);
+    }
+
+    #[test]
+    fn text_of_our_own_is_already_released() {
+        assert_eq!(text("Hemlo").released(), text("Hemlo"));
     }
 
     #[test]

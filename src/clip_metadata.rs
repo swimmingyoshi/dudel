@@ -2377,7 +2377,7 @@ fn prepare_document_mode(
         .collect();
     if !written.is_empty() {
         notes.push(format!(
-            "Text drawn by Dudel with the font it names, as pixels on an ordinary layer (CSP does not save text pixels; edges can differ slightly): {}.",
+            "Text drawn by Dudel with the font it names, and still editable with the Text tool (CSP does not save text pixels; edges can differ slightly): {}.",
             name_list(&written)
         ));
     }
@@ -2531,6 +2531,8 @@ fn prepare_document_mode(
     let mut budget = crate::clip_blocks::Budget::default();
     // Vector layers' pixels, to find their layers once assembled.
     let mut drawn_vectors: Vec<(crate::pixels::Pixels, i64)> = Vec::new();
+    // Text layers' pixels and records, the same way.
+    let mut drawn_texts = Vec::new();
     let mut doc =
         crate::clip_document::assemble(canvas, entries, active, &issues, cancelled, &mut |id| {
             let layer = report.layers.iter().find(|layer| layer.id == id).unwrap();
@@ -2539,14 +2541,11 @@ fn prepare_document_mode(
                 drawn_vectors.push((pixels.clone(), id));
                 return Ok(pixels);
             }
-            if let Some((text, font)) = report.texts.get(&id) {
-                return crate::clip_text::render(
-                    text,
-                    font,
-                    report.canvas.resolution,
-                    canvas,
-                    cancelled,
-                );
+            if let Some((text, _)) = report.texts.get(&id) {
+                let record = text.record(report.canvas.resolution);
+                let pixels = record.render(canvas, cancelled)?;
+                drawn_texts.push((pixels.clone(), record));
+                return Ok(pixels);
             }
             // Tone dots are drawn as CSP draws them when Dudel can, otherwise
             // as their average: black at the dot density. Both are shown
@@ -2632,6 +2631,11 @@ fn prepare_document_mode(
                 .collect();
             layer.vector = Some(crate::vector_layer::VectorLayer { strokes });
         }
+        // Text too large for a record stays as the pixels just drawn.
+        layer.text = drawn_texts
+            .iter()
+            .find(|(pixels, record)| pixels.shares(&layer.pixels) && record.validate().is_ok())
+            .map(|(_, record)| record.clone());
     }
     doc.dpi = report.canvas.resolution;
     crate::document::validate_dpi(doc.dpi)?;

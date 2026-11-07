@@ -3705,8 +3705,7 @@ impl Workspace {
 fn typing_in_the_text_tool_draws_live_and_finishes_as_one_step() {
     let mut w = Workspace::text_tool();
     w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
-    w.text("Edit text");
-    assert!(w.ctx.wants_keyboard_input(), "the editor opens with focus");
+    assert!(w.ctx.wants_keyboard_input(), "typing starts at once");
     w.type_text("Hem");
     w.type_text("lo");
     assert_eq!(w.draft(), "Hemlo", "the canvas follows typing");
@@ -3821,4 +3820,371 @@ fn text_options_stay_on_screen_at_compact_sizes() {
         let at = w.text("Right");
         assert!(at.x < size[0], "{size:?}");
     }
+}
+
+/// A finished "Hemlo" at (40, 40), with the given tool selected.
+fn text_on_canvas(tool: crate::tools::Tool) -> Workspace {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    w.app.select_tool(tool);
+    w.settle();
+    w
+}
+
+impl Workspace {
+    fn text_record(&self) -> crate::text_layer::TextLayer {
+        let layer = &self.app.doc.layers[self.app.doc.active];
+        layer.text.clone().expect("the layer is still text")
+    }
+    /// A press, one move and a release, frame by frame as a pen would.
+    fn pen_drag(&mut self, from: [f32; 2], to: [f32; 2]) {
+        let sample = |w: &Self, p: [f32; 2]| {
+            let at = w
+                .app
+                .view(w.app.canvas_area)
+                .to_screen(egui::pos2(p[0], p[1]));
+            crate::stroke::Sample {
+                x: at.x,
+                y: at.y,
+                ..Default::default()
+            }
+        };
+        let (a, b) = (sample(self, from), sample(self, to));
+        let pos = |s: crate::stroke::Sample| egui::pos2(s.x, s.y);
+        let button = |at, pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame_packets(
+            vec![egui::Event::PointerMoved(pos(a)), button(pos(a), true)],
+            &[crate::input::Packet::Start(a)],
+        );
+        self.frame_packets(
+            vec![egui::Event::PointerMoved(pos(b))],
+            &[crate::input::Packet::Move(b)],
+        );
+        self.frame_packets(vec![button(pos(b), false)], &[crate::input::Packet::End(b)]);
+        self.finish_geometry();
+    }
+    fn finish_geometry(&mut self) {
+        for _ in 0..200 {
+            self.frame(vec![]);
+            if !self.app.render_queue.busy()
+                && self.app.pending_move.is_none()
+                && self.app.move_drag.is_none()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        self.app.flush_render_queue();
+        self.settle();
+    }
+    /// Open Free transform and let its preview reach `settings`.
+    fn free_transform(&mut self, settings: crate::affine::Settings) {
+        self.app.toggle_free_transform();
+        self.settle();
+        self.app.affine_settings = settings;
+        for _ in 0..200 {
+            self.frame(vec![]);
+            if self.app.affine_preview_settled() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+#[test]
+fn the_move_tool_carries_text_and_undoes_in_one_step() {
+    let mut w = text_on_canvas(crate::tools::Tool::Move);
+    w.pen_drag([60.0, 60.0], [90.0, 80.0]);
+    let text = w.text_record();
+    assert_eq!(text.start, [70.0, 60.0]);
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+#[test]
+fn the_pointer_drags_text_and_double_clicks_open_it() {
+    let mut w = text_on_canvas(crate::tools::Tool::Pointer);
+    let pan = w.app.pan;
+    w.pen_drag([60.0, 60.0], [90.0, 80.0]);
+    assert_eq!(w.text_record().start, [70.0, 60.0]);
+    assert_eq!(w.app.pan, pan, "dragging text doesn't pan");
+    w.app.text_click = None;
+    w.press_text_tool([90.0, 80.0], [90.0, 80.0]);
+    assert!(w.app.text_edit.is_none(), "one press only takes hold");
+    w.press_text_tool([90.0, 80.0], [90.0, 80.0]);
+    assert!(
+        w.app.text_edit.is_some(),
+        "the second press opens the editor"
+    );
+    assert!(w.app.tool == crate::tools::Tool::Text);
+}
+
+#[test]
+fn the_pointer_still_pans_away_from_text() {
+    let mut w = text_on_canvas(crate::tools::Tool::Pointer);
+    let far = [
+        w.app.doc.width as f32 - 20.0,
+        w.app.doc.height as f32 - 20.0,
+    ];
+    let pan = w.app.pan;
+    w.pen_drag(far, [far[0] - 60.0, far[1] - 60.0]);
+    assert_ne!(w.app.pan, pan);
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+#[test]
+fn drawing_tools_never_move_text() {
+    let mut w = text_on_canvas(crate::tools::Tool::Brush);
+    w.pen_drag([60.0, 60.0], [90.0, 80.0]);
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+#[test]
+fn free_transform_scales_and_turns_text_without_asking() {
+    let mut w = text_on_canvas(crate::tools::Tool::Move);
+    w.free_transform(crate::affine::Settings {
+        scale_percent: [150.0, 150.0],
+        angle_degrees: 20.0,
+        ..Default::default()
+    });
+    w.key(egui::Key::Enter, egui::Modifiers::NONE);
+    assert!(!w.app.dialogs.open());
+    w.finish_geometry();
+    let text = w.text_record();
+    assert_eq!(text.size, 72.0);
+    assert!((text.along[1] - 20f64.to_radians().sin()).abs() < 1e-9);
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert_eq!(w.text_record().size, 48.0);
+}
+
+#[test]
+fn stretching_text_asks_first_and_rasterizes_in_one_undo_step() {
+    let mut w = text_on_canvas(crate::tools::Tool::Move);
+    let stretch = crate::affine::Settings {
+        scale_percent: [200.0, 100.0],
+        ..Default::default()
+    };
+    w.free_transform(stretch);
+    w.key(egui::Key::Enter, egui::Modifiers::NONE);
+    assert!(w.app.dialogs.open(), "asks first");
+    assert!(
+        w.app.affine_preview.is_some(),
+        "and the transform stays open"
+    );
+    w.app.accept_confirmation();
+    w.finish_geometry();
+    assert!(w.app.affine_preview.is_none());
+    assert!(w.app.doc.layers[w.app.doc.active].text.is_none());
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+fn stretched_text() -> Workspace {
+    let mut w = text_on_canvas(crate::tools::Tool::Move);
+    w.free_transform(crate::affine::Settings {
+        scale_percent: [200.0, 100.0],
+        ..Default::default()
+    });
+    w
+}
+
+#[test]
+fn leaving_a_stretch_open_asks_and_keeps_the_words_until_answered() {
+    let mut w = stretched_text();
+    w.app.select_tool(crate::tools::Tool::Brush);
+    w.app.close_input_gestures();
+    w.finish_geometry();
+    assert!(w.app.affine_preview.is_none());
+    assert!(
+        w.app.dialogs.open(),
+        "it asks instead of dropping the stretch"
+    );
+    assert_eq!(w.text_record().size, 48.0);
+    w.app.accept_confirmation();
+    w.finish_geometry();
+    assert!(w.app.doc.layers[w.app.doc.active].text.is_none());
+    assert!(w.app.history.can_undo());
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert_eq!(w.text_record().size, 48.0);
+}
+
+#[test]
+fn saying_no_to_a_stretch_left_open_keeps_the_text() {
+    let mut w = stretched_text();
+    w.app.close_input_gestures();
+    w.finish_geometry();
+    assert!(w.app.dialogs.open());
+    w.app.dismiss_dialogs();
+    w.settle();
+    assert!(!w.app.dialogs.open(), "it asks once");
+    assert_eq!(w.text_record().size, 48.0);
+}
+
+#[test]
+fn undo_with_a_stretch_open_still_asks() {
+    let mut w = stretched_text();
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert!(w.app.dialogs.open());
+    assert!(w.app.affine_preview.is_none());
+}
+
+#[test]
+fn closing_the_project_with_a_stretch_open_asks_before_anything_closes() {
+    let mut w = stretched_text();
+    let closed = w
+        .app
+        .request_replace(crate::document_actions::Action::Close);
+    assert!(!closed && !w.app.close_ready);
+    assert!(w.app.dialogs.open());
+    assert!(w.app.affine_preview.is_some(), "the transform stays open");
+    w.app.dismiss_dialogs();
+    assert!(w.app.affine_preview.is_some() && !w.app.close_ready);
+    w.app
+        .request_replace(crate::document_actions::Action::Close);
+    w.app.accept_confirmation();
+    w.finish_geometry();
+    assert!(w.app.doc.layers[w.app.doc.active].text.is_none());
+    assert!(
+        w.app.unsaved_action.is_some(),
+        "and the usual unsaved question follows"
+    );
+}
+
+#[test]
+fn escape_still_cancels_a_stretch_outright() {
+    let mut w = stretched_text();
+    w.key(egui::Key::Escape, egui::Modifiers::NONE);
+    w.finish_geometry();
+    assert!(w.app.affine_preview.is_none() && !w.app.dialogs.open());
+    assert_eq!(w.text_record().size, 48.0);
+}
+
+#[test]
+fn a_selection_keeps_text_whole() {
+    let mut w = text_on_canvas(crate::tools::Tool::Move);
+    w.app.doc.selection = Some(crate::selection::Selection {
+        left: 40,
+        top: 40,
+        right: 80,
+        bottom: 80,
+    });
+    w.pen_drag([60.0, 60.0], [90.0, 80.0]);
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+    assert_eq!(w.app.status, crate::text_layer::DESELECT);
+}
+
+#[test]
+fn no_floating_editor_stands_between_the_artist_and_the_text() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    let hidden = |w: &Workspace, text: &str| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.text(text))).is_err()
+    };
+    assert!(hidden(&w, "Edit text"));
+    w.type_text("Hemlo");
+    w.click(w.text("Done"));
+    assert!(hidden(&w, "Edit text"), "nor a button once it is finished");
+    assert_eq!(w.draft(), "Hemlo");
+}
+
+#[test]
+fn typing_goes_in_at_the_caret_placed_on_the_canvas() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    let caret = w.app.text_edit.as_ref().unwrap().caret_position(2);
+    w.press_text_tool(caret, caret);
+    w.settle();
+    w.type_text("X");
+    assert_eq!(w.draft(), "HeXmlo");
+}
+
+#[test]
+fn a_drag_selects_on_the_canvas_and_typing_replaces_it() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    let edit = w.app.text_edit.as_ref().unwrap();
+    let (from, to) = (edit.caret_position(1), edit.caret_position(4));
+    w.press_text_tool(from, to);
+    w.settle();
+    assert_eq!(w.app.text_edit.as_ref().unwrap().selected(), [1, 4]);
+    w.type_text("X");
+    assert_eq!(w.draft(), "HXo");
+}
+
+#[test]
+fn clicking_the_options_bar_keeps_typing_on_the_text() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hem");
+    w.click(w.text("Center"));
+    w.settle();
+    w.type_text("lo");
+    assert_eq!(w.draft(), "Hemlo");
+    assert_eq!(w.text_record().align, crate::text_render::Align::Center);
+}
+
+#[test]
+fn the_wheel_over_the_font_button_steps_through_fonts_and_the_list_scrolls() {
+    let mut w = Workspace::text_tool();
+    crate::text_render::warm_up();
+    for _ in 0..1000 {
+        if !crate::text_render::font_names().is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let names = crate::text_render::font_names();
+    if names.len() < 4 {
+        return;
+    }
+    w.app.text_style.font = names[1].clone();
+    w.settle();
+    let label: String = names[1].chars().take(22).collect();
+    let button = w.text(&label);
+    let wheel = |y: f32| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, y),
+        modifiers: Default::default(),
+    };
+    w.frame(vec![egui::Event::PointerMoved(button)]);
+    w.settle();
+    w.frame(vec![wheel(-40.0)]);
+    w.settle();
+    assert_eq!(w.app.text_style.font, names[2], "wheel down moves down");
+    w.frame(vec![wheel(80.0)]);
+    w.settle();
+    assert_eq!(w.app.text_style.font, names[0]);
+
+    // The open list scrolls with the wheel as well.
+    let label: String = names[0].chars().take(22).collect();
+    let button = w.text(&label);
+    w.click(button);
+    w.settle();
+    assert_eq!(w.app.font_list.first_row, 0, "the list is open at the top");
+    let list = button + egui::vec2(40.0, 120.0);
+    w.frame(vec![egui::Event::PointerMoved(list)]);
+    w.settle();
+    for _ in 0..6 {
+        w.frame(vec![wheel(-200.0)]);
+        w.settle();
+    }
+    for _ in 0..20 {
+        w.settle();
+    }
+    assert!(w.app.font_list.first_row > 0, "the wheel scrolled the list");
 }

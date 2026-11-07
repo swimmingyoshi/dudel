@@ -309,9 +309,14 @@ struct Dudel {
     text_drag: Option<text_tool::Drag>,
     text_style: text_tool::Style,
     text_drawer: text_tool::Drawer,
+    /// The Pointer is dragging a text layer, through the Move tool's path.
+    text_moving: bool,
+    /// The text layer last pressed with the Pointer, and when.
+    text_click: Option<(document::LayerId, f64)>,
+    /// The artist agreed that the open transform may rasterize text.
+    text_transform_confirmed: bool,
+    held_transform: Option<affine_preview::HeldTransform>,
     font_list: text_tool::FontList,
-    /// Whether the floating text editor can show CJK yet.
-    text_editor_fonts: bool,
     adjustment_edit: Option<adjustment_panel::Edit>,
     /// Adjustment settings last sent through the busy render queue.
     adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
@@ -591,8 +596,11 @@ impl Default for Dudel {
             text_drag: None,
             text_style: Default::default(),
             text_drawer: Default::default(),
+            text_moving: false,
+            text_click: None,
+            text_transform_confirmed: false,
+            held_transform: None,
             font_list: Default::default(),
-            text_editor_fonts: false,
             adjustment_edit: None,
             adjustment_sent: None,
             adjustment_window_open: false,
