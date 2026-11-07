@@ -34,7 +34,7 @@ pub struct Preferences {
     pub recent_colors: Vec<[u8; 3]>,
     /// What new text looks like.
     #[serde(default)]
-    pub text: crate::text_tool::Style,
+    pub text: crate::text_options::Style,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,

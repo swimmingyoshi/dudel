@@ -1,6 +1,6 @@
 # Text tool plan (0.2)
 
-Status: stages 0 to 4 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
+Status: stages 0 to 5 done on 2026-11-06, apart from the owner's pen pass. The owner accepted all four decisions below on
 2026-11-05. Tick stages off here as they land.
 
 ## Goal
@@ -139,14 +139,34 @@ the point: those transforms rasterize (see stage 3).
       editing strip, and the Layer menu's **Rasterize layer** now takes text.
 - [x] Typing lands on the canvas, with a blinking caret. A press places the caret, a drag
       selects, and **Done** and **Cancel** sit in the options bar for pen-only use.
-- [x] A dragged box keeps the size it was drawn at (`box_height`) and its corner resizes
-      it. Text past the bottom makes the box taller rather than being cut off.
+- [x] A dragged box keeps the size it was drawn at (`box_height`). Eight handles resize
+      it, and text past the bottom makes it taller rather than being cut off. The rest of
+      the border moves it, and the pointer shows which, turning with the text and view.
+- [x] The Text tool takes hold of the selected text only: a drag moves it, a click edits it
+      and hovering outlines it. Anywhere else starts new text, even on top of other text,
+      and a double-click opens other text. A press under 8 screen pixels is a click, so
+      pen jitter doesn't nudge text.
+- [x] Characters a font lacks come from an installed font, Japanese first
+      (`text_render::fallbacks`). Imported text has only its own font until the first
+      edit, so it can't change. This came forward from "Not in 0.2": without it, Japanese
+      showed as boxes in the default font.
+- [x] Esc and Enter belong to the IME during composition, and the field takes focus before
+      it runs, so a press never turns the IME off mid-word.
+- [x] **Touch keyboard** in the options bar, because Windows doesn't offer it by itself
+      for Dudel's controls (`touch_keyboard.rs`).
 - [x] The wheel over the font button steps through fonts, like the blend box.
 - [x] Typing draws on one long-lived background thread, and a newer keystroke stops
       the drawing in progress. One redraw measured 24 ms for a paragraph on a 2k canvas,
       236 ms at 100 MP and 7.2 s for 2,000 px text at 100 MP, which the UI thread can't
       absorb. Finishing a session waits for the last drawing, so that extreme text can
       still pause once on **Done**.
+- [x] Formatting, on the owner's list of 2026-11-07: font **family and style** menus
+      with **B** and **I**, which use real faces and fake them only when a family has
+      none; **U**; and a **Format** menu with strikethrough, letter spacing, line spacing,
+      **Box** (a line becomes a box and back) and **Outline** (the layer's Stroke effect,
+      so it stays editable). **Justify** joins the alignments. Words too long for a box
+      break at its edge. The options bar moved to `text_options.rs`, and text
+      measurements are cached for hovering.
 - [ ] Owner's pass with the pen: see Testing.
 
 ### Stage 3: moving and transforming
@@ -184,14 +204,24 @@ the point: those transforms rasterize (see stage 3).
 
 ### Stage 5: shaping and vertical text
 
-- [ ] `rustybuzz` behind the stage 0 layout function.
-- [ ] New vertical text, if there is room in 0.2.
+- [x] `rustybuzz` shapes each run of one font and direction, so GPOS kerning and
+      ligatures work. Text with `csp` set keeps the plain path, so imports can't change.
+- [x] New vertical text, on a **Vertical** toggle in the options bar. CJK stands upright
+      through vertical shaping, which brings in the fonts' vertical forms; Latin lies on
+      its side. Turning vertical keeps the box in place. **Left to right** stacks the
+      lines the other way (`rightward`), and **Letters** faces them turned right, turned
+      left (read upward, like a book's spine) or upright (stacked). `Block::rightward`
+      keeps every combination from mirroring the glyphs.
+- [x] Boxes wrap CJK between characters, keeping basic Japanese line-break rules, and
+      Latin still at spaces.
+- [ ] Right-to-left text shapes correctly within a run, but a line isn't reordered for
+      mixed directions, and carets in it are approximate. Tate-chu-yoko isn't done.
 
 ### Not in 0.2
 
 - Editable text in PSD. Export stays rendered pixels with a note in the report, and
   import stays pixels. Reading `TySh` is the natural next step.
-- Text in SVG export, text on a path, mixed styles and fallback fonts.
+- Text in SVG export, text on a path and mixed styles.
 - Text in the extension API.
 
 ## Testing

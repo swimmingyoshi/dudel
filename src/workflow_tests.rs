@@ -4143,18 +4143,21 @@ fn the_wheel_over_the_font_button_steps_through_fonts_and_the_list_scrolls() {
     let mut w = Workspace::text_tool();
     crate::text_render::warm_up();
     for _ in 0..1000 {
-        if !crate::text_render::font_names().is_empty() {
+        if !crate::text_render::families().is_empty() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    let names = crate::text_render::font_names();
-    if names.len() < 4 {
+    let families = crate::text_render::families();
+    if families.len() < 4 {
         return;
     }
-    w.app.text_style.font = names[1].clone();
+    let family = |w: &Workspace| {
+        crate::text_render::family_of(&w.app.text_style.font).map(|(family, _)| family.name.clone())
+    };
+    w.app.text_style.font = families[1].closest(400, false).name.clone();
     w.settle();
-    let label: String = names[1].chars().take(22).collect();
+    let label: String = families[1].name.chars().take(22).collect();
     let button = w.text(&label);
     let wheel = |y: f32| egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
@@ -4165,13 +4168,17 @@ fn the_wheel_over_the_font_button_steps_through_fonts_and_the_list_scrolls() {
     w.settle();
     w.frame(vec![wheel(-40.0)]);
     w.settle();
-    assert_eq!(w.app.text_style.font, names[2], "wheel down moves down");
+    assert_eq!(
+        family(&w),
+        Some(families[2].name.clone()),
+        "wheel down moves down"
+    );
     w.frame(vec![wheel(80.0)]);
     w.settle();
-    assert_eq!(w.app.text_style.font, names[0]);
+    assert_eq!(family(&w), Some(families[0].name.clone()));
 
     // The open list scrolls with the wheel as well.
-    let label: String = names[0].chars().take(22).collect();
+    let label: String = families[0].name.chars().take(22).collect();
     let button = w.text(&label);
     w.click(button);
     w.settle();
@@ -4187,4 +4194,282 @@ fn the_wheel_over_the_font_button_steps_through_fonts_and_the_list_scrolls() {
         w.settle();
     }
     assert!(w.app.font_list.first_row > 0, "the wheel scrolled the list");
+}
+
+#[test]
+fn the_pointer_shows_what_a_press_on_a_text_box_will_do() {
+    use egui::CursorIcon;
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [240.0, 200.0]);
+    w.type_text("Hemlo");
+    let view = w.app.view(w.app.canvas_area);
+    let icon = |w: &Workspace, x: f32, y: f32| {
+        w.app
+            .text_cursor_icon(&view, view.to_screen(egui::pos2(x, y)))
+    };
+    assert_eq!(icon(&w, 240.0, 200.0), CursorIcon::ResizeNwSe);
+    assert_eq!(icon(&w, 40.0, 200.0), CursorIcon::ResizeNeSw);
+    assert_eq!(icon(&w, 240.0, 120.0), CursorIcon::ResizeHorizontal);
+    assert_eq!(icon(&w, 140.0, 40.0), CursorIcon::ResizeVertical);
+    assert_eq!(icon(&w, 90.0, 40.0), CursorIcon::Move);
+    assert_eq!(icon(&w, 140.0, 120.0), CursorIcon::Text);
+    assert_eq!(icon(&w, 500.0, 500.0), CursorIcon::Default);
+}
+
+#[test]
+fn the_pointer_follows_the_box_when_the_view_turns() {
+    use egui::CursorIcon;
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [240.0, 200.0]);
+    w.type_text("Hemlo");
+    w.app.rotation = 90f32.to_radians();
+    w.settle();
+    let view = w.app.view(w.app.canvas_area);
+    let icon = w
+        .app
+        .text_cursor_icon(&view, view.to_screen(egui::pos2(240.0, 120.0)));
+    assert_eq!(icon, CursorIcon::ResizeVertical);
+}
+
+#[test]
+fn the_text_tool_drags_finished_text_and_a_click_still_edits_it() {
+    let mut w = text_on_canvas(crate::tools::Tool::Text);
+    w.pen_drag([60.0, 60.0], [90.0, 80.0]);
+    assert_eq!(w.text_record().start, [70.0, 60.0]);
+    assert!(w.app.text_edit.is_none(), "a drag only moves it");
+    assert_eq!(w.app.doc.layers.len(), 2, "and makes no new box");
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.finish_geometry();
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+    w.pen_drag([60.0, 60.0], [61.0, 61.0]);
+    assert!(w.app.text_edit.is_some(), "pen jitter is still a click");
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+#[test]
+fn pen_jitter_never_nudges_text_with_the_pointer() {
+    let mut w = text_on_canvas(crate::tools::Tool::Pointer);
+    w.pen_drag([60.0, 60.0], [61.0, 61.0]);
+    assert_eq!(w.text_record().start, [40.0, 40.0]);
+}
+
+#[test]
+fn ime_composition_shows_on_the_canvas_and_commits() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    let ime = |event| egui::Event::Ime(event);
+    w.frame(vec![ime(egui::ImeEvent::Enabled)]);
+    w.frame(vec![ime(egui::ImeEvent::Preedit("にほん".into()))]);
+    w.app.settle_text_draft();
+    assert_eq!(
+        w.draft(),
+        "にほん",
+        "the composing text shows as it is typed"
+    );
+    w.frame(vec![ime(egui::ImeEvent::Preedit("日本".into()))]);
+    w.app.settle_text_draft();
+    assert_eq!(w.draft(), "日本");
+    w.frame(vec![ime(egui::ImeEvent::Commit("日本".into()))]);
+    w.frame(vec![ime(egui::ImeEvent::Disabled)]);
+    w.app.settle_text_draft();
+    assert_eq!(w.draft(), "日本", "and committing doesn't type it twice");
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    assert_eq!(w.draft(), "日本");
+}
+
+impl Workspace {
+    fn canvas_screen(&self, at: [f32; 2]) -> egui::Pos2 {
+        self.app
+            .view(self.app.canvas_area)
+            .to_screen(egui::pos2(at[0], at[1]))
+    }
+}
+
+#[test]
+fn typing_survives_real_clicks_on_the_canvas_and_the_panels() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [40.0, 40.0]);
+    w.settle();
+    assert!(w.app.text_edit.is_some());
+    w.type_text("He");
+    assert_eq!(w.draft(), "He", "after the click that opened it");
+    // A real press on the text, buttons and all.
+    let caret = w.app.text_edit.as_ref().unwrap().caret_position(1);
+    w.pen_drag(caret, caret);
+    w.settle();
+    w.type_text("m");
+    assert_eq!(w.draft(), "Hme", "after a click on the text");
+    // Anywhere else in the window that isn't a text field.
+    w.click(w.text("Left"));
+    w.settle();
+    w.type_text("l");
+    assert_eq!(w.draft(), "Hmle", "after a click on a panel");
+    w.ctx
+        .memory_mut(|m| m.request_focus(egui::Id::new("some button")));
+    w.settle();
+    w.type_text("o");
+    assert_eq!(w.draft(), "Hmloe", "after focus went to another widget");
+}
+
+#[test]
+fn composing_is_not_interrupted_by_a_press_on_the_text() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    let ime = |event| egui::Event::Ime(event);
+    w.frame(vec![ime(egui::ImeEvent::Enabled)]);
+    w.frame(vec![ime(egui::ImeEvent::Preedit("に".into()))]);
+    let caret = w.app.text_edit.as_ref().unwrap().caret_position(1);
+    w.frame(vec![egui::Event::PointerMoved(w.canvas_screen(caret))]);
+    assert!(
+        w.output.platform_output.ime.is_some(),
+        "the window keeps IME on, or Windows drops the composition"
+    );
+}
+
+#[test]
+fn esc_and_enter_during_composition_belong_to_the_ime() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    let ime = |event| egui::Event::Ime(event);
+    let press = |key, pressed| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Default::default(),
+    };
+    w.frame(vec![ime(egui::ImeEvent::Enabled)]);
+    w.frame(vec![ime(egui::ImeEvent::Preedit("に".into()))]);
+    // Backing out of a conversion must not throw the text away.
+    w.frame(vec![press(egui::Key::Escape, true)]);
+    w.frame(vec![press(egui::Key::Escape, false)]);
+    w.settle();
+    assert!(w.app.text_edit.is_some(), "Esc only ends the composition");
+    w.frame(vec![ime(egui::ImeEvent::Preedit(String::new()))]);
+    w.frame(vec![ime(egui::ImeEvent::Disabled)]);
+    w.app.settle_text_draft();
+    assert_eq!(w.draft(), "Hemlo");
+    w.key(egui::Key::Escape, egui::Modifiers::NONE);
+    w.settle();
+    assert!(
+        w.app.text_edit.is_none(),
+        "and afterwards Esc cancels as usual"
+    );
+}
+
+/// "Hemlo" on the top layer, with the layer beneath it selected.
+fn text_on_another_layer() -> Workspace {
+    let mut w = text_on_canvas(crate::tools::Tool::Text);
+    assert!(w.app.select_layer_target(0));
+    w.settle();
+    w
+}
+
+#[test]
+fn text_on_another_layer_is_left_alone_by_a_click_or_a_drag() {
+    let mut w = text_on_another_layer();
+    w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
+    let edit = w.app.text_edit.as_ref().expect("new text starts");
+    assert_eq!(w.app.doc.layers.len(), 3);
+    assert!(edit.created());
+    w.key(egui::Key::Escape, egui::Modifiers::NONE);
+    w.settle();
+    assert_eq!(w.app.doc.layers.len(), 2);
+
+    assert!(w.app.select_layer_target(0));
+    w.pen_drag([50.0, 50.0], [200.0, 180.0]);
+    assert_eq!(w.app.doc.layers.len(), 3, "the drag draws a new box");
+    assert_eq!(
+        w.app.doc.layers[2].text.as_ref().unwrap().start,
+        [40.0, 40.0]
+    );
+}
+
+#[test]
+fn the_selected_text_is_the_one_a_click_edits() {
+    let mut w = text_on_another_layer();
+    assert!(w.app.select_layer_target(1));
+    w.settle();
+    w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
+    assert!(!w.app.text_edit.as_ref().unwrap().created());
+    assert_eq!(w.app.doc.layers.len(), 2);
+}
+
+#[test]
+fn a_double_click_opens_text_on_another_layer() {
+    let mut w = text_on_another_layer();
+    w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
+    assert_eq!(w.app.doc.layers.len(), 3, "the first click starts new text");
+    w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
+    assert_eq!(w.app.doc.layers.len(), 2, "the second gives it up");
+    assert!(!w.app.text_edit.as_ref().unwrap().created());
+    w.type_text("!");
+    assert!(w.draft().contains('!'));
+}
+
+impl Workspace {
+    /// Windows taking focus, as Win+V or Alt+Tab do, then giving it back.
+    fn lose_and_regain_focus(&mut self) {
+        // What `Input::frame_packets` turns a lost window focus into.
+        self.frame_packets(
+            vec![egui::Event::WindowFocused(false)],
+            &[crate::input::Packet::Cancel],
+        );
+        self.settle();
+        self.frame(vec![egui::Event::WindowFocused(true)]);
+        self.settle();
+    }
+}
+
+#[test]
+fn the_windows_clipboard_leaves_typing_alone_and_pastes_into_it() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo");
+    w.lose_and_regain_focus();
+    assert!(w.app.text_edit.is_some(), "the text stays open");
+    w.frame(vec![egui::Event::Paste(" pasted".into())]);
+    w.app.settle_text_draft();
+    assert_eq!(w.draft(), "Hemlo pasted");
+    w.type_text("!");
+    assert_eq!(w.draft(), "Hemlo pasted!", "and typing carries on");
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    assert_eq!(w.app.doc.layers.len(), 2);
+}
+
+#[test]
+fn new_empty_text_survives_losing_focus_too() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [40.0, 40.0]);
+    w.lose_and_regain_focus();
+    assert!(w.app.text_edit.is_some());
+    assert_eq!(w.app.doc.layers.len(), 2, "the new layer isn't thrown away");
+    w.frame(vec![egui::Event::Paste("日本".into())]);
+    w.app.settle_text_draft();
+    assert_eq!(w.draft(), "日本");
+}
+
+#[test]
+fn losing_focus_mid_drag_lets_go_of_the_box_and_keeps_the_text() {
+    let mut w = Workspace::text_tool();
+    w.pen_drag([40.0, 40.0], [240.0, 200.0]);
+    w.type_text("Hemlo");
+    let at = |w: &Workspace, p: [f32; 2]| {
+        let s = w.canvas_screen(p);
+        crate::stroke::Sample {
+            x: s.x,
+            y: s.y,
+            ..Default::default()
+        }
+    };
+    let press = at(&w, [240.0, 200.0]);
+    w.frame_packets(vec![], &[crate::input::Packet::Start(press)]);
+    w.lose_and_regain_focus();
+    let hover = at(&w, [300.0, 260.0]);
+    w.frame_packets(vec![], &[crate::input::Packet::Move(hover)]);
+    assert!(w.app.text_edit.is_some(), "the text stays open");
+    w.app.settle_text_draft();
+    assert_eq!(w.text_record().wrap, Some(200.0), "the handle is let go");
 }

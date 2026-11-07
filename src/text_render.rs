@@ -22,13 +22,103 @@ struct Face {
     index: u32,
     /// Full names, and family and style joined, in every language.
     names: Vec<String>,
+    /// The name it is listed and saved by, and its family and style.
+    name: String,
+    family: String,
+    style: String,
+    weight: u16,
+    italic: bool,
+}
+
+/// One face of a family, as the style menu lists it.
+pub(crate) struct Styled {
+    /// The full name, which text records keep.
+    pub(crate) name: String,
+    pub(crate) style: String,
+    pub(crate) weight: u16,
+    pub(crate) italic: bool,
+}
+
+/// A font family and its faces, regular first.
+pub(crate) struct Family {
+    pub(crate) name: String,
+    pub(crate) faces: Vec<Styled>,
+}
+
+impl Family {
+    /// The face closest to a weight and slant.
+    pub(crate) fn closest(&self, weight: u16, italic: bool) -> &Styled {
+        self.faces
+            .iter()
+            .min_by_key(|face| (face.italic != italic, face.weight.abs_diff(weight)))
+            .expect("a family has a face")
+    }
+}
+
+/// Installed fonts by family, sorted. Empty until the index is ready.
+pub(crate) fn families() -> &'static [Family] {
+    static FAMILIES: OnceLock<Vec<Family>> = OnceLock::new();
+    let Some(faces) = FACES.get() else {
+        return &[];
+    };
+    FAMILIES.get_or_init(|| {
+        let mut families: std::collections::BTreeMap<String, Family> = Default::default();
+        for face in faces {
+            let family = families
+                .entry(face.family.to_lowercase())
+                .or_insert_with(|| Family {
+                    name: face.family.clone(),
+                    faces: Vec::new(),
+                });
+            if !family.faces.iter().any(|f| f.name == face.name) {
+                family.faces.push(Styled {
+                    name: face.name.clone(),
+                    style: face.style.clone(),
+                    weight: face.weight,
+                    italic: face.italic,
+                });
+            }
+        }
+        let mut families: Vec<Family> = families.into_values().collect();
+        for family in &mut families {
+            family
+                .faces
+                .sort_by_key(|f| (f.italic, f.weight.abs_diff(400), f.weight));
+        }
+        families
+    })
+}
+
+/// The family a font belongs to, and which of its faces it is.
+pub(crate) fn family_of(font: &str) -> Option<(&'static Family, usize)> {
+    let face = FACES
+        .get()?
+        .iter()
+        .find(|face| face.names.iter().any(|n| n == font))?;
+    let family = families().iter().find(|f| f.name == face.family)?;
+    let index = family.faces.iter().position(|f| f.name == face.name)?;
+    Some((family, index))
+}
+
+/// A loaded font and its face within the file, which shaping needs.
+#[derive(Debug)]
+pub(crate) struct TextFont {
+    font: FontVec,
+    index: u32,
+}
+
+impl std::ops::Deref for TextFont {
+    type Target = FontVec;
+    fn deref(&self) -> &FontVec {
+        &self.font
+    }
 }
 
 struct Loaded {
     path: PathBuf,
     index: u32,
     bytes: usize,
-    font: Arc<FontVec>,
+    font: Arc<TextFont>,
 }
 
 static FACES: OnceLock<Vec<Face>> = OnceLock::new();
@@ -102,13 +192,48 @@ fn faces_in(path: &Path) -> Vec<Face> {
         };
         let styles = named(ttf_parser::name_id::SUBFAMILY);
         let mut names = named(ttf_parser::name_id::FULL_NAME);
-        for family in named(ttf_parser::name_id::FAMILY) {
+        let families = named(ttf_parser::name_id::FAMILY);
+        for family in &families {
             names.extend(styles.iter().map(|style| format!("{family} {style}")));
         }
+        // Menus show English names where there are some: fonts carry names in
+        // several languages, and "Negreta" is no use to most artists. The
+        // typographic family groups faces like "Arial Black" with Arial.
+        let english_named = |id: u16| -> Vec<String> {
+            face.names()
+                .into_iter()
+                .filter(|n| n.name_id == id && n.language().primary_language() == "English")
+                .filter_map(|n| n.to_string())
+                .collect()
+        };
+        let english = |id: u16, found: Vec<String>| {
+            let ascii = found.iter().find(|n| n.is_ascii()).cloned();
+            english_named(id)
+                .into_iter()
+                .next()
+                .or(ascii)
+                .or_else(|| found.into_iter().next())
+        };
+        let Some(name) = english(ttf_parser::name_id::FULL_NAME, names.clone()) else {
+            continue;
+        };
+        let typographic = ttf_parser::name_id::TYPOGRAPHIC_FAMILY;
+        let family = english(typographic, named(typographic))
+            .or_else(|| english(ttf_parser::name_id::FAMILY, families))
+            .unwrap_or_else(|| name.clone());
+        let typographic = ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY;
+        let style = english(typographic, named(typographic))
+            .or_else(|| english(ttf_parser::name_id::SUBFAMILY, styles))
+            .unwrap_or_else(|| "Regular".into());
         faces.push(Face {
             path: path.to_owned(),
             index,
             names,
+            name,
+            family,
+            style,
+            weight: face.weight().to_number(),
+            italic: face.is_italic(),
         });
     }
     faces
@@ -127,7 +252,7 @@ fn faces() -> &'static [Face] {
     })
 }
 
-fn load(face: &Face) -> Option<Arc<FontVec>> {
+fn load(face: &Face) -> Option<Arc<TextFont>> {
     let cache = || LOADED.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut loaded = cache();
@@ -143,7 +268,10 @@ fn load(face: &Face) -> Option<Arc<FontVec>> {
     }
     let data = std::fs::read(&face.path).ok()?;
     let bytes = data.len();
-    let font = Arc::new(FontVec::try_from_vec_and_index(data, face.index).ok()?);
+    let font = Arc::new(TextFont {
+        font: FontVec::try_from_vec_and_index(data, face.index).ok()?,
+        index: face.index,
+    });
     let mut loaded = cache();
     loaded.push(Loaded {
         path: face.path.clone(),
@@ -195,6 +323,50 @@ pub(crate) fn font_names() -> &'static [String] {
     })
 }
 
+/// Installed fonts that fill in characters a text's own font lacks, in the order
+/// they are tried. Japanese comes first: most Latin fonts have none of it.
+const FALLBACKS: [&str; 10] = [
+    "Yu Gothic Medium",
+    "Yu Gothic",
+    "Meiryo",
+    "Noto Sans JP",
+    "Noto Sans CJK JP",
+    "Microsoft YaHei",
+    "Malgun Gothic",
+    "Noto Sans CJK SC",
+    "Segoe UI Symbol",
+    "DejaVu Sans",
+];
+
+/// The regular face of a font family, or any face of it.
+fn family(name: &str) -> Option<Arc<TextFont>> {
+    let faces = faces();
+    let regular = format!("{name} Regular");
+    let prefix = format!("{name} ");
+    let named = |test: &dyn Fn(&str) -> bool| {
+        faces
+            .iter()
+            .find(|face| face.names.iter().any(|n| test(n.as_str())))
+    };
+    load(named(&|n| n == name || n == regular).or_else(|| named(&|n| n.starts_with(&prefix)))?)
+}
+
+/// The installed fonts that can draw what `font` can't in `string`.
+pub(crate) fn fallbacks(string: &str, font: &FontVec) -> Vec<Arc<TextFont>> {
+    let mut found: Vec<Arc<TextFont>> = Vec::new();
+    for c in missing_characters(string, font) {
+        if found.iter().any(|font| font.glyph_id(c).0 != 0) {
+            continue;
+        }
+        let covering = FALLBACKS
+            .iter()
+            .filter_map(|name| family(name))
+            .find(|font| font.glyph_id(c).0 != 0);
+        found.extend(covering);
+    }
+    found
+}
+
 /// A sensible font for new text.
 pub(crate) fn default_font() -> Option<String> {
     let names = font_names();
@@ -218,14 +390,17 @@ pub(crate) const TEST_FONT: &str = "Dudel Test Font";
 
 /// The font built into egui, which every platform has.
 #[cfg(test)]
-pub(crate) fn test_font() -> FontVec {
+pub(crate) fn test_font() -> TextFont {
     let fonts = eframe::egui::FontDefinitions::default();
     let data = fonts.font_data["Ubuntu-Light"].font.to_vec();
-    FontVec::try_from_vec(data).unwrap()
+    TextFont {
+        font: FontVec::try_from_vec(data).unwrap(),
+        index: 0,
+    }
 }
 
 /// The installed font whose full name (or family and style) is `name`.
-pub(crate) fn find_font(name: &str) -> Option<Arc<FontVec>> {
+pub(crate) fn find_font(name: &str) -> Option<Arc<TextFont>> {
     #[cfg(test)]
     if name == TEST_FONT {
         return Some(Arc::new(test_font()));
@@ -251,6 +426,8 @@ pub(crate) enum Align {
     Left,
     Right,
     Center,
+    /// Lines of a box stretch to fill it, all but each paragraph's last.
+    Justify,
 }
 
 /// How long and thick a block's lines are.
@@ -271,6 +448,18 @@ pub(crate) struct Block<'a> {
     pub(crate) em: f32,
     pub(crate) color: [u8; 3],
     pub(crate) vertical: bool,
+    /// Glyphs stand facing along `down` rather than against it, so that a
+    /// frame whose lines stack the other way doesn't mirror them.
+    pub(crate) rightward: bool,
+    /// Every character stands upright down the line, Latin included.
+    pub(crate) upright_letters: bool,
+    /// Extra space after each character, in canvas pixels.
+    pub(crate) tracking: f32,
+    /// Thicken or slant glyphs, for fonts with no bold or italic face.
+    pub(crate) faux_bold: bool,
+    pub(crate) faux_italic: bool,
+    pub(crate) underline: bool,
+    pub(crate) strikethrough: bool,
     pub(crate) align: Align,
     /// Canvas pixels: where the first line's start and top meet, the unit
     /// vectors along the lines and down across them, and the room lines wrap
@@ -307,8 +496,17 @@ pub(crate) struct Caret {
     pub(crate) height: f64,
 }
 
-/// One glyph and where it sits in text space.
+/// One glyph, the font it comes from and where it sits in text space. An
+/// upright glyph stands across the lines, as Japanese does in vertical text:
+/// `pen` is then its origin along the line, and `baseline` across it.
 struct Placed {
+    face: usize,
+    upright: bool,
+    /// See `Block::rightward`.
+    rightward: bool,
+    /// How far a faux italic leans, and how much a faux bold widens strokes.
+    slant: f32,
+    bold: f32,
     id: GlyphId,
     pen: f32,
     baseline: f32,
@@ -323,133 +521,523 @@ fn font_scale(font: &FontVec, em: f32) -> Result<PxScale, String> {
     ))
 }
 
-/// Length of a line, or of its glyphs so far.
-fn advance(font: &PxScaleFont<&FontVec>, line: &str, kerning: bool) -> f32 {
-    let mut last = None;
-    line.chars()
-        .map(|c| {
-            let id = font.glyph_id(c);
-            let kern = last
-                .filter(|_| kerning)
-                .map_or(0.0, |last| font.kern(last, id));
-            last = Some(id);
-            font.h_advance(id) + kern
-        })
-        .sum()
+/// Whether a character stands upright in vertical text.
+fn upright(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF       // Hangul jamo
+        | 0x2E80..=0x303F     // CJK radicals, symbols and punctuation
+        | 0x3040..=0x30FF     // kana
+        | 0x3100..=0x318F     // bopomofo and compatibility jamo
+        | 0x31A0..=0x4DBF     // kana extensions and CJK extension A
+        | 0x4E00..=0x9FFF     // CJK ideographs
+        | 0xA960..=0xA97F
+        | 0xAC00..=0xD7FF     // Hangul syllables
+        | 0xF900..=0xFAFF     // CJK compatibility ideographs
+        | 0xFE30..=0xFE4F     // CJK compatibility forms
+        | 0xFF00..=0xFFEF     // full and half width forms
+        | 0x20000..=0x3FFFF) // CJK extensions
 }
 
-/// A block's lines, the length they align within and how far apart they sit.
-fn arrange(block: &Block, scaled: &PxScaleFont<&FontVec>) -> (Vec<String>, f64, f32) {
-    // Lines wrap at spaces to the box; trailing spaces never wrap.
-    let mut lines = Vec::new();
-    for paragraph in block.string.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split_inclusive(' ') {
-            let candidate = format!("{line}{word}");
-            let length = advance(scaled, candidate.trim_end(), block.kerning);
-            if !line.is_empty() && f64::from(length) > block.wrap {
-                lines.push(std::mem::take(&mut line));
-                line = word.to_owned();
-            } else {
-                line = candidate;
-            }
+/// Whether a character of this block stands upright across its lines.
+fn stands(block: &Block, c: char) -> bool {
+    block.vertical && (block.upright_letters || upright(c))
+}
+
+/// Characters a line may not start with, by the usual Japanese rules.
+const NO_LINE_START: &str =
+    "、。，．・：；？！ー）」』】〕〉》ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮゝゞ々";
+/// Characters a line may not end with.
+const NO_LINE_END: &str = "（「『【〔〈《";
+
+/// Whether a line can break between two characters. Latin text breaks at
+/// spaces, and CJK text between characters.
+fn may_break(before: char, after: char) -> bool {
+    before == ' '
+        || ((upright(before) || upright(after))
+            && !NO_LINE_START.contains(after)
+            && !NO_LINE_END.contains(before))
+}
+
+/// A text's font and those behind it, all at one size.
+struct Scaled<'a> {
+    fonts: Vec<PxScaleFont<&'a FontVec>>,
+    /// Where an underline and a strikethrough sit above the baseline, and how
+    /// thick they are, in canvas pixels.
+    underline: [f32; 2],
+    strikethrough: [f32; 2],
+    /// One per font, or none when this text isn't shaped.
+    shapers: Vec<rustybuzz::Face<'a>>,
+}
+
+impl<'a> Scaled<'a> {
+    fn new(fonts: &[&'a TextFont], block: &Block) -> Result<Self, String> {
+        let scaled = fonts
+            .iter()
+            .map(|font| Ok(Font::as_scaled(&font.font, font_scale(font, block.em)?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        if scaled.is_empty() {
+            return Err("Unusable font".into());
         }
-        lines.push(line);
+        let mut shapers: Vec<_> = fonts
+            .iter()
+            .filter(|_| block.kerning)
+            .filter_map(|font| rustybuzz::Face::from_slice(font.as_slice(), font.index))
+            .collect();
+        if shapers.len() != scaled.len() {
+            shapers.clear();
+        }
+        // The font's own lines, or the usual places when it has none.
+        let face = ttf_parser::Face::parse(fonts[0].as_slice(), fonts[0].index).ok();
+        let factor = scaled[0].scale_factor().vertical;
+        let metrics = |found: Option<ttf_parser::LineMetrics>, position: f32| {
+            found
+                .filter(|m| m.thickness > 0)
+                .map_or([position * block.em, 0.05 * block.em], |m| {
+                    [
+                        f32::from(m.position) * factor,
+                        f32::from(m.thickness) * factor,
+                    ]
+                })
+        };
+        let underline = metrics(face.as_ref().and_then(|f| f.underline_metrics()), -0.1);
+        let strikethrough = metrics(face.as_ref().and_then(|f| f.strikeout_metrics()), 0.25);
+        Ok(Self {
+            fonts: scaled,
+            shapers,
+            underline,
+            strikethrough,
+        })
     }
-    let length = |line: &String| f64::from(advance(scaled, line.trim_end(), block.kerning));
+    /// The text's own font, which sets its line spacing.
+    fn main(&self) -> &PxScaleFont<&'a FontVec> {
+        &self.fonts[0]
+    }
+    /// The first font that has `c`, or the text's own to show it's missing.
+    fn face(&self, c: char) -> usize {
+        self.fonts
+            .iter()
+            .position(|font| font.glyph_id(c).0 != 0)
+            .unwrap_or(0)
+    }
+}
+
+/// One shaped glyph. `pen` runs along the line, and `across` is its offset from
+/// the baseline, or for an upright glyph from the middle of the line. `char`
+/// is the first character of the line it draws.
+struct Item {
+    face: usize,
+    char: usize,
+    upright: bool,
+    id: GlyphId,
+    pen: f32,
+    across: f32,
+}
+
+/// A line's glyphs, and how far along it each character starts. `pens` has one
+/// more entry than there are characters, for the end of the line.
+struct Shaped {
+    items: Vec<Item>,
+    pens: Vec<f32>,
+}
+
+impl Shaped {
+    /// The length of the line without its trailing spaces.
+    fn used(&self, line: &str) -> f64 {
+        f64::from(self.pens[line.trim_end().chars().count()])
+    }
+}
+
+/// Lay a line out character by character from `start`. Imported text comes
+/// this way, because CSP doesn't shape. The pen must add up from where the line
+/// starts: adding the same widths in another order rounds differently, which
+/// is enough to change imported pixels.
+fn plain_line(fonts: &Scaled, line: &str, kerning: bool, start: f32, tracking: f32) -> Shaped {
+    let mut items = Vec::new();
+    let mut pens = Vec::new();
+    let mut pen = start;
+    let mut last = None;
+    for (char, c) in line.chars().enumerate() {
+        let face = fonts.face(c);
+        let font = &fonts.fonts[face];
+        let id = font.glyph_id(c);
+        // Only glyphs of one font have kerning between them.
+        if let Some((_, last)) = last.filter(|(previous, _)| kerning && *previous == face) {
+            pen += font.kern(last, id);
+        }
+        last = Some((face, id));
+        pens.push(pen);
+        items.push(Item {
+            face,
+            char,
+            upright: false,
+            id,
+            pen,
+            across: 0.0,
+        });
+        pen += font.h_advance(id) + tracking;
+    }
+    pens.push(pen);
+    Shaped { items, pens }
+}
+
+/// Shape a line, one run of a single font and direction at a time.
+fn shaped_line(fonts: &Scaled, line: &str, block: &Block, tracking: f32) -> Shaped {
+    let chars: Vec<char> = line.chars().collect();
+    let run_of = |c: char| (fonts.face(c), stands(block, c));
+    let mut starts = vec![None; chars.len()];
+    let mut items = Vec::new();
+    let mut pen = 0.0f32;
+    let mut at = 0;
+    while at < chars.len() {
+        let (face, stands) = run_of(chars[at]);
+        // Spaces join the run they follow.
+        let end = (at + 1..chars.len())
+            .find(|&i| !chars[i].is_whitespace() && run_of(chars[i]) != (face, stands))
+            .unwrap_or(chars.len());
+        let text: String = chars[at..end].iter().collect();
+        let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.push_str(&text);
+        buffer.guess_segment_properties();
+        if stands {
+            // Vertical shaping also brings in the fonts' vertical forms.
+            buffer.set_direction(rustybuzz::Direction::TopToBottom);
+        }
+        let output = rustybuzz::shape(&fonts.shapers[face], &[], buffer);
+        let factor = fonts.fonts[face].scale_factor().horizontal;
+        let bytes: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
+        for (info, place) in output.glyph_infos().iter().zip(output.glyph_positions()) {
+            let [x, y] = [place.x_offset, place.y_offset].map(|v| v as f32 * factor);
+            let char_at = bytes.partition_point(|byte| *byte < info.cluster as usize);
+            let char = (at + char_at).min(chars.len() - 1);
+            starts[char].get_or_insert(pen);
+            let id = GlyphId(info.glyph_id as u16);
+            let (glyph_pen, across, advance) = if stands {
+                (pen - y, -x, -place.y_advance as f32 * factor)
+            } else {
+                (pen + x, -y, place.x_advance as f32 * factor)
+            };
+            items.push(Item {
+                face,
+                char,
+                upright: stands,
+                id,
+                pen: glyph_pen,
+                across,
+            });
+            pen += advance + tracking;
+        }
+        at = end;
+    }
+    // Characters inside a ligature have no glyph of their own.
+    let mut pens = Vec::with_capacity(chars.len() + 1);
+    let mut last = 0.0;
+    for start in starts {
+        last = start.unwrap_or(last);
+        pens.push(last);
+    }
+    pens.push(pen);
+    Shaped { items, pens }
+}
+
+/// The space after each character, which a faux bold widens.
+fn tracking(block: &Block) -> f32 {
+    block.tracking
+        + if block.faux_bold {
+            bold_width(block)
+        } else {
+            0.0
+        }
+}
+
+/// How much a faux bold thickens each stroke.
+fn bold_width(block: &Block) -> f32 {
+    block.em * 0.03
+}
+
+fn shape(block: &Block, fonts: &Scaled, line: &str) -> Shaped {
+    if fonts.shapers.is_empty() {
+        plain_line(fonts, line, block.kerning, 0.0, tracking(block))
+    } else {
+        shaped_line(fonts, line, block, tracking(block))
+    }
+}
+
+/// Add a paragraph's lines, wrapped at spaces as CSP does.
+fn wrap_at_spaces(block: &Block, fonts: &Scaled, paragraph: &str, lines: &mut Vec<String>) {
+    let mut line = String::new();
+    for word in paragraph.split_inclusive(' ') {
+        let candidate = format!("{line}{word}");
+        let length = plain_line(fonts, candidate.trim_end(), block.kerning, 0.0, 0.0).pens;
+        if !line.is_empty() && f64::from(*length.last().unwrap()) > block.wrap {
+            lines.push(std::mem::take(&mut line));
+            line = word.to_owned();
+        } else {
+            line = candidate;
+        }
+    }
+    lines.push(line);
+}
+
+/// Add a paragraph's lines, wrapped wherever a line may break. Each piece is
+/// measured on its own, which is close enough to choose a break and doesn't
+/// shape the line over again at every one.
+fn wrap_anywhere(block: &Block, fonts: &Scaled, paragraph: &str, lines: &mut Vec<String>) {
+    let measure = |text: &str| -> f64 {
+        text.chars()
+            .map(|c| {
+                let advance = if stands(block, c) {
+                    f64::from(block.em)
+                } else {
+                    let font = &fonts.fonts[fonts.face(c)];
+                    f64::from(font.h_advance(font.glyph_id(c)))
+                };
+                advance + f64::from(tracking(block))
+            })
+            .sum()
+    };
+    let mut pieces = Vec::new();
+    let mut piece = String::new();
+    let mut chars = paragraph.chars().peekable();
+    while let Some(c) = chars.next() {
+        piece.push(c);
+        if chars.peek().is_some_and(|next| may_break(c, *next)) {
+            pieces.push(std::mem::take(&mut piece));
+        }
+    }
+    pieces.push(piece);
+    // A word too long for a line by itself breaks wherever it reaches the edge.
+    let pieces = pieces.into_iter().flat_map(|piece| {
+        if measure(piece.trim_end()) > block.wrap {
+            piece.chars().map(String::from).collect()
+        } else {
+            vec![piece]
+        }
+    });
+    let mut line = String::new();
+    let mut length = 0.0;
+    for piece in pieces {
+        if !line.is_empty() && length + measure(piece.trim_end()) > block.wrap {
+            lines.push(std::mem::take(&mut line));
+            length = 0.0;
+        }
+        length += measure(&piece);
+        line.push_str(&piece);
+    }
+    lines.push(line);
+}
+
+/// A block's lines, shaped, the length they align within and how far apart
+/// they sit.
+fn arrange(block: &Block, fonts: &Scaled) -> (Vec<String>, Vec<Shaped>, f64, f32) {
+    let (lines, shaped, span, line_height, _) = arrange_paragraphs(block, fonts);
+    (lines, shaped, span, line_height)
+}
+
+/// `arrange`, with whether each line ends its paragraph.
+#[allow(clippy::type_complexity)]
+fn arrange_paragraphs(
+    block: &Block,
+    fonts: &Scaled,
+) -> (Vec<String>, Vec<Shaped>, f64, f32, Vec<bool>) {
+    // Lines wrap to the box; trailing spaces never wrap.
+    let mut lines = Vec::new();
+    let mut ends = Vec::new();
+    for paragraph in block.string.split('\n') {
+        let first = lines.len();
+        if !block.wrap.is_finite() {
+            lines.push(paragraph.to_owned());
+        } else if fonts.shapers.is_empty() {
+            wrap_at_spaces(block, fonts, paragraph, &mut lines);
+        } else {
+            wrap_anywhere(block, fonts, paragraph, &mut lines);
+        }
+        ends.extend((first..lines.len()).map(|line| line + 1 == lines.len()));
+    }
+    let shaped: Vec<Shaped> = lines.iter().map(|l| shape(block, fonts, l)).collect();
     let (span, line_height) = match block.measure {
         Measure::Given { span, thickness } => (span, (thickness / lines.len() as f64) as f32),
         Measure::Natural { line_spacing } => {
             let span = if block.wrap.is_finite() {
                 block.wrap
             } else {
-                lines.iter().map(length).fold(0.0, f64::max)
+                lines
+                    .iter()
+                    .zip(&shaped)
+                    .map(|(line, shaped)| shaped.used(line))
+                    .fold(0.0, f64::max)
             };
-            let natural = scaled.height() + scaled.line_gap();
+            let natural = fonts.main().height() + fonts.main().line_gap();
             (span, natural * line_spacing as f32)
         }
     };
-    (lines, span, line_height)
+    (lines, shaped, span, line_height, ends)
 }
 
 /// How long and how tall a block is, in canvas pixels.
-pub(crate) fn extent(block: &Block, font: &FontVec) -> Result<[f64; 2], String> {
-    let scaled = font.as_scaled(font_scale(font, block.em)?);
-    let (lines, span, line_height) = arrange(block, &scaled);
+pub(crate) fn extent(block: &Block, fonts: &[&TextFont]) -> Result<[f64; 2], String> {
+    let scaled = Scaled::new(fonts, block)?;
+    let (lines, _, span, line_height) = arrange(block, &scaled);
     let gaps = (lines.len() - 1) as f64;
     Ok([
         span,
-        f64::from(line_height) * gaps + f64::from(scaled.height()),
+        f64::from(line_height) * gaps + f64::from(scaled.main().height()),
     ])
 }
 
 /// A block's line count, with its font's natural line pitch and glyph height.
-pub(crate) fn line_metrics(block: &Block, font: &FontVec) -> Result<(usize, f64, f64), String> {
-    let scaled = font.as_scaled(font_scale(font, block.em)?);
-    let (lines, _, _) = arrange(block, &scaled);
-    let height = f64::from(scaled.height());
-    Ok((lines.len(), height + f64::from(scaled.line_gap()), height))
+pub(crate) fn line_metrics(
+    block: &Block,
+    fonts: &[&TextFont],
+) -> Result<(usize, f64, f64), String> {
+    let scaled = Scaled::new(fonts, block)?;
+    let (lines, ..) = arrange(block, &scaled);
+    let height = f64::from(scaled.main().height());
+    let gap = f64::from(scaled.main().line_gap());
+    Ok((lines.len(), height + gap, height))
 }
 
-/// Where every glyph goes in text space. Shaping belongs here: nothing after
-/// this knows how glyphs were chosen or spaced.
-fn layout(block: &Block, font: &FontVec, scale: PxScale) -> (Vec<Placed>, Vec<Caret>) {
-    let scaled = font.as_scaled(scale);
-    let (lines, span, line_height) = arrange(block, &scaled);
-    let length = |line: &String| f64::from(advance(&scaled, line.trim_end(), block.kerning));
+/// A line drawn under or through the text, as text-space corners.
+type Rule = [[f32; 2]; 4];
+
+/// Where every glyph goes in text space, where the caret can stand, and the
+/// underlines and strikethroughs.
+fn layout(block: &Block, fonts: &Scaled) -> (Vec<Placed>, Vec<Caret>, Vec<Rule>) {
+    let scaled = fonts.main();
+    let (lines, shaped, span, line_height, ends) = arrange_paragraphs(block, fonts);
     let mut placed = Vec::new();
+    let mut rules = Vec::new();
     // One caret per character and one at the end. Wrapped lines lose no
     // characters, and a line break is a character of its own.
     let mut carets = Vec::new();
     let mut source = block.string.chars().peekable();
     let height = f64::from(scaled.height());
-    for (index, line) in lines.iter().enumerate() {
-        let used = length(line);
+    let side = if block.rightward { 1.0 } else { -1.0 };
+    for (index, (line, glyphs)) in lines.iter().zip(shaped).enumerate() {
+        let used = glyphs.used(line);
         let offset = match block.align {
             Align::Right => span - used,
             Align::Center => (span - used) / 2.0,
-            Align::Left => 0.0,
+            Align::Left | Align::Justify => 0.0,
         } as f32;
         let top = line_height * index as f32;
         let baseline = match block.measure {
+            // The same places in the line, seen from its other side.
+            _ if block.vertical && block.rightward => top + 0.12 * block.em,
             _ if block.vertical => top + 0.88 * block.em,
+            _ if block.rightward => top - scaled.descent(),
             Measure::Given { .. } => top + line_height + scaled.descent(),
             // Extra spacing goes below a line, so the first stays at the top.
             Measure::Natural { .. } => top + scaled.ascent(),
         };
-        let mut pen = offset;
-        let mut last = None;
+        let middle = top + 0.5 * block.em;
+        // Plain lines start at their offset; shaped ones are moved there.
+        let (glyphs, offset) = if fonts.shapers.is_empty() {
+            let tracking = tracking(block);
+            (
+                plain_line(fonts, line, block.kerning, offset, tracking),
+                0.0,
+            )
+        } else {
+            (glyphs, offset)
+        };
+        // A justified line shares out its spare room between words, or
+        // between characters where there are no spaces.
+        let trimmed: Vec<char> = line.trim_end().chars().collect();
+        let spaces = trimmed.iter().filter(|c| **c == ' ').count();
+        let stretches = block.align == Align::Justify
+            && block.wrap.is_finite()
+            && !ends[index]
+            && trimmed.len() > 1;
+        let gaps = if spaces > 0 {
+            spaces
+        } else {
+            trimmed.len().saturating_sub(1)
+        };
+        let extra = if stretches {
+            ((span - used) / gaps as f64).max(0.0) as f32
+        } else {
+            0.0
+        };
+        let line_chars: Vec<char> = line.chars().collect();
+        let shift = |char: usize| {
+            let before = if spaces > 0 {
+                line_chars[..char.min(trimmed.len())]
+                    .iter()
+                    .filter(|c| **c == ' ')
+                    .count()
+            } else {
+                char.min(trimmed.len() - usize::from(!trimmed.is_empty()))
+            };
+            extra * before as f32
+        };
+        for item in glyphs.items {
+            let pen = offset + item.pen + shift(item.char);
+            placed.push(Placed {
+                face: item.face,
+                upright: item.upright,
+                rightward: block.rightward,
+                slant: if block.faux_italic { 0.21 } else { 0.0 },
+                bold: if block.faux_bold {
+                    bold_width(block)
+                } else {
+                    0.0
+                },
+                id: item.id,
+                pen,
+                baseline: if item.upright { middle } else { baseline }
+                    + if block.rightward {
+                        -item.across
+                    } else {
+                        item.across
+                    },
+            });
+        }
         let caret = |pen: f32| Caret {
-            along: f64::from(pen),
+            along: f64::from(offset + pen),
             top: f64::from(top),
             height,
         };
-        for c in line.chars() {
-            let id = scaled.glyph_id(c);
-            if let Some(last) = last.filter(|_| block.kerning) {
-                pen += scaled.kern(last, id);
-            }
-            last = Some(id);
-            carets.push(caret(pen));
+        let count = glyphs.pens.len() - 1;
+        for (char, pen) in glyphs.pens[..count].iter().enumerate() {
+            carets.push(caret(*pen + shift(char)));
             source.next();
-            placed.push(Placed { id, pen, baseline });
-            pen += scaled.h_advance(id);
+        }
+        let end = glyphs.pens[count] + shift(count);
+        // Underlines and strikethroughs run the length of what the line shows.
+        let length = if stretches { span as f32 } else { used as f32 };
+        if !trimmed.is_empty() {
+            let from = offset + glyphs.pens[0];
+            for (wanted, [position, thickness]) in [
+                (block.underline, fonts.underline),
+                (block.strikethrough, fonts.strikethrough),
+            ] {
+                if wanted {
+                    let [near, far] = [position - thickness / 2.0, position + thickness / 2.0]
+                        .map(|y| baseline + side * y);
+                    rules.push([
+                        [from, near],
+                        [from + length, near],
+                        [from + length, far],
+                        [from, far],
+                    ]);
+                }
+            }
         }
         match source.peek() {
             Some('\n') => {
-                carets.push(caret(pen));
+                carets.push(caret(end));
                 source.next();
             }
-            None => carets.push(caret(pen)),
+            None => carets.push(caret(end)),
             Some(_) => {}
         }
     }
-    (placed, carets)
+    (placed, carets, rules)
 }
 
 /// Where the caret stands before each character of a block, and at its end.
-pub(crate) fn carets(block: &Block, font: &FontVec) -> Result<Vec<Caret>, String> {
-    Ok(layout(block, font, font_scale(font, block.em)?).1)
+pub(crate) fn carets(block: &Block, fonts: &[&TextFont]) -> Result<Vec<Caret>, String> {
+    Ok(layout(block, &Scaled::new(fonts, block)?).1)
 }
 
 /// How much of each pixel the text covers, over the part of the canvas it
@@ -489,7 +1077,55 @@ fn reach(block: &Block, bounds: ab_glyph::Rect) -> [f64; 4] {
     ]
 }
 
-/// Draw a glyph at an angle: its outline is turned, then rasterized.
+impl Placed {
+    /// Where a point of the glyph's outline falls in text space, with the
+    /// glyph moved `nudge` along its own width: a faux bold draws it more than
+    /// once.
+    fn text_point_moved(&self, p: Point, factor: PxScaleFactor, nudge: f32) -> (f32, f32) {
+        let y = p.y * factor.vertical;
+        let x = p.x * factor.horizontal + y * self.slant + nudge;
+        let side = if self.rightward { 1.0 } else { -1.0 };
+        if self.upright {
+            (self.pen - y, self.baseline + side * x)
+        } else {
+            (self.pen + x, self.baseline + side * y)
+        }
+    }
+}
+
+impl Placed {
+    /// Whether the glyph must be drawn from its outline rather than from its
+    /// upright pixels.
+    fn needs_outline(&self) -> bool {
+        self.upright || self.rightward || self.slant != 0.0 || self.bold != 0.0
+    }
+}
+
+/// Fill an underline or strikethrough.
+fn draw_rule(block: &Block, rule: &Rule, edges: [f64; 4], coverage: &mut Coverage) {
+    let [left, top, right, bottom] = edges;
+    let first = top.max(coverage.rect[1] as f64);
+    let last = bottom.min(coverage.rect[3] as f64);
+    if first >= last || left >= right {
+        return;
+    }
+    let map = |[along, across]: [f32; 2]| {
+        let [x, y] = block.canvas(f64::from(along), f64::from(across));
+        raster_point((x - left) as f32, (y - first) as f32)
+    };
+    let mut raster = Rasterizer::new((right - left) as usize, (last - first) as usize);
+    for side in 0..4 {
+        raster.draw_line(map(rule[side]), map(rule[(side + 1) % 4]));
+    }
+    raster.for_each_pixel_2d(|x, y, value| {
+        let x = left + f64::from(x);
+        if x >= 0.0 {
+            coverage.add(x as usize, (first + f64::from(y)) as usize, value);
+        }
+    });
+}
+
+/// Draw a glyph from its outline, at any angle.
 fn draw_turned(
     block: &Block,
     placed: &Placed,
@@ -507,20 +1143,40 @@ fn draw_turned(
     if first >= last || left >= right {
         return;
     }
-    let map = |p: Point| {
-        let [x, y] = block.canvas(
-            f64::from(placed.pen + p.x * factor.horizontal),
-            f64::from(placed.baseline - p.y * factor.vertical),
-        );
-        raster_point((x - left) as f32, (y - first) as f32)
+    // A faux bold draws the glyph again, moved a little, so strokes thicken.
+    let nudges: &[f32] = if placed.bold > 0.0 {
+        &[0.0, 0.5, 1.0]
+    } else {
+        &[0.0]
     };
     let mut raster = Rasterizer::new((right - left) as usize, (last - first) as usize);
-    for curve in &outline.curves {
-        match *curve {
-            OutlineCurve::Line(a, b) => raster.draw_line(map(a), map(b)),
-            OutlineCurve::Quad(a, b, c) => raster.draw_quad(map(a), map(b), map(c)),
-            OutlineCurve::Cubic(a, b, c, d) => raster.draw_cubic(map(a), map(b), map(c), map(d)),
+    for nudge in nudges {
+        let map = |p: Point| {
+            let (along, across) = placed.text_point_moved(p, factor, nudge * placed.bold);
+            let [x, y] = block.canvas(f64::from(along), f64::from(across));
+            raster_point((x - left) as f32, (y - first) as f32)
+        };
+        let mut pass = Rasterizer::new((right - left) as usize, (last - first) as usize);
+        for curve in &outline.curves {
+            match *curve {
+                OutlineCurve::Line(a, b) => pass.draw_line(map(a), map(b)),
+                OutlineCurve::Quad(a, b, c) => pass.draw_quad(map(a), map(b), map(c)),
+                OutlineCurve::Cubic(a, b, c, d) => pass.draw_cubic(map(a), map(b), map(c), map(d)),
+            }
         }
+        if nudges.len() == 1 {
+            raster = pass;
+            break;
+        }
+        pass.for_each_pixel_2d(|x, y, value| {
+            let x = left + f64::from(x);
+            if x >= 0.0 {
+                coverage.add(x as usize, (first + f64::from(y)) as usize, value);
+            }
+        });
+    }
+    if nudges.len() > 1 {
+        return;
     }
     raster.for_each_pixel_2d(|x, y, value| {
         let x = left + f64::from(x);
@@ -533,24 +1189,78 @@ fn draw_turned(
 /// The text in its color over the whole canvas.
 pub(crate) fn render(
     block: &Block,
-    font: &FontVec,
+    fonts: &[&TextFont],
     canvas: [usize; 2],
     cancelled: &impl Fn() -> bool,
 ) -> Result<Pixels, String> {
     let [width, height] = canvas;
-    let scale = font_scale(font, block.em)?;
-    let scaled = font.as_scaled(scale);
-    let factor = scaled.scale_factor();
+    let scaled = Scaled::new(fonts, block)?;
     let mut drawn = Vec::new();
     let mut rect = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-    for placed in layout(block, font, scale).0 {
+    let (placed_glyphs, _, rules) = layout(block, &scaled);
+    let rule_edges: Vec<[f64; 4]> = rules
+        .iter()
+        .map(|rule| {
+            let [a0, a1] = [rule[0][0], rule[1][0]];
+            let [d0, d1] = [rule[0][1].min(rule[2][1]), rule[0][1].max(rule[2][1])];
+            reach(
+                block,
+                ab_glyph::Rect {
+                    min: point(a0, d0),
+                    max: point(a1, d1),
+                },
+            )
+        })
+        .collect();
+    for edges in &rule_edges {
+        for side in 0..2 {
+            rect[side] = rect[side].min(edges[side]);
+            rect[side + 2] = rect[side + 2].max(edges[side + 2]);
+        }
+    }
+    for placed in placed_glyphs {
+        let font = &scaled.fonts[placed.face];
         let glyph = placed
             .id
-            .with_scale_and_position(scale, point(placed.pen, placed.baseline));
-        let Some(outlined) = font.outline_glyph(glyph) else {
-            continue;
+            .with_scale_and_position(font.scale, point(placed.pen, placed.baseline));
+        let outlined = fonts[placed.face].outline_glyph(glyph);
+        let bounds = if placed.needs_outline() {
+            // The outline is turned, slanted or thickened, so its box is
+            // found from the corners it maps to.
+            let Some(outline) = fonts[placed.face].outline(placed.id) else {
+                continue;
+            };
+            let factor = font.scale_factor();
+            let [min, max] = [outline.bounds.min, outline.bounds.max];
+            let corners = [
+                point(min.x, min.y),
+                point(max.x, min.y),
+                point(min.x, max.y),
+                point(max.x, max.y),
+            ];
+            let mut found = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+            for corner in corners {
+                for nudge in [0.0, placed.bold] {
+                    let (a, d) = placed.text_point_moved(corner, factor, nudge);
+                    found = [
+                        found[0].min(a),
+                        found[1].min(d),
+                        found[2].max(a),
+                        found[3].max(d),
+                    ];
+                }
+            }
+            ab_glyph::Rect {
+                min: point(found[0], found[1]),
+                max: point(found[2], found[3]),
+            }
+        } else {
+            let Some(outlined) = &outlined else {
+                continue;
+            };
+            outlined.px_bounds()
         };
-        let edges = reach(block, outlined.px_bounds());
+        let edges = reach(block, bounds);
         for side in 0..2 {
             rect[side] = rect[side].min(edges[side]);
             rect[side + 2] = rect[side + 2].max(edges[side + 2]);
@@ -578,12 +1288,16 @@ pub(crate) fn render(
         if cancelled() {
             return Err("Text drawing canceled".into());
         }
-        if !straight {
-            if let Some(outline) = font.outline(placed.id) {
+        if !straight || placed.needs_outline() {
+            if let Some(outline) = fonts[placed.face].outline(placed.id) {
+                let factor = scaled.fonts[placed.face].scale_factor();
                 draw_turned(block, placed, &outline, factor, *edges, &mut coverage);
             }
             continue;
         }
+        let Some(outlined) = outlined else {
+            continue;
+        };
         let bounds = outlined.px_bounds();
         outlined.draw(|gx, gy, value| {
             // The middle of this pixel along and across the text.
@@ -594,6 +1308,9 @@ pub(crate) fn render(
                 coverage.add(x.floor() as usize, y.floor() as usize, value);
             }
         });
+    }
+    for (rule, edges) in rules.iter().zip(&rule_edges) {
+        draw_rule(block, rule, *edges, &mut coverage);
     }
     let mut writer = pixels.writer();
     let mut row = vec![0u8; (right - left) * 4];
@@ -626,6 +1343,13 @@ mod tests {
             em: 60.0,
             color: [10, 20, 30],
             vertical: false,
+            rightward: false,
+            upright_letters: false,
+            tracking: 0.0,
+            faux_bold: false,
+            faux_italic: false,
+            underline: false,
+            strikethrough: false,
             align: Align::Left,
             start: [150.0, 150.0],
             along: [cos, sin],
@@ -640,7 +1364,7 @@ mod tests {
     }
 
     fn draw(block: &Block) -> Vec<u8> {
-        let pixels = render(block, &test_font(), [400, 400], &|| false).unwrap();
+        let pixels = render(block, &[&test_font()], [400, 400], &|| false).unwrap();
         (0..400 * 400).map(|p| pixels.rgba(p)[3]).collect()
     }
 
@@ -713,7 +1437,7 @@ mod tests {
                 edge.start = start;
                 let clipped = draw(&edge);
                 edge.start = start.map(|v| v + MARGIN as f64);
-                let whole = render(&edge, &test_font(), [LARGE, LARGE], &|| false).unwrap();
+                let whole = render(&edge, &[&test_font()], [LARGE, LARGE], &|| false).unwrap();
                 for y in 0..400 {
                     for x in 0..400 {
                         let expected = whole.rgba((y + MARGIN) * LARGE + x + MARGIN)[3];
@@ -734,11 +1458,10 @@ mod tests {
     #[test]
     fn kerning_only_moves_glyphs_when_asked() {
         let font = test_font();
-        let scale = font_scale(&font, 60.0).unwrap();
         let pens = |kerning| {
             let mut text = block("AVAVAV", 0.0);
             text.kerning = kerning;
-            let placed = layout(&text, &font, scale).0;
+            let placed = layout(&text, &Scaled::new(&[&font], &text).unwrap()).0;
             placed.last().unwrap().pen
         };
         assert!(pens(true) <= pens(false));
@@ -754,7 +1477,7 @@ mod tests {
             let mut text = block("Wide line\nhi", 0.0);
             text.align = align;
             text.measure = Measure::Natural { line_spacing };
-            let placed = layout(&text, &font, scale).0;
+            let placed = layout(&text, &Scaled::new(&[&font], &text).unwrap()).0;
             let (first, last) = (placed.first().unwrap(), placed.last().unwrap());
             // The first glyph of the second line.
             let second = &placed[placed.len() - 2];
@@ -782,7 +1505,7 @@ mod tests {
         text.measure = Measure::Natural { line_spacing: 1.0 };
         text.wrap = 150.0;
         text.align = Align::Right;
-        let placed = layout(&text, &font, scale).0;
+        let placed = layout(&text, &Scaled::new(&[&font], &text).unwrap()).0;
         let rows: std::collections::BTreeSet<_> =
             placed.iter().map(|p| p.baseline.to_bits()).collect();
         assert!(rows.len() >= 2);
@@ -803,7 +1526,7 @@ mod tests {
 
     #[test]
     fn cancelling_stops_the_drawing() {
-        let result = render(&block("Hemlo", 0.0), &test_font(), [400, 400], &|| true);
+        let result = render(&block("Hemlo", 0.0), &[&test_font()], [400, 400], &|| true);
         assert_eq!(result.err().as_deref(), Some("Text drawing canceled"));
     }
 }

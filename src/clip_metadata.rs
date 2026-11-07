@@ -172,7 +172,13 @@ struct Report {
     corrections: BTreeMap<i64, crate::adjustment::Settings>,
     /// Import mode: each text layer's line and the font that draws it.
     #[serde(skip)]
-    texts: BTreeMap<i64, (crate::clip_text::Text, std::sync::Arc<ab_glyph::FontVec>)>,
+    texts: BTreeMap<
+        i64,
+        (
+            crate::clip_text::Text,
+            std::sync::Arc<crate::text_render::TextFont>,
+        ),
+    >,
     /// Import mode: brush styles drawn as plain round brushes (no texture,
     /// spray, watercolor or blending), which vector strokes may use, with
     /// their anti-aliasing level.

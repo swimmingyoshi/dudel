@@ -100,7 +100,7 @@ impl Tool {
             }
             Self::Move => "Drag to move the selection, or the whole active layer",
             Self::Text => {
-                "Click to type a line, or drag a box that wraps · click text to edit it · Ctrl+Enter finishes · Esc cancels"
+                "Click to type, or drag a box · on the selected text, click edits and drag moves · double-click other text to open it · Ctrl+Enter finishes"
             }
             Self::Lasso => {
                 "Draw a freehand, rectangle or ellipse shape to fill or erase · tap its shortcut again to switch fill/erase · Esc cancels"

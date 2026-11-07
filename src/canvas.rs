@@ -418,7 +418,9 @@ impl Dudel {
                 return;
             }
         }
-        if key(Modifiers::NONE, Key::Escape) {
+        // Esc during IME composition belongs to the IME.
+        let composing = self.text_edit.as_ref().is_some_and(|edit| edit.composing);
+        if !composing && key(Modifiers::NONE, Key::Escape) {
             if self.text_edit.is_some() || self.text_drag.is_some() {
                 self.cancel_text_edit();
             } else if self.affine_preview.is_some() {
@@ -677,6 +679,13 @@ impl Dudel {
                 input::Packet::Cancel => {
                     self.text_drag = None;
                     self.text_moving = false;
+                    self.text_press = None;
+                    // Losing the pointer is no reason to stop typing: Win+V or
+                    // the touch keyboard take focus, then give it straight back.
+                    if let Some(edit) = &mut self.text_edit {
+                        edit.release_press();
+                        continue;
+                    }
                     self.cancel_ruler_drag();
                     if let Some(drag) = self.guide_drag.take()
                         && drag.index < self.guide_lines.len()
@@ -781,6 +790,10 @@ impl Dudel {
             }
             if start {
                 self.text_moving = false;
+                self.text_press = None;
+            }
+            if self.tool == Tool::Text && start && on_canvas && navigation_allowed && !picking {
+                self.text_tool_press([at.x, at.y]);
             }
             if self.tool == Tool::Pointer
                 && start
@@ -854,7 +867,7 @@ impl Dudel {
                 );
                 continue;
             }
-            if self.tool == Tool::Text && navigation_allowed && !picking {
+            if self.tool == Tool::Text && navigation_allowed && !picking && !self.text_moving {
                 self.text_packet([at.x, at.y], start, end, on_workspace);
                 continue;
             }
@@ -879,10 +892,13 @@ impl Dudel {
                     moved = true;
                 }
                 if end {
+                    moved = false;
+                    if self.text_press_was_a_click([at.x, at.y]) {
+                        continue;
+                    }
                     self.apply_move();
                     self.finish_move_drag();
                     self.text_moving = false;
-                    moved = false;
                 }
                 continue;
             }
@@ -1288,7 +1304,7 @@ impl Dudel {
             }
         }
     }
-    fn cancel_move_drag(&mut self) {
+    pub(crate) fn cancel_move_drag(&mut self) {
         if self.pending_move.take().is_some() {
             self.status = "Move canceled".into();
             return;
@@ -1648,8 +1664,12 @@ impl Dudel {
                 }
             }
             Tool::Move => ctx.set_cursor_icon(CursorIcon::Move),
-            Tool::Text => ctx.set_cursor_icon(CursorIcon::Text),
-            Tool::Pointer => ctx.set_cursor_icon(CursorIcon::Default),
+            Tool::Text => ctx.set_cursor_icon(self.text_cursor_icon(view, pos)),
+            Tool::Pointer => ctx.set_cursor_icon(if self.pointer_grabs_text(view.to_doc(pos)) {
+                CursorIcon::Move
+            } else {
+                CursorIcon::Default
+            }),
             Tool::Fill | Tool::Picker | Tool::Select | Tool::Lasso => {
                 ctx.set_cursor_icon(CursorIcon::Crosshair)
             }

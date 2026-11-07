@@ -166,6 +166,7 @@ mod svg_export;
 mod symmetry;
 mod tabs;
 mod text_layer;
+mod text_options;
 mod text_render;
 mod text_tool;
 mod themes;
@@ -177,6 +178,8 @@ mod tip_import;
 mod tool_panel;
 mod tool_shift;
 mod tools;
+#[cfg(windows)]
+mod touch_keyboard;
 mod transform;
 mod vector_layer;
 mod vector_pick;
@@ -307,16 +310,20 @@ struct Dudel {
     effects_edit: Option<effects_panel::Edit>,
     text_edit: Option<text_tool::Editing>,
     text_drag: Option<text_tool::Drag>,
-    text_style: text_tool::Style,
+    text_style: text_options::Style,
+    text_extents: text_tool::Extents,
     text_drawer: text_tool::Drawer,
-    /// The Pointer is dragging a text layer, through the Move tool's path.
+    /// The Pointer or Text tool is dragging a text layer, through the Move
+    /// tool's path.
     text_moving: bool,
+    /// Where that press began, until the drag is told from a click.
+    text_press: Option<[f32; 2]>,
     /// The text layer last pressed with the Pointer, and when.
     text_click: Option<(document::LayerId, f64)>,
     /// The artist agreed that the open transform may rasterize text.
     text_transform_confirmed: bool,
     held_transform: Option<affine_preview::HeldTransform>,
-    font_list: text_tool::FontList,
+    font_list: text_options::FontList,
     adjustment_edit: Option<adjustment_panel::Edit>,
     /// Adjustment settings last sent through the busy render queue.
     adjustment_sent: Option<(document::LayerId, adjustment::Settings)>,
@@ -595,8 +602,10 @@ impl Default for Dudel {
             text_edit: None,
             text_drag: None,
             text_style: Default::default(),
+            text_extents: Default::default(),
             text_drawer: Default::default(),
             text_moving: false,
+            text_press: None,
             text_click: None,
             text_transform_confirmed: false,
             held_transform: None,
