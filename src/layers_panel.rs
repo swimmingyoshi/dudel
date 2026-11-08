@@ -108,8 +108,13 @@ enum OpacityMode {
     Queued(u64),
 }
 
-/// Mouse-wheel distance that steps one blend mode.
-pub(crate) const BLEND_WHEEL_STEP: f32 = 30.0;
+/// Wheel travel of one notch of an ordinary mouse wheel, which steps a
+/// wheel-stepped control once. Smaller movements, from touchpads and
+/// fine-grained wheels, add up to it. Any other size leaves a remainder that
+/// adds up to an extra step every few notches.
+pub(crate) fn wheel_notch(ctx: &egui::Context) -> f32 {
+    ctx.options(|o| o.input_options.line_scroll_speed).max(1.0)
+}
 
 /// Blend mode dropdown, grouped like other painting apps. The open list uses
 /// the window height before scrolling. Over the closed box the mouse wheel
@@ -171,15 +176,21 @@ pub(crate) fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool
             i.smooth_scroll_delta = egui::Vec2::ZERO;
             delta
         });
-        let mut travel = ui.data(|d| d.get_temp::<f32>(wheel)).unwrap_or(0.0) + delta;
-        // Wheel up moves up the list, like the open menu.
-        while travel >= BLEND_WHEEL_STEP {
-            step -= 1;
-            travel -= BLEND_WHEEL_STEP;
+        let notch = wheel_notch(ui.ctx());
+        let mut travel = ui.data(|d| d.get_temp::<f32>(wheel)).unwrap_or(0.0);
+        // Turning the other way starts afresh.
+        if travel * delta < 0.0 {
+            travel = 0.0;
         }
-        while travel <= -BLEND_WHEEL_STEP {
+        travel += delta;
+        // Wheel up moves up the list, like the open menu.
+        while travel >= notch {
+            step -= 1;
+            travel -= notch;
+        }
+        while travel <= -notch {
             step += 1;
-            travel += BLEND_WHEEL_STEP;
+            travel += notch;
         }
         ui.data_mut(|d| d.insert_temp(wheel, travel));
     }

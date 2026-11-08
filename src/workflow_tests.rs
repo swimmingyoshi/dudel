@@ -1394,8 +1394,9 @@ fn wheel_over_an_effect_blend_box_steps_it_without_scrolling_the_window() {
     w.frame(vec![
         egui::Event::PointerMoved(combo),
         egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, -super::layers_panel::BLEND_WHEEL_STEP),
+            // One notch of a mouse wheel, as Windows reports it.
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
             modifiers: Default::default(),
         },
     ]);
@@ -1416,8 +1417,8 @@ fn blend_modes_step_with_wheel_and_arrows_and_the_full_list_fits_without_scrolli
         w.frame(vec![
             egui::Event::PointerMoved(combo),
             egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
-                delta: egui::vec2(0.0, notches * super::layers_panel::BLEND_WHEEL_STEP),
+                unit: egui::MouseWheelUnit::Line,
+                delta: egui::vec2(0.0, notches),
                 modifiers: Default::default(),
             },
         ]);
@@ -1435,6 +1436,16 @@ fn blend_modes_step_with_wheel_and_arrows_and_the_full_list_fits_without_scrolli
     // Wheel up past the first mode stays there.
     wheel(&mut w, 2.0);
     assert_eq!(w.app.doc.layers[active].blend, BlendMode::Normal);
+    // Notch by notch, down the whole list and back, no mode is skipped:
+    // each notch is exactly one step, with nothing left over to add up.
+    for (index, mode) in BlendMode::ALL.iter().enumerate().skip(1) {
+        wheel(&mut w, -1.0);
+        assert_eq!(w.app.doc.layers[active].blend, *mode, "down to {index}");
+    }
+    for (index, mode) in BlendMode::ALL.iter().enumerate().rev().skip(1) {
+        wheel(&mut w, 1.0);
+        assert_eq!(w.app.doc.layers[active].blend, *mode, "up to {index}");
+    }
     // The open list shows every mode on screen at once.
     w.click(combo);
     for mode in BlendMode::ALL {

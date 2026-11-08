@@ -13,8 +13,6 @@ const PREVIEW_SIZE: [usize; 2] = [300, 28];
 const PREVIEW_LIMIT: usize = 256;
 /// Font previews drawn per frame, so that scrolling the list stays smooth.
 const PREVIEWS_PER_FRAME: usize = 2;
-/// Wheel travel that moves one font along.
-const FONT_WHEEL_STEP: f32 = 40.0;
 /// Weights from this one up count as bold.
 const BOLD: u16 = 600;
 const LARGEST_OUTLINE: f64 = 100.0;
@@ -627,9 +625,14 @@ impl Dudel {
             i.smooth_scroll_delta = egui::Vec2::ZERO;
             delta
         });
+        // Turning the other way starts afresh.
+        if self.font_list.wheel * delta < 0.0 {
+            self.font_list.wheel = 0.0;
+        }
         self.font_list.wheel += delta;
-        let steps = (self.font_list.wheel / FONT_WHEEL_STEP).trunc();
-        self.font_list.wheel -= steps * FONT_WHEEL_STEP;
+        let notch = crate::layers_panel::wheel_notch(ui.ctx());
+        let steps = (self.font_list.wheel / notch).trunc();
+        self.font_list.wheel -= steps * notch;
         let families = text_render::families();
         if steps == 0.0 || families.is_empty() {
             return;
