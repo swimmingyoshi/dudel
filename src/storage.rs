@@ -229,6 +229,9 @@ fn sparsify(doc: &mut Document) -> Result<(), String> {
 
 pub fn import_png(path: &Path) -> Result<Document, String> {
     use image::ImageDecoder;
+    if let Some(reason) = crate::image_paste::not_an_image(path) {
+        return Err(reason);
+    }
     let mut reader = image::ImageReader::open(path).map_err(|e| e.to_string())?;
     reader.set_format(image::ImageFormat::Png);
     let mut limits = image::Limits::default();

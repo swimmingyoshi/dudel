@@ -43,9 +43,46 @@ pub(crate) fn validate_incoming(raster: &Raster) -> Result<(), String> {
     Ok(())
 }
 
+/// Why a file named as an image isn't one, from its first bytes: a browser
+/// may save the page an image was on under the image's name.
+pub(crate) fn not_an_image(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut header = [0u8; 256];
+    let count = std::fs::File::open(path)
+        .and_then(|mut file| file.read(&mut header))
+        .ok()?;
+    let header = &header[..count];
+    if count == 0 {
+        return Some(format!("{} is empty", file_name(path)));
+    }
+    if image::guess_format(header).is_ok() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(header)
+        .trim_start()
+        .to_ascii_lowercase();
+    Some(
+        if text.starts_with("<!doctype html") || text.starts_with("<html") {
+            format!(
+                "{} is a web page saved under an image's name, not an image. Open the \
+             image on its own in the browser, then save or copy it from there",
+                file_name(path)
+            )
+        } else {
+            format!(
+                "{} isn't a PNG, JPEG, WebP, BMP or GIF image, whatever its name says",
+                file_name(path)
+            )
+        },
+    )
+}
+
 /// Decode an image file of any supported format, guessing from its bytes.
 pub(crate) fn decode(path: &Path) -> Result<Raster, String> {
     use image::ImageDecoder;
+    if let Some(reason) = not_an_image(path) {
+        return Err(reason);
+    }
     let mut reader = image::ImageReader::open(path)
         .map_err(|e| format!("{}: {e}", path.display()))?
         .with_guessed_format()
@@ -309,6 +346,35 @@ impl Dudel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn files_that_only_look_like_images_say_what_they_are() {
+        let directory = tempfile::tempdir().unwrap();
+        let page = directory.path().join("sketch.webp");
+        std::fs::write(
+            &page,
+            "<!DOCTYPE html>\n<html lang=\"en\"><body></body></html>",
+        )
+        .unwrap();
+        let error = decode(&page).err().unwrap();
+        assert!(error.contains("web page"), "{error}");
+        let junk = directory.path().join("sketch.png");
+        std::fs::write(&junk, b"41.. not an image at all").unwrap();
+        let error = decode(&junk).err().unwrap();
+        assert!(error.contains("isn't a PNG"), "{error}");
+        assert!(
+            crate::storage::import_png(&page)
+                .err()
+                .unwrap()
+                .contains("web page")
+        );
+        // A real image under another format's name opens by its contents.
+        let png = directory.path().join("actually-png.webp");
+        image::RgbaImage::from_pixel(3, 2, image::Rgba([9, 8, 7, 255]))
+            .save_with_format(&png, image::ImageFormat::Png)
+            .unwrap();
+        assert_eq!(decode(&png).unwrap().width, 3);
+    }
     #[test]
     fn decodes_common_formats_and_scales_oversized_images_to_the_canvas() {
         let dir = tempfile::tempdir().unwrap();
