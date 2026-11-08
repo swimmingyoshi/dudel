@@ -317,8 +317,11 @@ current file flush, before publication. If publication has already passed that
 fence, the save may finish and report success. Canceling a save also cancels a
 waiting New/Open/Close action; the current artwork stays open.
 
-**File > Export > Export PNG** flattens the image onto white paper. **Export
-transparent PNG** keeps composited transparency. **Export vector lines as SVG**
+**File > Export > Export image…** (Ctrl+Shift+E) opens a window: choose PNG,
+JPEG, WebP, BMP or GIF, whether to keep transparency where the format can, JPEG
+quality and the background color see-through areas become. A preview shows what
+the format does before you pick a file. **Export again** (Ctrl+Shift+R) repeats the
+last export to the same file with the same settings. **Export vector lines as SVG**
 writes each line of the shown vector layers as a path for Illustrator or Inkscape;
 raster layers, masks, effects and brush texture are left out. **Export Photoshop
 document (.psd)** keeps the layers, folders, masks and adjustment layers for

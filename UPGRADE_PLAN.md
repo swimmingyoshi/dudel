@@ -30,9 +30,10 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
    and line spacing, justify, outline, box; bold, italic, underline,
    strikethrough and colour also for selected characters) are implemented in the current
    development source, at 671bb79; they are not evidence of a released 0.2.0.
-2. **Export workflow.** Consolidate image export choices, expose useful format
-   settings such as JPEG quality and matte color, explain format conversions
-   before writing, and support repeating the previous export. Preserve the
+2. **Export workflow.** Implemented in the development source: one Export image
+   window with JPEG quality, a background color for flattening, transparency
+   where the format keeps it, notes and a preview of the conversion, and Export
+   again for the project's last export. Preserve the
    document snapshot and protect destinations on cancellation or failure. Track
    detailed tasks in [docs/EXPORT_OPTIONS.md](docs/EXPORT_OPTIONS.md).
 3. **Pen quick menu.** Add a configurable, compact menu near the canvas/pen for

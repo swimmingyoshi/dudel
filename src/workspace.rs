@@ -454,7 +454,7 @@ impl Dudel {
             });
             bounded_menu(ui, "Export", |ui| {
                 self.command_menu_item(ui, crate::commands::Action::ExportPng(false));
-                self.command_menu_item(ui, crate::commands::Action::ExportPng(true));
+                self.command_menu_item(ui, crate::commands::Action::ExportAgain);
                 self.command_menu_item(ui, crate::commands::Action::ExportPsd);
                 self.command_menu_item(ui, crate::commands::Action::ExportLive2d);
                 self.command_menu_item(ui, crate::commands::Action::ExportSvg);
@@ -1768,6 +1768,7 @@ impl Dudel {
 
     pub(crate) fn workspace(&mut self, ctx: &egui::Context) {
         self.window_resize_ui(ctx);
+        self.export_window(ctx);
         self.navigator_paint = None;
         if self.show_panels {
             self.refresh_thumbnails(ctx);

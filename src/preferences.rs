@@ -35,6 +35,9 @@ pub struct Preferences {
     /// What new text looks like.
     #[serde(default)]
     pub text: crate::text_options::Style,
+    /// How image exports are written.
+    #[serde(default)]
+    pub export: crate::export_options::ExportSettings,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,
@@ -180,6 +183,11 @@ mod tests {
             secondary: [1, 2, 3],
             recent_colors: vec![[9, 9, 9]],
             text: Default::default(),
+            export: crate::export_options::ExportSettings {
+                format: crate::export_options::Format::Jpeg,
+                quality: 70,
+                ..Default::default()
+            },
             show_transparency: true,
             tools: ToolPrefs {
                 brush_group: crate::brush::BrushGroup::Airbrush,

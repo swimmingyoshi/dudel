@@ -3535,6 +3535,93 @@ fn text_survives_save_reopen_editing_again_and_every_export() {
 }
 
 #[test]
+fn the_export_window_shows_only_what_the_format_can_do() {
+    use crate::export_options::Format;
+    let mut w = Workspace::new();
+    w.key(egui::Key::E, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    w.settle();
+    assert!(w.app.export_window.open, "Ctrl+Shift+E opens it");
+    let shown = |w: &Workspace, text: &str| {
+        w.output
+            .shapes
+            .iter()
+            .any(|s| format!("{:?}", s.shape).contains(text))
+    };
+    assert!(shown(&w, "Keep transparency"), "PNG can keep it");
+    assert!(!shown(&w, "Quality"));
+    w.app.export_settings.format = Format::Jpeg;
+    w.settle();
+    assert!(shown(&w, "Quality"), "JPEG has a quality");
+    assert!(!shown(&w, "Keep transparency"), "and no transparency");
+    assert!(shown(&w, "become white"), "so it says what happens instead");
+    w.click(w.text("Color"));
+    w.settle();
+    assert!(w.app.export_settings.background.is_some());
+    w.click(w.text("Cancel"));
+    w.settle();
+    assert!(!w.app.export_window.open);
+    assert!(!w.app.modified, "choosing settings changes no artwork");
+    assert_eq!(
+        w.app.export_settings.format,
+        Format::Jpeg,
+        "and they're remembered"
+    );
+}
+
+#[test]
+fn export_again_repeats_the_last_export_with_its_settings() {
+    use crate::export_options::{ExportSettings, Format};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Picture.jpg");
+    let mut w = Workspace::new();
+    // With nothing exported yet, Export again asks what to export.
+    w.key(egui::Key::R, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    w.settle();
+    assert!(w.app.export_window.open);
+    w.click(w.text("Cancel"));
+    w.settle();
+    let settings = ExportSettings {
+        format: Format::Jpeg,
+        quality: 40,
+        background: Some([0, 0, 255]),
+        ..Default::default()
+    };
+    w.app.export_image(path.clone(), settings);
+    finish_jobs(&mut w.app);
+    let blue = |path: &std::path::Path| {
+        let image = image::open(path).unwrap().into_rgb8();
+        let p = image.get_pixel(0, 0);
+        p[2] > 200 && p[0] < 60 && p[1] < 60
+    };
+    assert!(
+        blue(&path),
+        "the empty canvas flattened onto the background"
+    );
+    let first = std::fs::read(&path).unwrap();
+    // Paint, then export again: same file, same settings, new picture.
+    let width = w.app.doc.width;
+    w.app.doc.layers[0]
+        .pixels
+        .writer()
+        .rgba_mut(width * 40 + 40)
+        .copy_from_slice(&[255, 0, 0, 255]);
+    w.app.changed();
+    let modified = w.app.modified;
+    w.key(egui::Key::R, egui::Modifiers::CTRL | egui::Modifiers::SHIFT);
+    finish_jobs(&mut w.app);
+    w.settle();
+    assert!(!w.app.export_window.open, "no questions the second time");
+    let again = std::fs::read(&path).unwrap();
+    assert_ne!(again, first);
+    assert!(blue(&path), "still on the blue background");
+    assert_eq!(
+        w.app.modified, modified,
+        "exporting doesn't save or dirty the project"
+    );
+    assert_eq!(w.app.last_export.as_ref().unwrap().settings, settings);
+}
+
+#[test]
 fn toolbar_symmetry_popup_stays_open_while_its_label_grows() {
     // These widths fit the bar with "Symmetry" but not "Symmetry: Four-way";
     // a label naming the mode collapsed the bar and closed the popup.

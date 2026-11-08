@@ -53,6 +53,7 @@ mod document_edits;
 mod dynamics;
 mod effects_panel;
 mod export_jobs;
+mod export_options;
 mod extension_api;
 mod extensions;
 mod file_preview;
@@ -311,6 +312,11 @@ struct Dudel {
     text_edit: Option<text_tool::Editing>,
     text_drag: Option<text_tool::Drag>,
     text_style: text_options::Style,
+    /// How the next image export is written; a preference.
+    export_settings: export_options::ExportSettings,
+    export_window: export_options::ExportWindow,
+    /// The project's last image export, which Export again repeats.
+    last_export: Option<export_options::LastExport>,
     text_extents: text_tool::Extents,
     text_drawer: text_tool::Drawer,
     /// The Pointer or Text tool is dragging a text layer, through the Move
@@ -602,6 +608,9 @@ impl Default for Dudel {
             text_edit: None,
             text_drag: None,
             text_style: Default::default(),
+            export_settings: Default::default(),
+            export_window: Default::default(),
+            last_export: None,
             text_extents: Default::default(),
             text_drawer: Default::default(),
             text_moving: false,
@@ -901,6 +910,7 @@ impl Dudel {
         self.secondary = p.secondary;
         self.recent_colors = p.recent_colors;
         self.text_style = p.text;
+        self.export_settings = p.export.sanitized();
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
         // The current brush decides the group, so the two never disagree.
@@ -954,6 +964,7 @@ impl Dudel {
             secondary: self.secondary,
             recent_colors: self.recent_colors.clone(),
             text: self.text_style.clone(),
+            export: self.export_settings,
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
@@ -977,32 +988,6 @@ impl Dudel {
             },
         };
         serde_json::to_string(&p).map_err(|e| e.to_string())
-    }
-    fn export(&mut self, transparent: bool) {
-        if self.adjustment.is_some() {
-            self.status = "Apply or cancel the adjustment before exporting".into();
-            return;
-        }
-        if self.export_job.is_some() || self.queued_export.is_some() {
-            self.status = "An image export is already running".into();
-            return;
-        }
-        let name = self
-            .path
-            .as_deref()
-            .and_then(|p| p.file_stem())
-            .map_or("Painting".into(), |s| s.to_string_lossy().into_owned());
-        let dialog = self.dialog_in(
-            locations::Kind::Exports,
-            rfd::AsyncFileDialog::new()
-                .add_filter("PNG", &["png"])
-                .add_filter("WebP (lossless)", &["webp"])
-                .add_filter("JPEG (opaque, quality 92)", &["jpg", "jpeg"])
-                .add_filter("BMP (opaque)", &["bmp"])
-                .add_filter("GIF (256 colors)", &["gif"])
-                .set_file_name(format!("{name}.png")),
-        );
-        self.ask_save_file(dialog, move |app, path| app.export_to(path, transparent));
     }
     fn export_psd(&mut self, effects: psd_export::Effects) {
         if self.adjustment.is_some() {
@@ -1935,6 +1920,7 @@ fn main() -> eframe::Result {
         || capture_mask_lasso
         || capture_mask_paste;
     let capture_canvas_size = mode.as_deref() == Some("--capture-canvas-size");
+    let capture_export = mode.as_deref() == Some("--capture-export");
     let capture_popup = match mode.as_deref() {
         Some("--capture-file-menu") => Some(capture::Popup::FileMenu),
         Some("--capture-view-menu") => Some(capture::Popup::ViewMenu),
@@ -1974,6 +1960,7 @@ fn main() -> eframe::Result {
         || capture_theme_editor
         || capture_affine
         || capture_canvas_size
+        || capture_export
         || capture_layer_mask
         || capture_adjustment
         || capture_popup.is_some()
@@ -2524,6 +2511,17 @@ fn main() -> eframe::Result {
                         rgba,
                     })
                     .expect("capture mask paste");
+                }
+                if capture_export {
+                    app.open_export_window(false);
+                    app.export_settings.format =
+                        match std::env::var("DUDEL_CAPTURE_EXPORT_FORMAT").as_deref() {
+                            Ok("jpeg") => export_options::Format::Jpeg,
+                            Ok("gif") => export_options::Format::Gif,
+                            _ => export_options::Format::Png,
+                        };
+                    app.export_settings.quality = 20;
+                    app.export_settings.background = Some([40, 60, 110]);
                 }
                 if capture_canvas_size {
                     app.open_canvas_size();

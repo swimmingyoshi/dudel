@@ -20,6 +20,7 @@ pub(crate) enum Action {
     Save,
     SaveAs,
     ExportPng(bool),
+    ExportAgain,
     ExportPsd,
     ExportLive2d,
     ExportSvg,
@@ -106,8 +107,8 @@ pub(crate) const COMMANDS: &[Command] = &[
     command!(
         "export.png",
         "Export image…",
-        "",
-        "file image png jpeg jpg webp bmp gif opaque background",
+        "Ctrl+Shift+E",
+        "file image png jpeg jpg webp bmp gif opaque background quality",
         Action::ExportPng(false)
     ),
     command!(
@@ -116,6 +117,13 @@ pub(crate) const COMMANDS: &[Command] = &[
         "",
         "file image alpha no background",
         Action::ExportPng(true)
+    ),
+    command!(
+        "export.again",
+        "Export again",
+        "Ctrl+Shift+R",
+        "file image repeat same last overwrite",
+        Action::ExportAgain
     ),
     command!(
         "export.psd",
@@ -593,7 +601,8 @@ impl Dudel {
             Action::Open => self.open(),
             Action::Save => self.save(false),
             Action::SaveAs => self.save(true),
-            Action::ExportPng(transparent) => self.export(transparent),
+            Action::ExportPng(transparent) => self.open_export_window(transparent),
+            Action::ExportAgain => self.export_again(),
             Action::ExportPsd => self.export_psd(crate::psd_export::Effects::Editable),
             Action::ExportLive2d => self.export_psd(crate::psd_export::Effects::AsLayers),
             Action::ExportSvg => self.export_svg(),

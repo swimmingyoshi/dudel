@@ -3453,12 +3453,16 @@ mod tests {
             .writer()
             .rgba_mut(2)
             .copy_from_slice(&[255, 0, 0, 255]);
+        // (Unless the worker finishes between the lookup and the call
+        // returning: then the new drawing already shows.)
         let (meanwhile, previous, waiting) = expand_for_display(&doc, &wake);
-        if waiting {
-            assert_eq!(previous, drawn);
+        if waiting && previous == drawn {
             assert!(meanwhile.layers[1].pixels.shares(&ready.layers[1].pixels));
         }
         let (updated, redrawn) = settle(&doc);
+        if waiting && previous != drawn {
+            assert_eq!(previous, redrawn, "only ever the old or the new drawing");
+        }
         assert_ne!(redrawn, drawn);
         assert_eq!(updated.layers[1].pixels.rgba(2), [0, 0, 255, 255]);
         // Opacity and blending reuse the drawing: no wait.

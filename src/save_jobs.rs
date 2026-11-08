@@ -428,7 +428,10 @@ mod tests {
         app.queued_export = Some(crate::export_jobs::QueuedExport {
             ticket,
             path: png.clone(),
-            kind: crate::export_jobs::ExportKind::Png { transparent: true },
+            kind: crate::export_jobs::ExportKind::Png {
+                transparent: true,
+                background: None,
+            },
             canceled: false,
         });
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
