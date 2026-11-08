@@ -263,6 +263,14 @@ the point: those transforms rasterize (see stage 3).
       run's underline and strikethrough is drawn in its colour. Text without
       marks takes exactly the earlier path, so existing text and CSP imports
       draw identically.
+- [x] **Fit text to box** (owner's request, 2026-11-08), in the Format menu and
+      remembered for new text. Text that would overflow its box is drawn at the
+      largest quarter pixel that fits, never larger than its size, which stays the
+      user's choice; the menu shows the size it is drawn at. Resizing the box or
+      typing re-fits it, and a fitted box can be resized smaller than its text's
+      full size. `Format::fit`, saved only when on. Release timing to find the
+      size: 231 characters 0.9 ms, 1,155 characters 5.7 ms, 4,620 characters
+      25 ms; each draft is measured once and cached.
 - [ ] Tab switching, project close, undo and saving still close the session
       through `close_input_gestures`, which waits for the render. That keeps the
       newest draft but can pause the UI for a large text.

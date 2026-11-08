@@ -375,7 +375,8 @@ impl Editing {
         let mut shift = [0.0; 2];
         let mut sizes = [None; 2];
         for axis in 0..2 {
-            let least = if axis == 0 {
+            // Text that fits its box shrinks with it instead.
+            let least = if axis == 0 || origin.format.fit {
                 MIN_BOX
             } else {
                 // The lines' own thickness at the width chosen just above.
@@ -1847,6 +1848,31 @@ mod tests {
             edit.draft.start[0] >= 60.0,
             "and the box stays where it was"
         );
+    }
+
+    #[test]
+    fn text_fitted_to_its_box_shrinks_as_the_box_does() {
+        let mut app = app();
+        app.zoom = 1.0;
+        app.text_style.format.fit = true;
+        app.begin_new_text([60.0, 40.0], Some(120.0), Some(100.0));
+        typed(&mut app, "Hemlo");
+        let size = app.text_edit.as_ref().unwrap().draft.size;
+        // The bottom side, dragged up close to the top.
+        drag_through(&mut app, &[[120.0, 140.0], [120.0, 100.0], [120.0, 60.0]]);
+        let edit = app.text_edit.as_ref().unwrap();
+        assert_eq!(
+            edit.extent.unwrap()[1],
+            20.0,
+            "the box goes where it's dragged"
+        );
+        assert!(
+            edit.draft.shown_size() < size,
+            "and the text shrinks to fit"
+        );
+        assert_eq!(edit.draft.size, size, "keeping its size for a bigger box");
+        app.finish_text_edit();
+        assert_eq!(undo_depth(&mut app), 1);
     }
 
     #[test]

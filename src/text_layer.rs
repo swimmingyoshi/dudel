@@ -34,6 +34,19 @@ pub(crate) struct Format {
     pub(crate) faux_italic: bool,
     pub(crate) underline: bool,
     pub(crate) strikethrough: bool,
+    /// Text that would overflow its box is drawn smaller, just small enough
+    /// to fit; `size` is then the largest it gets.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) fit: bool,
+}
+
+/// Fitted sizes of texts drawn lately, so that typing doesn't search again.
+const FITTED_KEPT: usize = 8;
+
+thread_local! {
+    static FITTED: std::cell::RefCell<Vec<(TextLayer, f64)>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
 }
 
 /// Formatting some characters have differently from the rest of the text.
@@ -302,7 +315,8 @@ impl TextLayer {
         Ok(fonts)
     }
 
-    fn block(&self) -> Block<'_> {
+    /// The text laid out at `size`.
+    fn block_at(&self, size: f64) -> Block<'_> {
         let measure = match self.csp {
             Some([span, thickness]) => Measure::Given { span, thickness },
             None => Measure::Natural {
@@ -311,13 +325,13 @@ impl TextLayer {
         };
         Block {
             string: &self.string,
-            em: self.size as f32,
+            em: size as f32,
             color: self.color,
             // Letters turned left read like horizontal text turned a quarter.
             vertical: self.vertical && self.letters != Letters::TurnedLeft,
             rightward: self.rightward != (self.letters == Letters::TurnedLeft),
             upright_letters: self.letters == Letters::Upright,
-            tracking: (self.format.tracking * self.size) as f32,
+            tracking: (self.format.tracking * size) as f32,
             faux_bold: self.format.faux_bold,
             faux_italic: self.format.faux_italic,
             underline: self.format.underline,
@@ -338,8 +352,56 @@ impl TextLayer {
     /// their family's face for it, placed right after the text's own font,
     /// and faux bold or italic where the family has none.
     fn prepared(&self) -> Result<(Vec<std::sync::Arc<TextFont>>, Block<'_>), String> {
+        self.prepared_at(self.shown_size())
+    }
+
+    /// The size the text is drawn at: its own, or when it fits its box and
+    /// would overflow it, the largest quarter pixel at which it doesn't.
+    pub(crate) fn shown_size(&self) -> f64 {
+        let (Some(_), Some(room), true) = (self.wrap, self.box_height, self.format.fit) else {
+            return self.size;
+        };
+        if let Some(size) = FITTED.with_borrow(|known| {
+            known
+                .iter()
+                .find(|(text, _)| text == self)
+                .map(|(_, size)| *size)
+        }) {
+            return size;
+        }
+        let fits = |size: f64| {
+            self.prepared_at(size)
+                .and_then(|(fonts, block)| crate::text_render::extent(&block, &borrowed(&fonts)))
+                .is_ok_and(|[_, height]| height <= room + 1e-6)
+        };
+        let size = if fits(self.size) {
+            self.size
+        } else {
+            // Quarter pixels from 1 px up to just under the text's own size.
+            let (mut fitting, mut over) = (4u32, (self.size * 4.0).ceil() as u32);
+            while over - fitting > 1 {
+                let middle = (fitting + over) / 2;
+                if fits(f64::from(middle) / 4.0) {
+                    fitting = middle;
+                } else {
+                    over = middle;
+                }
+            }
+            f64::from(fitting) / 4.0
+        };
+        FITTED.with_borrow_mut(|known| {
+            if known.len() >= FITTED_KEPT {
+                known.remove(0);
+            }
+            known.push((self.clone(), size));
+        });
+        size
+    }
+
+    /// `prepared`, with the text drawn at `size`.
+    fn prepared_at(&self, size: f64) -> Result<(Vec<std::sync::Arc<TextFont>>, Block<'_>), String> {
         let mut fonts = self.fonts()?;
-        let mut block = self.block();
+        let mut block = self.block_at(size);
         if self.spans.is_empty() {
             return Ok((fonts, block));
         }
@@ -683,6 +745,74 @@ pub(crate) fn set(
 mod tests {
     use super::*;
     use crate::{document::LayerId, document_edits::Edit, text_render::TEST_FONT};
+
+    fn fitted(string: &str, box_size: [f64; 2]) -> TextLayer {
+        let mut text = text(string);
+        text.wrap = Some(box_size[0]);
+        text.box_height = Some(box_size[1]);
+        text.format.fit = true;
+        text
+    }
+
+    const LOREM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do \
+        eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, \
+        quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
+
+    #[test]
+    fn long_text_shrinks_to_fit_its_box() {
+        let text = fitted(LOREM, [240.0, 120.0]);
+        let shown = text.shown_size();
+        assert!(shown < text.size, "{shown}");
+        assert_eq!((shown * 4.0).fract(), 0.0, "on a quarter pixel");
+        assert_eq!(
+            text.extent().unwrap(),
+            [240.0, 120.0],
+            "the box stays as drawn"
+        );
+        // As large as fits: a quarter pixel more would overflow.
+        let mut larger = text.clone();
+        larger.format.fit = false;
+        larger.box_height = None;
+        larger.size = shown + 0.25;
+        assert!(larger.extent().unwrap()[1] > 120.0);
+        // And the ink stays inside the box.
+        let pixels = text.render([400, 300], &|| false).unwrap();
+        let below = (0..400 * 300)
+            .filter(|p| p / 400 > (text.start[1] + 120.0) as usize + 2)
+            .any(|p| pixels.rgba(p)[3] != 0);
+        assert!(!below, "nothing below the box");
+    }
+
+    #[test]
+    fn fitting_never_grows_text_and_follows_the_box() {
+        let short = fitted("Hemlo", [240.0, 120.0]);
+        assert_eq!(short.shown_size(), short.size, "short text keeps its size");
+        let small = fitted(LOREM, [240.0, 120.0]).shown_size();
+        let roomier = fitted(LOREM, [400.0, 300.0]).shown_size();
+        assert!(
+            roomier > small,
+            "a bigger box shows it bigger: {small} {roomier}"
+        );
+        // Without a box there's nothing to fit, and without Fit it overflows.
+        let mut line = fitted(LOREM, [240.0, 120.0]);
+        line.wrap = None;
+        line.box_height = None;
+        assert_eq!(line.shown_size(), line.size);
+        let mut grows = fitted(LOREM, [240.0, 120.0]);
+        grows.format.fit = false;
+        assert!(grows.extent().unwrap()[1] > 120.0);
+    }
+
+    #[test]
+    fn fit_is_saved_only_when_on() {
+        let mut text = text("Hemlo");
+        text.format.underline = true;
+        assert!(!serde_json::to_string(&text).unwrap().contains("fit"));
+        text.format.fit = true;
+        let json = serde_json::to_string(&text).unwrap();
+        let back: TextLayer = serde_json::from_str(&json).unwrap();
+        assert!(back.format.fit);
+    }
 
     fn bold(start: usize, end: usize) -> Span {
         Span {

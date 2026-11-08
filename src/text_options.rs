@@ -575,6 +575,20 @@ impl Dudel {
         if wants_box != boxed {
             self.edit_open_text(|text| text.set_box(wants_box));
         }
+        ui.checkbox(&mut style.format.fit, "Fit text to box")
+            .on_hover_text(
+                "Shrink text that would overflow its box. The size is the largest it gets",
+            );
+        if let Some(shown) = self
+            .text_edit
+            .as_ref()
+            .map(|edit| &edit.draft)
+            .filter(|text| text.format.fit && text.wrap.is_some())
+            .map(TextLayer::shown_size)
+            .filter(|shown| *shown < style.size)
+        {
+            ui.weak(format!("Shown at {shown:.2} px to fit"));
+        }
         let outline = self.text_outline();
         let mut outlined = outline.is_some();
         let (mut width, mut color) =
