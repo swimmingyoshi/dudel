@@ -211,6 +211,7 @@ impl Text {
             along: self.along,
             down: self.down,
             csp: Some([self.span, self.thickness]),
+            spans: Vec::new(),
         }
     }
 }

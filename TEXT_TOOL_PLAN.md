@@ -65,9 +65,11 @@ the point: those transforms rasterize (see stage 3).
    correctly), 38 have only GPOS kerning (Georgia, Comic Sans and Courier New get
    none) and 40 have neither. Downloaded fonts weren't measured. Arabic and
    ligatures need shaping regardless. The new dependency needs the usual notice review.
-3. **One style per layer?** Decided: yes for 0.2. Mixed styles inside one layer
-   need rich-text editing and a run-based record. Artists can use one layer per
-   style in the meantime. The importer also accepts only single-style CSP layers.
+3. **One style per layer?** Decided yes on 2026-11-05, then changed by the owner
+   on 2026-11-08 after trying the tool: Bold, Italic, Underline, Strikethrough
+   and colour apply to the selected characters, as in other editors. Font, size,
+   spacing, alignment and direction stay per layer for 0.2. The importer still
+   accepts only single-style CSP layers.
 4. **Should new vertical text be in 0.2?** Decided: yes if stage 5 has room,
    because it matters for manga. Imported vertical text works either way. Correct
    Japanese needs vertical glyph forms (the `vert` feature), so it depends on
@@ -248,6 +250,19 @@ the point: those transforms rasterize (see stage 3).
 - [x] Glyphs wholly off the canvas are no longer rasterized. `text_redraw_cost`
       (release, 2026-11-08): 2,000 px paragraph on a 100 MP canvas 3.75 s -> 0.53 s;
       200 px paragraph 108 -> 101 ms; turned 247 -> 233 ms. Output is unchanged.
+- [x] Styles for selected characters (owner's request, 2026-11-08). With text
+      selected, **B**, **I**, **U**, Strikethrough and the colour apply to it alone,
+      and the bar shows a style as on only when every selected character has it.
+      With nothing selected they change the whole text, clearing any per-character
+      marks of that style. The record keeps `spans`: ordered runs of characters
+      with `Marks` (each an optional bold, italic, underline, strikethrough or
+      colour, stored only where it differs from the whole text). Marks stay with
+      their characters as text is typed or deleted, and typing takes the marks of
+      the character before it. A bold or italic run uses the family's own face
+      when it has one (Arial Bold, not a faked bold) and fakes it otherwise; each
+      run's underline and strikethrough is drawn in its colour. Text without
+      marks takes exactly the earlier path, so existing text and CSP imports
+      draw identically.
 - [ ] Tab switching, project close, undo and saving still close the session
       through `close_input_gestures`, which waits for the render. That keeps the
       newest draft but can pause the UI for a large text.
@@ -271,7 +286,8 @@ the point: those transforms rasterize (see stage 3).
 
 - Editable text in PSD. Export stays rendered pixels with a note in the report, and
   import stays pixels. Reading `TySh` is the natural next step.
-- Text in SVG export, text on a path and mixed styles.
+- Text in SVG export, text on a path, and font, size or spacing that differ
+  within one layer.
 - Text in the extension API.
 
 ## Testing

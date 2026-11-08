@@ -36,6 +36,45 @@ pub(crate) struct Format {
     pub(crate) strikethrough: bool,
 }
 
+/// Formatting some characters have differently from the rest of the text.
+/// None leaves that one as the whole text has it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct Marks {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) bold: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) italic: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) underline: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) strikethrough: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<[u8; 3]>,
+}
+
+/// Characters `start..end` of the text, marked alike.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Span {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    #[serde(flatten)]
+    pub(crate) marks: Marks,
+}
+
+/// How a character shows, with its marks and the whole text's formatting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CharStyle {
+    pub(crate) bold: bool,
+    pub(crate) italic: bool,
+    pub(crate) underline: bool,
+    pub(crate) strikethrough: bool,
+    pub(crate) color: [u8; 3],
+}
+
+/// Weights from this one up count as bold.
+pub(crate) const BOLD: u16 = 600;
+
 /// Why a text layer's pixels can't be edited directly.
 pub(crate) const BLOCKER: &str =
     "This is a text layer — edit its text, or rasterize it (Layer menu) to edit its pixels";
@@ -88,6 +127,10 @@ pub(crate) struct TextLayer {
     /// imported text matches CSP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) csp: Option<[f64; 2]>,
+    /// Runs of characters bold, italic, underlined, struck through or colored
+    /// differently from the rest, in order and apart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) spans: Vec<Span>,
 }
 
 impl TextLayer {
@@ -114,10 +157,133 @@ impl TextLayer {
             || self
                 .csp
                 .is_some_and(|csp| !csp.iter().all(|v| inside(*v, 0.0..=MAX_POSITION)))
+            || !self.spans_fit()
         {
             return Err("Invalid text layer".into());
         }
         Ok(())
+    }
+
+    /// Spans are in order, apart, within the text and mark something.
+    fn spans_fit(&self) -> bool {
+        let count = self.string.chars().count();
+        let mut after = 0;
+        self.spans.iter().all(|span| {
+            let fits = span.start >= after
+                && span.start < span.end
+                && span.end <= count
+                && span.marks != Marks::default();
+            after = span.end;
+            fits
+        })
+    }
+
+    /// Whether the text's own face, with its faux formatting, is bold and italic.
+    pub(crate) fn looks(&self) -> (bool, bool) {
+        let face = crate::text_render::family_of(&self.font).map(|(family, i)| &family.faces[i]);
+        (
+            self.format.faux_bold || face.is_some_and(|f| f.weight >= BOLD),
+            self.format.faux_italic || face.is_some_and(|f| f.italic),
+        )
+    }
+
+    /// Each character's marks.
+    pub(crate) fn marks(&self) -> Vec<Marks> {
+        let mut marks = vec![Marks::default(); self.string.chars().count()];
+        for span in &self.spans {
+            let end = span.end.min(marks.len());
+            for mark in marks.iter_mut().take(end).skip(span.start) {
+                *mark = span.marks;
+            }
+        }
+        marks
+    }
+
+    /// How each character shows.
+    pub(crate) fn char_styles(&self) -> Vec<CharStyle> {
+        let (bold, italic) = self.looks();
+        self.marks()
+            .into_iter()
+            .map(|m| CharStyle {
+                bold: m.bold.unwrap_or(bold),
+                italic: m.italic.unwrap_or(italic),
+                underline: m.underline.unwrap_or(self.format.underline),
+                strikethrough: m.strikethrough.unwrap_or(self.format.strikethrough),
+                color: m.color.unwrap_or(self.color),
+            })
+            .collect()
+    }
+
+    /// Store each character's marks as spans, leaving out what matches the
+    /// whole text anyway.
+    pub(crate) fn set_marks(&mut self, marks: &[Marks]) {
+        let (bold, italic) = self.looks();
+        let unless = |value: Option<bool>, base: bool| value.filter(|v| *v != base);
+        let mut spans: Vec<Span> = Vec::new();
+        for (index, mark) in marks.iter().enumerate() {
+            let mark = Marks {
+                bold: unless(mark.bold, bold),
+                italic: unless(mark.italic, italic),
+                underline: unless(mark.underline, self.format.underline),
+                strikethrough: unless(mark.strikethrough, self.format.strikethrough),
+                color: mark.color.filter(|c| *c != self.color),
+            };
+            if mark == Marks::default() {
+                continue;
+            }
+            match spans.last_mut() {
+                Some(last) if last.end == index && last.marks == mark => last.end += 1,
+                _ => spans.push(Span {
+                    start: index,
+                    end: index + 1,
+                    marks: mark,
+                }),
+            }
+        }
+        self.spans = spans;
+    }
+
+    /// Change the marks of characters `range`.
+    pub(crate) fn mark(&mut self, range: std::ops::Range<usize>, change: impl Fn(&mut Marks)) {
+        let mut marks = self.marks();
+        let end = range.end.min(marks.len());
+        for mark in marks.iter_mut().take(end).skip(range.start) {
+            change(mark);
+        }
+        self.set_marks(&marks);
+    }
+
+    /// Keep the marks with their characters after the text changed from
+    /// `before`: typing takes the marks of the character before it.
+    pub(crate) fn follow_edit(&mut self, before: &str) {
+        if self.spans.is_empty() {
+            return;
+        }
+        let old: Vec<char> = before.chars().collect();
+        let new: Vec<char> = self.string.chars().collect();
+        let mut marks = {
+            let string = std::mem::replace(&mut self.string, before.to_owned());
+            let marks = self.marks();
+            self.string = string;
+            marks
+        };
+        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let room = old.len().min(new.len()) - prefix;
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let typed = new.len() - prefix - suffix;
+        let like = if prefix > 0 {
+            marks[prefix - 1]
+        } else {
+            marks.get(prefix).copied().unwrap_or_default()
+        };
+        marks.splice(prefix..old.len() - suffix, std::iter::repeat_n(like, typed));
+        self.set_marks(&marks);
     }
 
     fn font(&self) -> Result<std::sync::Arc<TextFont>, String> {
@@ -163,7 +329,62 @@ impl TextLayer {
             measure,
             wrap: self.wrap.unwrap_or(f64::INFINITY),
             kerning: self.csp.is_none(),
+            looks: Vec::new(),
+            variants: 0,
         }
+    }
+
+    /// The text's fonts and its block. Characters marked bold or italic use
+    /// their family's face for it, placed right after the text's own font,
+    /// and faux bold or italic where the family has none.
+    fn prepared(&self) -> Result<(Vec<std::sync::Arc<TextFont>>, Block<'_>), String> {
+        let mut fonts = self.fonts()?;
+        let mut block = self.block();
+        if self.spans.is_empty() {
+            return Ok((fonts, block));
+        }
+        let (base_bold, base_italic) = self.looks();
+        let family = crate::text_render::family_of(&self.font).map(|(family, _)| family);
+        let mut faces: Vec<(String, std::sync::Arc<TextFont>)> = Vec::new();
+        let mut looks = Vec::new();
+        for style in self.char_styles() {
+            let (mut face, mut faux_bold, mut faux_italic) =
+                (0, self.format.faux_bold, self.format.faux_italic);
+            if (style.bold, style.italic) != (base_bold, base_italic) {
+                (faux_bold, faux_italic) = (style.bold, style.italic);
+                if let Some(family) = family {
+                    let chosen = family.closest(if style.bold { 700 } else { 400 }, style.italic);
+                    let loaded = faces.iter().position(|(name, _)| *name == chosen.name);
+                    let index = if chosen.name == self.font {
+                        Some(0)
+                    } else if let Some(at) = loaded {
+                        Some(at + 1)
+                    } else if let Some(font) = crate::text_render::find_font(&chosen.name) {
+                        faces.push((chosen.name.clone(), font));
+                        Some(faces.len())
+                    } else {
+                        None
+                    };
+                    if let Some(index) = index {
+                        face = index;
+                        faux_bold = style.bold && chosen.weight < BOLD;
+                        faux_italic = style.italic && !chosen.italic;
+                    }
+                }
+            }
+            looks.push(crate::text_render::Look {
+                face,
+                faux_bold,
+                faux_italic,
+                underline: style.underline,
+                strikethrough: style.strikethrough,
+                color: style.color,
+            });
+        }
+        block.variants = faces.len();
+        block.looks = looks;
+        fonts.splice(1..1, faces.into_iter().map(|(_, font)| font));
+        Ok((fonts, block))
     }
 
     /// The text in its color over the whole canvas.
@@ -172,8 +393,8 @@ impl TextLayer {
         canvas: [usize; 2],
         cancelled: &impl Fn() -> bool,
     ) -> Result<Pixels, String> {
-        let fonts = self.fonts()?;
-        crate::text_render::render(&self.block(), &borrowed(&fonts), canvas, cancelled)
+        let (fonts, block) = self.prepared()?;
+        crate::text_render::render(&block, &borrowed(&fonts), canvas, cancelled)
     }
 
     /// This text in Dudel's own layout, for editing: imported text leaves CSP's
@@ -188,8 +409,8 @@ impl TextLayer {
         };
         let mut drop = 0.0;
         if let Ok((lines, pitch, height)) = self
-            .fonts()
-            .and_then(|fonts| crate::text_render::line_metrics(&self.block(), &borrowed(&fonts)))
+            .prepared()
+            .and_then(|(fonts, block)| crate::text_render::line_metrics(&block, &borrowed(&fonts)))
         {
             let spacing = (thickness / lines as f64 / pitch).clamp(0.5, 5.0);
             text.line_spacing = spacing;
@@ -311,14 +532,15 @@ impl TextLayer {
 
     /// How long and how tall the text is, in canvas pixels.
     pub(crate) fn extent(&self) -> Result<[f64; 2], String> {
-        let fonts = self.fonts()?;
-        let [length, height] = crate::text_render::extent(&self.block(), &borrowed(&fonts))?;
+        let (fonts, block) = self.prepared()?;
+        let [length, height] = crate::text_render::extent(&block, &borrowed(&fonts))?;
         Ok([length, height.max(self.box_height.unwrap_or(0.0))])
     }
 
     /// Where the caret stands before each character, and at the end.
     pub(crate) fn carets(&self) -> Result<Vec<crate::text_render::Caret>, String> {
-        crate::text_render::carets(&self.block(), &borrowed(&self.fonts()?))
+        let (fonts, block) = self.prepared()?;
+        crate::text_render::carets(&block, &borrowed(&fonts))
     }
 
     /// A point in text space, in canvas pixels.
@@ -462,6 +684,174 @@ mod tests {
     use super::*;
     use crate::{document::LayerId, document_edits::Edit, text_render::TEST_FONT};
 
+    fn bold(start: usize, end: usize) -> Span {
+        Span {
+            start,
+            end,
+            marks: Marks {
+                bold: Some(true),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn marks_stay_with_their_characters_while_typing() {
+        let mut text = text("Hemlo world");
+        text.mark(6..11, |m| m.bold = Some(true));
+        assert_eq!(text.spans, vec![bold(6, 11)]);
+        let mut typed = |before: &str, after: &str| {
+            let was = text.string.clone();
+            assert_eq!(was, before);
+            text.string = after.into();
+            text.follow_edit(&was);
+            text.spans.clone()
+        };
+        assert_eq!(typed("Hemlo world", "Oh Hemlo world"), vec![bold(9, 14)]);
+        assert_eq!(
+            typed("Oh Hemlo world", "Oh Hemlo worlds"),
+            vec![bold(9, 15)],
+            "typing after takes its marks"
+        );
+        assert_eq!(typed("Oh Hemlo worlds", "Oh Hemlo wds"), vec![bold(9, 12)]);
+        assert_eq!(typed("Oh Hemlo wds", "Oh Hemlo "), vec![]);
+        text.validate().unwrap();
+    }
+
+    #[test]
+    fn marks_are_kept_tidy() {
+        let mut text = text("Hemlo world");
+        // Marks the whole text already has aren't kept.
+        text.mark(0..5, |m| {
+            m.bold = Some(false);
+            m.color = Some(text_color());
+        });
+        assert!(text.spans.is_empty());
+        // Neighbours marked alike join.
+        text.mark(0..3, |m| m.underline = Some(true));
+        text.mark(3..6, |m| m.underline = Some(true));
+        assert_eq!(text.spans.len(), 1);
+        assert_eq!((text.spans[0].start, text.spans[0].end), (0, 6));
+        // Spans out of order, overlapping or past the end aren't valid.
+        for spans in [
+            vec![bold(3, 5), bold(0, 2)],
+            vec![bold(0, 4), bold(3, 6)],
+            vec![bold(5, 40)],
+            vec![bold(2, 2)],
+        ] {
+            text.spans = spans;
+            assert!(text.validate().is_err(), "{:?}", text.spans);
+        }
+    }
+
+    #[test]
+    fn marks_save_and_older_text_saves_as_before() {
+        let plain = text("Hemlo");
+        let json = serde_json::to_string(&plain).unwrap();
+        assert!(!json.contains("spans"), "{json}");
+        let mut marked = plain.clone();
+        marked.mark(1..3, |m| {
+            m.italic = Some(true);
+            m.color = Some([1, 2, 3]);
+        });
+        let json = serde_json::to_string(&marked).unwrap();
+        let back: TextLayer = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, marked);
+        back.validate().unwrap();
+    }
+
+    fn text_color() -> [u8; 3] {
+        text("x").color
+    }
+
+    /// Ink and its colors in columns `from..to`.
+    fn ink_between(
+        pixels: &crate::pixels::Pixels,
+        [width, height]: [usize; 2],
+        from: usize,
+        to: usize,
+    ) -> (usize, Vec<[u8; 3]>) {
+        let mut count = 0;
+        let mut colors = Vec::new();
+        for index in 0..width * height {
+            let x = index % width;
+            let p = pixels.rgba(index);
+            if (from..to).contains(&x) && p[3] > 0 {
+                count += 1;
+                if p[3] == 255 && !colors.contains(&[p[0], p[1], p[2]]) {
+                    colors.push([p[0], p[1], p[2]]);
+                }
+            }
+        }
+        (count, colors)
+    }
+
+    #[test]
+    fn only_marked_characters_are_drawn_bold_red_or_underlined() {
+        let canvas = [300, 200];
+        let plain = text("Hemlo Hemlo");
+        let split = plain.carets().unwrap()[6].along as usize + plain.start[0] as usize;
+        let drawn = |text: &TextLayer| text.render(canvas, &|| false).unwrap();
+        let halves = |text: &TextLayer| {
+            let pixels = drawn(text);
+            [
+                ink_between(&pixels, canvas, 0, split),
+                ink_between(&pixels, canvas, split, canvas[0]),
+            ]
+        };
+        let [first, second] = halves(&plain);
+        for (change, name) in [
+            (
+                (|m: &mut Marks| m.bold = Some(true)) as fn(&mut Marks),
+                "bold",
+            ),
+            (|m| m.underline = Some(true), "underline"),
+            (|m| m.italic = Some(true), "italic"),
+        ] {
+            let mut marked = plain.clone();
+            marked.mark(6..11, change);
+            let [a, b] = halves(&marked);
+            assert_eq!(a, first, "{name}: the first word is untouched");
+            assert_ne!(b.0, second.0, "{name}: the second word changes");
+        }
+        let mut red = plain.clone();
+        red.mark(6..11, |m| m.color = Some([220, 0, 0]));
+        let [a, b] = halves(&red);
+        assert_eq!(a, first);
+        assert_eq!(b.0, second.0, "same shapes");
+        assert_eq!(b.1, vec![[220, 0, 0]], "in red");
+    }
+
+    #[test]
+    fn text_marked_all_alike_draws_as_if_unmarked() {
+        let mut plain = text("Hemlo world");
+        plain.color = [220, 0, 0];
+        let mut marked = text("Hemlo world");
+        marked.mark(0..11, |m| m.color = Some([220, 0, 0]));
+        assert!(!marked.spans.is_empty());
+        let draw = |text: &TextLayer| text.render([300, 200], &|| false).unwrap();
+        assert!(draw(&plain) == draw(&marked));
+    }
+
+    #[test]
+    fn bold_marks_use_the_familys_bold_face() {
+        let mut text = text("Hemlo Hemlo");
+        text.font = "Arial".into();
+        if crate::text_render::find_font("Arial Bold").is_none() {
+            return;
+        }
+        text.mark(6..11, |m| m.bold = Some(true));
+        let (fonts, block) = text.prepared().unwrap();
+        assert_eq!(block.variants, 1);
+        assert_eq!(block.looks[8].face, 1);
+        assert!(
+            !block.looks[8].faux_bold,
+            "a real bold face, not a faked one"
+        );
+        assert_eq!(block.looks[0].face, 0);
+        assert!(fonts.len() >= 2);
+    }
+
     /// Where the caret before each character stands along the line.
     fn along(string: &str) -> Vec<f64> {
         text(string)
@@ -534,6 +924,7 @@ mod tests {
             along: [1.0, 0.0],
             down: [0.0, 1.0],
             csp: None,
+            spans: Vec::new(),
         }
     }
 

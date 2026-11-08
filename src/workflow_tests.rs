@@ -3816,6 +3816,82 @@ fn ctrl_enter_during_a_slow_drawing_finishes_without_freezing() {
 }
 
 #[test]
+fn bold_underline_and_color_change_only_the_selected_words() {
+    use crate::text_layer::{Marks, Span};
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo world");
+    // Shift+Left five times selects "world".
+    for _ in 0..5 {
+        w.key(egui::Key::ArrowLeft, egui::Modifiers::SHIFT);
+    }
+    w.click(w.text("B"));
+    w.click(w.text("U"));
+    w.app.color = [200, 30, 30];
+    w.settle();
+    w.app.settle_text_draft();
+    let marked = Marks {
+        bold: Some(true),
+        underline: Some(true),
+        color: Some([200, 30, 30]),
+        ..Default::default()
+    };
+    let draft = &w.app.text_edit.as_ref().unwrap().draft;
+    assert_eq!(
+        draft.spans,
+        vec![Span {
+            start: 6,
+            end: 11,
+            marks: marked
+        }]
+    );
+    assert!(!draft.format.underline, "the rest isn't underlined");
+    // Typing at the end of the bold word carries on in bold.
+    w.key(egui::Key::End, egui::Modifiers::NONE);
+    w.type_text("s");
+    let draft = &w.app.text_edit.as_ref().unwrap().draft;
+    assert_eq!(draft.string, "Hemlo worlds");
+    assert_eq!(draft.spans[0].end, 12);
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    assert!(w.app.text_edit.is_none());
+    let index = w.app.doc.active;
+    let text = w.app.doc.layers[index].text.clone().unwrap();
+    assert_eq!(text.spans.len(), 1);
+    // The red is in the layer's pixels, and not everywhere.
+    let pixels = &w.app.doc.layers[index].pixels;
+    let colors: std::collections::HashSet<[u8; 3]> = (0..w.app.doc.width * w.app.doc.height)
+        .map(|p| pixels.rgba(p))
+        .filter(|p| p[3] == 255)
+        .map(|p| [p[0], p[1], p[2]])
+        .collect();
+    assert!(
+        colors.contains(&[200, 30, 30]) && colors.len() >= 2,
+        "{colors:?}"
+    );
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    assert_eq!(w.app.doc.layers.len(), 1, "one undo step");
+}
+
+#[test]
+fn bold_with_nothing_selected_still_changes_the_whole_text() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hemlo world");
+    for _ in 0..5 {
+        w.key(egui::Key::ArrowLeft, egui::Modifiers::SHIFT);
+    }
+    w.click(w.text("U"));
+    // Deselect, then underline everything: the marks give way to it.
+    w.key(egui::Key::End, egui::Modifiers::NONE);
+    w.click(w.text("U"));
+    w.settle();
+    w.app.settle_text_draft();
+    let draft = &w.app.text_edit.as_ref().unwrap().draft;
+    assert!(draft.format.underline);
+    assert!(draft.spans.is_empty(), "{:?}", draft.spans);
+}
+
+#[test]
 fn tool_and_view_keys_type_into_the_text_editor() {
     let mut w = Workspace::text_tool();
     w.press_text_tool([40.0, 40.0], [40.0, 40.0]);

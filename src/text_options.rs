@@ -3,7 +3,7 @@
 use crate::{
     Dudel, egui,
     layer_effects::{Effect, Kind, LayerEffect, Paint, Position},
-    text_layer::{Format, Letters, TextLayer},
+    text_layer::{Format, Letters, Marks, TextLayer},
     text_render::{self, Align},
 };
 use std::collections::HashMap;
@@ -18,6 +18,15 @@ const FONT_WHEEL_STEP: f32 = 40.0;
 /// Weights from this one up count as bold.
 const BOLD: u16 = 600;
 const LARGEST_OUTLINE: f64 = 100.0;
+
+/// Formatting the bar can give selected characters alone.
+#[derive(Clone, Copy)]
+enum Mark {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+}
 
 /// What new text looks like; remembered between launches.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -141,6 +150,7 @@ pub(crate) fn preview_image(label: &str, font: &str) -> Option<egui::ColorImage>
         along: [1.0, 0.0],
         down: [0.0, 1.0],
         csp: None,
+        spans: Vec::new(),
     };
     let pixels = text.render(PREVIEW_SIZE, &|| false).ok()?;
     let bytes: Vec<u8> = (0..PREVIEW_SIZE[0] * PREVIEW_SIZE[1])
@@ -173,6 +183,72 @@ impl Dudel {
         }
         self.selected_text()
             .map_or_else(|| self.text_style.clone(), |(_, text)| Style::of(text))
+    }
+
+    /// The characters selected in the open text, when there are any.
+    pub(crate) fn selected_text_range(&self) -> Option<std::ops::Range<usize>> {
+        self.text_edit.as_ref()?.selection()
+    }
+
+    /// Bold, italic, underline and strikethrough as the bar shows them: for
+    /// selected characters, on only when every one has it; otherwise the
+    /// whole text's.
+    fn shown_marks(&self, style: &Style) -> [bool; 4] {
+        if let (Some(range), Some(edit)) = (self.selected_text_range(), &self.text_edit) {
+            let styles = edit.draft.char_styles();
+            let all = |has: fn(&crate::text_layer::CharStyle) -> bool| {
+                styles.get(range.clone()).is_some_and(|s| s.iter().all(has))
+            };
+            return [
+                all(|s| s.bold),
+                all(|s| s.italic),
+                all(|s| s.underline),
+                all(|s| s.strikethrough),
+            ];
+        }
+        let (bold, italic) = style.looks();
+        [
+            bold,
+            italic,
+            style.format.underline,
+            style.format.strikethrough,
+        ]
+    }
+
+    /// Turn one of bold, italic, underline or strikethrough on or off: for
+    /// the selected characters, or else for the whole text. `style` is the
+    /// whole text's, which the bar applies once it has drawn.
+    fn set_text_mark(&mut self, style: &mut Style, mark: Mark, on: bool) {
+        let set = move |marks: &mut Marks, value: Option<bool>| match mark {
+            Mark::Bold => marks.bold = value,
+            Mark::Italic => marks.italic = value,
+            Mark::Underline => marks.underline = value,
+            Mark::Strikethrough => marks.strikethrough = value,
+        };
+        if let Some(range) = self.selected_text_range() {
+            self.edit_open_text(|text| text.mark(range, |m| set(m, Some(on))));
+            return;
+        }
+        let (bold, italic) = style.looks();
+        match mark {
+            Mark::Bold => style.set_look(on, italic),
+            Mark::Italic => style.set_look(bold, on),
+            Mark::Underline => style.format.underline = on,
+            Mark::Strikethrough => style.format.strikethrough = on,
+        }
+        // The whole text means every character, marked or not.
+        let has_spans = self
+            .text_edit
+            .as_ref()
+            .map(|edit| &edit.draft)
+            .or_else(|| self.selected_text().map(|(_, text)| text))
+            .is_some_and(|text| !text.spans.is_empty());
+        if has_spans {
+            self.edit_open_text(|text| {
+                let all = 0..text.string.chars().count();
+                text.mark(all, |m| set(m, None));
+            });
+        }
     }
 
     pub(crate) fn selected_text(&self) -> Option<(usize, &TextLayer)> {
@@ -354,23 +430,30 @@ impl Dudel {
         ] {
             ui.selectable_value(&mut style.align, align, name);
         }
-        let (mut bold, mut italic) = style.looks();
-        let toggles = [
-            (&mut bold, egui::RichText::new("B").strong(), "Bold"),
-            (&mut italic, egui::RichText::new("I").italics(), "Italic"),
-        ];
-        let mut looks_changed = false;
-        for (value, label, hint) in toggles {
-            looks_changed |= ui.toggle_value(value, label).on_hover_text(hint).changed();
+        let shown = self.shown_marks(&style);
+        for (mark, label, hint) in [
+            (Mark::Bold, egui::RichText::new("B").strong(), "Bold"),
+            (Mark::Italic, egui::RichText::new("I").italics(), "Italic"),
+            (
+                Mark::Underline,
+                egui::RichText::new("U").underline(),
+                "Underline",
+            ),
+        ] {
+            let mut on = shown[mark as usize];
+            let hint = if self.selected_text_range().is_some() {
+                format!("{hint} the selected text")
+            } else {
+                hint.to_owned()
+            };
+            if ui
+                .toggle_value(&mut on, label)
+                .on_hover_text(hint)
+                .changed()
+            {
+                self.set_text_mark(&mut style, mark, on);
+            }
         }
-        if looks_changed {
-            style.set_look(bold, italic);
-        }
-        ui.toggle_value(
-            &mut style.format.underline,
-            egui::RichText::new("U").underline(),
-        )
-        .on_hover_text("Underline");
         if ui
             .toggle_value(&mut style.vertical, "Vertical")
             .on_hover_text("Lines run down the canvas")
@@ -446,7 +529,10 @@ impl Dudel {
     /// The rest of the formatting, which doesn't fit the bar.
     fn format_menu_ui(&mut self, ui: &mut egui::Ui, style: &mut Style) {
         ui.set_min_width(220.0);
-        ui.checkbox(&mut style.format.strikethrough, "Strikethrough");
+        let mut struck = self.shown_marks(style)[Mark::Strikethrough as usize];
+        if ui.checkbox(&mut struck, "Strikethrough").changed() {
+            self.set_text_mark(style, Mark::Strikethrough, struck);
+        }
         ui.horizontal(|ui| {
             ui.label("Letter spacing");
             let mut percent = style.format.tracking * 100.0;

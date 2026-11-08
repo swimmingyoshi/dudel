@@ -27,7 +27,8 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
    checklist is [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text creation, editing,
    transforms, CSP text import, rustybuzz shaping, vertical layout and
    formatting (family and style, bold/italic/underline, strikethrough, letter
-   and line spacing, justify, outline, box) are implemented in the current
+   and line spacing, justify, outline, box; bold, italic, underline,
+   strikethrough and colour also for selected characters) are implemented in the current
    development source, at 671bb79; they are not evidence of a released 0.2.0.
 2. **Export workflow.** Consolidate image export choices, expose useful format
    settings such as JPEG quality and matte color, explain format conversions

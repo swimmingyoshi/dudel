@@ -257,6 +257,13 @@ impl Editing {
         self.extent
             .is_some_and(|extent| within(&self.draft, extent, at, margin))
     }
+    /// The selected characters, when there are any.
+    pub(crate) fn selection(&self) -> Option<std::ops::Range<usize>> {
+        let [a, b] = self.cursor;
+        let count = self.draft.string.chars().count();
+        let range = a.min(b).min(count)..a.max(b).min(count);
+        (!range.is_empty()).then_some(range)
+    }
     /// Forget any press on the box, keeping what it already did.
     pub(crate) fn release_press(&mut self) {
         self.grab = None;
@@ -809,6 +816,7 @@ impl Dudel {
             along: [1.0, 0.0],
             down: [0.0, 1.0],
             csp: None,
+            spans: Vec::new(),
         };
         self.text_style.apply(&mut text);
         // A line starts where it was clicked, whichever way it runs.
@@ -1180,7 +1188,15 @@ impl Dudel {
         };
         if edit.color != color {
             edit.color = color;
-            edit.draft.color = color;
+            // A selection takes the color; otherwise the whole text does.
+            match edit.selection() {
+                Some(range) => edit.draft.mark(range, |m| m.color = Some(color)),
+                None => {
+                    edit.draft.color = color;
+                    let all = 0..edit.draft.string.chars().count();
+                    edit.draft.mark(all, |m| m.color = None);
+                }
+            }
         }
         // Keys pressed during composition reach us as well as the IME.
         let mut composing = edit.composing;
@@ -1249,6 +1265,7 @@ impl Dudel {
                 visuals.text_cursor.stroke = egui::Stroke::NONE;
                 visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
                 visuals.selection.stroke = egui::Stroke::NONE;
+                let before = (!edit.draft.spans.is_empty()).then(|| edit.draft.string.clone());
                 let output = egui::TextEdit::multiline(&mut edit.draft.string)
                     .id(id)
                     .frame(false)
@@ -1261,6 +1278,11 @@ impl Dudel {
                 }
                 while edit.draft.string.len() > MAX_TEXT {
                     edit.draft.string.pop();
+                }
+                // Marks stay with their characters, and typing takes the
+                // marks of the character before it.
+                if let Some(before) = before.filter(|b| *b != edit.draft.string) {
+                    edit.draft.follow_edit(&before);
                 }
             });
         self.draw_text_draft();
@@ -2110,6 +2132,7 @@ mod tests {
                 along: [angle.cos(), angle.sin()],
                 down: [-angle.sin(), angle.cos()],
                 csp: None,
+                spans: Vec::new(),
             };
             let start = std::time::Instant::now();
             let runs = 5;
@@ -2166,6 +2189,7 @@ mod tests {
             along: [1.0, 0.0],
             down: [0.0, 1.0],
             csp: None,
+            spans: Vec::new(),
         };
         let extent = text.extent().unwrap();
         let [left, top, right, bottom] = reach(&text, extent, [300, 200]);
