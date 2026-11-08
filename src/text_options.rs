@@ -278,6 +278,15 @@ impl Dudel {
     /// Font, size, color, alignment and formatting, in the options bar.
     pub(crate) fn text_options_ui(&mut self, ui: &mut egui::Ui, narrow: bool) {
         text_render::warm_up();
+        // Nothing may change the text while its last drawing comes in.
+        if self.text_finishing() {
+            ui.spinner();
+            ui.label("Finishing text…");
+            if ui.button("Keep editing").on_hover_text("Esc").clicked() {
+                self.keep_editing_text();
+            }
+            return;
+        }
         let original = self.shown_text_style();
         let mut style = original.clone();
         let family = text_render::family_of(&style.font);
@@ -418,7 +427,7 @@ impl Dudel {
         // A pen display may have no keyboard to finish with.
         if self.text_edit.is_some() {
             if ui.button("Done").on_hover_text("Ctrl+Enter").clicked() {
-                self.finish_text_edit();
+                self.request_text_finish();
             } else if ui.button("Cancel").on_hover_text("Esc").clicked() {
                 self.cancel_text_edit();
             }

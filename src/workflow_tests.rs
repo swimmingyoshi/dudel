@@ -3722,6 +3722,34 @@ fn typing_in_the_text_tool_draws_live_and_finishes_as_one_step() {
 }
 
 #[test]
+fn ctrl_enter_during_a_slow_drawing_finishes_without_freezing() {
+    let mut w = Workspace::text_tool();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    w.type_text("Hem");
+    w.app.text_drawer.hold(true);
+    w.frame(vec![egui::Event::Text("lo".into())]);
+    w.key(egui::Key::Enter, egui::Modifiers::CTRL);
+    assert!(w.app.text_finishing(), "the drawing isn't in yet");
+    // Frames keep coming, and a press meanwhile starts nothing.
+    let far = [w.app.doc.width as f32 - 5.0, w.app.doc.height as f32 - 5.0];
+    w.press_text_tool(far, far);
+    assert!(w.app.text_finishing());
+    assert_eq!(w.app.doc.layers.len(), 2);
+    w.app.text_drawer.hold(false);
+    for _ in 0..5000 {
+        w.frame(vec![]);
+        if w.app.text_edit.is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(w.app.text_edit.is_none());
+    assert_eq!(w.draft(), "Hemlo");
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    assert_eq!(w.app.doc.layers.len(), 1, "still one undo step");
+}
+
+#[test]
 fn tool_and_view_keys_type_into_the_text_editor() {
     let mut w = Workspace::text_tool();
     w.press_text_tool([40.0, 40.0], [40.0, 40.0]);

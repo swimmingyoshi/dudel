@@ -1288,6 +1288,12 @@ pub(crate) fn render(
         if cancelled() {
             return Err("Text drawing canceled".into());
         }
+        // A glyph wholly off the canvas adds nothing, and drawing it anyway
+        // was most of the time for large text running past the canvas.
+        let [x0, y0, x1, y1] = *edges;
+        if x1 <= left as f64 || y1 <= top as f64 || x0 >= right as f64 || y0 >= bottom as f64 {
+            continue;
+        }
         if !straight || placed.needs_outline() {
             if let Some(outline) = fonts[placed.face].outline(placed.id) {
                 let factor = scaled.fonts[placed.face].scale_factor();

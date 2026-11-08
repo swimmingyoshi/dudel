@@ -421,7 +421,9 @@ impl Dudel {
         // Esc during IME composition belongs to the IME.
         let composing = self.text_edit.as_ref().is_some_and(|edit| edit.composing);
         if !composing && key(Modifiers::NONE, Key::Escape) {
-            if self.text_edit.is_some() || self.text_drag.is_some() {
+            if self.text_finishing() {
+                self.keep_editing_text();
+            } else if self.text_edit.is_some() || self.text_drag.is_some() {
                 self.cancel_text_edit();
             } else if self.affine_preview.is_some() {
                 self.cancel_affine_preview();
@@ -671,6 +673,9 @@ impl Dudel {
         // A press on a sidebar's resize edge resizes the panel, never paints.
         let sidebar_edge = crate::workspace::sidebar_edge_active(ctx);
         let mut moved = false;
+        // Text that is finishing is still the open edit: nothing else may
+        // start on the canvas until it closes, a moment later.
+        let packets: &[input::Packet] = if self.text_finishing() { &[] } else { packets };
         for packet in packets {
             let (sample, start, end) = match packet {
                 input::Packet::Start(s) => (*s, true, false),

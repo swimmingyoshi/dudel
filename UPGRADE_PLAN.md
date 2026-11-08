@@ -17,10 +17,10 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
 
 1. **Text completion.** Shaping, vertical text and formatting are implemented.
    Remaining: resolve right-to-left mixed-direction line ordering and caret
-   accuracy or document a clear supported boundary; keep finishing responsive
-   when the last render is slow (Done waits for the final drawing, measured at
-   7.2 s for 2,000 px text at 100 MP) while preserving the newest draft on
-   finish/cancel/tab changes; and validate missing-font handling, save/reopen
+   accuracy or document a clear supported boundary; Done no longer waits for a
+   slow final render (measured at 7.2 s for 2,000 px text at 100 MP); tab
+   changes, close, undo and save still wait for it while preserving the newest
+   draft; and validate missing-font handling, save/reopen
    and export. The owner confirmed Japanese IME and Up/Down across wrapped lines
    on 2026-11-07; the touch keyboard is optional, behind a button. The detailed
    checklist is [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text creation, editing,

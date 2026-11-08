@@ -60,6 +60,9 @@ struct DrawShared {
     /// The newest job's id. Anything older stops at its next glyph.
     latest: AtomicU64,
     closed: AtomicBool,
+    /// Tests hold drawing back to stand in for a slow drawing.
+    #[cfg(test)]
+    held: AtomicBool,
 }
 
 impl DrawShared {
@@ -75,6 +78,10 @@ impl DrawShared {
                 return;
             };
             let stale = || self.latest.load(Ordering::SeqCst) != job.id;
+            #[cfg(test)]
+            while self.held.load(Ordering::SeqCst) && !stale() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
             let result = job.text.render(job.canvas, &stale);
             if !stale() {
                 *self.finished.lock().unwrap_or_else(|e| e.into_inner()) = Some(Drawn {
@@ -98,15 +105,18 @@ pub(crate) struct Drawer {
 }
 
 impl Drawer {
-    fn draw(&mut self, text: TextLayer, canvas: [usize; 2]) -> u64 {
-        let shared = self.shared.get_or_insert_with(|| {
+    fn worker(&mut self) -> &Arc<DrawShared> {
+        self.shared.get_or_insert_with(|| {
             let shared = Arc::new(DrawShared::default());
             let worker = shared.clone();
             let _ = std::thread::Builder::new()
                 .name("text drawing".into())
                 .spawn(move || worker.run());
             shared
-        });
+        })
+    }
+    fn draw(&mut self, text: TextLayer, canvas: [usize; 2]) -> u64 {
+        let shared = self.worker();
         let id = shared.latest.fetch_add(1, Ordering::SeqCst) + 1;
         *shared.job.lock().unwrap_or_else(|e| e.into_inner()) = Some(DrawJob { id, text, canvas });
         shared.wake.notify_one();
@@ -132,6 +142,11 @@ impl Drawer {
                 .0;
         }
         finished.take_if(|drawn| drawn.id == id)
+    }
+    /// Hold drawing back, or let it go on.
+    #[cfg(test)]
+    pub(crate) fn hold(&mut self, held: bool) {
+        self.worker().held.store(held, Ordering::SeqCst);
     }
 }
 
@@ -228,6 +243,9 @@ pub(crate) struct Editing {
     opened: std::time::Instant,
     /// The IME is composing, so Esc and Enter belong to it.
     pub(crate) composing: bool,
+    /// Done was chosen while the last drawing was still running: the session
+    /// takes no input and closes as soon as the drawing is in, since when.
+    finishing: Option<std::time::Instant>,
 }
 
 impl Editing {
@@ -438,6 +456,10 @@ fn reach(text: &TextLayer, extent: [f64; 2], canvas: [usize; 2]) -> [usize; 4] {
 impl Dudel {
     /// Canvas input for the Text tool.
     pub(crate) fn text_packet(&mut self, at: [f32; 2], start: bool, end: bool, on_workspace: bool) {
+        // Finishing text takes no input, and a press starts nothing new yet.
+        if self.text_finishing() {
+            return;
+        }
         let point = at.map(f64::from);
         let scale = 1.0 / f64::from(self.zoom.max(1e-3));
         if start && on_workspace && self.double_click_opens_text(point) {
@@ -465,7 +487,7 @@ impl Dudel {
             // A press away from the text finishes it, and only the next press
             // starts something new.
             if away {
-                self.finish_text_edit();
+                self.request_text_finish();
             }
         }
         if let Some(edit) = &mut self.text_edit {
@@ -889,6 +911,7 @@ impl Dudel {
             resize_from: None,
             opened: std::time::Instant::now(),
             composing: false,
+            finishing: None,
         });
         if let Some(edit) = &mut self.text_edit {
             edit.measure();
@@ -1031,6 +1054,63 @@ impl Dudel {
         .into();
     }
 
+    /// Done, without waiting: when the last drawing is still running, the
+    /// session stops taking input and closes once it is in, while the app
+    /// stays responsive. Anything that needs the session closed right away
+    /// still gets it through `finish_text_edit`, with the newest draft.
+    pub(crate) fn request_text_finish(&mut self) {
+        self.text_drag = None;
+        self.draw_text_draft();
+        self.take_drawn_text(false);
+        match &mut self.text_edit {
+            Some(edit) if edit.pending.is_some() => {
+                edit.release_press();
+                edit.finishing.get_or_insert_with(std::time::Instant::now);
+                self.status = "Finishing text… Esc keeps editing".into();
+            }
+            _ => self.finish_text_edit(),
+        }
+    }
+
+    /// Done was chosen and the drawing isn't in yet.
+    pub(crate) fn text_finishing(&self) -> bool {
+        self.text_edit
+            .as_ref()
+            .is_some_and(|edit| edit.finishing.is_some())
+    }
+
+    /// Changed your mind while text was finishing: go on typing.
+    pub(crate) fn keep_editing_text(&mut self) {
+        if let Some(edit) = &mut self.text_edit
+            && edit.finishing.take().is_some()
+        {
+            edit.focus = true;
+            self.status = "Type your text · Ctrl+Enter finishes · Esc cancels".into();
+        }
+    }
+
+    /// While finishing: close the session once the drawing is in.
+    fn poll_text_finish(&mut self, ctx: &egui::Context) {
+        self.take_drawn_text(false);
+        let Some(edit) = &mut self.text_edit else {
+            return;
+        };
+        if edit.pending.is_some()
+            && edit
+                .finishing
+                .is_some_and(|since| since.elapsed() > DRAW_TIMEOUT)
+        {
+            self.text_drawer.cancel();
+            edit.pending = None;
+            edit.error = Some("The text took too long to draw".into());
+        }
+        if edit.pending.is_none() {
+            self.finish_text_edit();
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+
     /// Close the session and put everything back.
     pub(crate) fn cancel_text_edit(&mut self) {
         self.text_drag = None;
@@ -1046,8 +1126,15 @@ impl Dudel {
         if self.text_edit.is_none() {
             return;
         }
+        if self.text_finishing() {
+            self.poll_text_finish(ctx);
+            return;
+        }
         if self.tool != Tool::Text {
-            self.finish_text_edit();
+            self.request_text_finish();
+            if self.text_finishing() {
+                self.poll_text_finish(ctx);
+            }
             return;
         }
         self.take_drawn_text(false);
@@ -1145,7 +1232,10 @@ impl Dudel {
         if canceled {
             self.cancel_text_edit();
         } else if done {
-            self.finish_text_edit();
+            self.request_text_finish();
+            if self.text_finishing() {
+                ctx.request_repaint_after(Duration::from_millis(16));
+            }
         } else if self.text_edit.as_ref().is_some_and(|e| e.pending.is_some()) {
             ctx.request_repaint_after(Duration::from_millis(16));
         } else {
@@ -1189,7 +1279,7 @@ impl Dudel {
             5.0,
             5.0,
         ));
-        if let Some(edit) = &self.text_edit {
+        if let Some(edit) = self.text_edit.as_ref().filter(|e| e.finishing.is_none()) {
             self.paint_text_caret(painter, edit, &screen, points[3]);
         }
     }
@@ -1316,6 +1406,78 @@ mod tests {
         assert_eq!(app.doc.layers.len(), 2);
         let text = app.doc.layers[1].text.as_ref().unwrap();
         assert_eq!(text.string, "Hemlo");
+    }
+
+    /// Editor frames until `done`, as the app runs them, or fail after a while.
+    fn frames_until(app: &mut Dudel, done: impl Fn(&Dudel) -> bool) {
+        let ctx = egui::Context::default();
+        for _ in 0..5000 {
+            let _ = ctx.run(Default::default(), |ctx| app.text_editor(ctx));
+            if done(app) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        panic!("it never happened");
+    }
+
+    #[test]
+    fn done_during_a_slow_drawing_waits_without_blocking_and_keeps_the_newest_draft() {
+        let mut app = app();
+        app.begin_new_text([20.0, 20.0], None, None);
+        typed(&mut app, "Hem");
+        app.text_drawer.hold(true);
+        app.text_edit.as_mut().unwrap().draft.string = "Hemlo".into();
+        let pressed = std::time::Instant::now();
+        app.request_text_finish();
+        assert!(
+            pressed.elapsed() < Duration::from_secs(1),
+            "Done doesn't wait"
+        );
+        assert!(app.text_finishing());
+        // Meanwhile a press starts nothing.
+        app.text_packet([250.0, 150.0], true, false, true);
+        app.text_packet([250.0, 150.0], false, true, true);
+        assert!(app.text_drag.is_none() && app.text_finishing());
+        assert_eq!(app.doc.layers.len(), 2);
+        // Esc goes back to typing, and Done finishes again.
+        app.keep_editing_text();
+        assert!(!app.text_finishing() && app.text_edit.is_some());
+        app.request_text_finish();
+        assert!(app.text_finishing());
+        app.text_drawer.hold(false);
+        frames_until(&mut app, |app| app.text_edit.is_none());
+        let text = app.doc.layers[1].text.as_ref().unwrap();
+        assert_eq!(text.string, "Hemlo");
+        assert_eq!(app.status, "Text added");
+        assert_eq!(undo_depth(&mut app), 1);
+    }
+
+    #[test]
+    fn closing_text_that_is_finishing_still_keeps_the_newest_draft() {
+        let mut app = app();
+        app.begin_new_text([20.0, 20.0], None, None);
+        typed(&mut app, "Hem");
+        app.text_drawer.hold(true);
+        app.text_edit.as_mut().unwrap().draft.string = "Hemlo".into();
+        app.request_text_finish();
+        assert!(app.text_finishing());
+        app.text_drawer.hold(false);
+        // Undo, saving or a tab change close every gesture at once.
+        app.close_input_gestures();
+        assert!(app.text_edit.is_none());
+        assert_eq!(app.doc.layers[1].text.as_ref().unwrap().string, "Hemlo");
+        assert_eq!(undo_depth(&mut app), 1);
+    }
+
+    #[test]
+    fn done_with_the_drawing_already_in_closes_at_once() {
+        let mut app = app();
+        app.begin_new_text([20.0, 20.0], None, None);
+        typed(&mut app, "Hemlo");
+        app.request_text_finish();
+        assert!(app.text_edit.is_none());
+        assert_eq!(app.status, "Text added");
     }
 
     #[test]

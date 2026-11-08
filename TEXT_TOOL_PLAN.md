@@ -227,11 +227,17 @@ the point: those transforms rasterize (see stage 3).
 
 ### 0.2.0 completion work
 
-- [ ] Keep finish/Done, tab switching and project close responsive while a large
-      text render is pending. Preserve the newest draft, cancellation semantics
-      and the one-session/one-undo-step guarantee. The current implementation
-      waits for the final render; a 2,000 px text render on a 100 MP canvas was
-      measured at 7.2 seconds during development.
+- [x] Done, Ctrl+Enter, a click away and a tool change no longer wait for a
+      pending render (a 2,000 px text on a 100 MP canvas was measured at 7.2 s).
+      The session goes into *finishing*: it takes no input, the canvas starts
+      nothing new, the options bar shows **Keep editing** (Esc), and it closes
+      with the newest draft as one undo step once the drawing is in.
+- [x] Glyphs wholly off the canvas are no longer rasterized. `text_redraw_cost`
+      (release, 2026-11-08): 2,000 px paragraph on a 100 MP canvas 3.75 s -> 0.53 s;
+      200 px paragraph 108 -> 101 ms; turned 247 -> 233 ms. Output is unchanged.
+- [ ] Tab switching, project close, undo and saving still close the session
+      through `close_input_gestures`, which waits for the render. That keeps the
+      newest draft but can pause the UI for a large text.
 - [x] Owner's check on 2026-11-07: Japanese IME composition works, and Up/Down
       across wrapped lines works for them. The touch keyboard is optional: Windows
       doesn't offer it for Dudel's controls, so a **Touch keyboard** button shows it.
