@@ -187,16 +187,26 @@ impl Dudel {
             {
                 self.focus_current_mask(false);
             }
-            if ui
-                .add_enabled(
-                    mask.is_some(),
-                    crate::egui::Button::new("Mask")
-                        .selected(!self.input_stroke_target().is_raster()),
+            if mask.is_some() {
+                if ui
+                    .add(
+                        crate::egui::Button::new("Mask")
+                            .selected(!self.input_stroke_target().is_raster()),
+                    )
+                    .on_hover_text("Black conceals, white reveals; erasing reveals the artwork")
+                    .clicked()
+                {
+                    self.focus_current_mask(true);
+                }
+            } else if ui
+                .add_enabled(!properties.locked, crate::egui::Button::new("Add mask"))
+                .on_hover_text(
+                    "Add a mask that shows everything, or only the selection when there is \
+                     one. Paint black on it to hide",
                 )
-                .on_hover_text("Black conceals, white reveals; erasing reveals the artwork")
                 .clicked()
             {
-                self.focus_current_mask(true);
+                self.add_mask();
             }
             ui.menu_button("Mask actions", |ui| {
                 if let Some(mask) = mask {
@@ -255,9 +265,9 @@ impl Dudel {
                 } else {
                     ui.add_enabled_ui(!properties.locked, |ui| {
                         for (label, seed) in [
-                            ("Reveal all", Seed::RevealAll),
-                            ("Hide all", Seed::HideAll),
-                            ("From selection", Seed::Selection),
+                            ("Add mask showing all", Seed::RevealAll),
+                            ("Add mask hiding all", Seed::HideAll),
+                            ("Add mask from selection", Seed::Selection),
                         ] {
                             let enabled = !matches!(seed, Seed::Selection)
                                 || self.doc.selection.is_some()
@@ -274,6 +284,16 @@ impl Dudel {
                 }
             });
         });
+    }
+    /// Add mask, in one click: the selection when there is one, else a mask
+    /// that shows everything.
+    pub(crate) fn add_mask(&mut self) -> bool {
+        let selected = self.doc.selection.is_some() || self.doc.selection_mask.is_some();
+        self.create_canvas_mask(if selected {
+            Seed::Selection
+        } else {
+            Seed::RevealAll
+        })
     }
     pub(crate) fn create_canvas_mask(&mut self, seed: Seed) -> bool {
         self.edit_canvas_mask(Command::Create {
@@ -376,6 +396,28 @@ mod tests {
             ..Default::default()
         }]);
     }
+    #[test]
+    fn add_mask_shows_everything_or_only_the_selection() {
+        let mut whole = app();
+        assert!(whole.add_mask());
+        whole.flush_render_queue();
+        let coverage = &whole.doc.layers[0].mask.as_ref().unwrap().coverage;
+        assert_eq!([coverage.at(0, 0), coverage.at(31, 31)], [255, 255]);
+        assert!(!whole.input_stroke_target().is_raster(), "and paints on it");
+
+        let mut selected = app();
+        selected.doc.selection = Some(crate::selection::Selection {
+            left: 4,
+            top: 4,
+            right: 12,
+            bottom: 12,
+        });
+        assert!(selected.add_mask());
+        selected.flush_render_queue();
+        let coverage = &selected.doc.layers[0].mask.as_ref().unwrap().coverage;
+        assert_eq!([coverage.at(6, 6), coverage.at(20, 20)], [255, 0]);
+    }
+
     #[test]
     fn reserved_layer_mask_and_duplicate_accept_following_mask_contacts_before_execution() {
         let mut app = app();

@@ -1848,13 +1848,15 @@ fn short_inspector_keeps_layers_masks_and_navigator_reachable_without_overlap() 
             w.click(w.text("Layer"));
             w.settle();
         }
-        for label in ["Artwork", "Mask", "Mask actions", "Normal"] {
+        for label in ["Artwork", "Add mask", "Mask actions", "Normal"] {
             visible(&w, label);
         }
-        w.click(w.text("Mask actions"));
-        w.click(w.text("Reveal all"));
+        // One click adds a mask that shows everything, and paints on it.
+        w.click(w.text("Add mask"));
         w.app.flush_render_queue();
         w.settle();
+        assert!(!w.app.input_stroke_target().is_raster());
+        assert!(w.app.doc.layers[w.app.doc.active].mask.is_some());
         w.click(w.text("Mask"));
         assert!(!w.app.input_stroke_target().is_raster());
         w.key(egui::Key::Escape, Default::default());
@@ -2961,7 +2963,7 @@ fn normal_mask_workflow_creates_paints_selects_duplicates_transforms_saves_reope
     };
     ui.settle();
     ui.click(ui.text("Mask actions"));
-    ui.click(ui.text("Reveal all"));
+    ui.click(ui.text("Add mask showing all"));
     finish_jobs(&mut ui.app);
     let first_mask = ui.app.doc.layers[0].mask.as_ref().unwrap().id;
     assert_eq!(

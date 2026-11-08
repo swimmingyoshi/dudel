@@ -218,7 +218,10 @@ to the layer below it. The Layers panel joins clipped rows to their base with a
 rail and an arrow. A clipped row reads "Clipped to" its base, and the base says
 how many layers are clipped above it.
 
-**Masks:** a masked layer shows its mask thumbnail beside the artwork. Click the
+**Masks:** **Add mask** under the layer properties adds one in a click: it shows
+everything, or only the selection when there is one, and you paint on it at once.
+**Mask actions** also adds one that hides everything. A masked layer shows its mask
+thumbnail beside the artwork. Click the
 mask thumbnail (or **Mask** under the layer properties) to paint the mask: the
 targeted thumbnail gets an accent outline and the options bar shows **Mask**. Paint
 black to hide, white to reveal. **Mask actions > Show mask on canvas** (or Alt+click on the
