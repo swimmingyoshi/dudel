@@ -3,8 +3,9 @@
 This is the detailed text workstream for [UPGRADE_PLAN.md](UPGRADE_PLAN.md).
 The implementation through stage 5 is present in current development source,
 including shaping and vertical text. This does not mean the workflow has passed
-its final manual acceptance. The remaining release work is right-to-left mixed
-direction behavior, finishing responsiveness and focused tablet/input review.
+its final manual acceptance. Mixed right-to-left text and finishing
+responsiveness are done; the remaining release work is focused tablet/input
+review and the user documentation.
 The owner accepted the four design decisions below on 2026-11-05.
 
 ## Goal
@@ -218,10 +219,22 @@ the point: those transforms rasterize (see stage 3).
       keeps every combination from mirroring the glyphs.
 - [x] Boxes wrap CJK between characters, keeping basic Japanese line-break rules, and
       Latin still at spaces.
-- [ ] Define and implement the supported right-to-left boundary. Shaping works
-      within a run, but a line is not reordered for mixed directions and carets
-      are approximate. Test selection, caret movement and visual ordering; if
-      full bidi is out of scope, explain the limitation in the UI/docs.
+- [x] Right-to-left text. Before this, each run was shaped in one guessed
+      direction, so `Hello שלום` showed the Hebrew backwards, `שלום Hello` showed
+      `olleH` and numbers in Hebrew came out reversed. A line with right-to-left
+      letters now goes through the Unicode bidirectional algorithm
+      (`unicode-bidi`, MIT/Apache-2.0): its runs are placed in visual order and
+      each is shaped in its own direction, so Hebrew and Arabic read right to
+      left while Latin and numbers among them read left to right. Carets stand
+      on the side reading starts from; a right-to-left line ends at its left.
+      Lines without right-to-left letters keep the previous code path exactly.
+      Supported boundary for 0.2: each line takes its direction from its own
+      first strong letter (a wrapped line of a Hebrew paragraph that starts with
+      a Latin word reads as left to right); Justify doesn't stretch lines that
+      mix directions; arrow keys move in reading order, so the caret jumps where
+      the direction changes; a selection across a direction change can cover a
+      gap; trailing spaces stay at the right; imported CSP text keeps its own
+      unshaped path.
 - [ ] Consider tate-chu-yoko only if the supported manga workflow needs it; it
       is not currently required for 0.2.0.
 
@@ -241,6 +254,13 @@ the point: those transforms rasterize (see stage 3).
 - [x] Owner's check on 2026-11-07: Japanese IME composition works, and Up/Down
       across wrapped lines works for them. The touch keyboard is optional: Windows
       doesn't offer it for Dudel's controls, so a **Touch keyboard** button shows it.
+- [x] Missing fonts, save/reopen and export. Tested end to end: a project with
+      an outlined text saves, reopens with the record and outline, opens again for
+      typing, finishes as one undo step and exports to PNG, JPEG, WebP, BMP, GIF and
+      PSD (pixels). Typing into text whose font is missing used to be thrown away
+      by Done with "Text unchanged"; Done now keeps the session open and says to
+      choose an installed font or press Esc, and anything that must close it
+      anyway says "Text kept as it was drawn" with the reason.
 - [ ] Owner's pen pass on the current candidate: create, select and move text;
       type Japanese; finish/cancel; test missing-font replacement; open and edit
       CSP text; save/reopen; and export a text layer.

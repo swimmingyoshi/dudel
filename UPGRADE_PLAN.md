@@ -16,13 +16,14 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
 ### Release priorities
 
 1. **Text completion.** Shaping, vertical text and formatting are implemented.
-   Remaining: resolve right-to-left mixed-direction line ordering and caret
-   accuracy or document a clear supported boundary; Done no longer waits for a
-   slow final render (measured at 7.2 s for 2,000 px text at 100 MP); tab
-   changes, close, undo and save still wait for it while preserving the newest
-   draft; and validate missing-font handling, save/reopen
-   and export. The owner confirmed Japanese IME and Up/Down across wrapped lines
-   on 2026-11-07; the touch keyboard is optional, behind a button. The detailed
+   Mixed right-to-left text now uses the Unicode bidirectional algorithm, with
+   its supported boundary in the text plan; missing-font handling, save/reopen
+   and export are tested end to end. Done no longer waits for a slow final
+   render, and that render is faster (2,000 px text at 100 MP: 3.75 s, now
+   0.53 s); tab changes, close, undo and save still wait for it while keeping
+   the newest draft. Remaining: the owner's pen pass and the user
+   documentation. The owner confirmed Japanese IME and Up/Down across wrapped
+   lines on 2026-11-07; the touch keyboard is optional, behind a button. The detailed
    checklist is [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text creation, editing,
    transforms, CSP text import, rustybuzz shaping, vertical layout and
    formatting (family and style, bold/italic/underline, strikethrough, letter

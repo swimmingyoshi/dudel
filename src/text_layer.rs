@@ -462,6 +462,60 @@ mod tests {
     use super::*;
     use crate::{document::LayerId, document_edits::Edit, text_render::TEST_FONT};
 
+    /// Where the caret before each character stands along the line.
+    fn along(string: &str) -> Vec<f64> {
+        text(string)
+            .carets()
+            .unwrap()
+            .iter()
+            .map(|c| c.along)
+            .collect()
+    }
+
+    fn increasing(values: &[f64]) -> bool {
+        values.windows(2).all(|w| w[0] < w[1])
+    }
+
+    #[test]
+    fn hebrew_among_latin_reads_right_to_left() {
+        // Hello שלום: the Hebrew word starts at its right.
+        let c = along("Hello \u{5e9}\u{5dc}\u{5d5}\u{5dd}");
+        assert!(increasing(&c[..5]), "Hello reads left to right: {c:?}");
+        let hebrew = [c[9], c[8], c[7], c[6]];
+        assert!(increasing(&hebrew), "and the Hebrew right to left: {c:?}");
+        assert!(c[9] > c[4], "after Hello: {c:?}");
+    }
+
+    #[test]
+    fn latin_among_hebrew_still_reads_left_to_right() {
+        // שלום Hello: a Hebrew line starts at its right, with Hello on the left.
+        let c = along("\u{5e9}\u{5dc}\u{5d5}\u{5dd} Hello");
+        assert!(increasing(&c[5..10]), "never olleH: {c:?}");
+        assert!(c[0] > c[9], "the Hebrew word is on the right: {c:?}");
+        assert!(increasing(&[c[3], c[2], c[1], c[0]]), "{c:?}");
+        assert!(c[10] < c[0], "the line ends at its left: {c:?}");
+    }
+
+    #[test]
+    fn numbers_in_hebrew_keep_their_digits_in_order() {
+        // שלום 123 עולם: the first word is on the right, 123 never 321.
+        let c = along("\u{5e9}\u{5dc}\u{5d5}\u{5dd} 123 \u{5e2}\u{5d5}\u{5dc}\u{5dd}");
+        assert!(increasing(&c[5..8]), "{c:?}");
+        assert!(c[0] > c[5] && c[5] > c[9], "words right to left: {c:?}");
+    }
+
+    #[test]
+    fn left_to_right_lines_keep_their_layout() {
+        for line in [
+            "Hemlo there",
+            "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f} 123",
+            "",
+        ] {
+            assert!(!crate::text_render::has_right_to_left(line), "{line}");
+        }
+        assert!(crate::text_render::has_right_to_left("a \u{627}"));
+    }
+
     fn text(string: &str) -> TextLayer {
         TextLayer {
             string: string.into(),

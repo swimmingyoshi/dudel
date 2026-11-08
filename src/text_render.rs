@@ -638,12 +638,18 @@ struct Item {
 struct Shaped {
     items: Vec<Item>,
     pens: Vec<f32>,
+    /// A line laid out in both directions: how long it shows without its
+    /// trailing spaces, since its pens no longer run in order.
+    bidi_width: Option<f32>,
 }
 
 impl Shaped {
     /// The length of the line without its trailing spaces.
     fn used(&self, line: &str) -> f64 {
-        f64::from(self.pens[line.trim_end().chars().count()])
+        match self.bidi_width {
+            Some(width) => f64::from(width),
+            None => f64::from(self.pens[line.trim_end().chars().count()]),
+        }
     }
 }
 
@@ -677,7 +683,11 @@ fn plain_line(fonts: &Scaled, line: &str, kerning: bool, start: f32, tracking: f
         pen += font.h_advance(id) + tracking;
     }
     pens.push(pen);
-    Shaped { items, pens }
+    Shaped {
+        items,
+        pens,
+        bidi_width: None,
+    }
 }
 
 /// Shape a line, one run of a single font and direction at a time.
@@ -736,7 +746,149 @@ fn shaped_line(fonts: &Scaled, line: &str, block: &Block, tracking: f32) -> Shap
         pens.push(last);
     }
     pens.push(pen);
-    Shaped { items, pens }
+    Shaped {
+        items,
+        pens,
+        bidi_width: None,
+    }
+}
+
+/// Whether a line has anything written right to left. Only such lines need
+/// the bidirectional algorithm; every other line is laid out as before.
+pub(crate) fn has_right_to_left(line: &str) -> bool {
+    use unicode_bidi::BidiClass::{AL, R, RLE, RLI, RLO};
+    line.chars()
+        .any(|c| matches!(unicode_bidi::bidi_class(c), R | AL | RLE | RLO | RLI))
+}
+
+/// Shape a line that mixes directions. The Unicode bidirectional algorithm
+/// puts its runs in the order they show; each run is shaped in its own
+/// direction, so Hebrew or Arabic reads right to left while Latin words and
+/// numbers among it still read left to right. The caret before a character
+/// stands on the side reading starts from. Trailing spaces stay at the end.
+fn bidi_line(fonts: &Scaled, line: &str, block: &Block, tracking: f32) -> Option<Shaped> {
+    let chars: Vec<char> = line.chars().collect();
+    let content = line.trim_end().chars().count();
+    let text: String = chars[..content].iter().collect();
+    let info = unicode_bidi::BidiInfo::new(&text, None);
+    let [paragraph] = info.paragraphs.as_slice() else {
+        return None;
+    };
+    let (levels, runs) = info.visual_runs(paragraph, paragraph.range.clone());
+    let mut char_at = vec![content; text.len() + 1];
+    for (index, (byte, _)) in text.char_indices().enumerate() {
+        char_at[byte] = index;
+    }
+    let run_of = |c: char| (fonts.face(c), stands(block, c));
+    let mut items = Vec::new();
+    let mut lead = vec![None; chars.len()];
+    let mut pen = 0.0f32;
+    for run in runs {
+        let rtl = levels[run.start].is_rtl();
+        let (from, to) = (char_at[run.start], char_at[run.end]);
+        // Pieces of one font; a right-to-left run shows its last piece first.
+        let mut pieces = Vec::new();
+        let mut at = from;
+        while at < to {
+            let key = run_of(chars[at]);
+            let end = (at + 1..to)
+                .find(|&i| !chars[i].is_whitespace() && run_of(chars[i]) != key)
+                .unwrap_or(to);
+            pieces.push(at..end);
+            at = end;
+        }
+        if rtl {
+            pieces.reverse();
+        }
+        for piece in pieces {
+            pen = shape_piece(
+                fonts, block, &chars, piece, rtl, tracking, pen, &mut items, &mut lead,
+            );
+        }
+    }
+    let width = pen;
+    if content < chars.len() {
+        let trailing = content..chars.len();
+        pen = shape_piece(
+            fonts, block, &chars, trailing, false, tracking, pen, &mut items, &mut lead,
+        );
+    }
+    // A right-to-left line begins at its right and ends at its left.
+    let rtl_line = paragraph.level.is_rtl();
+    let mut pens = Vec::with_capacity(chars.len() + 1);
+    let mut last = if rtl_line { width } else { 0.0 };
+    for start in lead {
+        last = start.unwrap_or(last);
+        pens.push(last);
+    }
+    pens.push(if rtl_line && content == chars.len() {
+        0.0
+    } else {
+        pen
+    });
+    Some(Shaped {
+        items,
+        pens,
+        bidi_width: Some(width),
+    })
+}
+
+/// Shape `range` of a line in one direction from `pen`, noting where the
+/// caret before each of its characters stands. Returns where the pen ends.
+#[allow(clippy::too_many_arguments)]
+fn shape_piece(
+    fonts: &Scaled,
+    block: &Block,
+    chars: &[char],
+    range: std::ops::Range<usize>,
+    rtl: bool,
+    tracking: f32,
+    mut pen: f32,
+    items: &mut Vec<Item>,
+    lead: &mut [Option<f32>],
+) -> f32 {
+    let first = chars[range.start];
+    let (face, stands) = (fonts.face(first), stands(block, first));
+    let text: String = chars[range.clone()].iter().collect();
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(&text);
+    buffer.guess_segment_properties();
+    buffer.set_direction(if stands {
+        rustybuzz::Direction::TopToBottom
+    } else if rtl {
+        rustybuzz::Direction::RightToLeft
+    } else {
+        rustybuzz::Direction::LeftToRight
+    });
+    let output = rustybuzz::shape(&fonts.shapers[face], &[], buffer);
+    let factor = fonts.fonts[face].scale_factor().horizontal;
+    let bytes: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
+    for (info, place) in output.glyph_infos().iter().zip(output.glyph_positions()) {
+        let [x, y] = [place.x_offset, place.y_offset].map(|v| v as f32 * factor);
+        let char_at = bytes.partition_point(|byte| *byte < info.cluster as usize);
+        let char = (range.start + char_at).min(range.end - 1);
+        let (glyph_pen, across, advance) = if stands {
+            (pen - y, -x, -place.y_advance as f32 * factor)
+        } else {
+            (pen + x, -y, place.x_advance as f32 * factor)
+        };
+        let caret = &mut lead[char];
+        *caret = Some(if rtl {
+            caret.map_or(pen + advance, |c: f32| c.max(pen + advance))
+        } else {
+            caret.unwrap_or(pen)
+        });
+        items.push(Item {
+            face,
+            char,
+            upright: stands,
+            id: GlyphId(info.glyph_id as u16),
+            pen: glyph_pen,
+            across,
+        });
+        pen += advance + tracking;
+    }
+    pen
 }
 
 /// The space after each character, which a faux bold widens.
@@ -758,7 +910,10 @@ fn shape(block: &Block, fonts: &Scaled, line: &str) -> Shaped {
     if fonts.shapers.is_empty() {
         plain_line(fonts, line, block.kerning, 0.0, tracking(block))
     } else {
-        shaped_line(fonts, line, block, tracking(block))
+        has_right_to_left(line)
+            .then(|| bidi_line(fonts, line, block, tracking(block)))
+            .flatten()
+            .unwrap_or_else(|| shaped_line(fonts, line, block, tracking(block)))
     }
 }
 
@@ -944,7 +1099,10 @@ fn layout(block: &Block, fonts: &Scaled) -> (Vec<Placed>, Vec<Caret>, Vec<Rule>)
         // between characters where there are no spaces.
         let trimmed: Vec<char> = line.trim_end().chars().collect();
         let spaces = trimmed.iter().filter(|c| **c == ' ').count();
+        // Spare room is shared out in reading order, which a line in both
+        // directions doesn't show in: it stays as laid out.
         let stretches = block.align == Align::Justify
+            && glyphs.bidi_width.is_none()
             && block.wrap.is_finite()
             && !ends[index]
             && trimmed.len() > 1;
@@ -1006,7 +1164,7 @@ fn layout(block: &Block, fonts: &Scaled) -> (Vec<Placed>, Vec<Caret>, Vec<Rule>)
         // Underlines and strikethroughs run the length of what the line shows.
         let length = if stretches { span as f32 } else { used as f32 };
         if !trimmed.is_empty() {
-            let from = offset + glyphs.pens[0];
+            let from = offset + glyphs.bidi_width.map_or(glyphs.pens[0], |_| 0.0);
             for (wanted, [position, thickness]) in [
                 (block.underline, fonts.underline),
                 (block.strikethrough, fonts.strikethrough),

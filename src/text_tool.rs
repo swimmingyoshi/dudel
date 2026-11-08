@@ -1036,6 +1036,20 @@ impl Dudel {
                 return;
             }
         }
+        // Typing that couldn't be drawn is lost, so say so.
+        if let Some(error) = &edit.error
+            && drawn.as_ref() != Some(&edit.draft)
+        {
+            let original = edit.before.layers.iter().find(|l| l.id == edit.target);
+            if original.is_some_and(|l| l.text == drawn) {
+                self.history.discard_pending_checkpoint(&self.doc);
+                self.modified = edit.modified;
+            } else {
+                self.history.settle(&self.doc);
+            }
+            self.status = format!("Text kept as it was drawn: {error}");
+            return;
+        }
         let original = edit.before.layers.iter().find(|l| l.id == edit.target);
         let effects = &self.doc.layers[index].effects;
         if !edit.created && original.is_some_and(|l| l.text == drawn && l.effects == *effects) {
@@ -1062,6 +1076,10 @@ impl Dudel {
         self.text_drag = None;
         self.draw_text_draft();
         self.take_drawn_text(false);
+        if let Some(error) = self.undrawable_text() {
+            self.status = format!("{error} · Choose an installed font to keep this, or Esc");
+            return;
+        }
         match &mut self.text_edit {
             Some(edit) if edit.pending.is_some() => {
                 edit.release_press();
@@ -1070,6 +1088,18 @@ impl Dudel {
             }
             _ => self.finish_text_edit(),
         }
+    }
+
+    /// Why the open draft can't be drawn, when finishing now would lose it.
+    fn undrawable_text(&self) -> Option<String> {
+        let edit = self.text_edit.as_ref()?;
+        let error = edit.error.clone()?;
+        let layer = self.doc.layers.iter().find(|l| l.id == edit.target)?;
+        let lost = edit.pending.is_none()
+            && edit.attempted == edit.draft
+            && layer.text.as_ref() != Some(&edit.draft)
+            && !edit.draft.string.trim().is_empty();
+        lost.then_some(error)
     }
 
     /// Done was chosen and the drawing isn't in yet.
@@ -1131,6 +1161,11 @@ impl Dudel {
             return;
         }
         if self.tool != Tool::Text {
+            // Another tool can't wait for a font: close, saying what was lost.
+            if self.undrawable_text().is_some() {
+                self.finish_text_edit();
+                return;
+            }
             self.request_text_finish();
             if self.text_finishing() {
                 self.poll_text_finish(ctx);
@@ -1615,6 +1650,53 @@ mod tests {
         app.settle_text_draft();
         assert!(app.text_edit.as_ref().unwrap().error.is_none());
         assert!(app.doc.layers[index].pixels != pixels);
+    }
+
+    #[test]
+    fn done_without_the_font_keeps_the_text_and_says_why() {
+        let mut app = app();
+        app.begin_new_text([20.0, 20.0], None, None);
+        typed(&mut app, "Hemlo");
+        app.finish_text_edit();
+        let index = app.doc.active;
+        app.doc.layers[index].text.as_mut().unwrap().font = "No Such Font".into();
+        let before = app.doc.clone();
+        // Opened and left alone, it closes as usual.
+        app.begin_text_edit(index);
+        app.request_text_finish();
+        assert!(app.text_edit.is_none());
+        assert_eq!(app.status, "Text unchanged");
+
+        // Typing that can't be drawn isn't thrown away by Done.
+        app.begin_text_edit(index);
+        typed(&mut app, "Changed");
+        app.request_text_finish();
+        assert!(app.text_edit.is_some(), "Done keeps the typing open");
+        assert!(app.status.contains("No Such Font"), "{}", app.status);
+        // Choosing an installed font keeps it.
+        app.text_edit.as_mut().unwrap().draft.font = TEST_FONT.into();
+        app.settle_text_draft();
+        app.request_text_finish();
+        assert!(app.text_edit.is_none());
+        assert_eq!(
+            app.doc.layers[index].text.as_ref().unwrap().string,
+            "Changed"
+        );
+
+        // Anything that must close it anyway says what was lost.
+        app.undo();
+        assert_eq!(app.doc.layers[index].text, before.layers[index].text);
+        app.begin_text_edit(index);
+        typed(&mut app, "Lost");
+        app.close_input_gestures();
+        assert!(app.text_edit.is_none());
+        assert_eq!(app.doc.layers[index].text, before.layers[index].text);
+        assert!(app.doc.layers[index].pixels == before.layers[index].pixels);
+        assert!(
+            app.status.starts_with("Text kept as it was drawn"),
+            "{}",
+            app.status
+        );
     }
 
     #[test]

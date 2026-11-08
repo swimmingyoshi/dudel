@@ -3469,6 +3469,72 @@ fn layered_illustration_selection_move_undo_save_reopen_and_export_preserve_artw
 }
 
 #[test]
+fn text_survives_save_reopen_editing_again_and_every_export() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("Poster.dudel");
+    let mut app = Dudel::default();
+    assert!(app.request_replace(crate::document_actions::Action::New(240, 120, 300.0)));
+    app.text_style.font = crate::text_render::TEST_FONT.into();
+    app.text_style.size = 32.0;
+    app.tool = crate::tools::Tool::Text;
+    app.color = [30, 60, 120];
+    app.begin_new_text([20.0, 20.0], Some(200.0), None);
+    app.text_edit.as_mut().unwrap().draft.string = "Hemlo there".into();
+    app.settle_text_draft();
+    app.set_text_outline(Some((3.0, [255, 255, 255])));
+    app.finish_text_edit();
+    let index = app.doc.active;
+    let record = app.doc.layers[index].text.clone().unwrap();
+    let effects = app.doc.layers[index].effects.clone();
+    assert!(!effects.is_empty(), "the outline is a layer effect");
+
+    app.path = Some(project.clone());
+    app.save(false);
+    finish_jobs(&mut app);
+    assert!(app.request_replace(crate::document_actions::Action::New(3, 2, 300.0)));
+    app.load_document(project.clone(), false);
+    finish_jobs(&mut app);
+    assert_eq!(app.doc.layers[index].text.as_ref(), Some(&record));
+    assert_eq!(app.doc.layers[index].effects, effects);
+
+    // Still text: it opens, takes more typing, and finishes as one step.
+    app.begin_text_edit(index);
+    let edit = app.text_edit.as_mut().unwrap();
+    edit.draft.string.push('!');
+    app.settle_text_draft();
+    app.finish_text_edit();
+    assert_eq!(
+        app.doc.layers[index].text.as_ref().unwrap().string,
+        "Hemlo there!"
+    );
+    assert_eq!(app.doc.layers[index].effects, effects);
+    let edited = app.doc.clone();
+    app.undo();
+    assert_eq!(app.doc.layers[index].text.as_ref(), Some(&record));
+    app.redo();
+    assert_eq!(app.doc.composite(), edited.composite());
+
+    // Every export shows the text as drawn.
+    let shown = app.doc.composite_transparent();
+    let png = directory.path().join("Poster.png");
+    app.export_to(png.clone(), true);
+    finish_jobs(&mut app);
+    assert_eq!(image::open(&png).unwrap().into_rgba8().as_raw(), &shown);
+    for name in ["Poster.jpg", "Poster.webp", "Poster.bmp", "Poster.gif"] {
+        let path = directory.path().join(name);
+        app.export_to(path.clone(), false);
+        finish_jobs(&mut app);
+        let image = image::open(&path).unwrap().into_rgba8();
+        assert_eq!(image.dimensions(), (240, 120), "{name}");
+    }
+    let psd = directory.path().join("Poster.psd");
+    app.export_psd_to(psd.clone(), crate::psd_export::Effects::Editable);
+    finish_jobs(&mut app);
+    let back = crate::psd_import::import(&psd, &|| false).unwrap().document;
+    assert_eq!(back.composite(), app.doc.composite());
+}
+
+#[test]
 fn toolbar_symmetry_popup_stays_open_while_its_label_grows() {
     // These widths fit the bar with "Symmetry" but not "Symmetry: Four-way";
     // a label naming the mode collapsed the bar and closed the popup.

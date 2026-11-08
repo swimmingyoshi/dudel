@@ -37,6 +37,7 @@ ab_glyph = "=0.2.32"
 ab_glyph_rasterizer = "=0.1.10"
 ttf-parser = "=0.25.1"
 rustybuzz = "=0.20.1"
+unicode-bidi = "=0.3.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 raw-window-handle = "0.6"
