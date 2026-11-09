@@ -172,3 +172,15 @@ hex/current-color row; **Swatches** opens recent colors, the full palette and it
 save/import/export actions. A few palette colors stay one click away beside it.
 Short windows scroll only the active settings page, keeping neighboring regions
 in place. Drag the dividers to rebalance library and color space.
+
+**Palette > Extract from canvas** or **Extract from layer** finds the main colors
+of the visible artwork or the active layer (3–12, set by the slider), most-used
+first. With a selection active, only the selection is read. Transparent pixels
+and the white paper are ignored, and the same artwork always gives the same
+colors. Results appear under **Color ideas** and become swatches only through
+**Save all** or a color's right-click menu. **Color ideas** also suggests colors
+built from the current color: shading ramps with cooler shadows and warmer
+highlights, analogous, complementary (through neutral), split-complementary and
+triadic hues, and steps toward the secondary color. Clicking a suggestion paints
+with it and keeps the row in place; picking a color anywhere else rebuilds the
+row. Everything runs in Oklab inside Dudel, with no model or download.

@@ -200,8 +200,11 @@ impl Dudel {
                     ui.close();
                     self.palette_file(false);
                 }
+                ui.separator();
+                self.palette_extract_menu_ui(ui);
             });
         });
+        self.palette_assist_ui(ui);
     }
     fn palette_file(&mut self, import: bool) {
         let dialog = self.dialog_in(

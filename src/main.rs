@@ -124,6 +124,7 @@ mod navigator;
 mod new_canvas;
 mod paint_target;
 mod palette;
+mod palette_assist;
 mod parallel;
 mod pending_layers;
 mod performance;
@@ -222,6 +223,7 @@ struct Dudel {
     color: [u8; 3],
     mask_colors: [u8; 2],
     palette: Vec<[u8; 3]>,
+    palette_assist: palette_assist::Assist,
     tool: Tool,
     /// Lasso fill/erase mode and outline shape.
     lasso: lasso_paint::Options,
@@ -532,6 +534,7 @@ impl Default for Dudel {
             color: [38, 44, 59],
             mask_colors: [0, 255],
             palette: palette::defaults(),
+            palette_assist: Default::default(),
             tool: Tool::Brush,
             lasso: Default::default(),
             brush_group: workspace::default_brushes()[0].group(),
