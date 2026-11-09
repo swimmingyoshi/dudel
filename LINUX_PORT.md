@@ -1,7 +1,7 @@
 # Linux port
 
-Tracking the Linux port (Wayland first). The `master` and `linux` branches now
-share the Windows and Linux implementation. Windows x64 remains the release
+Tracking the Linux port (Wayland first). Windows and Linux work both happen on
+`master`; the separate `linux` branch was retired on 2026-11-09. Windows x64 remains the release
 validation target; Linux acceptance items below remain open.
 
 ## Current automation (2026-10-18)
@@ -19,8 +19,8 @@ The later tab-recovery change has separate hosted checks pending.
 This does not validate Wayland tablet
 input, Hyprland workspace switching, real GPU performance or multi-monitor use.
 
-Pushes to `linux` run Linux once, while synchronized `master` pushes run Windows
-once; PRs and manual dispatch can run either workflow. Documentation-only reviewed
+Each `master` push runs both the Linux and Windows workflows; PRs and manual
+dispatch can run either one. Documentation-only reviewed
 commits may use the skip policy in TESTING.md. The physical checklist below stays
 open until build-identified hardware results exist.
 

@@ -2,8 +2,8 @@ name: Linux verification
 
 on:
   push:
-    # The synchronized mirror runs Linux once; master runs Windows once.
-    branches: [linux]
+    # One branch: every master push runs Linux and Windows.
+    branches: [master]
   pull_request:
   workflow_dispatch:
 

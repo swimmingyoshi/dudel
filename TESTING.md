@@ -57,17 +57,15 @@ unresolved concern. Keep UI work focused on visible rows and changed state, and
 measure native performance on a frozen build independently of compiler workloads.
 
 Hosted Windows checks run for default-branch (`master`) pushes, pull requests and
-manual dispatch. Mirroring the same commit to `linux` does not start a duplicate
-Windows release job. Superseded runs on the same ref are canceled. Dependency
+manual dispatch. Superseded runs on the same ref are canceled. Dependency
 builds use [Rust Cache](https://github.com/Swatinem/rust-cache) with the selected
 compiler; these workflow changes still require hosted execution evidence.
 
-Linux checks run on synchronized `linux` pushes, PRs and manual dispatch using
+Linux checks run on `master` pushes, PRs and manual dispatch using
 Ubuntu 24.04. Full verification is followed by an Xvfb/software-OpenGL startup
 capture; its artifact records executable/capture hashes and the commit. This
 checks compilation and startup, not physical Wayland/tablet or GPU performance.
-Push the same commit to `master` and `linux` (`git push origin master master:linux`)
-to run each platform once.
+A single push to `master` runs both platforms.
 
 Both workflows keep uploaded artifacts for 7 days. A private repository shares
 500 MB of artifact storage across the account and each Windows candidate is about
