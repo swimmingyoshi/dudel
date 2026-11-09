@@ -49,8 +49,9 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
 
 - [x] Version 0.2.0 in both Cargo manifests and lockfiles.
 - [x] Release notes, quick start (Text section) and README features.
-- [ ] Local `scripts/Verify.ps1 -Mode Full` on the frozen source.
-- [ ] Candidate package (`scripts/Package.ps1`), its binary hashes recorded in
+- [x] Local `scripts/Verify.ps1 -Mode Full` on the frozen source (2026-11-09,
+      1,312 default / 1,321 all-feature tests; CSP corpus 69/69 identical).
+- [x] Candidate package (`scripts/Package.ps1`), its binary hashes recorded in
       RELEASE_ACCEPTANCE.json and RELEASE_DECISION.md, then
       `Package.ps1 -Release`.
 - [ ] One hosted Windows CI run on the pushed candidate; tag `v0.2.0`.
