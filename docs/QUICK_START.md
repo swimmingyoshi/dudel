@@ -140,7 +140,10 @@ options**, and the sidebars may hide to give the canvas more room. Use **View >
 Navigator, color and layers** or **View > Tool property panel** to show a sidebar.
 **Tab** hides/shows panels. **View > Automatic panel layout** restores responsive
 panel choices and shows panels again after manual changes.
-In short windows, **Navigator** and **Color** open from the inspector's top row.
+Above the layers, the **Color** and **Navigator** tabs share one area; click a
+tab to switch, and Dudel remembers your choice. While the tool property panel
+is open, color sits there instead. In very short windows, **Navigator** and
+**Color** open from the inspector's top row.
 In the shortest layout, **Layer** holds layer actions, blend, opacity and masks,
 leaving room for the selected layer. Narrow inspectors use a draggable opacity
 percentage; click it to type a value.

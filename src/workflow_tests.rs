@@ -1980,6 +1980,7 @@ fn navigator_reserves_controls_and_compact_view_options_remain_clickable() {
     let mut ui = Workspace::sized([1280.0, 700.0]);
     ui.app.inspector_override = Some(true);
     ui.app.tool_panel_override = Some(false);
+    ui.app.inspector_navigator = true;
     ui.app.navigator_height = Some(600.0);
     ui.app.layers_height = Some(260.0);
     ui.settle();

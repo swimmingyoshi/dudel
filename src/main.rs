@@ -384,6 +384,8 @@ struct Dudel {
     brush_panel_page: tool_panel::BrushPage,
     brush_panel_section: brush_studio::Section,
     navigator_height: Option<f32>,
+    /// The right panel shows the navigator instead of color (its tabs).
+    inspector_navigator: bool,
     /// Dragged widths of the tool property panel and the inspector.
     sidebar_widths: [Option<f32>; 2],
     canvas_area: egui::Rect,
@@ -663,6 +665,7 @@ impl Default for Dudel {
             brush_panel_page: Default::default(),
             brush_panel_section: brush_studio::Section::Pressure,
             navigator_height: None,
+            inspector_navigator: false,
             sidebar_widths: [None; 2],
             canvas_area: egui::Rect::NOTHING,
             symmetry: symmetry::Symmetry::default(),
@@ -956,6 +959,7 @@ impl Dudel {
         self.library_height = finite(p.layout.library_height);
         self.color_height = finite(p.layout.color_height);
         self.navigator_height = finite(p.layout.navigator_height);
+        self.inspector_navigator = p.layout.navigator_tab;
         self.layers_height = finite(p.layout.layers_height);
         self.hsv = color_wheel::rgb_to_hsv(self.color);
     }
@@ -1005,6 +1009,7 @@ impl Dudel {
                 library_height: self.library_height,
                 color_height: self.color_height,
                 navigator_height: self.navigator_height,
+                navigator_tab: self.inspector_navigator,
                 layers_height: self.layers_height,
             },
         };

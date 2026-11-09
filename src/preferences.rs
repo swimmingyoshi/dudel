@@ -74,6 +74,9 @@ pub struct LayoutPrefs {
     pub navigator_height: Option<f32>,
     #[serde(default)]
     pub layers_height: Option<f32>,
+    /// The right panel's Navigator tab is chosen instead of Color.
+    #[serde(default)]
+    pub navigator_tab: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -220,6 +223,7 @@ mod tests {
                 color_height: None,
                 navigator_height: Some(150.0),
                 layers_height: None,
+                navigator_tab: true,
             },
             timelapse: crate::timelapse::Prefs {
                 record_new: true,

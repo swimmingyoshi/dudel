@@ -3489,6 +3489,7 @@ mod tests {
         let mut app = crate::Dudel {
             doc: Document::new(1, 1),
             inspector_override: Some(true),
+            inspector_navigator: true, // Color is the right panel's default tab.
             ..Default::default()
         };
         let raw = || egui::RawInput {

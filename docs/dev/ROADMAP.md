@@ -18,6 +18,10 @@ A polish release with no large new features.
 - [x] Help menu links: quick start, report a problem, releases page.
 - [x] Visible checkboxes and radio buttons; highlighted main dialog buttons.
 - [x] More room for layers; no duplicate zoom and rotation controls.
+- [x] Color and Navigator as tabs in the right panel.
+- [ ] Workspace reorganization: decide which panels can be docked, tabbed or
+      hidden (brush library, color, navigator, layers, references) and whether
+      layouts can be saved (see *Named workspace layouts* below).
 - [x] Docs reorganized under `docs/`; process records archived.
 - [ ] Find three to five testers on other tablets (Wacom, Huion, XP-Pen
       models besides the Artist 12) and act on their reports first.

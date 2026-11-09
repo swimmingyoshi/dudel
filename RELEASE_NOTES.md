@@ -20,6 +20,10 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   they blended into dialog backgrounds.
 - The main button of each dialog (Create canvas, Export…, Apply, and the action
   in confirmations) is highlighted.
+- **Color and Navigator are tabs** above the Layers panel, so the color wheel
+  always has room and no longer scrolls out of sight on smaller screens. Dudel
+  remembers the tab you chose. When the tool settings panel is open, color sits
+  there as before.
 - The Layers panel starts taller, showing more layers on laptop screens. The
   Navigator no longer repeats the zoom and rotation sliders of the status bar.
 - Brush names in the pen quick menu are no longer cut short.

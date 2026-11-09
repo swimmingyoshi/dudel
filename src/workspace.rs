@@ -2030,27 +2030,51 @@ impl Dudel {
                                     });
                                     self.layers_ui(ui, true, true);
                                 });
-                            let viewport_height = ui.available_height();
-                            egui::ScrollArea::vertical().show(ui, |ui| {
-                                let content_top = ui.cursor().top();
-                                ui.add_space(6.0);
-                                section("NAVIGATOR").show(ui, |ui| {
-                                    let height =
-                                        viewport_height - (ui.cursor().top() - content_top);
-                                    self.navigator_ui(ui, height);
-                                });
-                                // Color lives in the left panel; keep it
-                                // reachable here while that panel is closed.
+                            // Color and the navigator share the area above
+                            // the layers as tabs, so the chosen one gets all
+                            // of it. Color sits in the tool panel when that
+                            // is open, leaving the navigator here alone.
+                            ui.add_space(4.0);
+                            let navigator = tool_panel || self.inspector_navigator;
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 2.0;
                                 if !tool_panel {
-                                    ui.separator();
-                                    section(if self.input_stroke_target().is_raster() {
+                                    let color = if self.input_stroke_target().is_raster() {
                                         "COLOR"
                                     } else {
                                         "MASK COVERAGE"
-                                    })
-                                    .show(ui, |ui| self.palette_ui(ui));
+                                    };
+                                    if ui
+                                        .selectable_label(!navigator, section_title(color))
+                                        .clicked()
+                                    {
+                                        self.inspector_navigator = false;
+                                    }
+                                }
+                                if ui
+                                    .selectable_label(navigator, section_title("NAVIGATOR"))
+                                    .clicked()
+                                {
+                                    self.inspector_navigator = true;
                                 }
                             });
+                            let room = ui.available_height();
+                            if navigator {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("inspector navigator")
+                                    .show(ui, |ui| self.navigator_ui(ui, room));
+                            } else if room >= 340.0 {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("inspector color")
+                                    .show(ui, |ui| self.palette_ui(ui));
+                            } else {
+                                // Short panels: a wheel sized to the room,
+                                // with swatches behind a button.
+                                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                                ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
+                                ui.spacing_mut().interact_size.y = 26.0;
+                                self.compact_palette_ui(ui);
+                            }
                         })
                     });
             }
