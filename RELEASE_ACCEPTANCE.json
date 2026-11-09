@@ -1,20 +1,20 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-11-04",
+  "decision_date": "2026-11-09",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 release preparation with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at Verify commit bffcbea; later commits change documents only, and the v0.1.0 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "Rebuilt from current source at the owner's request (no 0.1.0 build has been published): vector layers and line editing, SVG export, command search, custom shortcuts, layer filter, multi-layer batches, editing feedback and stabilization fixes. Evidence: local Verify Full, both packaging gates, a packaged startup, hosted Windows CI and the owner's pen passes, the second covering selection limits, fill to line centres, line handles and SVG export. See RELEASE_DECISION.md. Previously accepted (unpublished) binaries: dudel.exe A3F989AF...1C648D30, dudel_thumbnails.dll 6302A480...BD641B4.",
+  "application_source": "this repository's source at commit 531da84; later commits change documents only, and the v0.2.0 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.2.0: editable text layers (format v8), the Export image window with Export again, the pen quick menu with the Windows side button as right-click, one-click Add mask, blend-mode wheel and image-paste fixes, and Linux packaging scripts. Evidence: local Verify Full, CSP corpus identity, both packaging gates, offline source rebuild, a packaged startup and the owner's pen check of the quick menu. See RELEASE_DECISION.md. Previous accepted 0.1.0 binaries: dudel.exe D53A9ED9...725ECD30, dudel_thumbnails.dll A0FCCA48...EE41DEC1.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "D53A9ED9FA3081556F932F435DB962BD5F8CBC08742243AD3CB239DF725ECD30"
+      "sha256": "86734496854458D25AE7A5219CF3E4D308B0E0E4C42CBB78737EAEC337164C3A"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "A0FCCA48554B4255CCB5362D6CE89F04CF14CB819BE0B40A6B947731EE41DEC1"
+      "sha256": "CA9E3C10B659E40BDCD29749D6ECF2DABFFFE4ECD26ACD214BBB0060E4204EC8"
     }
   ]
 }

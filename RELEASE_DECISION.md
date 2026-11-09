@@ -1,3 +1,51 @@
+# Windows 0.2 release decision — 2026-11-09
+
+**Release preparation for 0.2.0 is accepted for the Windows scope below,** at
+the owner's request to start the 0.2.0 release on 2026-11-09. The 0.1.0
+decision that follows remains the record for the evidence carried over.
+
+**Application source:** commit `531da84`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`86734496...37164C3A` and DLL `CA9E3C10...E4204EC8`, and release packaging
+refuses different bytes.
+
+**What changed since 0.1.0** (see [release notes](RELEASE_NOTES.md)): editable
+text layers saved as project format v8, the Export image window with Export
+again, the pen quick menu (the Windows side button now arrives as a right-click),
+one-click Add mask, the blend-mode wheel and image-paste fixes, and the Linux
+packaging scripts from the `linux` branch.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full` on `43d114e` (same application source
+  as `531da84`, whose two extra commits change packaging scripts and docs):
+  1,312 default / 1,321 all-feature tests (17 ignored each), three DLL tests,
+  formatting, both Clippy configurations and both release builds. The 42 Python
+  tests and the public-tree check were re-run on `531da84`.
+- All 69 files of the owner's private CSP corpus import exactly as with the
+  baseline build, including the three with text layers.
+- Candidate `dudel-0.2.0-candidate-20261109-072207-335`: static runtime (no
+  Visual C++ imports), no private paths or terms, notices passed with 0 problems
+  and binary/source parity. Against the reviewed 0.1.0 package, 18 notice files
+  changed, all new MIT, Apache-2.0 or Unicode terms for text shaping and
+  bidirectional text (rustybuzz, unicode-bidi and related crates).
+- Offline rebuild of the source ZIP passed (`check_source_archive.py`).
+- The packaged executable started and captured its workspace.
+- The owner's checks during development: they used per-selection text styles,
+  fit to box and the export window on 2026-11-08 and reported them working, and
+  confirmed the quick menu with the pen's side button on 2026-11-09 after the
+  Windows fix.
+
+**Not run on this build:** hosted CI (planned once on the pushed candidate),
+the resource and two-hour studies, the laptop install, a fresh owner pen pass
+over every text item in [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md), and Linux
+packaging, which is built separately on Linux and stays experimental. The
+painting, storage and recovery evidence carries over from 0.1.0 where those
+areas are unchanged; the new text and export code is covered by the automated
+tests above.
+
+**Known limits** are listed under "Limits in 0.2.0" in the release notes.
+
 # Windows 0.1 release decision — 2026-10-28
 
 **Release preparation is accepted for the Windows scope below.** The owner asked

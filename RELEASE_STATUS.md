@@ -1,3 +1,20 @@
+# Windows 0.2 release status
+
+Updated 2026-11-09. **Release preparation for 0.2.0 is complete locally.** It is
+built from `531da84`; [the release decision](RELEASE_DECISION.md) lists its
+evidence and what was not run.
+
+- Version/platform: 0.2.0, Windows x64, portable, unsigned.
+- Public-package names: `dudel-0.2.0-windows-x64.zip` and
+  `dudel-0.2.0-windows-x64-source.zip`, each with a SHA-256 sidecar.
+- [Accepted binaries](RELEASE_ACCEPTANCE.json): EXE `86734496...37164C3A`,
+  thumbnail DLL `CA9E3C10...E4204EC8`. Release packaging rejects different bytes.
+- Open before publication: one hosted Windows CI run on the pushed candidate, the
+  `v0.2.0` tag and the GitHub release. A Linux tarball is built separately on
+  Linux with `scripts/package_linux.py` and stays experimental.
+
+The 0.1.0 status below is kept as the record for that release.
+
 # Windows 0.1 release status
 
 Updated 2026-11-05. **Release preparation for the 2026-11-04 rebuild of 0.1.0 is
