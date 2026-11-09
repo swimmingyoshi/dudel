@@ -41,6 +41,10 @@ display or tablet.
   symmetric features such as eyes.
 - Adjustments and filters, including Rhai and WebAssembly extensions; API 2
   plugins contribute brush presets, tool presets, commands and panels.
+- **Editable text** typed on the canvas: installed fonts with kerning, vertical
+  and right-to-left text, styles for selected words and *fit text to box*.
+- A **pen quick menu**: the side button opens a ring of favorite brushes, recent
+  colors and your chosen commands under the tip.
 - **Command search** (`Ctrl+K`) and custom keyboard shortcuts.
 
 **Your work stays safe**
@@ -50,7 +54,9 @@ display or tablet.
   boards that never become part of the artwork.
 - Per-canvas **timelapse** recording that plays back in the app and exports as GIF or MP4 (FFmpeg required)
   or PNG frames; portable UI themes.
-- PNG import/export, JPEG, lossless WebP, BMP and GIF image export, layered PSD export and SVG export of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+- PNG import/export; one **Export image** window for PNG, JPEG, lossless WebP,
+  BMP and GIF with a preview and *Export again*; layered PSD export and SVG export
+  of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
   (PSD shapes, gradient fills, layer effects and adjustment layers included) and
   clearly identified flattened fallbacks.
 
@@ -159,7 +165,7 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   version or later.
 - Native saves use project format v4, v5 when layer masks are used, or v6 when
   layer effects, adjustment layers or fill opacity are used, or v7 for vector
-  layers; newer files need a compatible
+  layers, v8 for text layers; newer files need a compatible
   Dudel (older builds refuse them rather than drop that data). Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD

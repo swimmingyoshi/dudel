@@ -2,9 +2,8 @@
 
 Use `.dudel` for editable projects, PNG for sharing flattened artwork and PSD
 for taking layers to Photoshop, Live2D and other editors.
-This describes Windows 0.1.0 as rebuilt on 2026-11-04. See
-[release notes](RELEASE_NOTES.md) for its changes and
-[the release decision](RELEASE_DECISION.md) for packaged-build evidence.
+This describes Windows 0.2.0. See [release notes](RELEASE_NOTES.md) for its
+changes and [the release decision](RELEASE_DECISION.md) for packaged-build evidence.
 
 | Format | Open/import | Save/export | What is retained |
 | --- | --- | --- | --- |
@@ -12,7 +11,7 @@ This describes Windows 0.1.0 as rebuilt on 2026-11-04. See
 | PNG | Image import | Flattened opaque or transparent export | Pixels and print resolution; no editable layer hierarchy |
 | SVG | No | Vector line export | Each line of the shown vector layers as a path: stroked center lines for even widths, outlines for lines shaped by pressure or taper. Raster layers, masks, effects and brush texture are left out |
 | Clip Studio Paint `.clip` | Supported raster and vector subsets; optional saved-preview fallback | No | Raster and Gray layers, supported vector strokes, folders, clipping, standard blends, locks, saved animation frame; unsupported layers skipped and listed |
-| JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | No source-format export | Static decoded image, scaled down to fit the current canvas; no animation editing |
+| JPEG, WebP, BMP, GIF images | Drop or paste copied files as raster layers | Flattened export from the [Export image](docs/EXPORT_OPTIONS.md) window: JPEG with a quality setting, lossless WebP, BMP, single-image GIF | Import: static decoded image, scaled down to fit the current canvas; no animation editing. Export: no layers; JPEG and BMP are always opaque |
 | Project package `.zip` | Yes | Yes | Exact embedded project plus editable layer/mask PNGs, folder paths, references, preview and manifest |
 | Theme `.dudeltheme` | Yes | Yes | Workspace theme colors; separate from artwork |
 | Photoshop `.psd` | RGB, grayscale, CMYK and Lab layers at 8, 16 and 32 bits; indexed, bitmap, duotone and multichannel images | 8-bit RGB layered export | Import: layers, groups, artboards, masks, vector shapes, gradient and pattern fills, layer effects and adjustment layers; saved composite for other features. Export: layers, folders, masks, blend modes, opacity, clipping, visibility, locks, adjustment layers, layer effects (editable styles, or drawn as layers for Live2D) and the flattened image |
@@ -20,7 +19,7 @@ This describes Windows 0.1.0 as rebuilt on 2026-11-04. See
 
 Native saves use v4, v5 when layer masks are present, or v6 when layer effects,
 adjustment layers or non-default fill opacity are present, or v7 when vector
-layers are present. Older readers reject
+layers are present, or v8 when text layers are present. Older readers reject
 unsupported headers instead of silently dropping those features on resave.
 The supported document envelope is 1-16,384 pixels per side, at most 100,000,000 pixels
 in total (Clip Studio Paint's 10,000 x 10,000), 1,000 raster layers, 2,000 total layer/folder
@@ -74,7 +73,7 @@ and PSD source files, including renamed files recognized by their signatures.
 | Vector layers drawn with plain round brushes | Imported as editable vector strokes with a raster display cache (CSP saves strokes, not pixels). Width follows each point's pen pressure and the brush's anti-aliasing level fades light strokes as CSP does. Earlier raster-import comparisons matched the owner's vector previews within one level on average; retaining strokes does not establish broader brush compatibility. Strokes using textured, spray or watercolor brushes skip the layer |
 | Screentone (Tone) layers, as made by line-and-tone conversion or the Tone layer effect | Round dots, squares and lines at a set density are drawn as CSP draws them (each matched CSP's saved preview pixel for pixel on the owner's samples: round at 300 dpi, squares and lines at 600 dpi); other dot shapes, densities taken from the layer's colors, and dots under 2 px apart are drawn as black at the tone's dot density. Either way the tone shows through the layer's mask, which imports as an editable Dudel layer mask (Dudel draws no live screentone) |
 | Correction layers: Tone Curve (master curve with up to one middle point), Brightness/Contrast (contrast 0 or more), and Hue/Saturation/Luminosity | Imported as editable Dudel adjustment layers with their masks (Hue/Saturation/Luminosity uses CSP's own color model, also available as a Dudel adjustment); matched CSP's saved previews within half a level on the owner's gradient samples. Other settings and correction kinds skip the layer |
-| Text layers in one style | Drawn by Dudel as pixels with the system font they name, at their size and color, using CSP's own layout: wrapping to the text box, left, right or centered lines, vertical text and text turned half a turn (CSP does not save text pixels). On the owner's samples lines land within a pixel of CSP's preview; a right-aligned line in a box shorter than the line sat 3-4 px off. Several styles in one layer, missing fonts, other rotations and unchecked spacing settings skip the layer |
+| Text layers in one style | Editable Dudel text layers that keep CSP's layout until first edited (text too large for a text layer stays pixels). Drawn by Dudel with the system font they name, at their size and color, using CSP's own layout: wrapping to the text box, left, right or centered lines, vertical text and text turned half a turn (CSP does not save text pixels). On the owner's samples lines land within a pixel of CSP's preview; a right-aligned line in a box shorter than the line sat 3-4 px off. Several styles in one layer, missing fonts, other rotations and unchecked spacing settings skip the layer |
 | Balloon, material and effect layers; other correction settings; masks on folders, monochrome | That layer (or folder and its contents) is skipped and named in Import details |
 | Layer color settings | Pixels keep their stored colors; noted in Import details |
 | Profiles, proofing and color adjustments | Layered conversion rejected |

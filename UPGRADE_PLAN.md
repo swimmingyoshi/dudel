@@ -21,8 +21,8 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
    and export are tested end to end. Done no longer waits for a slow final
    render, and that render is faster (2,000 px text at 100 MP: 3.75 s, now
    0.53 s); tab changes, close, undo and save still wait for it while keeping
-   the newest draft. Remaining: the owner's pen pass and the user
-   documentation. The owner confirmed Japanese IME and Up/Down across wrapped
+   the newest draft. User documentation is written (quick start, release
+   notes, README); the owner's pen pass on the candidate remains. The owner confirmed Japanese IME and Up/Down across wrapped
    lines on 2026-11-07; the touch keyboard is optional, behind a button. The detailed
    checklist is [TEXT_TOOL_PLAN.md](TEXT_TOOL_PLAN.md). Text creation, editing,
    transforms, CSP text import, rustybuzz shaping, vertical layout and
@@ -40,7 +40,21 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
    button or a right-click opens a ring of starred brushes, recent colors and up
    to four chosen commands under the tip. It reuses the library's favorites
    and the command list. Targets, dismissal and placement are recorded in
-   [UX_WORKFLOW_PLAN.md](UX_WORKFLOW_PLAN.md); the owner's pen review remains.
+   [UX_WORKFLOW_PLAN.md](UX_WORKFLOW_PLAN.md). The owner confirmed it with the
+   pen on 2026-11-09 after d0f503a: Windows gives pen messages to winit as
+   touches, so the side button never reached egui as a right-click until the
+   pen reader reported it.
+
+### Release preparation (started 2026-11-09)
+
+- [x] Version 0.2.0 in both Cargo manifests and lockfiles.
+- [x] Release notes, quick start (Text section) and README features.
+- [ ] Local `scripts/Verify.ps1 -Mode Full` on the frozen source.
+- [ ] Candidate package (`scripts/Package.ps1`), its binary hashes recorded in
+      RELEASE_ACCEPTANCE.json and RELEASE_DECISION.md, then
+      `Package.ps1 -Release`.
+- [ ] One hosted Windows CI run on the pushed candidate; tag `v0.2.0`.
+- [ ] Draft GitHub release for the owner to publish (address releases by id).
 
 Named workspace layouts are a stretch goal after these priorities. Do not expand
 0.2.0 into editable animation, rich text, editable PSD text, broad format parity,

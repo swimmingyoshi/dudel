@@ -218,6 +218,16 @@ to the layer below it. The Layers panel joins clipped rows to their base with a
 rail and an arrow. A clipped row reads "Clipped to" its base, and the base says
 how many layers are clipped above it.
 
+**Text:** pick the Text tool (T), then click to type on one line or drag a box
+for text that wraps. Type on the canvas, then press **Done** or Ctrl+Enter, click
+away or change tools; Esc cancels. Click an existing text with the Text tool to
+edit it again. The options bar sets font, size, color, spacing, alignment and an
+outline. With part of the text selected, bold, italic, underline, strikethrough
+and color change only the selection. **Format > Fit text to box** shrinks text
+that would overflow its box. Japanese and other languages type through Windows'
+input methods, and Hebrew and Arabic read right to left. Each text layer keeps
+one font and size. PSD export writes text as pixels.
+
 **Pen quick menu:** press the pen's side button (or right-click) on the canvas
 for a ring under the tip: your starred brushes around the outside, recent colors
 inside them and four commands in the middle. Star brushes in the brush library to

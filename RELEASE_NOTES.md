@@ -1,3 +1,77 @@
+# Dudel 0.2.0 for Windows
+
+Editable text, an export window that remembers its settings, and a quick menu
+under the pen. Projects with text layers are saved as format v8, which 0.1.0
+can't open; it refuses them instead of dropping the text. Everything else in
+0.1.0 is unchanged, and its notes follow below.
+
+## New in 0.2.0
+
+### Text
+
+- A **Text tool** (T) for typing straight onto the canvas: click to type on one
+  line, or drag a box for text that wraps. The box has handles to resize it, and
+  text layers move, scale and rotate with the usual transform.
+- Fonts installed on Windows, with proper kerning and ligatures, Japanese and
+  other scripts through the system's input methods, and vertical text.
+- Formatting: font and style, size, color, bold, italic, underline,
+  strikethrough, letter and line spacing, alignment and justify, and an outline.
+  With part of the text selected, bold, italic, underline, strikethrough and
+  color apply to the selection alone.
+- **Fit text to box** (Format menu) shrinks text that would overflow its box,
+  never past the size you chose, and re-fits it as you type or resize.
+- Hebrew and Arabic read right to left, with Latin words and numbers among
+  them kept left to right.
+- Text stays editable after saving and reopening. Clip Studio Paint text opens
+  as editable text where its settings are supported.
+- **Done** never freezes on large text. While the final drawing finishes, the
+  bar shows **Keep editing** (Esc), and large text draws about 7x faster than
+  before. If the text's font is missing, Done keeps your typing and asks you
+  to choose an installed font.
+
+### Exporting images
+
+- **File > Export > Export image…** (Ctrl+Shift+E) opens one window for PNG,
+  WebP, JPEG, BMP and GIF, with JPEG quality, a background color for flattening
+  and transparency where the format can keep it. A preview shows the result,
+  including JPEG quality loss and GIF color limits, before you pick a file.
+- **Export again** (Ctrl+Shift+R) writes the project's last export to the same
+  file with the same settings, with no questions asked.
+- Timelapses also export as MP4 if FFmpeg is installed.
+
+### Pen quick menu
+
+- Press the pen's side button, or right-click, on the canvas. A ring opens under
+  the tip with your starred brushes, recent colors and up to four commands of
+  your choice (**View > Settings > Drawing**). One tap picks; the side button
+  again, Esc or a tap outside closes it without painting.
+- On Windows the side button now works as a right-click everywhere in the app,
+  for example in the Layers panel menus.
+
+### Smaller changes
+
+- **Add mask** adds a mask in one click: showing everything, or only the
+  selection when there is one. The menu beside it still offers a mask hiding
+  everything.
+- One mouse-wheel notch over the blend mode moves exactly one mode; it used to
+  skip a mode at times.
+- Dropping or pasting a file that only looks like an image, such as a web page
+  saved as `.webp`, now says so instead of reporting a decoding error.
+
+## Limits in 0.2.0
+
+- Each text layer has one font, size and spacing; only bold, italic, underline,
+  strikethrough and color can differ within it.
+- Text exports as pixels to PSD, and SVG export leaves text out. Text on a path
+  isn't supported, and plugins can't create text.
+- Each line takes its direction from its first letter, so a wrapped line of
+  Hebrew that starts with a Latin word reads left to right. Justify doesn't
+  stretch lines that mix directions.
+- Switching tabs, closing a project, undo and save still wait for a large
+  text's final drawing (about half a second at worst on a 100 MP canvas).
+- The export preview is reduced to 256 pixels, so fine detail can differ from
+  the file. Only PNG keeps the project's DPI.
+
 # Dudel 0.1.0 for Windows
 
 A Windows illustration application. Release preparation is accepted using the
