@@ -2,12 +2,12 @@
 
 Dudel is a pen-focused illustration app. Windows x64 is the supported platform;
 this Linux build is experimental and is not covered by the Windows release
-decision. `BUILD.json` identifies this package, and [the Linux port](LINUX_PORT.md)
+decision. `BUILD.json` identifies this package, and [the Linux port](docs/dev/LINUX_PORT.md)
 lists what has and has not been checked.
 
 Extract the archive, then run `./dudel` from the folder, or run `./install.sh` to
 add it to your launcher. `./install.sh --uninstall` removes it again and keeps your
-projects and preferences. Start with the [quick start](QUICK_START.md) for drawing,
+projects and preferences. Start with the [quick start](docs/QUICK_START.md) for drawing,
 layers, saving and PNG export.
 
 ## Requirements
@@ -28,12 +28,12 @@ pen acts as a mouse with fixed pressure. See View > Tablet input for diagnostics
 - File manager previews of `.dudel` files are Windows-only.
 
 Save editable artwork as `.dudel` and export PNG for sharing. Read
-[format support](FORMAT_SUPPORT.md) before importing CSP files, and the
+[format support](docs/FORMAT_SUPPORT.md) before importing CSP files, and the
 [release notes](RELEASE_NOTES.md) for general limits. When reporting a problem,
 include the version and hash from `BUILD.json`, your distribution, compositor, GPU
 and tablet, and the steps on a disposable canvas.
 
 Dudel is GPL-3.0-only. Official executable downloads may be sold; you can build the
 matching source yourself. [SOURCE.md](SOURCE.md) identifies the corresponding source
-archive. [Distribution policy](DISTRIBUTION.md), [LICENSE](LICENSE) and
+archive. [Distribution policy](docs/DISTRIBUTION.md), [LICENSE](LICENSE) and
 [third-party notices](THIRD_PARTY_NOTICES.md) describe the supplied sources and terms.

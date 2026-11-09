@@ -1,6 +1,6 @@
 # Export options
 
-0.2.0 workflow goals, tracked by [UPGRADE_PLAN.md](../UPGRADE_PLAN.md):
+The 0.2.0 export workflow:
 
 - [x] One export flow with format-specific options: **File > Export > Export
       image…** (Ctrl+Shift+E) opens a window.
@@ -55,4 +55,4 @@ MP4 requires FFmpeg with the `libx264` encoder on `PATH`. Restart Dudel after ch
 
 Video streams into a temporary file and is published after successful encoding. Cancellation terminates the encoder and removes staged output. Existing files of a different detected format are protected from replacement.
 
-Container flags follow the [official FFmpeg documentation](https://ffmpeg.org/ffmpeg-formats.html). See the [animation timeline plan](ANIMATION_PLAN.md) for editable animation work.
+Container flags follow the [official FFmpeg documentation](https://ffmpeg.org/ffmpeg-formats.html). See the [animation timeline plan](dev/ANIMATION_PLAN.md) for editable animation work.

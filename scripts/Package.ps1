@@ -58,7 +58,7 @@ try {
     $name = "dudel-$($package.version)-candidate-$timestamp"
     $releaseDecision = $null
     if ($Release) {
-        $releaseDecision = Get-Content -LiteralPath (Join-Path $repository 'RELEASE_ACCEPTANCE.json') -Raw | ConvertFrom-Json
+        $releaseDecision = Get-Content -LiteralPath (Join-Path $repository 'docs/release/RELEASE_ACCEPTANCE.json') -Raw | ConvertFrom-Json
         if ($releaseDecision.status -ne 'ready_for_publication' -or $releaseDecision.version -ne $package.version) {
             throw 'Release preparation is not accepted for this version.'
         }
@@ -104,8 +104,12 @@ try {
     if ($IncludeSymbols) {
         Copy-Item -LiteralPath (Join-Path $metadata.target_directory 'release/dudel.pdb') -Destination $stage
     }
-    foreach ($document in @('QUICK_START.md', 'DELIVERY_PLAN.md', 'RELEASE_STATUS.md', 'XP_PEN_VALIDATION.md', 'RELEASE_CHECKLIST.md', 'RELEASE_NOTES.md', 'RELEASE_DECISION.md', 'RELEASE_ACCEPTANCE.json', 'DISTRIBUTION.md', 'FORMAT_SUPPORT.md', 'CREATOR_FEATURES.md', 'PLUGIN_DEVELOPMENT.md', 'TESTING.md')) {
-        Copy-Item -LiteralPath $document -Destination $stage
+    # User documents keep their repository paths so their links still work;
+    # package_docs.py adds any further document they link to.
+    foreach ($document in @('RELEASE_NOTES.md', 'docs/QUICK_START.md', 'docs/FORMAT_SUPPORT.md', 'docs/EXPORT_OPTIONS.md', 'docs/CREATOR_FEATURES.md', 'docs/PLUGIN_DEVELOPMENT.md', 'docs/DISTRIBUTION.md', 'docs/TESTER_GUIDE.md')) {
+        $destination = Join-Path $stage $document
+        New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
+        Copy-Item -LiteralPath $document -Destination $destination
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'RELEASE_README.md') -Destination (Join-Path $stage 'README.md')
     foreach ($license in @(Get-ChildItem -File -Filter 'LICENSE*')) {
@@ -134,10 +138,10 @@ try {
         # Plain strings: Get-Content attaches provider metadata that ConvertTo-Json would expand.
         cargo_config = [ordered]@{ path = '.cargo/config.toml'; sha256 = $cargoConfigBefore; text = [string][IO.File]::ReadAllText($cargoConfigPath) }
         executable_imports = @((Invoke-Native python @((Join-Path $PSScriptRoot 'check_pe_imports.py'), $executable)) | ForEach-Object { [string]$_ } | Where-Object { $_ -notmatch '^Visual C\+\+ runtime imports:' })
-        acceptance = 'Development candidate; consult RELEASE_CHECKLIST.md. Not release-certified.'
+        acceptance = 'Development candidate; see docs/dev/RELEASING.md. Not release-certified.'
     }
     if ($Release) {
-        $provenance.acceptance = 'Prepared Windows release with recorded evidence and limits; see RELEASE_DECISION.md. Not yet published.'
+        $provenance.acceptance = 'Prepared Windows release with recorded evidence and limits; see docs/release/RELEASE_DECISION.md. Not yet published.'
         $provenance['release_decision'] = $releaseDecision
     }
     $provenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'BUILD.json') -Encoding utf8

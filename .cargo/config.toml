@@ -1,6 +1,6 @@
 # Link the C runtime into dudel.exe so it starts on Windows PCs without the
-# Visual C++ redistributable (a clean-PC test failed with 0xC0000135; see
-# research/CLEANPC_LAPTOP_2026-10-22.md). Package.ps1 records this file in
+# Visual C++ redistributable (a clean-PC test on 2026-10-22 failed with
+# 0xC0000135 without it). Package.ps1 records this file in
 # BUILD.json, package_source.py prepends it to the source archive's vendoring
 # config, and check_source_archive.py verifies both.
 [target.x86_64-pc-windows-msvc]

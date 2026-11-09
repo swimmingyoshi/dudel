@@ -55,12 +55,11 @@ def bundle(repository, destination, binary, metadata_path):
     check_thumbnail_dependencies(metadata, repository / "shell/thumbnails/Cargo.lock")
     build = json.loads((binary / "BUILD.json").read_text(encoding="utf-8-sig"))
     paths = set()
-    for name in ("Cargo.toml", "Cargo.lock", ".gitattributes", "LICENSE", "LICENSE-psd-tools", "README.md", "QUICK_START.md",
-                 "RELEASE_NOTES.md", "RELEASE_CHECKLIST.md", "RELEASE_STATUS.md", "RELEASE_DECISION.md", "RELEASE_ACCEPTANCE.json", "DELIVERY_PLAN.md", "DISTRIBUTION.md",
-                 "XP_PEN_VALIDATION.md", "FORMAT_SUPPORT.md", "PROJECT_FORMAT_V4.md", "LINUX_PORT.md", "PLUGIN_DEVELOPMENT.md", "CREATOR_FEATURES.md", "TESTING.md", "build.rs", "rust-toolchain.toml"):
+    for name in ("Cargo.toml", "Cargo.lock", ".gitattributes", "LICENSE", "LICENSE-psd-tools", "README.md",
+                 "RELEASE_NOTES.md", "CONTRIBUTING.md", "build.rs", "rust-toolchain.toml"):
         if (repository / name).is_file():
             paths.add(Path(name))
-    for folder in ("src", "examples", "plugins", "scripts", ".github", "research/fixtures/replay"):
+    for folder in ("src", "examples", "plugins", "scripts", ".github", "docs", "research/fixtures/replay"):
         paths.update(p.relative_to(repository) for p in (repository / folder).rglob("*") if p.is_file())
     paths.update(p.relative_to(repository) for p in (repository / "research").glob("*.py"))
     # The subset check above keeps the shared vendor/notices tree complete.
@@ -169,7 +168,7 @@ def bundle(repository, destination, binary, metadata_path):
         "Run these commands from the extracted root so both workspaces use its vendored configuration. "
         "With a custom CARGO_TARGET_DIR, both artifacts instead appear in that target's release folder.\n\n"
         "Development checks: `cargo test --locked --offline`; full Windows/Python checks, including the DLL: `./scripts/Verify.ps1 -Mode Full`. "
-        "The approximately 1 GiB maximum-project test is a separate ignored test; see RELEASE_CHECKLIST.md.\n", encoding="utf-8")
+        "The approximately 1 GiB maximum-project test is a separate ignored test; see docs/dev/TESTING.md.\n", encoding="utf-8")
     # Keep public report links usable offline without shipping ignored/private
     # research, raw artwork, captures or repository history.
     bundle_docs(repository, destination)

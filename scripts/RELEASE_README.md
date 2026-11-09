@@ -1,53 +1,52 @@
 # Dudel for Windows
 
-Dudel is a pen-focused illustration app. [The release decision](RELEASE_DECISION.md)
-records Windows 0.1 acceptance, evidence and known limits. `BUILD.json` identifies
-this package; public availability is a separate publishing action.
+Dudel is a drawing app made for pen tablets. Thanks for trying it.
 
-Extract the complete archive and run `dudel.exe`. Start with the
-[quick start](QUICK_START.md) for drawing, layers, saving and PNG export.
-The [workflow checklist](CANDIDATE_TEST_CHECKLIST.md) is available for targeted
-troubleshooting; it is not a request to repeat completed testing.
-The C runtime is included; a separate Visual C++ redistributable is not required.
-Keep `dudel_thumbnails.dll` beside the executable for optional Explorer previews.
-Before deleting the app folder, use View > Settings > File Explorer previews >
-Remove .dudel previews if you enabled them. Projects and preferences are stored
-separately; see the quick start.
+## Start
 
-- Save editable artwork as `.dudel`; export PNG for sharing.
-- Read [format support](FORMAT_SUPPORT.md) before importing CSP files or opening
-  projects with an older Dudel build.
-- Read [release notes](RELEASE_NOTES.md) for current limits and validation gaps.
-- Use Help for keyboard shortcuts and View -> Tablet input for input diagnostics.
-- When reporting a problem, include the version/hash from `BUILD.json`, Windows,
-  GPU/tablet driver, display scaling and steps on a disposable canvas.
+1. Keep this whole folder together: `dudel.exe` needs nothing else installed.
+   Keep `dudel_thumbnails.dll` beside it for optional `.dudel` previews in File
+   Explorer.
+2. Run `dudel.exe`. The builds aren't code-signed yet, so Windows SmartScreen may
+   say "Windows protected your PC": choose **More info > Run anyway**.
+3. The welcome window offers a new canvas and lists the keys worth learning
+   first. The [quick start](docs/QUICK_START.md) covers drawing, layers,
+   saving, recovery and export.
 
-The sustained study passed, and the owner confirms working Artist 12 use and
-Explorer previews. Existing laptop installation/runtime results are retained.
-Remaining engineering/distribution details are recorded in
-[the checklist](RELEASE_CHECKLIST.md); no blanket repeat study is scheduled.
+Your artwork is saved in `Documents\Dudel`; settings and recovery snapshots stay
+in `%LOCALAPPDATA%\Dudel`. To remove Dudel, first choose **View > Settings >
+File Explorer previews > Remove .dudel previews** if you turned previews on, then
+delete this folder. Your projects stay where they are.
 
-To run the optional Windows DX12 study when leaving the PC idle, save your work
-and close Dudel first. Install Python 3.11+ with `python` in PATH, extract the
-package to a writable local folder with at least 8 GiB free, then run there:
+## Good to know
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\RunPerformanceStudy.ps1
-```
+- Save editable work as `.dudel`; export PNG, JPEG, WebP, BMP, GIF or PSD to
+  share it. [Format support](docs/FORMAT_SUPPORT.md) lists what Clip Studio
+  Paint and Photoshop imports keep.
+- [Release notes](RELEASE_NOTES.md) describe this version and its limits.
+- **View > Tablet input** shows the pressure Dudel receives from your pen.
 
-The script checks the frozen executable and supplied study tools, records
-CPU/RAM/GPU/driver information, and runs three standard sessions followed by a
-maximum-layer session lasting at least two hours. Allow four hours or more and
-keep a laptop plugged in with its lid open; do not suspend the PC. Reports stay in `diagnostics/target/qa/study-*`.
-For release performance evidence, leave the PC idle: movie playback, games,
-compilation and other foreground work can share CPU/GPU/memory and affect results.
-A concurrent-use run is exploratory; record the activity and repeat the acceptance
-study while idle. The synthetic study does not replace physical tablet acceptance.
-`-CheckOnly` validates prerequisites without starting; `-Mode Standard` or
-`-Mode Maximum` runs one part. The controller stops on failure, preserves reports
-and restores its temporary awake request. Keep results from different PCs separate.
+## Problems and feedback
 
-Dudel is GPL-3.0-only. Official executable downloads may be sold; you can build the
-matching source yourself. [SOURCE.md](SOURCE.md) identifies the corresponding source
-archive. [Distribution policy](DISTRIBUTION.md), [LICENSE](LICENSE) and
-[third-party notices](THIRD_PARTY_NOTICES.md) describe the supplied sources and terms.
+Use **Help > Report a problem…**, and include the version from
+**Help > About Dudel**, your Windows version, graphics and tablet drivers and
+the steps that lead to the problem. If Dudel closed unexpectedly, attach the
+newest file from **Help > Problem reports folder**. `BUILD.json` in this folder
+identifies the exact build.
+
+## License and source
+
+Dudel is free software under GPL-3.0-only ([LICENSE](LICENSE)). Official
+downloads may be sold; you can always build the matching source yourself.
+[SOURCE.md](SOURCE.md) names the matching source archive, and
+[third-party notices](THIRD_PARTY_NOTICES.md) list the components Dudel uses.
+See also the [distribution policy](docs/DISTRIBUTION.md).
+
+## Optional: performance study
+
+`RunPerformanceStudy.ps1` runs an unattended engineering study of several hours
+for developers who ask for one; it is not needed to use Dudel. It requires
+Python 3.11+ and 8 GiB of free space. Close Dudel first, then run
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\RunPerformanceStudy.ps1`
+in this folder (`-CheckOnly` checks the prerequisites without starting).
+Reports stay in `diagnostics\target\qa\study-*`.

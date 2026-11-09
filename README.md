@@ -56,7 +56,7 @@ display or tablet.
   or PNG frames; portable UI themes.
 - PNG import/export; one **Export image** window for PNG, JPEG, lossless WebP,
   BMP and GIF with a preview and *Export again*; layered PSD export and SVG export
-  of vector lines; [CSP and PSD import](FORMAT_SUPPORT.md) with editable layers
+  of vector lines; [CSP and PSD import](docs/FORMAT_SUPPORT.md) with editable layers
   (PSD shapes, gradient fills, layer effects and adjustment layers included) and
   clearly identified flattened fallbacks.
 
@@ -94,7 +94,7 @@ and run `./dudel`. Pen pressure needs a Wayland session.
 
 **Tested on** Windows 11 x64 (desktop RTX 3060 and an Intel UHD laptop) with an
 XP-Pen Artist 12. Minimum Windows, RAM and GPU requirements have not been
-established yet; see [tested systems](RELEASE_NOTES.md#tested-systems-and-prerequisites).
+established yet; see [tested systems](RELEASE_NOTES.md#tested-systems).
 
 ## First steps
 
@@ -123,7 +123,7 @@ Then:
 | Next / previous tab, close tab | **Ctrl+Tab** / **Ctrl+Shift+Tab**, **Ctrl+W** |
 | Hide or show the side panels | **Tab** |
 
-**Help > Keyboard shortcuts** lists every binding. The [quick start](QUICK_START.md)
+**Help > Keyboard shortcuts** lists every binding. The [quick start](docs/QUICK_START.md)
 walks through drawing, layers, selections, saving, recovery and export.
 
 ## Pen tablets and latency
@@ -137,22 +137,19 @@ queued frames adds roughly 35-50 ms on a 60 Hz screen. If your display shows
 brief tearing, untick **Low latency** in **View > Settings > Display > Graphics API and latency...** and
 restart; Dudel keeps your choice. The same window chooses OpenGL (default),
 DirectX 12 or Vulkan. With the stabilizer at 0 the stroke itself follows the pen
-exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind-the-pen).
+exactly; details are in the [quick start](docs/QUICK_START.md#if-the-line-lags-behind-the-pen).
 
 ## Documentation
 
 | I want to... | Read |
 |---|---|
-| Learn the app step by step | [Quick start](QUICK_START.md) |
-| See what this release contains and its boundaries | [Release notes](RELEASE_NOTES.md) |
-| Check which files Dudel opens and saves | [File format support](FORMAT_SUPPORT.md) · [Project format v4](PROJECT_FORMAT_V4.md) |
-| Use timelapse, themes, references and brush presets | [Creator features](CREATOR_FEATURES.md) |
-| Write or install extensions | [Plugin development](PLUGIN_DEVELOPMENT.md) · [Rhai SDK](plugins/SDK.md) · [WASM SDK](plugins/WASM_SDK.md) |
-| Check tablet validation | [XP-Pen Artist 12 record](XP_PEN_VALIDATION.md) |
-| Build, package and verify releases | [Distribution](DISTRIBUTION.md) · [Testing](TESTING.md) · [Release checklist](RELEASE_CHECKLIST.md) |
-| Follow the project's status and plans | [Release status](RELEASE_STATUS.md) · [0.2.0 plan](UPGRADE_PLAN.md) · [Workflow priorities](UX_WORKFLOW_PLAN.md) · [Historical 0.1 delivery plan](DELIVERY_PLAN.md) |
-| Track the Linux port | [Linux port](LINUX_PORT.md) |
-| Read engineering notes and measurements | [`research/`](research/) · [`benchmarks/`](benchmarks/) |
+| Learn the app step by step | [Quick start](docs/QUICK_START.md) |
+| See what changed and what the limits are | [Release notes](RELEASE_NOTES.md) |
+| Check which files Dudel opens and saves | [File format support](docs/FORMAT_SUPPORT.md) · [Export options](docs/EXPORT_OPTIONS.md) |
+| Use timelapse, themes and references | [Creator features](docs/CREATOR_FEATURES.md) |
+| Write or install extensions | [Plugin development](docs/PLUGIN_DEVELOPMENT.md) · [Rhai SDK](plugins/SDK.md) · [WASM SDK](plugins/WASM_SDK.md) |
+| Try Dudel and send feedback | [30-minute tester guide](docs/TESTER_GUIDE.md) |
+| Build, test or contribute | [Contributing](CONTRIBUTING.md) · [All documentation](docs/README.md) |
 
 ## Current limits
 
@@ -173,7 +170,7 @@ exactly; details are in the [quick start](QUICK_START.md#if-the-line-lags-behind
   workflows and universal format compatibility are not supported.
 - Windows x64 is the supported platform; Linux builds are experimental.
 
-See [release notes](RELEASE_NOTES.md#current-boundaries) for the full list.
+See [release notes](RELEASE_NOTES.md#known-limits) for the full list.
 
 ## Build from source
 
@@ -195,18 +192,22 @@ Development checks (Python 3.11+ is required for the script's extra checks):
 The script also enables a pre-push hook that refuses unformatted Rust and
 personal paths in tracked files. `.\scripts\Package.ps1` builds the binary and
 matching-source ZIPs with checksums and third-party notices; see
-[distribution](DISTRIBUTION.md). Linux instructions are in [testing](TESTING.md)
-and [the Linux port](LINUX_PORT.md).
+[distribution](docs/DISTRIBUTION.md). Linux instructions are in [testing](docs/dev/TESTING.md)
+and [the Linux port](docs/dev/LINUX_PORT.md).
 
 ## Reporting problems and contributing
 
-Trying Dudel for the first time? The [30-minute test](TESTER_GUIDE.md) says what to
-try and how to send feedback.
+Trying Dudel for the first time? The [30-minute test](docs/TESTER_GUIDE.md) says
+what to try and how to send feedback.
 
-Open an issue with the bug-report template. Include the version and build hash
-from `BUILD.json`, your Windows version, GPU and tablet drivers, display scaling,
-canvas and layer sizes, brush settings and the steps to reproduce on a disposable
-canvas. Run `.\scripts\Verify.ps1` before opening a pull request.
+To report a bug, use **Help > Report a problem…** in the app or open an issue
+with the bug-report template. Include the version from **Help > About Dudel**,
+your Windows version, graphics and tablet drivers, display scaling and the steps
+to reproduce it. If Dudel closed unexpectedly, attach the newest report from
+**Help > Problem reports folder**.
+
+Code contributions are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains how
+the project is organized and which checks to run.
 
 ## License
 

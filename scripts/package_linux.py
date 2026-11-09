@@ -1,7 +1,7 @@
 """Linux counterpart of Package.ps1: an executable tarball, matching source ZIP and
 SHA-256 sidecars under artifacts/releases/.
 
-Linux stays experimental: nothing here reads RELEASE_ACCEPTANCE.json, which covers
+Linux stays experimental: nothing here reads docs/release/RELEASE_ACCEPTANCE.json, which covers
 the Windows deliverables only. Needs cargo-zigbuild and zig on PATH, so the binary
 links against an old glibc instead of whatever the build machine has.
 
@@ -21,8 +21,8 @@ import tarfile
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 TARGET = "x86_64-unknown-linux-gnu"
-DOCUMENTS = ("QUICK_START.md", "RELEASE_NOTES.md", "LINUX_PORT.md", "DISTRIBUTION.md", "FORMAT_SUPPORT.md",
-             "CREATOR_FEATURES.md", "PLUGIN_DEVELOPMENT.md", "TESTING.md")
+DOCUMENTS = ("RELEASE_NOTES.md", "docs/QUICK_START.md", "docs/FORMAT_SUPPORT.md", "docs/EXPORT_OPTIONS.md",
+             "docs/CREATOR_FEATURES.md", "docs/PLUGIN_DEVELOPMENT.md", "docs/DISTRIBUTION.md", "docs/dev/LINUX_PORT.md")
 
 
 def run(*command):
@@ -109,7 +109,9 @@ def package(glibc):
     shutil.copy2(linux / "dudel.desktop", stage)
     shutil.copy2(linux / "install.sh", stage)
     for document in DOCUMENTS:
-        shutil.copy2(REPOSITORY / document, stage)
+        # Keep repository paths so links between documents still work.
+        (stage / document).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPOSITORY / document, stage / document)
     for license_file in REPOSITORY.glob("LICENSE*"):
         shutil.copy2(license_file, stage)
 
@@ -132,7 +134,7 @@ def package(glibc):
         "source_inputs": after,
         "cargo_config": {"path": ".cargo/config.toml", "sha256": cargo_config_before,
                          "text": cargo_config_path.read_bytes().decode("utf-8")},
-        "acceptance": "Experimental Linux build; RELEASE_DECISION.md covers Windows only. See LINUX_PORT.md for open checks.",
+        "acceptance": "Experimental Linux build; docs/release/RELEASE_DECISION.md covers Windows only. See docs/dev/LINUX_PORT.md for open checks.",
     }
     (stage / "BUILD.json").write_text(json.dumps(build, indent=2) + "\n", encoding="utf-8")
     metadata_file = Path(metadata["target_directory"]) / f"package-metadata-{name}.json"

@@ -1,11 +1,37 @@
-# Dudel 0.2.0 for Windows
+# Dudel release notes
+
+Windows x64 is the supported platform; Linux builds are experimental. Each
+release is a portable ZIP: extract it and run `dudel.exe` (see the
+[README](README.md#download-and-install)).
+
+## Unreleased
+
+- A **welcome window** on startup: start a new canvas, open a file or a recent
+  project, and see the few keys worth learning first. Untick *Show this window
+  when Dudel starts* to skip it; **Help > Welcome screen** brings it back.
+- If Dudel ever has to close because of an internal error, it now says so
+  instead of vanishing, keeps a short problem report and reminds you that
+  unsaved work can be restored from the recovery snapshot on the next start.
+  **Help > Problem reports folder** opens the reports; nothing is sent anywhere.
+- The **Help** menu links to the quick start guide, the problem report form and
+  the releases page (**Check for updates…**). Dudel still never connects to the
+  internet by itself.
+- Empty checkboxes and radio buttons are clearly visible in dark themes; before,
+  they blended into dialog backgrounds.
+- The main button of each dialog (Create canvas, Export…, Apply, and the action
+  in confirmations) is highlighted.
+- The Layers panel starts taller, showing more layers on laptop screens. The
+  Navigator no longer repeats the zoom and rotation sliders of the status bar.
+- Brush names in the pen quick menu are no longer cut short.
+- The blend mode list uses the whole window height, so every mode stays visible
+  wherever the Layers panel sits.
+
+## 0.2.0 (2026-11-09)
 
 Editable text, an export window that remembers its settings, and a quick menu
 under the pen. Projects with text layers are saved as format v8, which 0.1.0
 can't open; it refuses them instead of dropping the text. Everything else in
-0.1.0 is unchanged, and its notes follow below.
-
-## New in 0.2.0
+0.1.0 is unchanged.
 
 ### Text
 
@@ -58,7 +84,7 @@ can't open; it refuses them instead of dropping the text. Everything else in
 - Dropping or pasting a file that only looks like an image, such as a web page
   saved as `.webp`, now says so instead of reporting a decoding error.
 
-## Limits in 0.2.0
+### Limits in 0.2.0
 
 - Each text layer has one font, size and spacing; only bold, italic, underline,
   strikethrough and color can differ within it.
@@ -72,295 +98,63 @@ can't open; it refuses them instead of dropping the text. Everything else in
 - The export preview is reduced to 256 pixels, so fine detail can differ from
   the file. Only PNG keeps the project's DPI.
 
-# Dudel 0.1.0 for Windows
+## 0.1.0 (2026-11-05)
 
-A Windows illustration application. Release preparation is accepted using the
-existing automated, performance and owner workflow evidence, within the limits
-in [the release decision](RELEASE_DECISION.md). This document does not imply that
-the package has been uploaded to a public store.
+The first public pre-release.
 
-## Added in the 2026-11-04 rebuild of 0.1.0
+- **Drawing:** Pencil, Pen, Brush and Airbrush with pen pressure, pressure
+  curves and dynamics; a Smooth or Rope stabilizer; custom tips, paper grain,
+  scatter and tapers; Brush Studio with a test pad; low-latency drawing on by
+  default.
+- **Fill and shapes:** fill with *Fill to edges* and gap closing, lasso fill and
+  erase, mirror and radial symmetry, rulers, guides and a grid with snapping.
+- **Layers:** raster and vector layers, folders, clipping, blend modes (including
+  glow modes and Pass through), locks, layer masks, editable layer effects and
+  adjustment layers; up to 1,000 layers.
+- **Editing:** rectangle, lasso, polygon and magic wand selections; free
+  transform with distort, perspective and mesh; mirror-pair edits; editable
+  vector lines.
+- **Workflow:** tabs, command search (Ctrl+K), custom shortcuts, a preview
+  window, reference images and boards, timelapse recording with GIF and PNG
+  export, and UI themes.
+- **Files:** `.dudel` projects with atomic saves and crash recovery; PNG import
+  and export; layered PSD/PSB import and export; Clip Studio Paint import for
+  the subsets in [format support](docs/FORMAT_SUPPORT.md); SVG export of
+  vector lines.
+- **Extensions:** Rhai and WebAssembly filters and API 2 plugins for brush
+  presets, tool presets, commands and panels.
+- **Packaging:** a portable ZIP with the C runtime built in and optional
+  `.dudel` thumbnails in File Explorer.
 
-No earlier 0.1.0 build was published, so these changes are part of 0.1.0.
+## Known limits
 
-- Layer effects draw in the background and reuse regional drawings and recent
-  undo states. Large brush dabs use parallel row bands.
-- Native folder effects, fill opacity, satin, pattern overlays and pattern
-  strokes; a gradient editor with editable color/opacity stops.
-- Adjustment controls expose hue ranges, gradient-map middle stops and a Levels
-  histogram, with adjustment actions in the Layer menu.
-- Wider PSD/PSB import: 32-bit channels, Lab, indexed, bitmap, duotone and
-  multichannel images, artboards and pattern fills; faster PSD export and full
-  composites. These conversions retain the limits in [format support](FORMAT_SUPPORT.md).
-- Settings search and per-page reset, saved new-canvas presets and recent sizes.
-- Multi-layer selection with Ctrl/Shift-click and a Batch menu for visibility,
-  locks, stack movement, grouping and deletion. Each batch is atomic and undoable
-  in one step; filtered selections report hidden rows. Painting remains on the
-  active layer. See [Quick Start](QUICK_START.md) for folder and lock behavior.
-- Vector line editing with the Pointer: pick or lasso single lines, move, reshape
-  with a Reach, resize, taper, smooth, recolor and delete them, on native and CSP
-  strokes. The Eraser can stop at crossing lines.
-- Selections limit vector drawing and erasing; Fill can stop at vector line
-  centres and run under them; a box scales and rotates picked lines; and **File >
-  Export** (now a submenu) writes vector lines as SVG.
-- F resizes the brush, eraser or reshape Reach by moving the pen. The right-click
-  menu of the Layers panel now creates layers of every kind.
-- Clipped layers read as one block with their base in the Layers panel, and their
-  rows name it.
-- Custom shortcuts in **View > Settings > Shortcuts**, with conflict detection,
-  per-command/all-command defaults, unbinding and `.dudelkeys` profile import/export.
-  Menus, command search and tool hints share the saved bindings. Tool tap/hold
-  behavior and fixed clipboard/navigation/canvas gestures are retained.
-- Command search (`Ctrl+K` / `Ctrl+Shift+P`) with aliases, shortcut hints and
-  keyboard navigation; layer name/type filtering, compact rows and reveal-active;
-  an editing-target strip with explicit recovery actions. See the
-  [workflow improvement plan](UX_WORKFLOW_PLAN.md) for scope and validation.
-- Extension API 2 scripted tools and packaged brush tip/grain images, with
-  SDK example packages. Plugin update/version ordering remains unfinished.
-- The separately developed vector-layer work now retains native stroke recordings
-  and supported CSP vector strokes. Projects containing them use v7; PSD exports
-  their rendered pixels. These changes are separate from the two stabilization fixes.
+- Canvases are up to 16,384 pixels per side and 100 megapixels in total.
+  Documents hold up to 1,000 raster layers, 2,000 layer and folder entries and
+  ten folder levels, with 2 GiB of stored pixels including masks.
+- Newer projects need a matching Dudel: text layers need 0.2.0, and older
+  versions refuse such files instead of dropping what they can't read.
+- CSP and PSD import cover the subsets in [format support](docs/FORMAT_SUPPORT.md).
+  Unsupported content opens from the file's saved preview or composite and is
+  listed in **Import details**.
+- PSD export writes vector and text layers as pixels. SVG export holds vector
+  lines only.
+- There is no color management for print work.
+- Builds are not code-signed yet, so Windows SmartScreen may ask before the
+  first start (**More info > Run anyway**).
 
-- Stabilization fixes: reduced fill and inside effects share one soft edge;
-  scripted tools are limited to 4096 generated dabs per sampling update, with
-  an error and an undoable earlier stroke if the allowance is exceeded.
+## Tested systems
 
-The [stabilization plan](STABILIZATION_PLAN.md) records implementation and
-verification of these fixes. Current source checks
-are recorded separately from packaged-release evidence in [release status](RELEASE_STATUS.md).
+Dudel is tested on Windows 11 x64 with a desktop RTX 3060 and an Intel UHD
+laptop, and with an XP-Pen Artist 12 pen display. Minimum Windows, memory and
+graphics requirements have not been established yet; Windows 10, Windows on ARM
+and other tablets have not been tested. Linux builds pass automated checks but
+lack hands-on tablet testing. Reports from other systems are very welcome.
 
-## Rebuilt 0.1.0: imports, PSD export, effects and large documents (2026-10-31)
+## Reporting a problem
 
-- Selection options and the compact toolbar expose Transform selection directly.
-  Overlapping mirror pairs split ownership along the mirror line.
-- Guides settings use stable popup IDs and work after layer override changes
-  with both mouse clicks and same-frame taps.
-- New canvas has a live size preview, portrait/landscape/HD/A4 presets and rotation.
-  Settings now opens a scrollable window with four categories.
-- Extension API 2 contributes brushes, native tool presets, commands and panels,
-  with capability validation, namespaced IDs and an SDK example. API 1 stays supported.
-- CSP adds ordinary folders/clipping, standard blends, locks and Gray layers.
-  Animation files open on their saved frame with every cel kept as a layer.
-  Unsupported layers are skipped and listed instead of failing the import;
-  supported vector and text subsets are described below. Files that still fail offer an explicitly flattened
-  saved-preview import. PSD RGB import supports bounded editable subsets and a
-  reported saved-composite fallback.
-
-- Documents hold up to 1,000 raster layers, 2,000 entries and ten folder levels
-  (was 32 / 64 / six), with a 2 GiB stored-pixel budget. Such projects need this
-  version to open.
-- Large layer stacks stay responsive. Near 1,000 layers, adding a layer took up
-  to ~67 ms once the undo history filled and now takes ~6 ms. The Layers panel
-  draws only the rows on screen (a frame went from 12-18 ms to 3-6 ms), and a
-  full-resolution redraw of 990 small layers is about 11 times faster.
-  Thumbnails follow their layer when layers are added, removed or reordered,
-  instead of briefly showing their neighbours' pictures.
-- New blend modes: Dissolve, Color dodge (glow), Add (glow), and Pass through for
-  folders. CSP and PSD imports map them.
-- PSD export: File > Export > Export Photoshop document writes every layer and
-  folder with names, blend modes (glow modes included), opacity, clipping,
-  visibility, locks, masks and adjustment layers, plus the flattened image.
-  Layer effects stay editable as Photoshop layer styles; Export PSD for Live2D
-  draws them as separate layers instead, like Photoshop's Create Layers. CSP's
-  tone curves and Hue/Saturation/Luminosity become the closest Photoshop
-  adjustments. Exports open in Live2D Cubism, Affinity and Photopea.
-- PSD import accepts layers up to the full canvas limit (100 megapixels), not 64.
-- PSD import reads each file's own layer order. Some writers list layers top
-  first; groups decide it, and flat files are checked against the saved image.
-- Layer effects: **fx** in the layer properties adds editable drop and inner
-  shadows, outer and inner glows, strokes, color and gradient overlays, and bevel
-  and emboss. They follow the layer's pixels, save with the project, and appear in
-  exports. Such projects use the v6 header; older readers reject that header
-  instead of silently discarding effects or adjustments.
-- Adjustment layers: levels, curves, brightness/contrast, exposure,
-  hue/saturation, vibrance, color balance, black & white, photo filter, channel
-  mixer, selective color, gradient map, invert, posterize and threshold, from the
-  half-circle button in the layer toolbar or from PSD files. They recolor what
-  lies below them (or their clipping base), with a curves editor and sliders in
-  the Adjustment window.
-- PSD layer effects stay editable on ordinary layers, and become separate layers
-  (like Photoshop's Create Layers) on shape and fill layers and folders:
-  strokes, color and gradient overlays, drop and inner shadows, outer and inner
-  glows, bevel and emboss, also on folders. Satin and pattern effects are listed
-  in Import details instead.
-- CSP import reads image material layers (placed pictures), layers that extend
-  past the canvas, canvases set in inches or millimetres, layer masks on raster
-  layers, Tone Curve, Brightness/Contrast and Hue/Saturation/Luminosity correction
-  layers (as editable adjustment layers; the last also a new Dudel adjustment), text layers in
-  one style (drawn with the font they name), and files with color proofing
-  settings that are switched off. Vector layers are drawn from their strokes
-  as raster layers instead of being skipped; Layers-panel color labels no
-  longer skip layers. Screentone layers import with their dots drawn as CSP
-  draws round dots (even shading for other dot shapes and very fine tones),
-  with their CSP mask as an editable layer mask.
-- Photoshop large documents (`.psb`) open like `.psd` files, and CMYK files open with
-  their colors converted through the file's color profile. 16-bit files open with
-  their layers instead of as one flattened layer.
-- Canvases up to 16,384 px per side and 100 megapixels (10,000 x 10,000), up from
-  4096 x 4096, for new canvases, resizing and CSP/PSD/PNG imports. Mask-aware
-  projects share the full 2 GiB pixel budget. Import details text can be selected
-  and copied, or copied whole with Copy all.
-- Import details opens by itself only when a CSP or PSD import left something
-  out; other notes (timeline frame, animation cels, drawing aids) are behind the
-  Import details button in the status bar.
-
-See [format limits](FORMAT_SUPPORT.md) and [API 2](plugins/API_2.md). The 0.1.0
-binaries were rebuilt from this source; [the release decision](RELEASE_DECISION.md)
-lists the evidence on them. Universal CSP/PSD compatibility and a complete
-plugin platform are not claimed.
-
-## Use
-
-Extract the complete archive and run `dudel.exe`. See `QUICK_START.md` for drawing,
-native project saving, recovery and PNG export. `BUILD.json` identifies the exact
-executable, source inputs, toolchain and workspace state used by this package.
-Dudel is **portable**: there is no installer. Extract the zip anywhere, including a
-USB stick, and run `dudel.exe`. The Visual C++ runtime is built in, so nothing else
-needs installing. Artwork goes to `Documents\Dudel` (inside OneDrive if Documents is
-redirected). Settings and recovery snapshots stay in `%LOCALAPPDATA%\Dudel` on each PC.
-To remove Dudel, delete its folder; your projects stay. Extract before running:
-starting `dudel.exe` from inside the zip runs a temporary copy.
-
-Downloads are not code-signed yet. Windows SmartScreen may show "Windows protected
-your PC" on first launch: choose **More info > Run anyway**. Compare the zip's
-SHA-256 with the published `.sha256` file to confirm the download is intact.
-
-## Final 0.1.0 changes (2026-10-28)
-
-- **Low latency drawing is on by default.** Ink no longer trails the pen by the
-  two queued vsync frames the owner saw on the Artist 12. If a display tears,
-  untick **View > Settings > Display > Graphics API and latency... > Low latency** and restart; a saved
-  choice is kept.
-- The brush toolbar keeps the same layout in Smooth and Rope mode. Follow mode,
-  Rope distance and "Less smoothing on fast strokes" moved into the new
-  **Smooth / Rope** button, so turning Rope on no longer pushes Snap and Symmetry
-  out of view.
-- The shipped binaries no longer contain the build machine's folder paths, and
-  packaging refuses binaries or archives that do.
-
-## Recent workflow fixes
-
-- Dudel starts on PCs without Microsoft's Visual C++ runtime; it no longer fails
-  with error 0xC0000135.
-- Clicking a tool in the left rail always shows its settings, including on smaller
-  screens where they were hidden automatically.
-- Saving, opening and filter progress appear inside the status bar, so the bar and
-  canvas no longer jump while they run.
-- Canvases up to a full 4096 x 4096 (16.7 MP), enough for 4K artwork. This was 4.2 MP.
-- The brush library, brush settings, color wheel, navigator and layers areas can be
-  resized much further on small screens. Double-click a divider to reset it; sizes
-  are remembered.
-- Project tabs draw their close button inside the tab.
-- The status bar shows "Backup saved …" while there are unsaved changes, so you can
-  see that crash recovery has a copy. It is not a substitute for saving.
-- Opening, replacing or closing a large project now returns the previous document's
-  memory to Windows once the app settles. Idle memory no longer rises by up to
-  ~450 MiB after reopening a 32-layer project. The two-hour maximum-document study
-  now passes.
-- Transform dragging uses the full layer compositor when blending, clipping,
-  translucency, masks, upper layers or visible references make a separate mesh
-  misleading. Simple topmost Normal layers retain the instant mesh preview.
-- Transform properties scroll above Color in short panels, preventing help text
-  from painting across the color controls. Apply/Cancel remain in the toolbar.
-- View > Performance shows tracked CPU allocations across all open projects,
-  including parked documents and shared reference images, plus separate RGBA
-  texture estimates. The window scrolls on small screens; these figures are
-  allocation estimates rather than total process memory or committed VRAM.
-- [Current release status](RELEASE_STATUS.md) separates source improvements,
-  packaged candidates and the remaining acceptance gates.
-- Save as refuses a destination owned by another open project tab, preserving
-  that project's file and both tabs' editable state.
-- Global symmetry and ruler/grid snapping stay with their project when switching
-  or closing tabs; navigation alone does not create unsaved guide changes.
-- Brush preview cache checks hash dynamics directly, avoiding repeated JSON
-  allocation. This is a component optimization, not a drawing-latency claim.
-- The audience preview's Workspace background follows the customized canvas
-  surround color.
-
-Use the [candidate workflow checklist](CANDIDATE_TEST_CHECKLIST.md) for a short
-Artist 12 exercise before reporting feedback.
-
-## Stable adjustment dialogs
-
-Brightness/Contrast, Hue/Saturation and Levels keep their controls and preview
-status area in place while updates run. Slider adjustments no longer change the
-centered dialog's height, and the adjustment popup opens without a fade effect.
-Controls remain visible while the initial preview prepares; Apply waits for the
-current preview. Short windows retain scrolling and reachable action buttons.
-
-## Bucket edge fill
-
-The bucket now enables **Fill to edges** by default. It replaces the background
-contribution at soft pencil/pen borders rather than leaving a pale seam or
-painting over the outline. It supports transparent and flattened linework,
-separate reference layers, selections, opacity and Undo/Redo. Use **Fill options**
-in the toolbar for reference choice, edge fill, gap closing and expansion.
-
-Windows candidates also include `RunPerformanceStudy.ps1` for an unattended,
-build-identified DX12 study. See the packaged README for prerequisites and the
-one-command invocation. It is an engineering check, not release certification.
-
-## Current boundaries
-
-- Documents up to 16,384 px per side and 100 megapixels, up to 1,000 raster
-  layers, 2,000 layer/folder entries and ten folder levels. Raster pixels and
-  layer masks share a 2 GiB payload budget.
-- Native `.dudel` retains editable artwork; mask-aware projects need a compatible
-  reader. PNG export is a flattened sharing copy. Indexed `.didx` is experimental.
-- CSP and PSD import cover the subsets in [format support](FORMAT_SUPPORT.md).
-  No general CSP/PSD compatibility or color-managed print fidelity is claimed.
-- Scattered or mirrored vector lines cannot use a selection. SVG export leaves out
-  raster layers, masks, effects and brush texture. PSD export writes vector layers
-  as rendered pixels.
-- The October 21 sustained study passed. The owner confirms working Artist 12
-  use and Explorer previews on October 28. Precise physical latency, actual GPU
-  commitment and some native OS workflow details remain unclaimed; see current
-  release status for their scope and the evidence carried forward.
-- Dudel uses GPL-3.0-only. Paid executable downloads are planned; matching source
-  remains available to build yourself. See `DISTRIBUTION.md`, `SOURCE.md`,
-  `LICENSE` and `THIRD_PARTY_NOTICES.md` in the complete package.
-- Initial unsigned distribution is approved. Reviewed dependency notices are
-  retained; a universal minimum Windows/GPU specification is not claimed.
-  `DEPENDENCIES.json` is an inventory; actual collected
-  terms and provenance are indexed under `third-party-licenses/`.
-
-## Tested systems and prerequisites
-
-The Windows candidate is an x64 portable ZIP. Extract the complete folder before
-running it, and keep `dudel_thumbnails.dll` beside `dudel.exe` for optional Explorer
-previews. A separate Visual C++ runtime installation is not required. Python 3.11+
-is needed only for the optional engineering checks, not for drawing.
-
-These are tested configurations, not minimum specifications or blanket acceptance
-of the current candidate:
-
-| Configuration | Evidence and remaining limits |
-| --- | --- |
-| Windows 11 Pro 26200; Ryzen 5 3600X; approximately 40 GiB RAM; RTX 3060, driver 32.0.15.9579 | October 21 DX12 standard and two-hour maximum resource study passed on candidate `20261021-190309-093`. Current source `0d8e429` passes local automated checks and reviewed DX12/OpenGL captures. Changed rendering/timelapse resource behavior still needs acceptance measurements. |
-| Windows 11 Pro 26200; Core i5-10310U; 15.7 GB RAM; Intel UHD, driver 31.0.101.2114 | October 22 laptop round 2 (`20261022-170440-814`) passed launch, OpenGL/DX12 diagnostic sessions, save/reopen, recovery and portable use with the Visual C++ runtime uninstalled. This was a second Windows installation with other software installed, not a pristine machine. These remain historical compatibility results; the current candidate is being validated on the reference PC. No repeat laptop study is scheduled. |
-| XP-Pen Artist 12 | Owner confirms on October 28 that it works and has been tested repeatedly during development. This is accepted qualitative usability feedback; exact driver/scaling metadata and measured pen latency are not inferred. No repeat tablet session is scheduled. |
-| Ubuntu 24.04 hosted CI | Build/tests and X11 OpenGL startup checks pass on `0d8e429`. Linux remains experimental; physical tablet, Wayland and distribution acceptance are pending. |
-
-Minimum Windows version, RAM and GPU requirements have not been established.
-Windows 10, Windows ARM and other tablet models have no release acceptance in this
-record. The 2 GiB document payload limit is not the application's total RAM
-requirement; history, display resources and background file jobs use additional
-memory. A successful small-project startup does not establish dense-4K performance.
-
-Detailed evidence: [current status](RELEASE_STATUS.md),
-[desktop resource study](benchmarks/heap-compaction-study-20261021.json),
-[laptop results](research/CLEANPC_LAPTOP_2026-10-22.md) and
-[tablet validation](XP_PEN_VALIDATION.md).
-
-## Report a defect
-
-Record BUILD.json's version/hash, Windows version, GPU/driver, tablet/driver,
-display scaling, canvas/layer sizes, brush, steps, expected/actual behavior and
-whether it reproduces on a fresh disposable canvas. Attach a minimal fixture only
-when it contains no private artwork. Keep original projects and recovery copies.
-
-See [file format support](FORMAT_SUPPORT.md) for the native-version and restricted CSP import matrix.
-
-## Creator tools update
-
-Adds opt-in disk-backed artwork timelapse with pause/resume, reopening recordings and cancellable animated GIF export; persistent built-in/imported UI themes; compact reference selection and within-group ordering; and four textured/paint brush presets. Adds a plugin packaging/validation SDK and package sharing from the extension manager. Theme setup is cached and offscreen brush previews are skipped. Quick development verification is now the default; hosted Windows release checks explicitly retain Full mode. See CREATOR_FEATURES.md, PLUGIN_DEVELOPMENT.md and TESTING.md. Native latency, long recording sessions and Linux runtime acceptance remain separate gates.
+Use **Help > Report a problem…** or the
+[issue form](https://github.com/swimmingyoshi/dudel/issues/new/choose). Include
+the version from **Help > About Dudel**, your Windows version, graphics and
+tablet drivers, display scaling and the steps that lead to the problem. If Dudel
+closed unexpectedly, attach the newest file from **Help > Problem reports
+folder**. Attach artwork only if you're happy for it to be public.

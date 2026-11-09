@@ -1,9 +1,0 @@
-{
-  "observer_script": "scripts/Observe-Soak.ps1",
-  "native_pid": 39472,
-  "observation_log": "target\\qa\\maximum32-noise-job-peaks-20261017\\external-process-observations-v2.jsonl",
-  "positive_live_attach_and_memory_counter_check": true,
-  "existing_file_refused_and_preserved": true,
-  "scope": "Live isolated soak attachment, memory field sanity, syntax and existing-output preservation only; late external sampling cannot replace full native report or release acceptance.",
-  "release_gate_accepted": false
-}

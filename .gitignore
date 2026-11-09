@@ -8,11 +8,7 @@
 /research/private/
 __pycache__/
 
-# Raw sustained-session traces (9-13 MB each); summaries and plots are committed
-/benchmarks/*-sustained-100.json
-/benchmarks/sustained-native-release-*.json
-/benchmarks/sustained-native-dx12-normal-100.json
-/benchmarks/*.allocations.json
-/benchmarks/*.heapwalk.json
-/benchmarks/sustained-native-dx12-profile-100.json
+# Local measurement output. Evidence worth keeping goes to the project's
+# archive, not this repository.
+/benchmarks/
 /shell/thumbnails/target
