@@ -3683,6 +3683,38 @@ fn the_side_button_opens_a_ring_of_favorites_colors_and_commands() {
     assert!(!w.app.modified, "nothing on the ring touches the artwork");
 }
 
+#[cfg(windows)]
+#[test]
+fn the_windows_pen_side_button_opens_the_ring_once() {
+    let mut w = Workspace::new();
+    let center = w.app.canvas_area.center();
+    let ppp = w.ctx.pixels_per_point();
+    let px = [center.x * ppp, center.y * ppp];
+    // Windows gives the pen to winit as a touch, so egui sees no right-click
+    // of its own; the pen reader reports the side button instead. A driver
+    // that also sends a right-click must not close the ring straight away.
+    let echo = |pressed| egui::Event::PointerButton {
+        pos: center,
+        button: egui::PointerButton::Secondary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    w.app.input.test_side_button(true, px);
+    w.frame(vec![echo(true)]);
+    w.app.input.test_side_button(false, px);
+    w.frame(vec![echo(false)]);
+    w.settle();
+    let menu = w.app.quick_menu.expect("the side button opens the ring");
+    assert!(menu.center.distance(center) < 1.0, "under the pen");
+    // Pressing it again closes it.
+    w.app.input.test_side_button(true, px);
+    w.frame(vec![]);
+    w.app.input.test_side_button(false, px);
+    w.frame(vec![]);
+    w.settle();
+    assert!(w.app.quick_menu.is_none());
+}
+
 #[test]
 fn a_press_that_closes_the_ring_never_paints() {
     let mut w = Workspace::new();

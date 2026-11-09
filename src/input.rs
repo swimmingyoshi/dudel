@@ -17,6 +17,9 @@ pub struct Input {
     pub diagnostics: Diagnostics,
     #[cfg(any(windows, target_os = "linux"))]
     native: Option<crate::native_pen::Backend>,
+    /// Until when a driver's own right-click is the side button's echo.
+    #[cfg(windows)]
+    side_echo_until: f64,
     /// Tests stand in for a pen flipped to its eraser end.
     #[cfg(test)]
     pub(crate) test_eraser_in_range: bool,
@@ -31,6 +34,8 @@ impl Default for Input {
             diagnostics: Default::default(),
             #[cfg(any(windows, target_os = "linux"))]
             native: None,
+            #[cfg(windows)]
+            side_echo_until: f64::NEG_INFINITY,
             #[cfg(test)]
             test_eraser_in_range: false,
         }
@@ -97,6 +102,13 @@ impl Input {
         }
         None
     }
+    /// Tests stand in for the Windows pen's side button at `at` pixels.
+    #[cfg(all(test, windows))]
+    pub(crate) fn test_side_button(&mut self, pressed: bool, at: [f32; 2]) {
+        self.native
+            .get_or_insert_with(|| crate::native_pen::Backend::with_test_packets(vec![]))
+            .test_side_button(pressed, at);
+    }
     /// A pen hovering or touching with its eraser end.
     pub fn eraser_in_range(&self) -> bool {
         #[cfg(test)]
@@ -132,11 +144,42 @@ impl Input {
     /// Wayland stops emulating a pointer for the pen once its tablet seat is
     /// bound; give egui widgets the pen's pointer events instead.
     #[cfg(target_os = "linux")]
-    pub fn raw_input_hook(&mut self, raw_input: &mut eframe::egui::RawInput) {
+    pub fn raw_input_hook(&mut self, raw_input: &mut eframe::egui::RawInput, _: f32) {
         if let Some(native) = &mut self.native {
             let events = native.pointer_events(raw_input.modifiers);
             raw_input.events.extend(events);
         }
+    }
+
+    /// Windows gives pen messages to winit as touches, so the side button
+    /// never reaches egui as a right-click; add it from the pen reader.
+    #[cfg(windows)]
+    pub fn raw_input_hook(
+        &mut self,
+        raw_input: &mut eframe::egui::RawInput,
+        pixels_per_point: f32,
+    ) {
+        let Some(native) = &mut self.native else {
+            return;
+        };
+        let (events, busy) = native.side_button_events(pixels_per_point, raw_input.modifiers);
+        let now = raw_input.time.unwrap_or(0.0);
+        if busy {
+            self.side_echo_until = now + 0.4;
+        }
+        if busy || now < self.side_echo_until {
+            // A driver set to send a right-click as well would toggle twice.
+            raw_input.events.retain(|e| {
+                !matches!(
+                    e,
+                    Event::PointerButton {
+                        button: PointerButton::Secondary,
+                        ..
+                    }
+                )
+            });
+        }
+        raw_input.events.extend(events);
     }
     pub fn frame_packets(&mut self, events: &[Event], pixels_per_point: f32) -> Vec<Packet> {
         #[cfg(any(windows, target_os = "linux"))]

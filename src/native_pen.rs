@@ -29,6 +29,12 @@ struct Stream {
     failed: bool,
     last: Option<(u32, u32, u32)>,
     pressure: Option<f32>,
+    /// The side (barrel) button is held, hovering or touching.
+    barrel: bool,
+    /// Where the pen last was, in client pixels.
+    at: [f32; 2],
+    /// Side-button presses and releases for egui, in client pixels.
+    side: Vec<(bool, [f32; 2])>,
 }
 impl Stream {
     fn cancel(&mut self) {
@@ -67,6 +73,10 @@ impl Stream {
         {
             return;
         }
+        self.at = [sample.x, sample.y];
+        if sample.barrel != self.barrel {
+            self.press_side(sample.barrel);
+        }
         if flags & POINTER_FLAG_DOWN != 0 {
             // Windows marks barrel/right-button gestures as secondary input.
             // Leave their UI dispatch intact, but never start a paint stroke.
@@ -98,6 +108,20 @@ impl Stream {
             }
         }
         self.last = Some((id, frame, flags));
+    }
+    /// Windows hands pen messages to winit as touches, so egui never sees
+    /// the side button as a right-click; report it here instead.
+    fn press_side(&mut self, pressed: bool) {
+        self.barrel = pressed;
+        if self.side.len() < 64 {
+            self.side.push((pressed, self.at));
+        }
+    }
+    /// The pen left: let go of a held side button.
+    fn leave(&mut self) {
+        if self.barrel {
+            self.press_side(false);
+        }
     }
     fn resolve_pressure(&self, value: Option<f32>) -> (f32, bool) {
         match value {
@@ -149,6 +173,12 @@ impl Backend {
             }),
         }
     }
+    /// Tests stand in for the side button going down or up at `at` pixels.
+    #[cfg(test)]
+    pub(crate) fn test_side_button(&mut self, pressed: bool, at: [f32; 2]) {
+        self.state.stream.at = at;
+        self.state.stream.press_side(pressed);
+    }
     pub fn attach(cc: &eframe::CreationContext<'_>) -> Result<Self, String> {
         let handle = cc.window_handle().map_err(|e| e.to_string())?;
         let RawWindowHandle::Win32(handle) = handle.as_raw() else {
@@ -199,6 +229,34 @@ impl Backend {
     /// The pen near the screen is flipped to its eraser end.
     pub fn eraser_in_range(&self) -> bool {
         self.state.enabled && self.state.stream.in_range && self.state.stream.inverted
+    }
+    /// The side button as egui secondary-button events, in points, and
+    /// whether it is held or was used this frame.
+    pub fn side_button_events(
+        &mut self,
+        pixels_per_point: f32,
+        modifiers: eframe::egui::Modifiers,
+    ) -> (Vec<eframe::egui::Event>, bool) {
+        use eframe::egui::{Event, PointerButton, pos2};
+        let scale = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+            pixels_per_point
+        } else {
+            1.0
+        };
+        let side = std::mem::take(&mut self.state.stream.side);
+        let busy = self.state.stream.barrel || !side.is_empty();
+        let mut events = Vec::with_capacity(side.len() * 2);
+        for (pressed, [x, y]) in side {
+            let pos = pos2(x / scale, y / scale);
+            events.push(Event::PointerMoved(pos));
+            events.push(Event::PointerButton {
+                pos,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers,
+            });
+        }
+        (events, busy)
     }
     pub fn drain(&mut self, pixels_per_point: f32) -> (Vec<Packet>, bool, String) {
         let suppress = self.state.enabled
@@ -257,8 +315,10 @@ unsafe extern "system" fn callback(
             || (msg == WM_POINTERCAPTURECHANGED && state.stream.active == Some((w & 0xffff) as u32))
         {
             state.stream.cancel();
+            state.stream.leave();
             state.stream.in_range = false;
         } else if msg == WM_POINTERLEAVE {
+            state.stream.leave();
             state.stream.in_range = false;
             state.stream.inverted = false;
         } else if state.enabled && matches!(msg, WM_POINTERDOWN | WM_POINTERUPDATE | WM_POINTERUP) {
@@ -451,6 +511,32 @@ mod tests {
         assert_eq!(stream.active, None);
         stream.ingest(1, 2, POINTER_FLAG_DOWN | POINTER_FLAG_FIRSTBUTTON, sample);
         assert!(matches!(stream.queue[0], Packet::Start(_)));
+    }
+    #[test]
+    fn the_side_button_presses_once_per_hold_hovering_or_touching() {
+        let mut stream = Stream::default();
+        let at = |barrel, x| Sample {
+            x,
+            barrel,
+            ..Default::default()
+        };
+        stream.ingest(1, 1, POINTER_FLAG_INRANGE, at(false, 1.0));
+        stream.ingest(1, 2, POINTER_FLAG_INRANGE, at(true, 2.0));
+        // Tapping while it is held is the same press, not a second one.
+        stream.ingest(
+            1,
+            3,
+            POINTER_FLAG_DOWN | POINTER_FLAG_SECONDBUTTON,
+            at(true, 3.0),
+        );
+        stream.ingest(1, 4, POINTER_FLAG_UP, at(true, 3.0));
+        stream.ingest(1, 5, POINTER_FLAG_INRANGE, at(false, 4.0));
+        assert_eq!(stream.side, vec![(true, [2.0, 0.0]), (false, [4.0, 0.0])]);
+        assert!(stream.queue.is_empty(), "the side button never paints");
+        stream.side.clear();
+        stream.ingest(1, 6, POINTER_FLAG_INRANGE, at(true, 5.0));
+        stream.leave();
+        assert_eq!(stream.side, vec![(true, [5.0, 0.0]), (false, [5.0, 0.0])]);
     }
     #[test]
     fn missing_lift_pressure_holds_the_contact_force_but_zero_remains_zero() {

@@ -1178,8 +1178,8 @@ impl eframe::App for Dudel {
         if let Some(pointer) = self.capture.as_ref().and_then(|c| c.pointer) {
             raw_input.events.push(egui::Event::PointerMoved(pointer));
         }
-        #[cfg(target_os = "linux")]
-        self.input.raw_input_hook(raw_input);
+        #[cfg(any(windows, target_os = "linux"))]
+        self.input.raw_input_hook(raw_input, ctx.pixels_per_point());
         if self.dialogs.native_open() {
             // Nothing in the window answers a system dialog.
             raw_input.events.clear();
