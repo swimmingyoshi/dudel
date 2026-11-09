@@ -38,6 +38,9 @@ pub struct Preferences {
     /// How image exports are written.
     #[serde(default)]
     pub export: crate::export_options::ExportSettings,
+    /// The commands in the middle of the pen quick menu.
+    #[serde(default)]
+    pub quick_menu: crate::quick_menu::QuickMenuPrefs,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,
@@ -187,6 +190,9 @@ mod tests {
                 format: crate::export_options::Format::Jpeg,
                 quality: 70,
                 ..Default::default()
+            },
+            quick_menu: crate::quick_menu::QuickMenuPrefs {
+                actions: vec!["edit.undo".into()],
             },
             show_transparency: true,
             tools: ToolPrefs {

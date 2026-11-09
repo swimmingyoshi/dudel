@@ -218,6 +218,12 @@ to the layer below it. The Layers panel joins clipped rows to their base with a
 rail and an arrow. A clipped row reads "Clipped to" its base, and the base says
 how many layers are clipped above it.
 
+**Pen quick menu:** press the pen's side button (or right-click) on the canvas
+for a ring under the tip: your starred brushes around the outside, recent colors
+inside them and four commands in the middle. Star brushes in the brush library to
+add them; choose the commands in Settings > Drawing. Tap anything to use it, or
+tap outside or press Esc to close.
+
 **Masks:** **Add mask** under the layer properties adds one in a click: it shows
 everything, or only the selection when there is one, and you paint on it at once.
 **Mask actions** also adds one that hides everything. A masked layer shows its mask

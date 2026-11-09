@@ -33,13 +33,14 @@ separate proposal is in [docs/ANIMATION_PLAN.md](docs/ANIMATION_PLAN.md).
 2. **Export workflow.** Implemented in the development source: one Export image
    window with JPEG quality, a background color for flattening, transparency
    where the format keeps it, notes and a preview of the conversion, and Export
-   again for the project's last export. Preserve the
-   document snapshot and protect destinations on cancellation or failure. Track
-   detailed tasks in [docs/EXPORT_OPTIONS.md](docs/EXPORT_OPTIONS.md).
-3. **Pen quick menu.** Add a configurable, compact menu near the canvas/pen for
-   favorite brushes and a small set of common actions. Reuse existing favorite
-   brush data and commands; define tap targets, dismissal, placement and compact
-   window behavior in [UX_WORKFLOW_PLAN.md](UX_WORKFLOW_PLAN.md).
+   again for the project's last export. Exports keep their document snapshot
+   and protect destinations on cancellation or failure. Details in
+   [docs/EXPORT_OPTIONS.md](docs/EXPORT_OPTIONS.md).
+3. **Pen quick menu.** Implemented in the development source: the pen's side
+   button or a right-click opens a ring of starred brushes, recent colors and up
+   to four chosen commands under the tip. It reuses the library's favorites
+   and the command list. Targets, dismissal and placement are recorded in
+   [UX_WORKFLOW_PLAN.md](UX_WORKFLOW_PLAN.md); the owner's pen review remains.
 
 Named workspace layouts are a stretch goal after these priorities. Do not expand
 0.2.0 into editable animation, rich text, editable PSD text, broad format parity,

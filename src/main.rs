@@ -109,6 +109,7 @@ mod pattern;
 mod psd_export;
 mod psd_import;
 mod psd_vector;
+mod quick_menu;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
 mod background;
@@ -312,6 +313,9 @@ struct Dudel {
     text_edit: Option<text_tool::Editing>,
     text_drag: Option<text_tool::Drag>,
     text_style: text_options::Style,
+    /// The pen quick menu, while open, and the commands it offers.
+    quick_menu: Option<quick_menu::QuickMenu>,
+    quick_menu_prefs: quick_menu::QuickMenuPrefs,
     /// How the next image export is written; a preference.
     export_settings: export_options::ExportSettings,
     export_window: export_options::ExportWindow,
@@ -609,6 +613,8 @@ impl Default for Dudel {
             text_drag: None,
             text_style: Default::default(),
             export_settings: Default::default(),
+            quick_menu: None,
+            quick_menu_prefs: Default::default(),
             export_window: Default::default(),
             last_export: None,
             text_extents: Default::default(),
@@ -911,6 +917,7 @@ impl Dudel {
         self.recent_colors = p.recent_colors;
         self.text_style = p.text;
         self.export_settings = p.export.sanitized();
+        self.quick_menu_prefs = p.quick_menu.sanitized();
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
         // The current brush decides the group, so the two never disagree.
@@ -965,6 +972,7 @@ impl Dudel {
             recent_colors: self.recent_colors.clone(),
             text: self.text_style.clone(),
             export: self.export_settings,
+            quick_menu: self.quick_menu_prefs.clone(),
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
@@ -1921,6 +1929,7 @@ fn main() -> eframe::Result {
         || capture_mask_paste;
     let capture_canvas_size = mode.as_deref() == Some("--capture-canvas-size");
     let capture_export = mode.as_deref() == Some("--capture-export");
+    let capture_quick_menu = mode.as_deref() == Some("--capture-quick-menu");
     let capture_popup = match mode.as_deref() {
         Some("--capture-file-menu") => Some(capture::Popup::FileMenu),
         Some("--capture-view-menu") => Some(capture::Popup::ViewMenu),
@@ -1961,6 +1970,7 @@ fn main() -> eframe::Result {
         || capture_affine
         || capture_canvas_size
         || capture_export
+        || capture_quick_menu
         || capture_layer_mask
         || capture_adjustment
         || capture_popup.is_some()
@@ -2511,6 +2521,24 @@ fn main() -> eframe::Result {
                         rgba,
                     })
                     .expect("capture mask paste");
+                }
+                if capture_quick_menu {
+                    for index in [0, 1, 2, 3, 5, 6, 8] {
+                        if let Some(brush) = app.brushes.get_mut(index) {
+                            brush.favorite = true;
+                        }
+                    }
+                    app.recent_colors = vec![
+                        [32, 36, 48],
+                        [200, 60, 60],
+                        [240, 170, 60],
+                        [70, 140, 90],
+                        [70, 110, 200],
+                        [235, 225, 210],
+                    ];
+                    let screen =
+                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+                    app.open_quick_menu(screen.center() - egui::vec2(60.0, 0.0), screen);
                 }
                 if capture_export {
                     app.open_export_window(false);

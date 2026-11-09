@@ -145,15 +145,21 @@ measurements.
 
 ### Pen quick menu — release priority
 
-- [ ] Put a compact configurable menu near the canvas for favorite brushes and
-      a small set of common actions. Reuse existing favorite brushes and command
-      actions so the menu does not create a second source of truth.
-- [ ] Define pen-sized targets, placement near an edge/corner, open/close and
-      dismissal gestures, and behavior while drawing, panning or using a text
-      editor. Closed-menu input must pass through to the canvas normally.
-- [ ] Check keyboard focus, accessibility labels, project-tab isolation and
-      compact window sizes. The menu is preference/workspace UI state, not
-      artwork project data.
+- [x] A ring under the pen (owner's choices, 2026-11-08): the pen's side button
+      or a right-click on the canvas opens it. Starred brushes from the library
+      sit on the outer ring (up to 10; the ring grows so pills never overlap),
+      recent colors on the inner ring (up to 8), and up to four commands from the
+      ordinary command list in the middle, chosen in Settings > Drawing (Undo,
+      Redo, Eraser and Flip by default). No second copy of brushes or commands.
+- [x] Targets are 96x32 pills, 28 px swatches and 58x30 buttons. The ring opens
+      under the tip, pushed inward to stay on the canvas. Picking anything, a
+      press outside, Esc or the side button again closes it. It doesn't open
+      while drawing, typing text, transforming or dragging a selection or move.
+      While open the canvas takes no pen input, and the press that closes it is
+      swallowed until it lifts, so it never paints; closed, input passes through.
+- [x] Unavailable commands are greyed with their reason; swatches carry
+      accessibility labels; another project tab closes it; it is preference and
+      workspace state, never artwork. `--capture-quick-menu` screenshots it.
 - [ ] Owner's pen review on the current candidate before release.
 
 ### Export workflow — release priority

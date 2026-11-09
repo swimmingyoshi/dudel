@@ -421,7 +421,9 @@ impl Dudel {
         // Esc during IME composition belongs to the IME.
         let composing = self.text_edit.as_ref().is_some_and(|edit| edit.composing);
         if !composing && key(Modifiers::NONE, Key::Escape) {
-            if self.text_finishing() {
+            if self.quick_menu.is_some() {
+                self.close_quick_menu(false);
+            } else if self.text_finishing() {
                 self.keep_editing_text();
             } else if self.text_edit.is_some() || self.text_drag.is_some() {
                 self.cancel_text_edit();
@@ -546,6 +548,7 @@ impl Dudel {
             )
             .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
         self.text_editor(ctx);
+        self.quick_menu_ui(ctx);
         self.ask_about_held_transform();
         self.finish_navigator_paint(ctx);
     }
@@ -675,7 +678,13 @@ impl Dudel {
         let mut moved = false;
         // Text that is finishing is still the open edit: nothing else may
         // start on the canvas until it closes, a moment later.
-        let packets: &[input::Packet] = if self.text_finishing() { &[] } else { packets };
+        self.quick_menu_input(ctx, area, response.layer_id);
+        let packets: &[input::Packet] = if self.text_finishing() || self.quick_menu_blocks_canvas()
+        {
+            &[]
+        } else {
+            packets
+        };
         for packet in packets {
             let (sample, start, end) = match packet {
                 input::Packet::Start(s) => (*s, true, false),

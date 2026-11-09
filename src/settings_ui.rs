@@ -13,7 +13,7 @@ const PAGES: [(&str, &str, &str, &str); 5] = [
         "Drawing",
         "Drawing and pen input",
         "Brush-specific pressure and stabilization settings live in Brush Studio.",
-        "Use native pen input, stop recording timelapses for new canvases, and lock and snap to guides.",
+        "Use native pen input, stop recording timelapses for new canvases, lock and snap to guides, and put the default commands back in the pen quick menu.",
     ),
     (
         "Display",
@@ -45,6 +45,7 @@ enum Item {
     Theme,
     Extensions,
     NativePen,
+    QuickMenu,
     Timelapse,
     LockGuides,
     Snapping,
@@ -64,6 +65,7 @@ impl Item {
         Item::Theme,
         Item::Extensions,
         Item::NativePen,
+        Item::QuickMenu,
         Item::Timelapse,
         Item::LockGuides,
         Item::Snapping,
@@ -81,7 +83,11 @@ impl Item {
             | Item::ProjectLimit
             | Item::Theme
             | Item::Extensions => 0,
-            Item::NativePen | Item::Timelapse | Item::LockGuides | Item::Snapping => 1,
+            Item::NativePen
+            | Item::QuickMenu
+            | Item::Timelapse
+            | Item::LockGuides
+            | Item::Snapping => 1,
             Item::Graphics | Item::Performance => 2,
             Item::Folders => 3,
             #[cfg(windows)]
@@ -100,6 +106,9 @@ impl Item {
             Item::Theme => "choose customize theme colors dark light appearance",
             Item::Extensions => "manage extensions plugins add-ons filters install",
             Item::NativePen => "native pen input tablet wacom xp-pen windows ink pressure stylus",
+            Item::QuickMenu => {
+                "pen quick menu ring radial popup palette side barrel button right click favorite brushes colors"
+            }
             Item::Timelapse => "record timelapses new canvases speed paint",
             Item::LockGuides => "lock guide handles rulers symmetry",
             Item::Snapping => "snap strokes to guides rulers",
@@ -232,6 +241,12 @@ impl Dudel {
                     self.extension_manager = true;
                 }
             }
+            Item::QuickMenu => {
+                ui.add_space(4.0);
+                ui.strong("Pen quick menu");
+                self.quick_menu_settings_ui(ui);
+                ui.add_space(4.0);
+            }
             Item::NativePen => {
                 ui.checkbox(&mut self.input.native_requested, "Use native pen input");
                 ui.weak(&self.input.diagnostics.status);
@@ -293,6 +308,7 @@ impl Dudel {
                 self.timelapse.prefs.record_new = false;
                 self.guides_locked = true;
                 self.snapping = true;
+                self.quick_menu_prefs = Default::default();
             }
             2 => self.performance.open = false,
             4 => {

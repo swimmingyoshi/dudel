@@ -3634,6 +3634,120 @@ fn export_again_repeats_the_last_export_with_its_settings() {
     assert_eq!(w.app.last_export.as_ref().unwrap().settings, settings);
 }
 
+impl Workspace {
+    /// The pen's side button, or a right-click, at `at` on screen.
+    fn side_button(&mut self, at: egui::Pos2) {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame(vec![egui::Event::PointerMoved(at), button(true)]);
+        self.frame(vec![button(false)]);
+        self.settle();
+    }
+}
+
+#[test]
+fn the_side_button_opens_a_ring_of_favorites_colors_and_commands() {
+    let mut w = Workspace::new();
+    w.app.brushes[1].favorite = true;
+    w.app.brushes[2].favorite = true;
+    w.app.recent_colors = vec![[200, 30, 30], [30, 200, 30]];
+    let center = w.app.canvas_area.center();
+    w.side_button(center);
+    assert!(w.app.quick_menu.is_some(), "the side button opens it");
+    let name: String = w.app.brushes[2].name.chars().take(11).collect();
+    for label in [name.as_str(), "Undo", "Redo", "Eraser", "Flip"] {
+        let _ = w.text(label);
+    }
+    // A brush on the ring is chosen in one tap, and the ring closes.
+    w.click(w.text(&name));
+    w.settle();
+    assert_eq!(w.app.selected_brush, 2);
+    assert!(w.app.quick_menu.is_none());
+    // Commands in the middle run like their menu items.
+    w.side_button(center);
+    let mirrored = w.app.mirror;
+    w.click(w.text("Flip"));
+    w.settle();
+    assert_ne!(w.app.mirror, mirrored);
+    // Esc and the side button again close it, choosing nothing.
+    w.side_button(center);
+    w.key(egui::Key::Escape, Default::default());
+    assert!(w.app.quick_menu.is_none());
+    w.side_button(center);
+    w.side_button(center);
+    assert!(w.app.quick_menu.is_none());
+    assert!(!w.app.modified, "nothing on the ring touches the artwork");
+}
+
+#[test]
+fn a_press_that_closes_the_ring_never_paints() {
+    let mut w = Workspace::new();
+    let center = w.app.canvas_area.center();
+    w.side_button(center);
+    let menu = w.app.quick_menu.unwrap();
+    let before = w.app.doc.layers[w.app.doc.active].pixels.clone();
+    let can_undo = w.app.history.can_undo();
+    // Far outside the ring, a real stroke: press, drag and lift.
+    let away = menu.center + egui::vec2(-260.0, 120.0);
+    let sample = |p: egui::Pos2| crate::stroke::Sample {
+        x: p.x,
+        y: p.y,
+        pressure: 1.0,
+        ..Default::default()
+    };
+    let button = |pressed| egui::Event::PointerButton {
+        pos: away,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    use crate::input::Packet;
+    w.frame_packets(
+        vec![egui::Event::PointerMoved(away), button(true)],
+        &[Packet::Start(sample(away))],
+    );
+    let along = away + egui::vec2(40.0, 10.0);
+    w.frame_packets(
+        vec![egui::Event::PointerMoved(along)],
+        &[Packet::Move(sample(along))],
+    );
+    w.frame_packets(vec![button(false)], &[Packet::End(sample(along))]);
+    w.settle();
+    finish_jobs(&mut w.app);
+    assert!(w.app.quick_menu.is_none(), "a press outside closes it");
+    assert!(
+        w.app.doc.layers[w.app.doc.active].pixels == before,
+        "and paints nothing"
+    );
+    assert_eq!(w.app.history.can_undo(), can_undo);
+}
+
+#[test]
+fn the_ring_picks_a_recent_color_and_stays_shut_while_typing() {
+    let mut w = Workspace::new();
+    w.app.recent_colors = vec![[200, 30, 30], [30, 200, 30]];
+    let center = w.app.canvas_area.center();
+    w.side_button(center);
+    let menu = w.app.quick_menu.unwrap();
+    // The first recent color sits at the top of the inner ring.
+    w.click(menu.center - egui::vec2(0.0, 86.0));
+    w.settle();
+    assert_eq!(w.app.color, [200, 30, 30]);
+    assert!(w.app.quick_menu.is_none());
+    // Not while text is being typed: the side button belongs to it.
+    w.app.text_style.font = crate::text_render::TEST_FONT.into();
+    w.key(egui::Key::T, egui::Modifiers::NONE);
+    w.settle();
+    w.press_text_tool([40.0, 40.0], [40.0, 40.0]);
+    assert!(w.app.text_edit.is_some());
+    w.side_button(center);
+    assert!(w.app.quick_menu.is_none());
+}
+
 #[test]
 fn toolbar_symmetry_popup_stays_open_while_its_label_grows() {
     // These widths fit the bar with "Symmetry" but not "Symmetry: Four-way";
