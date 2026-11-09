@@ -188,7 +188,10 @@ impl Dudel {
             ui.label(&confirm.text);
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                if ui.button(confirm.action).clicked() {
+                if ui
+                    .add(crate::workspace::primary_button(ui, confirm.action))
+                    .clicked()
+                {
                     answer = Some(true);
                 }
                 if ui.button("Cancel").clicked() {

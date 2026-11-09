@@ -134,7 +134,9 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
         style.visuals.extreme_bg_color = surface(-12);
         style.visuals.faint_bg_color = surface(-5);
         style.visuals.widgets.noninteractive.bg_fill = surface(0);
-        style.visuals.widgets.inactive.bg_fill = surface(-8);
+        // Checkboxes, radio buttons and slider rails use `bg_fill`; buttons
+        // use `weak_bg_fill`. A deeper well keeps empty boxes visible.
+        style.visuals.widgets.inactive.bg_fill = surface(-34);
         style.visuals.widgets.inactive.weak_bg_fill = surface(-8);
         style.visuals.widgets.hovered.bg_fill = surface(8);
         style.visuals.widgets.hovered.weak_bg_fill = surface(8);
@@ -144,6 +146,15 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
         style.visuals.widgets.open.weak_bg_fill = surface(4);
     }
     let rgb = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+    if theme.dark {
+        // Unchecked checkboxes and radio buttons use `bg_fill`. egui's grey
+        // matched the dialog color, so empty boxes disappeared in dialogs.
+        // Lift it clearly above both panels and windows; buttons keep
+        // `weak_bg_fill`, so their look is unchanged.
+        let base = theme.panel.iter().zip(theme.window).map(|(&a, b)| a.max(b));
+        let lifted: Vec<u8> = base.map(|v| v.saturating_add(34)).collect();
+        style.visuals.widgets.inactive.bg_fill = rgb([lifted[0], lifted[1], lifted[2]]);
+    }
     style.visuals.panel_fill = rgb(theme.panel);
     style.visuals.window_fill = rgb(theme.window);
     style.visuals.selection.bg_fill = rgb(theme.accent);

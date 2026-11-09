@@ -209,8 +209,8 @@ impl Dudel {
         self.heap_compact_pending = true;
     }
     /// A replaced or closed document frees thousands of 256 KiB tiles inside
-    /// the process heap, which can keep those pages committed (see
-    /// research/MAX32_HEAP_RETENTION_2026-10-20.md). Once workers no longer hold
+    /// the process heap, which can keep those pages committed (measured with
+    /// the maximum 32-layer study, 2026-10-20). Once workers no longer hold
     /// the old document, ask the heap to coalesce and decommit large free blocks.
     pub(crate) fn compact_heap_when_settled(&mut self) {
         if !self.heap_compact_pending

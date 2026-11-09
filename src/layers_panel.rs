@@ -130,11 +130,10 @@ pub(crate) fn blend_selector(ui: &mut egui::Ui, current: BlendMode, folder: bool
         )
         .on_hover_text("Blend mode · scroll or press Up/Down to step through modes");
     let popup = response.id.with("blend list");
-    // Compact rows, and all the room on the side the list opens before it
-    // scrolls, so the whole set is visible at once on ordinary screens.
-    let screen = ui.ctx().content_rect();
-    let room =
-        (response.rect.top() - screen.top()).max(screen.bottom() - response.rect.bottom()) - 24.0;
+    // Compact rows, and the window's height before it scrolls, so the whole
+    // set is visible at once on ordinary screens. A list taller than the room
+    // on either side of the box is kept on screen and may cover the box.
+    let room = ui.ctx().content_rect().height() - 48.0;
     egui::Popup::menu(&response)
         .id(popup)
         .width(response.rect.width().max(170.0))

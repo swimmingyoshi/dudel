@@ -41,6 +41,9 @@ pub struct Preferences {
     /// The commands in the middle of the pen quick menu.
     #[serde(default)]
     pub quick_menu: crate::quick_menu::QuickMenuPrefs,
+    /// Open the welcome window at startup.
+    #[serde(default = "default_welcome")]
+    pub welcome: bool,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,
@@ -111,6 +114,9 @@ fn default_secondary() -> [u8; 3] {
     [255, 255, 255]
 }
 fn default_native_pen() -> bool {
+    true
+}
+fn default_welcome() -> bool {
     true
 }
 
@@ -194,6 +200,7 @@ mod tests {
             quick_menu: crate::quick_menu::QuickMenuPrefs {
                 actions: vec!["edit.undo".into()],
             },
+            welcome: false,
             show_transparency: true,
             tools: ToolPrefs {
                 brush_group: crate::brush::BrushGroup::Airbrush,
@@ -233,6 +240,7 @@ mod tests {
         assert_eq!(restored.brushes[0].size, 42.0);
         assert_eq!(restored.selected_brush, 0);
         assert!(restored.show_transparency);
+        assert!(!restored.welcome);
         assert!(restored.tools == p.tools);
         assert!(!restored.storage.beside_project);
         assert!(restored.preview.show_pointer && restored.preview.hide_references);

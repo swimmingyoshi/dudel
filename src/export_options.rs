@@ -275,7 +275,9 @@ impl Dudel {
                 ));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    export = ui.button("Export…").clicked();
+                    export = ui
+                        .add(crate::workspace::primary_button(ui, "Export…"))
+                        .clicked();
                     cancel = ui.button("Cancel").clicked();
                 });
             });

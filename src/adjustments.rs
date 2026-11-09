@@ -931,7 +931,7 @@ impl Dudel {
                         ui.small("Adjusts the selected layer inside the selection. Transparency is preserved. Apply creates one undo step.");
                     });
             ui.horizontal(|ui| {
-                apply = ui.add_enabled(preview.ready(), egui::Button::new("Apply")).clicked();
+                apply = ui.add_enabled(preview.ready(), crate::workspace::primary_button(ui, "Apply")).clicked();
                 if ui.button("Reset").clicked() { preview.settings = preview.settings.kind().defaults(); preview.error = None; }
                 cancel = ui.button("Cancel").clicked();
             });

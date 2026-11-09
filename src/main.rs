@@ -115,6 +115,7 @@ use wayland_pen as native_pen;
 mod background;
 mod command_search;
 mod commands;
+mod crash_report;
 mod editing_feedback;
 mod layer_batch;
 mod layer_menu;
@@ -191,6 +192,7 @@ mod wand;
 mod wasm_filters;
 #[cfg(target_os = "linux")]
 mod wayland_pen;
+mod welcome;
 mod window_chrome;
 #[cfg(test)]
 mod workflow_tests;
@@ -512,6 +514,10 @@ struct Dudel {
     tip_cursor: tip_cursor::TipTexture,
     /// Dropped projects waiting to open, one tab each.
     pending_opens: Vec<PathBuf>,
+    /// The welcome window is showing.
+    welcome_open: bool,
+    /// Open the welcome window when Dudel starts (a preference).
+    show_welcome: bool,
 }
 
 impl Default for Dudel {
@@ -759,6 +765,8 @@ impl Default for Dudel {
             tabs: Default::default(),
             pending_opens: Vec::new(),
             tip_cursor: Default::default(),
+            welcome_open: false,
+            show_welcome: true,
         }
     }
 }
@@ -921,6 +929,7 @@ impl Dudel {
         self.text_style = p.text;
         self.export_settings = p.export.sanitized();
         self.quick_menu_prefs = p.quick_menu.sanitized();
+        self.show_welcome = p.welcome;
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
         // The current brush decides the group, so the two never disagree.
@@ -976,6 +985,7 @@ impl Dudel {
             text: self.text_style.clone(),
             export: self.export_settings,
             quick_menu: self.quick_menu_prefs.clone(),
+            welcome: self.show_welcome,
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
@@ -1356,6 +1366,23 @@ impl eframe::App for Dudel {
 }
 
 fn main() -> eframe::Result {
+    // A plain launch is an artist's session: keep a report of any panic and,
+    // if one closes the window, say so instead of vanishing. Command-line
+    // and diagnostic modes report on stderr as before.
+    if std::env::args_os().len() > 1 {
+        return run();
+    }
+    crash_report::install();
+    match std::panic::catch_unwind(run) {
+        Ok(result) => result,
+        Err(_) => {
+            crash_report::tell_artist();
+            std::process::exit(101);
+        }
+    }
+}
+
+fn run() -> eframe::Result {
     let mut args = std::env::args().skip(1);
     let mode = args.next();
     if mode.as_deref() == Some("--check-plugin") {
@@ -1889,6 +1916,7 @@ fn main() -> eframe::Result {
     let capture_extensions = mode.as_deref() == Some("--capture-extensions");
     let capture_settings = mode.as_deref() == Some("--capture-settings");
     let capture_shortcuts = mode.as_deref() == Some("--capture-shortcuts");
+    let capture_welcome = mode.as_deref() == Some("--capture-welcome");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -1956,6 +1984,7 @@ fn main() -> eframe::Result {
         || capture_extensions
         || capture_settings
         || capture_shortcuts
+        || capture_welcome
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2624,6 +2653,12 @@ fn main() -> eframe::Result {
                 if capture_settings {
                     app.settings_open = true;
                 }
+                if capture_welcome {
+                    app.welcome_open = true;
+                    app.recent = ["Portrait study.dudel", "Comic page 12.dudel"]
+                        .map(PathBuf::from)
+                        .to_vec();
+                }
                 if capture_shortcuts || capture_shortcut_conflict {
                     app.settings_open = true;
                     app.settings_section = 4;
@@ -2734,6 +2769,8 @@ fn main() -> eframe::Result {
                 }
                 app.display_settings = display;
                 app.display_active = display_settings::active_description(cc);
+                // Recovery asks first; the welcome window can wait for Help.
+                app.welcome_open = app.show_welcome && !app.recovery_window;
                 app.experimental_indexed_storage = experimental_indexed_storage;
                 #[cfg(any(windows, target_os = "linux"))]
                 app.input.attach(cc);

@@ -17,7 +17,7 @@ const MOST_COLORS: usize = 8;
 /// Where the rings run, from the tip, and the size of what sits on them.
 const BRUSH_RING: f32 = 138.0;
 const COLOR_RING: f32 = 86.0;
-const BRUSH_SIZE: egui::Vec2 = egui::vec2(96.0, 32.0);
+const BRUSH_SIZE: egui::Vec2 = egui::vec2(112.0, 32.0);
 const COLOR_SIZE: f32 = 28.0;
 const ACTION_SIZE: egui::Vec2 = egui::vec2(58.0, 30.0);
 /// How far out the brushes run: further for more of them, so that the
@@ -244,10 +244,17 @@ impl Dudel {
                     if ui
                         .put(
                             egui::Rect::from_center_size(at, BRUSH_SIZE),
-                            egui::Button::new(brush.name.as_str())
-                                .selected(selected)
-                                .corner_radius(16.0)
-                                .wrap_mode(egui::TextWrapMode::Truncate),
+                            // Longer names step down a size so most fit whole.
+                            egui::Button::new(egui::RichText::new(brush.name.as_str()).size(
+                                if brush.name.chars().count() > 10 {
+                                    12.5
+                                } else {
+                                    14.0
+                                },
+                            ))
+                            .selected(selected)
+                            .corner_radius(16.0)
+                            .wrap_mode(egui::TextWrapMode::Truncate),
                         )
                         .on_hover_text(&brush.name)
                         .clicked()

@@ -47,19 +47,10 @@ impl Dudel {
                     + 2.0 * ui.spacing().button_padding.y,
             )
             .max(30.0);
-        let full_controls = 10.0 + 3.0 * row_height + 4.0 * ui.spacing().item_spacing.y;
-        let compact = maximum_height < 80.0 + full_controls;
-        let inline_zoom = !compact
-            || maximum_height >= 48.0 + 10.0 + 2.0 * row_height + 3.0 * ui.spacing().item_spacing.y;
-        let controls = if compact {
-            if inline_zoom {
-                10.0 + 2.0 * row_height + 3.0 * ui.spacing().item_spacing.y
-            } else {
-                10.0 + row_height + 2.0 * ui.spacing().item_spacing.y
-            }
-        } else {
-            full_controls
-        };
+        // Zoom and rotation live in the status bar; the navigator keeps one
+        // row of view buttons, or a menu when the area is too short for it.
+        let controls = 10.0 + row_height + 2.0 * ui.spacing().item_spacing.y;
+        let compact = maximum_height < 80.0 + controls;
         let height = self
             .navigator_height
             .unwrap_or(((width - MARGIN) / aspect + MARGIN).min(280.0))
@@ -135,23 +126,14 @@ impl Dudel {
             }
             crate::workspace::SplitDrag::None => {}
         }
-        if inline_zoom {
-            self.zoom_controls(ui, ui.available_width() - 150.0);
-        }
         if compact {
-            ui.menu_button("View options", |ui| {
-                if !inline_zoom {
-                    self.zoom_controls(ui, ui.available_width() - 150.0);
-                }
-                self.navigator_view_controls(ui);
-            });
+            ui.menu_button("View options", |ui| self.navigator_view_controls(ui));
         } else {
             self.navigator_view_controls(ui);
         }
     }
 
     fn navigator_view_controls(&mut self, ui: &mut egui::Ui) {
-        self.rotation_controls(ui, ui.available_width() - 150.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if icons::button(ui, Icon::Fit, 30.0, self.auto_fit, true)

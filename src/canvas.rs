@@ -650,6 +650,7 @@ impl Dudel {
         let modal = self.new_canvas
             || self.input_settings
             || self.recovery_window
+            || self.welcome_open
             || self.adjustment.is_some()
             || self.adjustment_ticket.is_some()
             || self.canvas_resize.is_some();

@@ -280,6 +280,12 @@ pub(crate) fn section(title: &str) -> egui::CollapsingHeader {
     egui::CollapsingHeader::new(section_title(title)).default_open(true)
 }
 
+/// A dialog's main action, filled with the accent color so it stands apart
+/// from Cancel.
+pub(crate) fn primary_button(ui: &egui::Ui, text: &str) -> egui::Button<'static> {
+    egui::Button::new(egui::RichText::new(text).strong()).fill(ui.visuals().selection.bg_fill)
+}
+
 /// Horizontal divider grip between two stacked panel areas. Returns the
 /// vertical drag distance this frame.
 /// What a split handle did this frame.
@@ -798,7 +804,38 @@ impl Dudel {
         });
         self.open_capture_popup(&view_menu, crate::capture::Popup::ViewMenu);
         bounded_menu(ui, "Help", |ui| {
+            if menu_item(ui, "Welcome screen", "", true) {
+                self.welcome_open = true;
+            }
+            if menu_item(ui, "Quick start guide", "", true) {
+                ui.ctx()
+                    .open_url(egui::OpenUrl::new_tab(crate::welcome::GUIDE));
+            }
             self.command_menu_item(ui, crate::commands::Action::Shortcuts);
+            ui.separator();
+            if menu_item(ui, "Report a problem…", "", true) {
+                ui.ctx()
+                    .open_url(egui::OpenUrl::new_tab(crate::crash_report::ISSUES));
+            }
+            let reports = crate::crash_report::folder().filter(|folder| folder.is_dir());
+            if menu_item(ui, "Problem reports folder", "", reports.is_some())
+                && let Some(folder) = &reports
+                && let Err(error) = crate::locations::reveal(folder)
+            {
+                self.status = error;
+            }
+            let updates = ui
+                .add(egui::Button::new("Check for updates…"))
+                .on_hover_text(format!(
+                    "Opens the releases page in your browser. You have version {}.                      Dudel never connects to the internet by itself.",
+                    env!("CARGO_PKG_VERSION")
+                ));
+            if updates.clicked() {
+                ui.close();
+                ui.ctx()
+                    .open_url(egui::OpenUrl::new_tab(crate::welcome::RELEASES));
+            }
+            ui.separator();
             if menu_item(ui, "About Dudel", "", true) {
                 self.about_window = true;
             }
@@ -1968,10 +2005,12 @@ impl Dudel {
                                     if tool_panel {
                                         // Color is in the left panel: layers
                                         // take the room under the navigator.
-                                        return (total - 400.0).max(total * 0.5);
+                                        return (total - 320.0).max(total * 0.55);
                                     }
-                                    let rows = self.doc.layers.len().min(8) as f32;
-                                    (150.0 + rows * 50.0).min(total * 0.5)
+                                    // The controls above the rows take about
+                                    // 220 px; leave room for several rows too.
+                                    let rows = self.doc.layers.len().clamp(3, 8) as f32;
+                                    (220.0 + rows * 48.0).min(total * 0.6)
                                 })
                                 .clamp(minimum, (total - 140.0).max(minimum));
                             egui::TopBottomPanel::bottom("layers area")
@@ -2018,6 +2057,7 @@ impl Dudel {
         }
         self.shortcuts_ui(ctx);
         self.about_ui(ctx);
+        self.welcome_ui(ctx);
         self.extension_manager_ui(ctx);
         self.import_report_ui(ctx);
         self.extension_panels_ui(ctx);

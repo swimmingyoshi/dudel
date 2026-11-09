@@ -211,7 +211,7 @@ impl crate::Dudel {
             let valid = settings.validate();
             if let Err(error) = &valid { ui.colored_label(ui.visuals().error_fg_color, error); }
             ui.horizontal(|ui| {
-                apply = ui.add_enabled(valid.is_ok() && ([settings.width,settings.height] != [self.doc.width,self.doc.height] || settings.dpi.is_some_and(|dpi| dpi != self.doc.dpi)), egui::Button::new("Apply")).clicked();
+                apply = ui.add_enabled(valid.is_ok() && ([settings.width,settings.height] != [self.doc.width,self.doc.height] || settings.dpi.is_some_and(|dpi| dpi != self.doc.dpi)), crate::workspace::primary_button(ui, "Apply")).clicked();
                 cancel = ui.button("Cancel").clicked();
             });
         });

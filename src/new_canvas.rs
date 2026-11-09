@@ -373,7 +373,7 @@ impl Dudel {
                 create = ui
                     .add_enabled(
                         dimensions.is_ok() && self.new_canvas_form.resolution().is_ok() && !self.tab_open_pending(),
-                        egui::Button::new("Create canvas"),
+                        crate::workspace::primary_button(ui, "Create canvas"),
                     )
                     .clicked();
                 let button = ui.button("Cancel").on_hover_text("Esc");
