@@ -4593,7 +4593,11 @@ fn the_wheel_over_the_font_button_steps_through_fonts_and_the_list_scrolls() {
     w.settle();
     assert_eq!(family(&w), Some(families[0].name.clone()));
 
-    // The open list scrolls with the wheel as well.
+    // The open list scrolls with the wheel as well, once it has more fonts
+    // than fit (a bare CI machine has only a few).
+    if families.len() as f32 * crate::text_options::LIST_ROW <= crate::text_options::LIST_HEIGHT {
+        return;
+    }
     let label: String = families[0].name.chars().take(22).collect();
     let button = w.text(&label);
     w.click(button);

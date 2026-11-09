@@ -9,6 +9,10 @@ use crate::{
 use std::collections::HashMap;
 
 const PREVIEW_SIZE: [usize; 2] = [300, 28];
+/// One row of the open font list, and the most of the list shown before it
+/// scrolls.
+pub(crate) const LIST_ROW: f32 = PREVIEW_SIZE[1] as f32 + 4.0;
+pub(crate) const LIST_HEIGHT: f32 = 320.0;
 /// Font previews kept before they are all dropped and redrawn on demand.
 const PREVIEW_LIMIT: usize = 256;
 /// Font previews drawn per frame, so that scrolling the list stays smooth.
@@ -674,9 +678,9 @@ impl Dudel {
         }
         let current = text_render::family_of(&style.font).map(|(family, _)| family.name.as_str());
         let mut budget = PREVIEWS_PER_FRAME;
-        let height = PREVIEW_SIZE[1] as f32 + 4.0;
+        let height = LIST_ROW;
         egui::ScrollArea::vertical()
-            .max_height(320.0)
+            .max_height(LIST_HEIGHT)
             .auto_shrink([false, false])
             .show_rows(ui, height, found.len(), |ui, rows| {
                 #[cfg(test)]
