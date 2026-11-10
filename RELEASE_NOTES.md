@@ -33,6 +33,10 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   there as before.
 - The Layers panel starts taller, showing more layers on laptop screens. The
   Navigator no longer repeats the zoom and rotation sliders of the status bar.
+- **Color ideas:** **Palette > Extract from canvas** (or **from layer**) finds
+  the main colors of the artwork, or of the selection, and the palette suggests
+  shading ramps and related hues built from the current color. Suggestions
+  become swatches only when you save them.
 - Brush names in the pen quick menu are no longer cut short.
 - The blend mode list uses the whole window height, so every mode stays visible
   wherever the Layers panel sits.
