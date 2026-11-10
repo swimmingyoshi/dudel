@@ -186,6 +186,43 @@ pub(crate) fn fill(
 
 /// Paint antialiased shape coverage into a mask with the same selection math as
 /// opaque, alpha-locked grayscale artwork. A mask eraser supplies white here.
+/// Paint each pixel of `bounds` with its own value and opacity, limited by
+/// the selection. Returns the new coverage, or None when nothing changed.
+pub(crate) fn paint_each(
+    doc: &Document,
+    index: usize,
+    id: LayerId,
+    bounds: [usize; 4],
+    cancel: Option<&AtomicBool>,
+    paint: impl Fn(usize, usize) -> (u8, f32),
+) -> Result<Option<Mask>, String> {
+    fill::check_cancel(cancel)?;
+    let before = source(doc, index, id)?;
+    let [left, top, right, bottom] = bounds;
+    let mut after = before.clone();
+    let mut changed = false;
+    {
+        let mut writer = after.writer();
+        for y in top..bottom.min(doc.height) {
+            fill::check_cancel(cancel)?;
+            for x in left..right.min(doc.width) {
+                let selected = selected(doc, x, y);
+                if selected == 0 {
+                    continue;
+                }
+                let (value, opacity) = paint(x, y);
+                let opacity = opacity * f32::from(selected) / 255.0;
+                if opacity > 0.0 {
+                    changed |= writer.paint(x, y, value, opacity);
+                }
+            }
+        }
+        writer.reclaim_region(bounds);
+    }
+    fill::check_cancel(cancel)?;
+    Ok(changed.then_some(after))
+}
+
 pub(crate) fn paint_shape(
     doc: &Document,
     index: usize,

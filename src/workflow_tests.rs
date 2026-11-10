@@ -4911,3 +4911,35 @@ fn losing_focus_mid_drag_lets_go_of_the_box_and_keeps_the_text() {
     w.app.settle_text_draft();
     assert_eq!(w.text_record().wrap, Some(200.0), "the handle is let go");
 }
+
+#[test]
+fn fill_tool_gradient_mode_paints_a_dragged_gradient_as_one_undo_step() {
+    let mut w = Workspace::sized([1280.0, 800.0]);
+    w.app.doc = crate::document::Document::new(64, 16);
+    w.app.color = [0, 0, 0];
+    w.app.secondary = [255, 255, 255];
+    w.app.brush.opacity = 1.0;
+    w.app.select_tool(crate::tools::Tool::Fill);
+    w.settle();
+    // Tapping the Fill shortcut again switches to Gradient mode.
+    w.key(egui::Key::G, Default::default());
+    w.settle();
+    assert!(w.app.gradient.active);
+    assert_eq!(w.app.tool_label().0, "Gradient");
+    w.pen_drag([4.0, 8.0], [60.0, 8.0]);
+    w.app.flush_render_queue();
+    w.settle();
+    let px = |w: &Workspace, x: usize| w.app.doc.layers[0].pixels.rgba(8 * 64 + x);
+    assert!(px(&w, 2)[0] < 20, "{:?}", px(&w, 2));
+    assert!(px(&w, 62)[0] > 235, "{:?}", px(&w, 62));
+    assert!(px(&w, 20)[0] < px(&w, 40)[0]);
+    assert!((0..64).all(|x| px(&w, x)[3] == 255));
+    // One undo removes the whole gradient.
+    w.key(egui::Key::Z, egui::Modifiers::CTRL);
+    w.app.flush_render_queue();
+    assert!((0..64).all(|x| px(&w, x)[3] == 0));
+    // Tapping again returns to the bucket.
+    w.key(egui::Key::G, Default::default());
+    w.settle();
+    assert!(!w.app.gradient.active);
+}

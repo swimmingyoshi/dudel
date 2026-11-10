@@ -61,6 +61,7 @@ mod fill;
 mod folders;
 #[cfg(feature = "allocation-profile")]
 mod gpu_profile;
+mod gradient_tool;
 mod guides;
 mod history_pixels;
 mod icons;
@@ -229,6 +230,7 @@ struct Dudel {
     tool: Tool,
     /// Lasso fill/erase mode and outline shape.
     lasso: lasso_paint::Options,
+    gradient: gradient_tool::Options,
     /// Which paint group the Brush tool shows, and each group's last preset.
     brush_group: brush::BrushGroup,
     group_presets: [String; 4],
@@ -545,6 +547,7 @@ impl Default for Dudel {
             palette_assist: Default::default(),
             tool: Tool::Brush,
             lasso: Default::default(),
+            gradient: Default::default(),
             brush_group: workspace::default_brushes()[0].group(),
             group_presets: Default::default(),
             group_live: Default::default(),
@@ -935,6 +938,7 @@ impl Dudel {
         self.show_welcome = p.welcome;
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
+        self.gradient = p.tools.gradient.clone();
         // The current brush decides the group, so the two never disagree.
         self.brush_group = self.brush.group();
         self.group_presets = p.tools.group_presets;
@@ -993,6 +997,7 @@ impl Dudel {
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
+                gradient: self.gradient.clone(),
                 brush_group: self.brush_group,
                 group_presets: self.group_presets.clone(),
                 eraser_own: self.eraser_own,
@@ -1922,6 +1927,7 @@ fn run() -> eframe::Result {
     let capture_settings = mode.as_deref() == Some("--capture-settings");
     let capture_shortcuts = mode.as_deref() == Some("--capture-shortcuts");
     let capture_welcome = mode.as_deref() == Some("--capture-welcome");
+    let capture_gradient = mode.as_deref() == Some("--capture-gradient");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -1990,6 +1996,7 @@ fn run() -> eframe::Result {
         || capture_settings
         || capture_shortcuts
         || capture_welcome
+        || capture_gradient
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2657,6 +2664,27 @@ fn run() -> eframe::Result {
                 }
                 if capture_settings {
                     app.settings_open = true;
+                }
+                if capture_gradient {
+                    // The Fill tool's Gradient mode mid-drag, with its options.
+                    app.select_tool(tools::Tool::Fill);
+                    app.gradient.active = true;
+                    app.gradient.style = gradient_tool::Style::Radial;
+                    app.tool_panel_override = Some(true);
+                    if let Some(target) = app.input_target() {
+                        app.selection_drag = Some(selection_ui::Drag::Gradient(Box::new(
+                            gradient_tool::Settings {
+                                target,
+                                paint_target: Default::default(),
+                                start: [300.0, 260.0],
+                                end: [620.0, 470.0],
+                                style: app.gradient.style,
+                                reverse: false,
+                                ramp: app.gradient.ramp(app.color, app.secondary),
+                                opacity: 1.0,
+                            },
+                        )));
+                    }
                 }
                 if capture_welcome {
                     app.welcome_open = true;

@@ -26,6 +26,7 @@ impl Dudel {
             Tool::Brush => (self.brush_group.name(), self.brush_group.icon()),
             Tool::Lasso if self.lasso.erase => ("Lasso erase", icons::Icon::LassoErase),
             Tool::Lasso => ("Lasso fill", icons::Icon::LassoFill),
+            Tool::Fill if self.gradient.active => ("Gradient", icons::Icon::Gradient),
             tool => (tool.name(), tool.icon()),
         }
     }
@@ -202,7 +203,7 @@ impl Dudel {
         }
         ui.horizontal(|ui| {
             if self.tool != Tool::Brush {
-                icons::mark(ui, self.tool.icon(), 18.0, ui.visuals().text_color());
+                icons::mark(ui, self.tool_label().1, 18.0, ui.visuals().text_color());
             }
             if self.tool == Tool::Brush {
                 icons::mark(ui, self.brush_group.icon(), 18.0, ui.visuals().text_color());
@@ -215,6 +216,7 @@ impl Dudel {
                     crate::brush::BrushGroup::Airbrush => "AIRBRUSH",
                 },
                 Tool::Eraser => "ERASER",
+                Tool::Fill if self.gradient.active => "GRADIENT",
                 Tool::Fill => "FILL",
                 Tool::Picker => "COLOR PICKER",
                 Tool::Select => "SELECTION",
@@ -263,7 +265,12 @@ impl Dudel {
                 }
             }
             Tool::Brush => self.brush_panel_ui(ui),
+            Tool::Fill if self.gradient.active => {
+                self.fill_mode_ui(ui);
+                self.gradient_options_ui(ui, true);
+            }
             Tool::Fill => {
+                self.fill_mode_ui(ui);
                 ui.label("Reference");
                 self.fill_source_ui(ui);
                 ui.label("Tolerance");

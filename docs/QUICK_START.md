@@ -188,6 +188,16 @@ or expand/shrink the region. For linework on a separate layer, choose **Visible
 layers** or that specific layer as the reference and fill on a color layer below
 it. Selections still limit the fill; mask fills use mask coverage boundaries.
 
+**Gradients:** tap **G** again (or choose **Gradient** at the top of the Fill
+panel) and drag across the canvas: the gradient starts where you press and ends
+where you release, and **Shift** snaps the line to 15° steps. Pick a **Shape**
+(linear, radial, angle, reflected or diamond) and **Colors**: main to secondary
+color, main color to transparent, or **Custom** stops edited in the panel. A
+selection limits the gradient, Lock transparency recolors only existing paint,
+and each gradient is one undo step. On a mask, the colors' brightness becomes
+coverage, which makes soft fade-outs. Tap **G** once more to return to the
+bucket.
+
 Use **Ctrl+Shift+N** to add a layer above the current layer: for example, separate
 sketch, ink and color. Select layers in the Layers panel; double-click a name to
 rename it. **Ctrl+J** duplicates the selected layer. Layer opacity and blend mode
@@ -282,7 +292,7 @@ axis so both halves meet again. Apply commits both
 sides as one undo step, and Escape restores both. The driving selection remains
 selected afterward. Turn **Mirror pair** off for an ordinary one-sided edit.
 
-**G** selects Fill and **I** selects Picker. **Alt+click** temporarily samples a
+**G** selects Fill (tap again for gradients) and **I** selects Picker. **Alt+click** temporarily samples a
 visible color. **Help > Keyboard shortcuts** lists the full bindings.
 
 To draw from a picture, use **Layer > Add reference image…** (or the layer

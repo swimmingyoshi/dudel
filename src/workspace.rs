@@ -1114,6 +1114,25 @@ impl Dudel {
                     self.opacity_slider(ui);
                     ui.label(egui::RichText::new("Draw a shape; lift to apply").weak());
                 }
+                Tool::Fill if self.gradient.active => {
+                    self.quick_color_ui(ui);
+                    egui::ComboBox::from_id_salt("gradient shape bar")
+                        .selected_text(self.gradient.style.name())
+                        .show_ui(ui, |ui| {
+                            for style in crate::gradient_tool::Style::ALL {
+                                ui.selectable_value(&mut self.gradient.style, style, style.name());
+                            }
+                        })
+                        .response
+                        .on_hover_text("Gradient shape");
+                    egui::containers::menu::MenuButton::new("Gradient options")
+                        .config(egui::containers::menu::MenuConfig::default().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
+                        .ui(ui, |ui| {
+                            ui.set_width(280.0);
+                            self.gradient_options_ui(ui, false);
+                        });
+                    self.opacity_slider(ui);
+                }
                 Tool::Fill => {
                     self.quick_color_ui(ui);
                     egui::containers::menu::MenuButton::new("Fill options")
@@ -1187,6 +1206,8 @@ impl Dudel {
                         }
                         let icon = if tool == Tool::Lasso && self.lasso.erase {
                             Icon::LassoErase
+                        } else if tool == Tool::Fill && self.gradient.active {
+                            Icon::Gradient
                         } else {
                             tool.icon()
                         };

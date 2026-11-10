@@ -35,10 +35,10 @@ A polish release with no large new features.
 The everyday tools and filters artists expect from other painting apps, in
 this order (agreed 2026-11-10), adjusted by tester feedback:
 
-1. [ ] **Gradient tool:** drag to fill the layer or selection with linear,
-       radial, angle, reflected or diamond gradients, from the current colors
-       or saved gradients. Reuses the gradient model and editor of layer
-       effects.
+1. [x] **Gradient tool:** the Fill tool's Gradient mode (tap **G** again)
+       paints linear, radial, angle, reflected or diamond gradients from the
+       current colors or custom stops, reusing the layer-effects gradient
+       model. Later: a library of named gradients.
 2. [ ] **Filters:** Gaussian blur, sharpen (unsharp mask) and add noise, each
        with a live preview; and every adjustment-layer type (curves, posterize,
        threshold, color balance and the rest) also applied directly from the

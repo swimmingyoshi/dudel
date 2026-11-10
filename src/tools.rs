@@ -93,7 +93,9 @@ impl Tool {
         match self {
             Self::Brush => "Paint with the selected preset · Shift+click draws a straight line",
             Self::Eraser => "Erase with the current brush's shape, or with its own eraser tip",
-            Self::Fill => "Fill a contiguous area of the active layer",
+            Self::Fill => {
+                "Fill an area of similar color, or drag a gradient · tap its shortcut again to switch"
+            }
             Self::Picker => "Sample visible artwork · hold Alt with any tool",
             Self::Select => {
                 "Rectangle, lasso, polygon or magic wand · Deselect removes the selection · Delete clears"

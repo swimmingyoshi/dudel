@@ -395,6 +395,10 @@ fn gradient_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient
     {
         gradient.set_scale(scale / 100.0);
     }
+    gradient_stops_editor(ui, gradient);
+}
+/// A gradient's color and opacity stops.
+pub(crate) fn gradient_stops_editor(ui: &mut egui::Ui, gradient: &mut crate::psd_vector::Gradient) {
     let mut colors = gradient.color_stops();
     let mut opacities = gradient.opacity_stops();
     color_stops(ui, &mut colors, |t| {

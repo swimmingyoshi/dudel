@@ -36,6 +36,8 @@ pub(crate) enum Drag {
         settings: crate::wand::Settings,
         mode: Combine,
     },
+    /// The Fill tool's Gradient mode: the line being dragged.
+    Gradient(Box<crate::gradient_tool::Settings>),
 }
 impl Drag {
     pub(crate) fn rectangle(&self) -> Option<Selection> {
@@ -333,7 +335,7 @@ impl Dudel {
                         points.push(point);
                     }
                 }
-                Drag::Wand { .. } | Drag::Polygon { .. } => {}
+                Drag::Wand { .. } | Drag::Polygon { .. } | Drag::Gradient(_) => {}
             }
         }
         if !end {
@@ -372,6 +374,8 @@ impl Dudel {
                 return;
             }
             Drag::Polygon { .. } => unreachable!("Polygon drafts handled above"),
+            // Gradient drags finish in `gradient_packet`.
+            Drag::Gradient(_) => return,
             Drag::Wand {
                 point,
                 settings,

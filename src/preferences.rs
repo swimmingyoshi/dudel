@@ -101,6 +101,9 @@ impl Default for TabPrefs {
 pub struct ToolPrefs {
     #[serde(default)]
     pub lasso: crate::lasso_paint::Options,
+    /// The Fill tool's Gradient mode and its choices.
+    #[serde(default)]
+    pub gradient: crate::gradient_tool::Options,
     #[serde(default)]
     pub brush_group: crate::brush::BrushGroup,
     /// Last preset name chosen in each brush group, by `BrushGroup::index`.

@@ -52,6 +52,8 @@ pub enum Icon {
     Mask,
     /// More actions: three dots.
     More,
+    /// The Fill tool's Gradient mode: a frame with a rising ramp.
+    Gradient,
 }
 
 pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
@@ -207,6 +209,10 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Mask => {
             closed(&[p(0.14, 0.20), p(0.86, 0.20), p(0.86, 0.80), p(0.14, 0.80)]);
             painter.circle_filled(p(0.5, 0.5), side * 0.18, color);
+        }
+        Icon::Gradient => {
+            closed(&[p(0.14, 0.22), p(0.86, 0.22), p(0.86, 0.78), p(0.14, 0.78)]);
+            filled(vec![p(0.20, 0.72), p(0.80, 0.72), p(0.80, 0.30)]);
         }
         Icon::More => {
             for x in [0.22, 0.5, 0.78] {

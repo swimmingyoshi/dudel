@@ -240,6 +240,15 @@ impl Dudel {
                             // Tapping the current tool's key steps through its variants.
                             match tool {
                                 Tool::Brush => self.select_brush_group(self.brush_group.next()),
+                                Tool::Fill => {
+                                    self.gradient.active = !self.gradient.active;
+                                    self.status = if self.gradient.active {
+                                        "Fill tool: gradient"
+                                    } else {
+                                        "Fill tool: bucket"
+                                    }
+                                    .into();
+                                }
                                 Tool::Lasso => {
                                     self.lasso.erase = !self.lasso.erase;
                                     self.status = if self.lasso.erase {

@@ -4,6 +4,14 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+- **Gradients:** the Fill tool has a Gradient mode (tap **G** again). Drag
+  across the canvas for a linear, radial, angle, reflected or diamond gradient
+  from the main to the secondary color, the main color to transparent, or your
+  own stops. Selections and Lock transparency apply, and on a mask a gradient
+  makes a soft fade.
+
 ## 0.3.0 (2026-11-10)
 
 A polish release for the first outside testers: a friendlier start, clearer

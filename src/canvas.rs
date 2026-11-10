@@ -858,6 +858,19 @@ impl Dudel {
                 self.finish_painted_stroke();
                 continue;
             }
+            if self.tool == Tool::Fill && self.gradient.active && navigation_allowed && !picking {
+                let can_start = area.contains(pos)
+                    && ctx.layer_id_at(pos) == Some(response.layer_id)
+                    && !(start && (sidebar_edge || on_ruler));
+                self.gradient_packet(
+                    [f64::from(at.x), f64::from(at.y)],
+                    start,
+                    end,
+                    can_start,
+                    shift,
+                );
+                continue;
+            }
             if (self.tool == Tool::Select || self.tool.is_lasso_paint())
                 && navigation_allowed
                 && !picking
@@ -1523,6 +1536,7 @@ impl Dudel {
                 Stroke::new(1.0_f32, Color32::WHITE),
             ));
         }
+        self.paint_gradient_line(&painter, *view);
         if let Some(points) = self.polygon_selection_points() {
             let mut outline: Vec<Pos2> = points
                 .iter()

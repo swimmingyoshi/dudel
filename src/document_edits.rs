@@ -68,6 +68,8 @@ pub enum Edit {
         points: Vec<[f64; 2]>,
         settings: crate::lasso_paint::Settings,
     },
+    /// A gradient dragged with the Fill tool's Gradient mode.
+    Gradient(Box<crate::gradient_tool::Settings>),
     FeatherSelection(u8),
     InvertSelection,
     Property {
@@ -305,6 +307,7 @@ impl Edit {
             {
                 Err("Invalid lasso opacity".into())
             }
+            Self::Gradient(settings) => settings.validate(),
             Self::DuplicateTarget { copies, .. }
                 if copies.is_empty() || copies.len() > crate::document::MAX_ENTRIES =>
             {
@@ -358,6 +361,7 @@ impl Edit {
                 "Lasso fill"
             }),
             Self::FillTarget { .. } => Some("Fill"),
+            Self::Gradient(_) => Some("Gradient"),
             Self::MoveTarget { .. } => Some("Move"),
             Self::AffineTarget { .. } | Self::AffineSettingsTarget { .. } => Some("Transform"),
             Self::SelectionRectangle { .. }
@@ -449,6 +453,10 @@ impl Edit {
             Self::LassoPaint { points, settings } => {
                 Self::resolve(&Target::Identity(settings.target), &doc)?;
                 outcome.changed = crate::lasso_paint::apply(&mut doc, points, *settings, cancel)?;
+            }
+            Self::Gradient(settings) => {
+                Self::resolve(&Target::Identity(settings.target), &doc)?;
+                outcome.changed = crate::gradient_tool::apply(&mut doc, settings, cancel)?;
             }
             Self::SelectionWand {
                 point,
