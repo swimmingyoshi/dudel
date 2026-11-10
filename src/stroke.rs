@@ -161,16 +161,8 @@ impl Stroke {
         self.zoom = 1.0;
     }
     fn spacing(brush: &Brush, sample: &Sample) -> f32 {
-        (brush.size
-            * brush.aspect
-            * brush.spacing
-            * brush.size_factor(sample)
-            * brush
-                .dynamics
-                .spacing
-                .as_ref()
-                .map_or(1.0, |d| d.evaluate(sample)))
-        .max(0.5)
+        let factors = brush.factors(sample);
+        (brush.size * brush.aspect * brush.spacing * factors.size * factors.spacing).max(0.5)
     }
     fn random_value(index: u32, seed: u32) -> f32 {
         let mut hash = index.wrapping_add(seed).wrapping_add(1);
@@ -643,10 +635,11 @@ impl Stroke {
                 distance: self.length + at as f64,
                 ..sample
             };
-            dab.spacing = Some(Self::spacing(brush, &dab));
+            let spacing = Self::spacing(brush, &dab);
+            dab.spacing = Some(spacing);
             dabs.push(dab);
             self.last_dab = Some(dab);
-            at += Self::spacing(brush, &dab);
+            at += spacing;
         }
         self.until_dab = at - length;
         self.length += length as f64;

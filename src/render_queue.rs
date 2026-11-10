@@ -529,7 +529,8 @@ impl Queue {
                 .as_ref()
                 .map_or(0, |i| i.alpha.capacity())
             + settings.brush.name.capacity()
-            + settings.brush.tags.capacity();
+            + settings.brush.tags.capacity()
+            + settings.brush.graph.as_ref().map_or(0, |g| g.heap_bytes());
         let bytes = bytes
             + [
                 &settings.brush.dynamics.size,

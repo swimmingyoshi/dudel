@@ -16,8 +16,10 @@ mod allocation_trace;
 mod benchmark;
 mod binary_project;
 mod blend;
+mod blend_brush;
 mod brush;
 mod brush_edge;
+mod brush_graph;
 mod brush_library;
 mod brush_pack;
 mod brush_previews;
@@ -960,6 +962,12 @@ impl Dudel {
                 p.shortcuts_dropped
             );
         }
+        if p.graphs_dropped > 0 {
+            self.status = format!(
+                "{} saved brush graph(s) were damaged and were removed; those brushes paint with their plain settings",
+                p.graphs_dropped
+            );
+        }
         let finite = |h: Option<f32>| h.filter(|h| h.is_finite() && *h > 0.0);
         self.library_height = finite(p.layout.library_height);
         self.color_height = finite(p.layout.color_height);
@@ -1011,6 +1019,7 @@ impl Dudel {
             new_canvas: self.new_canvas_form.prefs.clone(),
             shortcuts: self.shortcuts.clone(),
             shortcuts_dropped: 0,
+            graphs_dropped: 0,
             layout: preferences::LayoutPrefs {
                 library_height: self.library_height,
                 color_height: self.color_height,
@@ -1930,6 +1939,7 @@ fn run() -> eframe::Result {
     let capture_welcome = mode.as_deref() == Some("--capture-welcome");
     let capture_gradient = mode.as_deref() == Some("--capture-gradient");
     let capture_filter = mode.as_deref() == Some("--capture-filter");
+    let capture_smudge = mode.as_deref() == Some("--capture-smudge");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2000,6 +2010,7 @@ fn run() -> eframe::Result {
         || capture_welcome
         || capture_gradient
         || capture_filter
+        || capture_smudge
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2693,6 +2704,9 @@ fn run() -> eframe::Result {
                             },
                         )));
                     }
+                }
+                if capture_smudge {
+                    app.smudge_capture_fixture();
                 }
                 if capture_welcome {
                     app.welcome_open = true;

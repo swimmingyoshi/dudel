@@ -11,6 +11,9 @@ pub struct Preferences {
     /// Saved shortcuts that decoding put back to their defaults.
     #[serde(skip)]
     pub shortcuts_dropped: usize,
+    /// Brush graphs that failed validation and were removed on load.
+    #[serde(skip)]
+    pub graphs_dropped: usize,
     pub version: u32,
     #[serde(default)]
     pub theme: crate::themes::Theme,
@@ -142,6 +145,13 @@ impl Preferences {
         if p.brushes.is_empty() {
             p.brushes = workspace::default_brushes();
         }
+        // A broken graph costs only the graph, not the whole settings file.
+        for brush in p.brushes.iter_mut().chain([&mut p.current_brush]) {
+            if brush.graph.as_ref().is_some_and(|g| g.validate().is_err()) {
+                brush.graph = None;
+                p.graphs_dropped += 1;
+            }
+        }
         for brush in &p.brushes {
             brush.validate()?;
         }
@@ -183,6 +193,7 @@ mod tests {
         let p = Preferences {
             shortcuts: Default::default(),
             shortcuts_dropped: 0,
+            graphs_dropped: 0,
             theme: crate::themes::Theme::presets().remove(1),
             version: 1,
             brushes: vec![brush.clone()],

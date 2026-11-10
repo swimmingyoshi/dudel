@@ -331,8 +331,12 @@ dismisses the current popup. With no control focused, **Tab** hides or shows pan
 
 For brush editing, open the brush selector, choose **Brush settings**, then
 **Open Brush Studio**. Choose **Test pad** to try strokes with the brush.
-The tool property's **Basic** page keeps Size, Opacity, Stabilizer and Follow
-visible. Expand **Paint & pressure** for Flow, Hardness and pressure controls;
+The tool property's **Basic** page keeps Mode, Size, Opacity, Stabilizer and
+Follow visible. **Mode** turns any brush into a **Smudge** brush, which drags the
+paint under it along the stroke like a finger, or a **Blur** brush, which softens
+it; Opacity sets how strongly. The built-in **Smudge** and **Blur** presets are
+ready-made ones. Both work on the layer's own paint, honor selections and Lock
+transparency, and ignore Taper out; the pen's eraser end still erases. Expand **Paint & pressure** for Flow, Hardness and pressure controls;
 use **Tip**, **Texture** and **Advanced** for detailed tuning.
 **Save as new** keeps a new
 preset; **Update preset** replaces the selected preset after confirmation;

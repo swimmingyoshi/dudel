@@ -1028,7 +1028,14 @@ pub fn run(path: &std::path::Path, incremental: bool, buffered: bool) -> Result<
             },
         }],
     });
+    // The same brush driven by its converted graph: the graph's cost per dab.
+    let graph_ink = Brush {
+        name: "Speed dynamics ink (graph)".into(),
+        graph: Some(crate::brush_graph::BrushGraph::from_brush(&dynamic_ink)),
+        ..dynamic_ink.clone()
+    };
     brushes.push(dynamic_ink);
+    brushes.push(graph_ink);
     if buffered {
         brushes.push(Brush {
             name: "Tapered ink".into(),

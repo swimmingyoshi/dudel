@@ -102,6 +102,14 @@ impl Dudel {
         }
     }
     pub(crate) fn canvas_paint_blocker(&self) -> Option<&'static str> {
+        // Vector layers keep strokes as curves; there is no paint to move.
+        if !self.brush.blend.is_paint()
+            && self.tool != crate::tools::Tool::Eraser
+            && self.input_stroke_target().is_raster()
+            && self.vector_target().is_some()
+        {
+            return Some("Smudge and blur work on raster layers — rasterize this layer first");
+        }
         self.stroke_target_blocker(
             self.input_stroke_target(),
             self.tool == crate::tools::Tool::Eraser,

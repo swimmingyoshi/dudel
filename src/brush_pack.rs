@@ -8,16 +8,25 @@ pub struct BrushPack {
     pub brushes: Vec<Brush>,
 }
 impl BrushPack {
+    /// Packs holding a brush graph are version 3, which older Dudel refuses
+    /// instead of importing the brushes without their graphs.
     pub fn new(brushes: Vec<Brush>) -> Self {
         Self {
             format: "dudel-brush-pack".into(),
-            version: 2,
+            version: if brushes.iter().any(|b| b.graph.is_some()) {
+                3
+            } else {
+                2
+            },
             brushes,
         }
     }
     pub fn validate(&self) -> Result<(), String> {
-        if self.format != "dudel-brush-pack" || !matches!(self.version, 1 | 2) {
+        if self.format != "dudel-brush-pack" || !matches!(self.version, 1..=3) {
             return Err("Unsupported brush pack format/version".into());
+        }
+        if self.version < 3 && self.brushes.iter().any(|b| b.graph.is_some()) {
+            return Err("Brush graphs need a version 3 brush pack".into());
         }
         if self.brushes.is_empty() || self.brushes.len() > 512 {
             return Err("Brush packs must contain 1–512 presets".into());

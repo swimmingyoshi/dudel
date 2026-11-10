@@ -156,6 +156,8 @@ pub fn render(brush: &Brush, [width, height]: [usize; 2]) -> Vec<u8> {
     let tip_side = height.min(width * 3 / 10) as f32;
     // Tip: one full-pressure dab scaled to fill its box, shape over size.
     let mut tip = brush.clone();
+    // The close-up shows the tip's shape, so smudge and blur tips paint it.
+    tip.blend = crate::brush::Blend::Paint;
     tip.size = tip_side * 0.72;
     tip.scatter = 0.0;
     tip.stabilization = 0.0;
@@ -181,6 +183,9 @@ pub fn render(brush: &Brush, [width, height]: [usize; 2]) -> Vec<u8> {
     let mut path = stroke::Stroke::default();
     let left = tip_side + 12.0 + sample_brush.size / 2.0;
     let right = width as f32 - 10.0 - sample_brush.size / 2.0;
+    if !brush.blend.is_paint() {
+        crate::blend_brush::preview_stripes(&mut doc, INK, [tip_side as usize + 6, width]);
+    }
     let steps = 120;
     for i in 0..=steps {
         let t = i as f32 / steps as f32;

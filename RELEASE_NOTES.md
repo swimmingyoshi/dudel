@@ -13,6 +13,14 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   makes a soft fade.
 - **New filters:** **Filter > Gaussian blur**, **Sharpen** (unsharp mask) and
   **Add noise**, with a live preview, inside the selection, as one undo step.
+- **Smudge and blur brushes:** a brush's new **Mode** setting smudges (drags the
+  paint under the brush along the stroke) or blurs instead of painting, with
+  Opacity as the strength. New libraries include **Smudge** and **Blur**
+  presets; in an existing library, set Mode on any brush and save it as a new
+  preset.
+- Brushes can carry a brush graph (an engine for the coming node editor). It is
+  not editable yet. Brush packs that contain one are written as version 3,
+  which older Dudel refuses rather than importing without the graph.
 
 ## 0.3.0 (2026-11-10)
 

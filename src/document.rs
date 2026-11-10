@@ -49,6 +49,8 @@ pub(crate) struct DabRaster {
     pub right: i32,
     pub top: i32,
     pub bottom: i32,
+    /// Smudge: how far the tip moved since the previous dab.
+    pub(crate) smear: [f32; 2],
 }
 impl DabRaster {
     pub fn new(
@@ -59,17 +61,11 @@ impl DabRaster {
         height: usize,
     ) -> Self {
         let (x, y) = (sample.x, sample.y);
-        let radius = (brush.size * brush.size_factor(&sample) / 2.0).max(0.5);
-        let opacity = brush.opacity
-            * brush.flow
-            * brush.opacity_factor(&sample)
-            * brush
-                .dynamics
-                .flow
-                .as_ref()
-                .map_or(1.0, |d| d.evaluate(&sample));
+        let factors = brush.factors(&sample);
+        let radius = (brush.size * factors.size / 2.0).max(0.5);
+        let opacity = brush.opacity * brush.flow * factors.opacity * factors.flow;
         let interval_ratio = (brush.adjust_flow_by_spacing && brush.opacity > 0.0).then(|| {
-            let diameter = brush.size * brush.size_factor(&sample) * brush.aspect;
+            let diameter = brush.size * factors.size * brush.aspect;
             let reference = (diameter * 0.1).max(0.5);
             sample
                 .spacing
@@ -104,6 +100,7 @@ impl DabRaster {
             right: ((x + extent).ceil() as i32).min(width as i32 - 1),
             top: ((y - extent).floor() as i32).max(0),
             bottom: ((y + extent).ceil() as i32).min(height as i32 - 1),
+            smear: [0.0; 2],
         }
     }
 }
@@ -1879,6 +1876,8 @@ impl Document {
             }
             return;
         }
+        // The eraser end still erases with a smudge or blur brush.
+        let blending = !brush.blend.is_paint() && !erase;
         let (color, erase, alpha_locked) = target.params(color, erase, layer.alpha_locked);
         let prefix_pass = buffer.as_ref().is_some_and(|b| b.is_prefix_pass());
         // Clip the iteration domain before evaluating coverage or touching COW
@@ -1968,6 +1967,45 @@ impl Document {
             }
             Some((a * selected, brush.opacity * selected))
         };
+        if blending && !prefix_pass {
+            let width = self.width;
+            let mut scratch = buffer
+                .as_deref_mut()
+                .map(|b| std::mem::take(&mut b.blend_scratch))
+                .unwrap_or_default();
+            // Rows of one dab may arrive in slices; the copy is made once.
+            if first_row <= raster.top {
+                crate::blend_brush::capture(
+                    &mut scratch,
+                    |px, py| target.read(layer, width, px, py),
+                    [self.width, self.height],
+                    [raster.left, raster.top, raster.right, raster.bottom],
+                    brush.blend,
+                    raster.smear,
+                    radius,
+                );
+            }
+            let mut writer = target.writer(layer, width);
+            for py in top..=bottom {
+                for px in left..=right {
+                    let Some((a, _)) = coverage_at(px, py) else {
+                        continue;
+                    };
+                    let (px, py) = (px as usize, py as usize);
+                    let source = scratch.source(brush.blend, raster.smear, px, py);
+                    writer.edit(px, py, |pixel| {
+                        if let Some(buffer) = buffer.as_deref_mut() {
+                            buffer.remember_at(active, px, py, pixel);
+                        }
+                        crate::blend_brush::mix(pixel, source, a, alpha_locked);
+                    });
+                }
+            }
+            if let Some(buffer) = buffer.as_deref_mut() {
+                buffer.blend_scratch = scratch;
+            }
+            return;
+        }
         // Large dabs on raster tiles blend in row bands across cores.
         if !prefix_pass
             && target.is_raster()

@@ -43,12 +43,13 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        with a live preview (blur reuses the layer-effects blur).
    [ ] Every adjustment-layer type (curves, posterize, threshold, color
        balance and the rest) also applied directly from the Filter menu.
-3. [ ] **Blending brushes:** a brush mode that smudges (drags color along the
-       stroke) or blurs instead of painting, with built-in Smudge, Blend and
-       Blur presets. Needs a dab path that reads the canvas under the tip.
-4. [ ] **Brush graph, milestone 1** (engine only): see the
-       [brush graph proposal](BRUSH_GRAPH_PLAN.md). Waits for review of the
-       proposal.
+3. [x] **Blending brushes:** a brush Mode that smudges (drags color along the
+       stroke) or blurs instead of painting, with built-in Smudge and Blur
+       presets. Later: a color-mixing ("wet paint") mode that also lays down
+       the current color.
+4. [x] **Brush graph, milestone 1** (engine only): see the
+       [brush graph plan](BRUSH_GRAPH_PLAN.md). Next: milestone 2, the
+       editor.
 5. [ ] Named workspace layouts, after the workspace reorganization above.
 
 ## Later

@@ -146,7 +146,7 @@ pub fn curve_ui(ui: &mut eframe::egui::Ui, curve: &mut Curve) -> bool {
     changed
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Curve {
     pub points: Vec<[f32; 2]>,
 }

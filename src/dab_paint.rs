@@ -10,6 +10,8 @@ use std::sync::Arc;
 struct Copies {
     sample: Sample,
     copies: Vec<([f32; 2], Map)>,
+    /// Smudge: how far each copy moved since the previous dab.
+    moves: Vec<[f32; 2]>,
     at: usize,
     raster: Option<(Box<DabRaster>, i32)>,
     peak_payload: usize,
@@ -24,6 +26,7 @@ impl Copies {
         Self {
             sample,
             copies,
+            moves: Vec::new(),
             at: 0,
             raster: None,
             peak_payload,
@@ -53,7 +56,7 @@ impl Copies {
             if !prefix {
                 result.painted.region.include(bounds);
             }
-            let raster = Box::new(DabRaster::new(
+            let mut raster = Box::new(DabRaster::new(
                 Sample {
                     x,
                     y,
@@ -64,6 +67,7 @@ impl Copies {
                 doc.width,
                 doc.height,
             ));
+            raster.smear = self.moves.get(self.at).copied().unwrap_or_default();
             let row = raster.top;
             self.raster = Some((raster, row));
             self.peak_payload = self.peak_payload.max(self.payload_capacity_bytes());
@@ -143,7 +147,7 @@ impl DabPaint {
         sample: Sample,
         settings: Arc<Settings>,
     ) -> Self {
-        let phase = if settings.brush.taper_out > 0.0
+        let phase = if settings.brush.tail_length() > 0.0
             && buffer
                 .tail
                 .back()
@@ -213,10 +217,10 @@ impl DabPaint {
                     }
                 }
                 Phase::Retire => {
-                    if self.settings.brush.taper_out > 0.0
+                    if self.settings.brush.tail_length() > 0.0
                         && (buffer.tail.front().is_some_and(|old| {
                             self.sample.distance - old.distance
-                                > self.settings.brush.taper_out as f64
+                                > self.settings.brush.tail_length() as f64
                         }) || buffer.tail.len() >= MAX_TAIL_DABS)
                     {
                         Phase::Prefix(Copies::new(
@@ -225,7 +229,15 @@ impl DabPaint {
                             &self.settings,
                         ))
                     } else {
-                        Phase::Live(Copies::new(self.sample, doc, &self.settings))
+                        let mut copies = Copies::new(self.sample, doc, &self.settings);
+                        if !self.settings.brush.blend.is_paint() {
+                            copies.moves = buffer.blend_moves(
+                                self.sample,
+                                &self.settings,
+                                [doc.width, doc.height],
+                            );
+                        }
+                        Phase::Live(copies)
                     }
                 }
                 Phase::Prefix(mut copies) => {
@@ -247,7 +259,7 @@ impl DabPaint {
                     }
                 }
                 Phase::Store => {
-                    if self.settings.brush.taper_out > 0.0 {
+                    if self.settings.brush.tail_length() > 0.0 {
                         buffer.tail.push_back(self.sample);
                         buffer.tail_peak = buffer.tail_peak.max(buffer.tail.len());
                     }

@@ -363,7 +363,7 @@ impl TailReplay {
                             let factor = 0.05
                                 + 0.95
                                     * ((self.end - sample.distance)
-                                        / self.settings.brush.taper_out as f64)
+                                        / self.settings.brush.tail_length() as f64)
                                         .clamp(0.0, 1.0)
                                         as f32;
                             sample.taper = Some(sample.taper.unwrap_or(1.0) * factor);

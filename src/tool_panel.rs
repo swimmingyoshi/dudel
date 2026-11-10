@@ -821,7 +821,19 @@ impl Dudel {
         percent_marked(ui, "Opacity", &mut self.brush.opacity, 0.0, saved);
     }
 
+    /// Paint, Smudge or Blur.
+    fn brush_blend_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Mode");
+            for blend in crate::brush::Blend::ALL {
+                ui.selectable_value(&mut self.brush.blend, blend, blend.name())
+                    .on_hover_text(blend.hint());
+            }
+        });
+    }
+
     fn brush_quick_controls_ui(&mut self, ui: &mut egui::Ui) {
+        self.brush_blend_ui(ui);
         self.brush_size_opacity_ui(ui);
         let saved = self.saved_value(|b| b.stabilization);
         marked(
@@ -863,6 +875,7 @@ impl Dudel {
         use crate::brush_studio::Section;
         match section {
             Section::SizeOpacity => {
+                self.brush_blend_ui(ui);
                 self.brush_size_opacity_ui(ui);
                 self.brush_flow_hardness_ui(ui);
                 ui.horizontal(|ui| {

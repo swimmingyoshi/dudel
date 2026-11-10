@@ -37,6 +37,11 @@ impl Previews {
 pub(crate) fn fingerprint(brush: &Brush) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     hash_dynamics(&brush.dynamics, &mut hasher);
+    brush.blend.hash(&mut hasher);
+    brush.graph.is_some().hash(&mut hasher);
+    if let Some(graph) = &brush.graph {
+        graph.hash_into(&mut hasher);
+    }
     brush.adjust_flow_by_spacing.hash(&mut hasher);
     brush.taper_in.to_bits().hash(&mut hasher);
     brush.taper_out.to_bits().hash(&mut hasher);
@@ -124,6 +129,9 @@ pub fn render(brush: &Brush) -> Vec<u8> {
         layer: 0,
         symmetry: Default::default(),
     };
+    if !brush.blend.is_paint() {
+        crate::blend_brush::preview_stripes(&mut doc, settings.color, [0, WIDTH]);
+    }
     let steps = 80;
     for i in 0..=steps {
         let t = i as f32 / steps as f32;

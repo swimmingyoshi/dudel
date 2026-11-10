@@ -1,8 +1,9 @@
 # Brush graph
 
-Status: proposal for review, 2026-11-10. Nothing here is implemented yet. It
-answers the "first deliverable" of the brush graph brief: how a node-based brush
-editor fits the brush engine Dudel already has, and what to build first.
+Status: accepted 2026-11-10; milestone 1 (the engine) is implemented, see
+[section 13](#13-milestone-1-as-built). It answers the "first deliverable" of
+the brush graph brief: how a node-based brush editor fits the brush engine
+Dudel already has, and what to build first.
 
 The short version: Dudel already has a small typed curve system for brush
 dynamics. The brush graph should grow out of it, not sit beside it. A graph is
@@ -272,3 +273,44 @@ Phase 1, with no editor yet. Acceptance criteria:
 Until the editor lands, graphs are reachable only through conversion and tests,
 so milestone 1 changes nothing artists can see. That keeps it safe to merge
 before the editor design is settled.
+
+## 13. Milestone 1 as built
+
+`src/brush_graph.rs`, 2026-11-10. Where it differs from the plan above:
+
+- **Outputs:** Size, Opacity, Flow and Spacing. Rotation and Scatter stay
+  plain brush settings for now: the stroke draws their random values from one
+  shared sequence per dab, and keeping that order exact while a graph takes
+  them over needs its own design. With them goes the Angle port type, so every
+  port carries an amount from 0 to 1 and there is nothing to mismatch yet.
+- **Nodes:** Pressure (raw, or shaped by the brush's pressure response),
+  Speed, Tilt, Twist, Distance, Random (seed 0 is the dab's own random value;
+  other seeds are independent streams), Constant, Curve, Remap, Invert,
+  Multiply, Add, Minimum, Maximum, Mix, and the four outputs. Smooth and Tilt
+  direction wait for the editor.
+- **Missing sensors:** a value the pen does not report travels as *missing*.
+  Curve, Remap, Invert and Mix pass it on, Multiply and Add leave it out,
+  Minimum and Maximum take the other input, and an output that receives only
+  a missing value stays at full for that dab. This is what the existing
+  dynamics already do, which is why conversion can be exact.
+- **Evaluation:** the compiled graph is cached on the graph itself (rebuilt
+  after an edit) rather than shipped separately in `stroke_buffer::Settings`;
+  it travels with the brush the stroke already carries. `Brush::factors`
+  evaluates it once for size, opacity, flow and spacing together, at the two
+  places each dab needs them (spacing in `Stroke`, the dab in `DabRaster`).
+  Registers are a stack array, so a dab allocates nothing.
+- **Layout:** `graph_layout` arrives with the editor; nothing reads it yet.
+- **Conversion:** `BrushGraph::from_brush` builds the graph for a brush's
+  pressure toggles and size, opacity, flow and spacing dynamics. A test paints
+  every built-in brush, plus brushes using every dynamics input, both minimum
+  modes and a custom pressure curve, along a stroke with pressure, tilt and
+  uneven timing, before and after conversion: the pixels are identical.
+- **Benchmark:** `--benchmark` now includes "Speed dynamics ink (graph)", the
+  dynamics ink driven by its converted graph. Release build, 41 runs: median
+  stroke time 8.31 ms plain, 8.49 ms with the graph (+2.1%), against run-to-run
+  noise of about ±5%. That is at the 2% gate rather than clearly under it;
+  reaching it took evaluating once per dab instead of once per setting.
+- **Persistence:** brush packs holding a graph are version 3; a version 1 or 2
+  pack claiming a graph is refused. A damaged graph in preferences is removed
+  on load, with a status message, and the brush keeps its plain settings.
+

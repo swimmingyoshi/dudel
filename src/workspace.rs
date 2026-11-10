@@ -2403,6 +2403,34 @@ pub fn default_brushes() -> Vec<Brush> {
             ..Brush::default()
         },
         Brush {
+            name: "Smudge".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "blending, smudge, soft".into(),
+            size: 36.0,
+            opacity: 0.75,
+            hardness: 0.35,
+            spacing: 0.05,
+            pressure_size: false,
+            pressure_opacity: true,
+            softness_profile: crate::brush::SoftnessProfile::Eased,
+            blend: crate::brush::Blend::Smudge,
+            ..Brush::default()
+        },
+        Brush {
+            name: "Blur".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "blending, blur, soft".into(),
+            size: 60.0,
+            opacity: 0.5,
+            hardness: 0.0,
+            spacing: 0.08,
+            pressure_size: false,
+            pressure_opacity: true,
+            softness_profile: crate::brush::SoftnessProfile::Eased,
+            blend: crate::brush::Blend::Blur,
+            ..Brush::default()
+        },
+        Brush {
             name: "Blending wash".into(),
             group: Some(BrushGroup::Brush),
             tags: "paint, blending, soft".into(),

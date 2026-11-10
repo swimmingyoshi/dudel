@@ -192,6 +192,49 @@ pub struct Brush {
     /// Tool group the preset belongs to; None infers one from its name and tags.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<BrushGroup>,
+    /// Node graph driving size, opacity, flow and spacing per dab. Each
+    /// connected output replaces that setting's pressure toggle and dynamics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph: Option<crate::brush_graph::BrushGraph>,
+    /// Paint with the color, or smudge or blur what is already there.
+    #[serde(default, skip_serializing_if = "Blend::is_paint")]
+    pub blend: Blend,
+}
+
+/// What a dab does to the layer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Blend {
+    /// Lay down the current color.
+    #[default]
+    Paint,
+    /// Drag the paint under the tip along the stroke, like a finger.
+    Smudge,
+    /// Soften the paint under the tip.
+    Blur,
+}
+impl Blend {
+    pub const ALL: [Blend; 3] = [Self::Paint, Self::Smudge, Self::Blur];
+    pub fn is_paint(&self) -> bool {
+        *self == Self::Paint
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Paint => "Paint",
+            Self::Smudge => "Smudge",
+            Self::Blur => "Blur",
+        }
+    }
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::Paint => "Paint with the current color",
+            Self::Smudge => {
+                "Drag the paint under the brush along the stroke · opacity sets the strength · taper out does not apply"
+            }
+            Self::Blur => {
+                "Soften the paint under the brush · opacity sets the strength · taper out does not apply"
+            }
+        }
+    }
 }
 
 /// Paint tool groups shown as separate tools, like CSP's pencil, pen and
@@ -296,36 +339,105 @@ impl Default for Brush {
             angle_source: AngleSource::Fixed,
             angle_jitter: 0.0,
             group: None,
+            graph: None,
+            blend: Blend::Paint,
         }
     }
 }
 
+/// Per-dab multipliers from pressure, dynamics or the brush graph.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Factors {
+    /// Includes taper.
+    pub size: f32,
+    /// Includes taper.
+    pub opacity: f32,
+    pub flow: f32,
+    pub spacing: f32,
+}
+
 impl Brush {
-    pub fn size_factor(&self, sample: &crate::stroke::Sample) -> f32 {
-        sample.taper.unwrap_or(1.0)
-            * self.dynamics.size.as_ref().map_or_else(
-                || {
-                    if self.pressure_size {
-                        self.response(sample.pressure).max(0.05)
-                    } else {
-                        1.0
-                    }
-                },
-                |d| d.evaluate(sample),
-            )
+    /// The brush graph's results for this dab, when the brush has a graph.
+    pub fn graph_values(
+        &self,
+        sample: &crate::stroke::Sample,
+    ) -> Option<crate::brush_graph::Values> {
+        let compiled = self.graph.as_ref()?.compiled().ok()?;
+        Some(compiled.evaluate(&crate::brush_graph::Inputs {
+            pressure: sample.pressure,
+            shaped_pressure: if compiled.needs_shaped_pressure() {
+                self.response(sample.pressure)
+            } else {
+                sample.pressure
+            },
+            speed: sample.speed,
+            tilt: sample.tilt,
+            twist: sample.twist,
+            random: sample.random,
+            distance: sample.distance,
+        }))
     }
-    pub fn opacity_factor(&self, sample: &crate::stroke::Sample) -> f32 {
-        sample.taper.unwrap_or(1.0)
-            * self.dynamics.opacity.as_ref().map_or_else(
-                || {
-                    if self.pressure_opacity {
-                        self.response(sample.pressure)
-                    } else {
-                        1.0
-                    }
-                },
-                |d| d.evaluate(sample),
-            )
+    /// Size, opacity, flow and spacing factors for one dab, running the
+    /// brush graph once. Each matches its single-factor method exactly.
+    pub fn factors(&self, sample: &crate::stroke::Sample) -> Factors {
+        let graph = self.graph_values(sample).unwrap_or_default();
+        let taper = sample.taper.unwrap_or(1.0);
+        Factors {
+            size: taper * graph.size.unwrap_or_else(|| self.plain_size(sample)),
+            opacity: taper * graph.opacity.unwrap_or_else(|| self.plain_opacity(sample)),
+            flow: graph.flow.unwrap_or_else(|| self.plain_flow(sample)),
+            spacing: graph.spacing.unwrap_or_else(|| self.plain_spacing(sample)),
+        }
+    }
+    pub fn size_factor(&self, sample: &crate::stroke::Sample) -> f32 {
+        let graph = self.graph_values(sample).and_then(|v| v.size);
+        sample.taper.unwrap_or(1.0) * graph.unwrap_or_else(|| self.plain_size(sample))
+    }
+    /// Size from the pressure toggle or size dynamics, before taper.
+    fn plain_size(&self, sample: &crate::stroke::Sample) -> f32 {
+        self.dynamics.size.as_ref().map_or_else(
+            || {
+                if self.pressure_size {
+                    self.response(sample.pressure).max(0.05)
+                } else {
+                    1.0
+                }
+            },
+            |d| d.evaluate(sample),
+        )
+    }
+    fn plain_opacity(&self, sample: &crate::stroke::Sample) -> f32 {
+        self.dynamics.opacity.as_ref().map_or_else(
+            || {
+                if self.pressure_opacity {
+                    self.response(sample.pressure)
+                } else {
+                    1.0
+                }
+            },
+            |d| d.evaluate(sample),
+        )
+    }
+    fn plain_flow(&self, sample: &crate::stroke::Sample) -> f32 {
+        self.dynamics
+            .flow
+            .as_ref()
+            .map_or(1.0, |d| d.evaluate(sample))
+    }
+    fn plain_spacing(&self, sample: &crate::stroke::Sample) -> f32 {
+        self.dynamics
+            .spacing
+            .as_ref()
+            .map_or(1.0, |d| d.evaluate(sample))
+    }
+    /// How far back the end of a stroke is re-tapered after the pen lifts.
+    /// Smudge and blur read the layer as they go, so they cannot be re-tapered.
+    pub fn tail_length(&self) -> f32 {
+        if self.blend.is_paint() {
+            self.taper_out
+        } else {
+            0.0
+        }
     }
     /// Explicit group, or one inferred for presets saved before groups existed.
     pub fn group(&self) -> BrushGroup {
@@ -401,6 +513,9 @@ impl Brush {
     }
     pub fn validate(&self) -> Result<(), String> {
         self.dynamics.validate()?;
+        if let Some(graph) = &self.graph {
+            graph.validate()?;
+        }
         if self.pressure_curve[0] != 0.0
             || self.pressure_curve[4] != 1.0
             || self

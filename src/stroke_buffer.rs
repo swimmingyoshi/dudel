@@ -52,6 +52,10 @@ pub struct StrokeBuffer {
     rebuilding: bool,
     tail: VecDeque<crate::stroke::Sample>,
     tail_peak: usize,
+    /// Smudge and blur: the area the current dab reads, and where the
+    /// previous dab was (before symmetry).
+    pub(crate) blend_scratch: crate::blend_brush::Scratch,
+    pub(crate) blend_last: Option<[f32; 2]>,
 }
 /// Own original pixels until rollback completes. The controller must prevent
 /// document replacement/edits and retain the history checkpoint during restore.
@@ -615,9 +619,16 @@ impl StrokeBuffer {
         settings: &Settings,
     ) -> Painted {
         let mut result = Painted::default();
-        for ([x, y], map) in settings
+        let moves = if settings.brush.blend.is_paint() || self.prefix_pass {
+            Vec::new()
+        } else {
+            self.blend_moves(sample, settings, [doc.width, doc.height])
+        };
+        for (copy, ([x, y], map)) in settings
             .symmetry
             .copies(sample.x, sample.y, doc.width, doc.height)
+            .into_iter()
+            .enumerate()
         {
             let bounds =
                 crate::render_region::dab_bounds(x, y, &settings.brush, doc.width, doc.height);
@@ -626,13 +637,23 @@ impl StrokeBuffer {
             }
             result.region.include(bounds);
             result.dabs += 1;
-            doc.dab_sample_buffered(
+            let mut raster = crate::document::DabRaster::new(
                 crate::stroke::Sample { x, y, ..sample },
+                &settings.brush,
+                map,
+                doc.width,
+                doc.height,
+            );
+            raster.smear = moves.get(copy).copied().unwrap_or_default();
+            let (top, bottom) = (raster.top, raster.bottom);
+            doc.paint_dab_rows(
+                &raster,
                 &settings.brush,
                 settings.color,
                 settings.erase,
-                map,
                 Some(self),
+                top,
+                bottom,
             );
         }
         result
@@ -647,7 +668,7 @@ impl StrokeBuffer {
             return Painted::default();
         }
         let mut result = Painted::default();
-        if settings.brush.taper_out > 0.0 {
+        if settings.brush.tail_length() > 0.0 {
             if self
                 .tail
                 .back()
@@ -655,11 +676,9 @@ impl StrokeBuffer {
             {
                 result.merge(self.finish_tail(doc, settings));
             }
-            while self
-                .tail
-                .front()
-                .is_some_and(|old| sample.distance - old.distance > settings.brush.taper_out as f64)
-                || self.tail.len() >= MAX_TAIL_DABS
+            while self.tail.front().is_some_and(|old| {
+                sample.distance - old.distance > settings.brush.tail_length() as f64
+            }) || self.tail.len() >= MAX_TAIL_DABS
             {
                 let old = self.tail.pop_front().unwrap();
                 self.prefix_pass = true;
@@ -670,7 +689,7 @@ impl StrokeBuffer {
             }
         }
         result.merge(self.render(doc, sample, settings));
-        if settings.brush.taper_out > 0.0 {
+        if settings.brush.tail_length() > 0.0 {
             self.tail.push_back(sample);
             self.tail_peak = self.tail_peak.max(self.tail.len());
         }
@@ -698,7 +717,7 @@ impl StrokeBuffer {
     ) -> Option<TailReplay> {
         if self.tail.is_empty()
             || doc.active != settings.layer
-            || settings.brush.taper_out <= 0.0
+            || settings.brush.tail_length() <= 0.0
             || self.target != settings.target
             || doc
                 .layers
@@ -822,6 +841,7 @@ impl StrokeBuffer {
                 .sum::<usize>()
             + self.prefix.capacity() * std::mem::size_of::<Option<Box<[f32]>>>()
             + self.tail.capacity() * std::mem::size_of::<crate::stroke::Sample>()
+            + self.blend_scratch.capacity_bytes()
     }
     /// After tail finalization, prefix coverage and retained dabs are no longer
     /// needed. Original pixels and total coverage remain available for rollback.
@@ -892,6 +912,49 @@ impl StrokeBuffer {
             self.prefix.push(None);
             index
         })
+    }
+    /// Record `pixel` as the original at (`x`, `y`) if the stroke has not
+    /// touched it yet. Smudge and blur change pixels in place, so rollback
+    /// needs only the original.
+    pub(crate) fn remember_at(&mut self, layer: usize, x: usize, y: usize, pixel: &[u8]) {
+        let key = (layer, x / 32, y / 32);
+        let block = if let Some((cached_key, block)) = self.cached
+            && cached_key == key
+        {
+            block
+        } else {
+            let block = self.block(key);
+            self.cached = Some((key, block));
+            block
+        };
+        let entry = &mut self.blocks[block][(y % 32) * 32 + x % 32];
+        if entry.1 < 0.0 {
+            *entry = (pixel.try_into().unwrap(), 0.0);
+        }
+    }
+    /// Where each symmetry copy of `sample` moved since the previous dab.
+    pub(crate) fn blend_moves(
+        &mut self,
+        sample: crate::stroke::Sample,
+        settings: &Settings,
+        size: [usize; 2],
+    ) -> Vec<[f32; 2]> {
+        let now = settings
+            .symmetry
+            .copies(sample.x, sample.y, size[0], size[1]);
+        let before = self
+            .blend_last
+            .replace([sample.x, sample.y])
+            .map(|[x, y]| settings.symmetry.copies(x, y, size[0], size[1]));
+        now.iter()
+            .enumerate()
+            .map(|(i, (at, _))| {
+                before
+                    .as_ref()
+                    .and_then(|b| b.get(i))
+                    .map_or([0.0; 2], |(from, _)| [at[0] - from[0], at[1] - from[1]])
+            })
+            .collect()
     }
     /// Make sure the 32 px block at (`bx`, `by`) of `layer` exists.
     pub(crate) fn touch_block(&mut self, layer: usize, bx: usize, by: usize) {
