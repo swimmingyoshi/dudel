@@ -64,6 +64,9 @@ pub struct Preferences {
     pub layout: LayoutPrefs,
     #[serde(default)]
     pub new_canvas: crate::new_canvas::Prefs,
+    /// Named panel arrangements (View > Workspaces).
+    #[serde(default)]
+    pub workspaces: Vec<crate::workspace_layouts::Workspace>,
 }
 
 /// Heights the artist dragged in the side panels; None keeps the automatic size.
@@ -166,6 +169,7 @@ impl Preferences {
         p.recent.truncate(10);
         p.recent_colors.truncate(16);
         p.text.sanitize();
+        crate::workspace_layouts::sanitize(&mut p.workspaces);
         p.storage.sanitize();
         for name in &mut p.tools.group_presets {
             name.truncate(256);
@@ -252,6 +256,7 @@ mod tests {
                 }],
                 recent: vec![],
             },
+            workspaces: vec![],
         };
         let restored = Preferences::decode(&serde_json::to_string(&p).unwrap()).unwrap();
         assert_eq!(restored.theme, p.theme);

@@ -778,6 +778,13 @@ impl Dudel {
                 self.inspector_override = None;
                 self.show_panels = true;
             }
+            // Clicks in the name field must not close the menu.
+            egui::containers::menu::SubMenuButton::new("Workspaces")
+                .config(
+                    egui::containers::menu::MenuConfig::default()
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+                )
+                .ui(ui, |ui| self.workspaces_menu(ui));
             ui.separator();
             self.command_menu_item(ui, crate::commands::Action::ZoomIn);
             self.command_menu_item(ui, crate::commands::Action::ZoomOut);

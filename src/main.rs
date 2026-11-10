@@ -201,6 +201,7 @@ mod window_chrome;
 #[cfg(test)]
 mod workflow_tests;
 mod workspace;
+mod workspace_layouts;
 use tools::Tool;
 
 use brush::Brush;
@@ -393,6 +394,9 @@ struct Dudel {
     inspector_navigator: bool,
     /// Dragged widths of the tool property panel and the inspector.
     sidebar_widths: [Option<f32>; 2],
+    /// Named panel arrangements, and the name being typed for a new one.
+    workspaces: Vec<workspace_layouts::Workspace>,
+    workspace_name: String,
     canvas_area: egui::Rect,
     symmetry: symmetry::Symmetry,
     symmetry_drag: bool,
@@ -673,6 +677,8 @@ impl Default for Dudel {
             navigator_height: None,
             inspector_navigator: false,
             sidebar_widths: [None; 2],
+            workspaces: Vec::new(),
+            workspace_name: String::new(),
             canvas_area: egui::Rect::NOTHING,
             symmetry: symmetry::Symmetry::default(),
             symmetry_drag: false,
@@ -932,6 +938,7 @@ impl Dudel {
         self.input.native_requested = p.native_pen;
         self.inspector_override = p.inspector_override;
         self.tool_panel_override = p.tool_panel_override;
+        self.workspaces = p.workspaces;
         self.recent = p.recent;
         self.secondary = p.secondary;
         self.recent_colors = p.recent_colors;
@@ -1017,6 +1024,7 @@ impl Dudel {
             tabs: preferences::TabPrefs { max: self.tabs.max },
             timelapse: self.timelapse.prefs.clone(),
             new_canvas: self.new_canvas_form.prefs.clone(),
+            workspaces: self.workspaces.clone(),
             shortcuts: self.shortcuts.clone(),
             shortcuts_dropped: 0,
             graphs_dropped: 0,

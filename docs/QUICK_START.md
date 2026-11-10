@@ -329,6 +329,11 @@ when a smaller window hid them automatically. Keyboard shortcuts switch tools
 without opening the panel. Saving, opening and filter progress appear in the status
 bar, so the canvas never shifts while they run.
 
+**View > Workspaces** saves the current arrangement under a name (which panels
+show, their widths and heights, and the Color or Navigator tab) and switches
+back to it with one click: for example a painting layout with large color and
+a bare one for a small screen. Saving under an existing name replaces it.
+
 From the canvas, **F6** focuses workspace controls. **Tab** / **Shift+Tab** move
 focus, and **Space** or **Enter** activates a button. **Escape** leaves a field or
 dismisses the current popup. With no control focused, **Tab** hides or shows panels.

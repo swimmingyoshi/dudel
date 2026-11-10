@@ -4943,3 +4943,27 @@ fn fill_tool_gradient_mode_paints_a_dragged_gradient_as_one_undo_step() {
     w.settle();
     assert!(!w.app.gradient.active);
 }
+
+#[test]
+fn view_menu_saves_and_switches_named_workspaces() {
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.app.sidebar_widths = [Some(300.0), Some(320.0)];
+    ui.settle();
+    ui.click(ui.text("View"));
+    ui.click(ui.text("Workspaces"));
+    ui.click(ui.text("Name"));
+    ui.frame(vec![egui::Event::Text("Painting".into())]);
+    ui.click(ui.text("Save"));
+    assert_eq!(ui.app.workspaces.len(), 1);
+    assert_eq!(ui.app.workspaces[0].name, "Painting");
+    assert_eq!(ui.app.workspaces[0].widths, [Some(300.0), Some(320.0)]);
+    // Rearrange, then switch back from the menu.
+    ui.app.inspector_override = Some(false);
+    ui.app.sidebar_widths = [Some(270.0), None];
+    ui.settle();
+    ui.click(ui.text("View"));
+    ui.click(ui.text("Workspaces"));
+    ui.click(ui.text("Painting"));
+    assert_eq!(ui.app.inspector_override, None);
+    assert_eq!(ui.app.status, "Workspace “Painting”");
+}

@@ -19,9 +19,8 @@ A polish release with no large new features.
 - [x] Visible checkboxes and radio buttons; highlighted main dialog buttons.
 - [x] More room for layers; no duplicate zoom and rotation controls.
 - [x] Color and Navigator as tabs in the right panel.
-- [ ] Workspace reorganization: decide which panels can be docked, tabbed or
-      hidden (brush library, color, navigator, layers, references) and whether
-      layouts can be saved (see *Named workspace layouts* below).
+- [x] Workspace reorganization: decided 2026-11-10 to keep today's panel
+      arrangement; named workspaces save it (0.4). Docking stays a later idea.
 - [x] Docs reorganized under `docs/`; process records archived.
 - [ ] Find three to five testers on other tablets (Wacom, Huion, XP-Pen
       models besides the Artist 12) and act on their reports first.
@@ -51,7 +50,8 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
 4. [x] **Brush graph, milestone 1** (engine only): see the
        [brush graph plan](BRUSH_GRAPH_PLAN.md). Next: milestone 2, the
        editor.
-5. [ ] Named workspace layouts, after the workspace reorganization above.
+5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
+       their sizes and the Color/Navigator tab, and switches between them.
 
 ## Later
 
