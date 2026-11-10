@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-09, after the 0.2.0 release. This replaces the earlier plan
+Updated 2026-11-10, after the 0.3.0 pre-release. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -28,15 +28,28 @@ A polish release with no large new features.
 - [x] Layers panel: rarely used toolbar actions in a menu; the mask row only
       for layers with a mask.
 - [x] One dialog style: title, close button and button order everywhere.
-- [ ] Build and attach the Linux tarball for each release.
+- [x] Build and attach the Linux tarball for each release (cross-built since 0.3.0).
 
-## Next tools
+## 0.4: painting essentials
 
-In the order agreed after 0.1.0, adjusted by tester feedback:
+The everyday tools and filters artists expect from other painting apps, in
+this order (agreed 2026-11-10), adjusted by tester feedback:
 
-1. Gradient tool.
-2. Smudge and blur brushes.
-3. Named workspace layouts.
+1. [ ] **Gradient tool:** drag to fill the layer or selection with linear,
+       radial, angle, reflected or diamond gradients, from the current colors
+       or saved gradients. Reuses the gradient model and editor of layer
+       effects.
+2. [ ] **Filters:** Gaussian blur, sharpen (unsharp mask) and add noise, each
+       with a live preview; and every adjustment-layer type (curves, posterize,
+       threshold, color balance and the rest) also applied directly from the
+       Filter menu. Blur reuses the layer-effects blur.
+3. [ ] **Blending brushes:** a brush mode that smudges (drags color along the
+       stroke) or blurs instead of painting, with built-in Smudge, Blend and
+       Blur presets. Needs a dab path that reads the canvas under the tip.
+4. [ ] **Brush graph, milestone 1** (engine only): see the
+       [brush graph proposal](BRUSH_GRAPH_PLAN.md). Waits for review of the
+       proposal.
+5. [ ] Named workspace layouts, after the workspace reorganization above.
 
 ## Later
 

@@ -24,6 +24,7 @@
 - [Project format](dev/PROJECT_FORMAT.md): the `.dudel` container.
 - [Linux port](dev/LINUX_PORT.md): status of the Linux build.
 - [Animation plan](dev/ANIMATION_PLAN.md): a proposal for editable animation.
+- [Brush graph](dev/BRUSH_GRAPH_PLAN.md): a proposal for node-based brush behavior.
 
 ## Release records
 
