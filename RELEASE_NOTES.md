@@ -4,7 +4,11 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.3.0 (in testing)
+
+A polish release for the first outside testers: a friendlier start, clearer
+panels and dialogs, and a report when something goes wrong. Projects and file
+formats are unchanged from 0.2.0.
 
 - A **welcome window** on startup: start a new canvas, open a file or a recent
   project, and see the few keys worth learning first. Untick *Show this window
