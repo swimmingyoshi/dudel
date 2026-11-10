@@ -39,10 +39,10 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        paints linear, radial, angle, reflected or diamond gradients from the
        current colors or custom stops, reusing the layer-effects gradient
        model. Later: a library of named gradients.
-2. [ ] **Filters:** Gaussian blur, sharpen (unsharp mask) and add noise, each
-       with a live preview; and every adjustment-layer type (curves, posterize,
-       threshold, color balance and the rest) also applied directly from the
-       Filter menu. Blur reuses the layer-effects blur.
+2. [x] **Filters:** Gaussian blur, sharpen (unsharp mask) and add noise, each
+       with a live preview (blur reuses the layer-effects blur).
+   [ ] Every adjustment-layer type (curves, posterize, threshold, color
+       balance and the rest) also applied directly from the Filter menu.
 3. [ ] **Blending brushes:** a brush mode that smudges (drags color along the
        stroke) or blurs instead of painting, with built-in Smudge, Blend and
        Blur presets. Needs a dab path that reads the canvas under the tip.

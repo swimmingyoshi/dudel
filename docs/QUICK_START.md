@@ -232,6 +232,13 @@ it and double-click to remove it. Hue/saturation exposes individual color ranges
 gradient maps have editable middle stops, and Levels shows a histogram. The Layer
 menu also provides adjustment actions.
 
+**Filters** change the selected layer's pixels directly, inside the selection,
+with a live preview and one undo step: **Filter > Brightness / contrast**, **Hue
+/ saturation** and **Levels**; **Gaussian blur** (blurs spread into clear areas
+unless Lock transparency is on); **Sharpen**, an unsharp mask with amount and
+radius; and **Add noise**, in color or monochrome grain. **Invert**,
+**Grayscale** and extension filters are in the same menu.
+
 **Clipping:** the clip button in the layer action row limits a layer or adjustment
 to the layer below it. The Layers panel joins clipped rows to their base with a
 rail and an arrow. A clipped row reads "Clipped to" its base, and the base says

@@ -11,6 +11,8 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   from the main to the secondary color, the main color to transparent, or your
   own stops. Selections and Lock transparency apply, and on a mask a gradient
   makes a soft fade.
+- **New filters:** **Filter > Gaussian blur**, **Sharpen** (unsharp mask) and
+  **Add noise**, with a live preview, inside the selection, as one undo step.
 
 ## 0.3.0 (2026-11-10)
 

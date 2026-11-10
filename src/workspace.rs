@@ -693,6 +693,17 @@ impl Dudel {
                 }
             }
             ui.separator();
+            for kind in [
+                crate::adjustments::Kind::GaussianBlur,
+                crate::adjustments::Kind::Sharpen,
+                crate::adjustments::Kind::AddNoise,
+            ] {
+                if ui.button(format!("{}\u{2026}", kind.name())).clicked() {
+                    self.start_adjustment(kind);
+                    ui.close();
+                }
+            }
+            ui.separator();
             if ui.button("Invert").clicked() {
                 self.filter(include_str!("../plugins/invert.rhai"));
                 ui.close();

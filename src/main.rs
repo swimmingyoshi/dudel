@@ -58,6 +58,7 @@ mod extension_api;
 mod extensions;
 mod file_preview;
 mod fill;
+mod filters;
 mod folders;
 #[cfg(feature = "allocation-profile")]
 mod gpu_profile;
@@ -1928,6 +1929,7 @@ fn run() -> eframe::Result {
     let capture_shortcuts = mode.as_deref() == Some("--capture-shortcuts");
     let capture_welcome = mode.as_deref() == Some("--capture-welcome");
     let capture_gradient = mode.as_deref() == Some("--capture-gradient");
+    let capture_filter = mode.as_deref() == Some("--capture-filter");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -1997,6 +1999,7 @@ fn run() -> eframe::Result {
         || capture_shortcuts
         || capture_welcome
         || capture_gradient
+        || capture_filter
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2664,6 +2667,11 @@ fn run() -> eframe::Result {
                 }
                 if capture_settings {
                     app.settings_open = true;
+                }
+                if capture_filter {
+                    // The Gaussian blur dialog over the sample artwork.
+                    app.doc.active = app.doc.layers.len() - 1;
+                    app.start_adjustment(adjustments::Kind::GaussianBlur);
                 }
                 if capture_gradient {
                     // The Fill tool's Gradient mode mid-drag, with its options.

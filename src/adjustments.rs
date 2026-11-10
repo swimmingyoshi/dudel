@@ -13,6 +13,9 @@ pub(crate) enum Kind {
     BrightnessContrast,
     HueSaturation,
     Levels,
+    GaussianBlur,
+    Sharpen,
+    AddNoise,
 }
 
 #[cfg(test)]
@@ -284,6 +287,43 @@ mod tests {
         assert!(!app.modified);
     }
     #[test]
+    fn neighborhood_filters_preview_apply_and_undo_in_one_step() {
+        for settings in [
+            Kind::GaussianBlur.defaults(),
+            Kind::Sharpen.defaults(),
+            Kind::AddNoise.defaults(),
+        ] {
+            let mut app = app();
+            let source = app.doc.composite_transparent();
+            app.start_adjustment(settings.kind());
+            app.adjustment.as_mut().unwrap().settings = settings;
+            wait(&mut app);
+            let filtered = app.doc.composite_transparent();
+            assert_ne!(source, filtered, "{settings:?} previews a change");
+            app.apply_adjustment();
+            wait(&mut app);
+            assert_eq!(app.doc.composite_transparent(), filtered);
+            app.undo();
+            wait(&mut app);
+            assert_eq!(app.doc.composite_transparent(), source, "{settings:?}");
+        }
+        // Zero strength is no change at all.
+        for neutral in [
+            Settings::GaussianBlur { radius: 0.0 },
+            Settings::Sharpen {
+                amount: 0.0,
+                radius: 2.0,
+            },
+            Settings::AddNoise {
+                amount: 0.0,
+                monochrome: true,
+            },
+        ] {
+            assert!(neutral.is_identity() && neutral.validate().is_ok());
+        }
+        assert!(Settings::GaussianBlur { radius: 900.0 }.validate().is_err());
+    }
+    #[test]
     fn latest_settings_win_and_stale_documents_are_never_overwritten() {
         let mut app = app();
         app.start_adjustment(Kind::BrightnessContrast);
@@ -383,6 +423,9 @@ impl Kind {
             Self::BrightnessContrast => "Brightness / contrast",
             Self::HueSaturation => "Hue / saturation",
             Self::Levels => "Levels",
+            Self::GaussianBlur => "Gaussian blur",
+            Self::Sharpen => "Sharpen",
+            Self::AddNoise => "Add noise",
         }
     }
     pub(crate) fn defaults(self) -> Settings {
@@ -402,6 +445,15 @@ impl Kind {
                 gamma: 1.0,
                 output_black: 0,
                 output_white: 255,
+            },
+            Self::GaussianBlur => Settings::GaussianBlur { radius: 4.0 },
+            Self::Sharpen => Settings::Sharpen {
+                amount: 100.0,
+                radius: 1.5,
+            },
+            Self::AddNoise => Settings::AddNoise {
+                amount: 10.0,
+                monochrome: false,
             },
         }
     }
@@ -424,6 +476,20 @@ pub(crate) enum Settings {
         output_black: u8,
         output_white: u8,
     },
+    /// Radius in pixels.
+    GaussianBlur {
+        radius: f32,
+    },
+    /// Amount in percent; radius in pixels.
+    Sharpen {
+        amount: f32,
+        radius: f32,
+    },
+    /// Amount in percent of full brightness.
+    AddNoise {
+        amount: f32,
+        monochrome: bool,
+    },
 }
 impl Settings {
     fn kind(self) -> Kind {
@@ -431,6 +497,33 @@ impl Settings {
             Self::BrightnessContrast { .. } => Kind::BrightnessContrast,
             Self::HueSaturation { .. } => Kind::HueSaturation,
             Self::Levels { .. } => Kind::Levels,
+            Self::GaussianBlur { .. } => Kind::GaussianBlur,
+            Self::Sharpen { .. } => Kind::Sharpen,
+            Self::AddNoise { .. } => Kind::AddNoise,
+        }
+    }
+    /// Settings that leave every pixel as it is.
+    fn is_identity(self) -> bool {
+        match self {
+            Self::GaussianBlur { radius } => radius < 0.3,
+            Self::Sharpen { amount, .. } | Self::AddNoise { amount, .. } => amount == 0.0,
+            other => other == other.kind().defaults(),
+        }
+    }
+    /// The neighborhood filter these settings describe, if any.
+    fn filter(self) -> Option<crate::filters::Filter> {
+        use crate::filters::Filter;
+        match self {
+            Self::GaussianBlur { radius } => Some(Filter::Blur { radius }),
+            Self::Sharpen { amount, radius } => Some(Filter::Sharpen {
+                amount: amount / 100.0,
+                radius,
+            }),
+            Self::AddNoise { amount, monochrome } => Some(Filter::Noise {
+                amount: amount / 100.0,
+                monochrome,
+            }),
+            _ => None,
         }
     }
     pub(crate) fn validate(self) -> Result<(), String> {
@@ -462,6 +555,14 @@ impl Settings {
                     && (0.1..=10.0).contains(&gamma)
                     && output_black <= output_white
             }
+            Self::GaussianBlur { radius } => radius.is_finite() && (0.0..=250.0).contains(&radius),
+            Self::Sharpen { amount, radius } => {
+                amount.is_finite()
+                    && (0.0..=500.0).contains(&amount)
+                    && radius.is_finite()
+                    && (0.1..=100.0).contains(&radius)
+            }
+            Self::AddNoise { amount, .. } => amount.is_finite() && (0.0..=100.0).contains(&amount),
         };
         if valid {
             Ok(())
@@ -571,12 +672,21 @@ pub(crate) fn prepare(
     if control.cancel.load(Ordering::Relaxed) {
         return Err("Adjustment canceled".into());
     }
-    if settings == settings.kind().defaults() {
+    if settings.is_identity() {
         return Ok(source.clone());
     }
     let mut result = source.clone();
     let layer = &mut result.layers[source.active];
-    if matches!(settings, Settings::HueSaturation { .. }) {
+    if let Some(filter) = settings.filter() {
+        crate::filters::apply(
+            layer,
+            source.selection,
+            source.selection_mask.as_ref(),
+            [source.width, source.height],
+            filter,
+            control,
+        )?;
+    } else if matches!(settings, Settings::HueSaturation { .. }) {
         crate::plugins::filter_pixels_masked(
             layer,
             source.selection,
@@ -907,6 +1017,17 @@ impl Dudel {
                                 crate::workspace::labeled_slider(ui, "Black", egui::Slider::new(output_black, 0..=*output_white));
                                 crate::workspace::labeled_slider(ui, "White", egui::Slider::new(output_white, *output_black..=255));
                             }
+                            Settings::GaussianBlur { radius } => {
+                                crate::workspace::labeled_slider(ui, "Radius", egui::Slider::new(radius, 0.0..=250.0).logarithmic(true).suffix(" px").max_decimals(1));
+                            }
+                            Settings::Sharpen { amount, radius } => {
+                                crate::workspace::labeled_slider(ui, "Amount", egui::Slider::new(amount, 0.0..=500.0).suffix("%").integer());
+                                crate::workspace::labeled_slider(ui, "Radius", egui::Slider::new(radius, 0.1..=100.0).logarithmic(true).suffix(" px").max_decimals(1));
+                            }
+                            Settings::AddNoise { amount, monochrome } => {
+                                crate::workspace::labeled_slider(ui, "Amount", egui::Slider::new(amount, 0.0..=100.0).suffix("%").max_decimals(1));
+                                ui.checkbox(monochrome, "Monochrome").on_hover_text("The same grain on every channel, so colors keep their hue");
+                            }
                         });
                         if before != preview.settings { preview.error = None; }
                         ui.checkbox(&mut preview.enabled, "Preview");
@@ -928,7 +1049,11 @@ impl Dudel {
                             let label = ui.add(egui::Label::new(status).truncate());
                             if let Some(error) = &preview.error { label.on_hover_text(error); }
                         });
-                        ui.small("Adjusts the selected layer inside the selection. Transparency is preserved. Apply creates one undo step.");
+                        ui.small(if matches!(preview.settings, Settings::GaussianBlur { .. }) {
+                            "Softens the selected layer inside the selection. Edges spread into clear areas unless Lock transparency is on. Apply creates one undo step."
+                        } else {
+                            "Adjusts the selected layer inside the selection. Transparency is preserved. Apply creates one undo step."
+                        });
                     });
             let mut reset = false;
             crate::dialogs::dialog_buttons_beside(ui, |ui| {
