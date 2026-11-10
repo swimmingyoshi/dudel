@@ -4,7 +4,7 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## 0.3.0 (in testing)
+## 0.3.0 (2026-11-10)
 
 A polish release for the first outside testers: a friendlier start, clearer
 panels and dialogs, and a report when something goes wrong. Projects and file

@@ -1,8 +1,51 @@
-# Windows 0.2 release decision — 2026-11-09
+# Windows 0.3 release decision — 2026-11-10
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.3.0 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-10 to make a pre-release. The 0.2.0
+decision that follows remains the record for the evidence carried over.
+
+**Application source:** commit `f6e5b5a`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`6E92CBFC...CE234D4B` and DLL `C21A954B...31CFA0CD`, and release packaging refuses
+different bytes.
+
+**What changed since 0.2.0** (see [release notes](../../RELEASE_NOTES.md)): a
+welcome window, problem reports with a message when Dudel has to close, Help
+menu links, Color and Navigator as tabs, a tidier layer toolbar with the mask
+row only for masked layers, one dialog style, palette color extraction and
+color ideas, checkbox and radio contrast in dark themes, and the documentation
+moved under `docs/`. Project and file formats are unchanged.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full` on `f6e5b5a`: default and all-feature
+  test runs (1,327 tests in the all-feature run, 17 ignored), the DLL tests,
+  formatting, both Clippy configurations, both release builds, the 42 Python
+  tests and the public-tree check.
+- Hosted Windows and Linux CI passed on `b108c3c`, whose application code is
+  the same as `f6e5b5a` apart from the version number.
+- Candidate `dudel-0.3.0-candidate-20261110-175240-000`: static runtime (no
+  Visual C++ imports), no private paths or terms, and 0 public-tree problems in
+  the package and its source ZIP.
+- The packaged executable started, showed version 0.3.0 and captured its
+  workspace and welcome window.
+- The Linux tarball was cross-built with `cargo-zigbuild` against glibc 2.31
+  (the binary needs at most 2.30). It was not started; Linux stays experimental.
+
+**Not run on this build:** the private CSP corpus comparison (import code is
+unchanged since 0.2.0), the resource and two-hour studies, an owner pen pass
+over the new panels and dialogs, and a launch of the Linux build. The painting,
+storage, recovery and import evidence carries over from 0.2.0 where those areas
+are unchanged; the new interface code is covered by the automated workflow
+tests above. Outside testers are the next check.
+
+**Known limits** are listed under "Known limits" in the release notes.
+
+# Windows 0.2 release decision — 2026-11-09
 
 **Release preparation for 0.2.0 is accepted for the Windows scope below,** at
 the owner's request to start the 0.2.0 release on 2026-11-09. The 0.1.0
