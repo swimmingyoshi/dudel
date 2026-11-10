@@ -416,8 +416,8 @@ impl Dudel {
                 && !self.doc.layers[active - 1].folder
                 && self.doc.layers[active - 1].depth == layer.depth
         };
-        // Eleven actions share this row, including the three right-aligned locks.
-        let action_size = ((ui.available_width() - 20.0) / 11.0).clamp(20.0, 30.0);
+        // Ten actions share this row, including the three right-aligned locks.
+        let action_size = ((ui.available_width() - 18.0) / 10.0).clamp(20.0, 30.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if icons::button(ui, Icon::Plus, action_size, false, self.doc.has_room(1, 1))
@@ -484,47 +484,33 @@ impl Dudel {
             {
                 self.delete_layer();
             }
+            let properties = self.input_properties();
+            let has_mask = properties.is_some_and(|p| p.mask.is_some());
+            let editing_mask = has_mask && !self.input_stroke_target().is_raster();
             if icons::button(
                 ui,
-                Icon::Image,
+                Icon::Mask,
                 action_size,
-                false,
-                self.reference_layers.layers.len() < crate::reference_layers::MAX_REFERENCES,
+                editing_mask,
+                target_ready && (has_mask || properties.is_some_and(|p| !p.locked)),
             )
-            .on_hover_text("Add reference image: place a picture on the canvas to draw from")
+            .on_hover_text(if has_mask {
+                "Switch between painting the mask and the artwork"
+            } else {
+                "Add mask: shows everything, or only the selection when there is one. \
+                 Paint black on it to hide"
+            })
             .clicked()
             {
-                self.add_reference_layer();
-            }
-            if icons::button(
-                ui,
-                Icon::Effects,
-                action_size,
-                self.effects_window_open,
-                target_ready,
-            )
-            .on_hover_text("Layer effects: shadows, glows, strokes, overlays, bevels")
-            .clicked()
-            {
-                self.effects_window_open = !self.effects_window_open;
-            }
-            let adjust = icons::button(
-                ui,
-                Icon::Adjustment,
-                action_size,
-                false,
-                self.doc.has_room(1, 1),
-            )
-            .on_hover_text("New adjustment layer: levels, curves, hue/saturation and more");
-            egui::Popup::menu(&adjust).show(|ui| {
-                for settings in crate::adjustment::presets() {
-                    if ui.button(settings.name()).clicked() {
-                        self.create_adjustment_layer(settings);
-                        self.adjustment_window_open = true;
-                        ui.close();
-                    }
+                if has_mask {
+                    self.focus_current_mask(!editing_mask);
+                } else {
+                    self.add_mask();
                 }
-            });
+            }
+            let more = icons::button(ui, Icon::More, action_size, false, true)
+                .on_hover_text("More: mask, effects, adjustment layers, reference images");
+            egui::Popup::menu(&more).show(|ui| self.layer_more_menu(ui, target_ready));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 let Some(target) = self.input_target() else {
@@ -586,6 +572,43 @@ impl Dudel {
         self.layer_properties_ui(ui);
         if self.mask_controls_available() {
             self.mask_controls_ui(ui);
+        }
+    }
+
+    /// Less frequent layer actions, behind the toolbar's More button.
+    fn layer_more_menu(&mut self, ui: &mut egui::Ui, target_ready: bool) {
+        ui.set_min_width(220.0);
+        ui.menu_button("Layer mask", |ui| self.mask_menu_items(ui));
+        if ui
+            .add_enabled(target_ready, egui::Button::new("Layer effects…"))
+            .on_hover_text("Shadows, glows, strokes, overlays, bevels")
+            .clicked()
+        {
+            self.effects_window_open = true;
+            ui.close();
+        }
+        ui.add_enabled_ui(self.doc.has_room(1, 1), |ui| {
+            ui.menu_button("New adjustment layer", |ui| {
+                for settings in crate::adjustment::presets() {
+                    if ui.button(settings.name()).clicked() {
+                        self.create_adjustment_layer(settings);
+                        self.adjustment_window_open = true;
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.separator();
+        if ui
+            .add_enabled(
+                self.reference_layers.layers.len() < crate::reference_layers::MAX_REFERENCES,
+                egui::Button::new("Add reference image…"),
+            )
+            .on_hover_text("Place a picture on the canvas to draw from")
+            .clicked()
+        {
+            self.add_reference_layer();
+            ui.close();
         }
     }
 

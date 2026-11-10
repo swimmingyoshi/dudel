@@ -880,7 +880,7 @@ impl Dudel {
             .area(egui::Modal::default_area(id).fade_in(false))
             .show(ctx, |ui| {
             ui.set_width(360.0);
-            ui.heading(preview.settings.kind().name());
+            cancel |= crate::dialogs::dialog_title(ui, preview.settings.kind().name());
             // Keep the controls and status slot present throughout worker updates.
             // A centered modal moves under the pointer if its contents change size.
                 egui::ScrollArea::vertical()
@@ -930,11 +930,14 @@ impl Dudel {
                         });
                         ui.small("Adjusts the selected layer inside the selection. Transparency is preserved. Apply creates one undo step.");
                     });
-            ui.horizontal(|ui| {
+            let mut reset = false;
+            crate::dialogs::dialog_buttons_beside(ui, |ui| {
+                reset = ui.button("Reset").on_hover_text("Return every setting to its default").clicked();
+            }, |ui| {
                 apply = ui.add_enabled(preview.ready(), crate::workspace::primary_button(ui, "Apply")).clicked();
-                if ui.button("Reset").clicked() { preview.settings = preview.settings.kind().defaults(); preview.error = None; }
-                cancel = ui.button("Cancel").clicked();
+                cancel |= ui.button("Cancel").clicked();
             });
+            if reset { preview.settings = preview.settings.kind().defaults(); preview.error = None; }
         });
         if apply {
             self.apply_adjustment();

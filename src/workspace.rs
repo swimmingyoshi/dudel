@@ -620,6 +620,7 @@ impl Dudel {
                 self.rasterize_layer();
             }
             self.command_menu_item(ui, crate::commands::Action::Effects);
+            ui.menu_button("Layer mask", |ui| self.mask_menu_items(ui));
             self.command_menu_item(ui, crate::commands::Action::Group);
             self.command_menu_item(ui, crate::commands::Action::Ungroup);
             ui.separator();

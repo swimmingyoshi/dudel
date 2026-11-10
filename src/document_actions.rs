@@ -79,17 +79,25 @@ impl Dudel {
         let response =
             eframe::egui::Modal::new(eframe::egui::Id::new("unsaved painting")).show(ctx, |ui| {
                 ui.set_width(360.0);
-                ui.heading("Save your painting?");
-                ui.add_space(8.0);
+                if crate::dialogs::dialog_title(ui, "Save your painting?") {
+                    choice = Some(UnsavedChoice::Cancel);
+                }
                 ui.label(format!(
                     "‘{name}’ has unsaved changes. Save them before continuing?"
                 ));
-                ui.add_space(16.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
+                ui.add_space(12.0);
+                crate::dialogs::dialog_buttons(ui, |ui| {
+                    if ui
+                        .add(crate::workspace::primary_button(ui, "Save"))
+                        .clicked()
+                    {
                         choice = Some(UnsavedChoice::Save);
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button("Don't save")
+                        .on_hover_text("Continue and lose the unsaved changes")
+                        .clicked()
+                    {
                         choice = Some(UnsavedChoice::Discard);
                     }
                     if ui.button("Cancel").clicked() {

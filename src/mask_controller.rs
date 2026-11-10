@@ -168,11 +168,16 @@ impl Dudel {
         }
         .into();
     }
+    /// The Artwork/Mask target switch and mask actions. Shown only when the
+    /// selected layer has a mask; masks are added from the layer toolbar or
+    /// the Layer menu.
     pub(crate) fn mask_controls_ui(&mut self, ui: &mut crate::egui::Ui) {
         let Some(properties) = self.input_properties() else {
             return;
         };
-        let mask = properties.mask;
+        if properties.mask.is_none() {
+            return;
+        }
         let narrow = ui.available_width() < 300.0;
         ui.horizontal(|ui| {
             if narrow {
@@ -187,103 +192,94 @@ impl Dudel {
             {
                 self.focus_current_mask(false);
             }
-            if mask.is_some() {
-                if ui
-                    .add(
-                        crate::egui::Button::new("Mask")
-                            .selected(!self.input_stroke_target().is_raster()),
-                    )
-                    .on_hover_text("Black conceals, white reveals; erasing reveals the artwork")
-                    .clicked()
-                {
-                    self.focus_current_mask(true);
-                }
-            } else if ui
-                .add_enabled(!properties.locked, crate::egui::Button::new("Add mask"))
-                .on_hover_text(
-                    "Add a mask that shows everything, or only the selection when there is \
-                     one. Paint black on it to hide",
+            if ui
+                .add(
+                    crate::egui::Button::new("Mask")
+                        .selected(!self.input_stroke_target().is_raster()),
                 )
+                .on_hover_text("Black conceals, white reveals; erasing reveals the artwork")
                 .clicked()
             {
-                self.add_mask();
+                self.focus_current_mask(true);
             }
-            ui.menu_button("Mask actions", |ui| {
-                if let Some(mask) = mask {
-                    let mut viewing = self.mask_view && !self.input_stroke_target().is_raster();
-                    if ui
-                        .checkbox(&mut viewing, "Show mask on canvas")
-                        .on_hover_text(
-                            "White reveals, black conceals · also Alt+click the mask thumbnail",
-                        )
-                        .changed()
-                    {
-                        if viewing {
-                            self.focus_current_mask(true);
-                        }
-                        self.mask_view = viewing;
-                        self.dirty = true;
-                    }
-                    ui.separator();
-                    let mut enabled = mask.enabled;
-                    let mut linked = mask.linked;
-                    ui.add_enabled_ui(!properties.locked, |ui| {
-                        if ui.checkbox(&mut enabled, "Enable mask").changed() {
-                            self.edit_canvas_mask(Command::Enabled {
-                                id: mask.id,
-                                value: enabled,
-                            });
-                        }
-                        if ui.checkbox(&mut linked, "Link to artwork").changed() {
-                            self.edit_canvas_mask(Command::Linked {
-                                id: mask.id,
-                                value: linked,
-                            });
-                        }
-                        ui.separator();
-                        if ui.button("Invert mask").clicked() {
-                            self.edit_canvas_mask(Command::Invert(mask.id));
-                            ui.close();
-                        }
-                        let can_apply =
-                            !self.input_is_folder() && (!mask.enabled || !properties.alpha_locked);
-                        if ui
-                            .add_enabled(
-                                can_apply,
-                                crate::egui::Button::new("Apply mask to artwork"),
-                            )
-                            .clicked()
-                        {
-                            self.edit_canvas_mask(Command::Apply(mask.id));
-                            ui.close();
-                        }
-                        if ui.button("Remove mask").clicked() {
-                            self.edit_canvas_mask(Command::Remove(mask.id));
-                            ui.close();
-                        }
-                    });
-                } else {
-                    ui.add_enabled_ui(!properties.locked, |ui| {
-                        for (label, seed) in [
-                            ("Add mask showing all", Seed::RevealAll),
-                            ("Add mask hiding all", Seed::HideAll),
-                            ("Add mask from selection", Seed::Selection),
-                        ] {
-                            let enabled = !matches!(seed, Seed::Selection)
-                                || self.doc.selection.is_some()
-                                || self.doc.selection_mask.is_some();
-                            if ui
-                                .add_enabled(enabled, crate::egui::Button::new(label))
-                                .clicked()
-                            {
-                                self.create_canvas_mask(seed);
-                                ui.close();
-                            }
-                        }
+            ui.menu_button("Mask actions", |ui| self.mask_menu_items(ui));
+        });
+    }
+    /// Mask commands for the selected layer: add one when it has none,
+    /// otherwise view, enable, link, invert, apply or remove it.
+    pub(crate) fn mask_menu_items(&mut self, ui: &mut crate::egui::Ui) {
+        let Some(properties) = self.input_properties() else {
+            ui.label("Select a layer first");
+            return;
+        };
+        if let Some(mask) = properties.mask {
+            let mut viewing = self.mask_view && !self.input_stroke_target().is_raster();
+            if ui
+                .checkbox(&mut viewing, "Show mask on canvas")
+                .on_hover_text("White reveals, black conceals · also Alt+click the mask thumbnail")
+                .changed()
+            {
+                if viewing {
+                    self.focus_current_mask(true);
+                }
+                self.mask_view = viewing;
+                self.dirty = true;
+            }
+            ui.separator();
+            let mut enabled = mask.enabled;
+            let mut linked = mask.linked;
+            ui.add_enabled_ui(!properties.locked, |ui| {
+                if ui.checkbox(&mut enabled, "Enable mask").changed() {
+                    self.edit_canvas_mask(Command::Enabled {
+                        id: mask.id,
+                        value: enabled,
                     });
                 }
+                if ui.checkbox(&mut linked, "Link to artwork").changed() {
+                    self.edit_canvas_mask(Command::Linked {
+                        id: mask.id,
+                        value: linked,
+                    });
+                }
+                ui.separator();
+                if ui.button("Invert mask").clicked() {
+                    self.edit_canvas_mask(Command::Invert(mask.id));
+                    ui.close();
+                }
+                let can_apply =
+                    !self.input_is_folder() && (!mask.enabled || !properties.alpha_locked);
+                if ui
+                    .add_enabled(can_apply, crate::egui::Button::new("Apply mask to artwork"))
+                    .clicked()
+                {
+                    self.edit_canvas_mask(Command::Apply(mask.id));
+                    ui.close();
+                }
+                if ui.button("Remove mask").clicked() {
+                    self.edit_canvas_mask(Command::Remove(mask.id));
+                    ui.close();
+                }
             });
-        });
+        } else {
+            ui.add_enabled_ui(!properties.locked, |ui| {
+                for (label, seed) in [
+                    ("Add mask showing all", Seed::RevealAll),
+                    ("Add mask hiding all", Seed::HideAll),
+                    ("Add mask from selection", Seed::Selection),
+                ] {
+                    let enabled = !matches!(seed, Seed::Selection)
+                        || self.doc.selection.is_some()
+                        || self.doc.selection_mask.is_some();
+                    if ui
+                        .add_enabled(enabled, crate::egui::Button::new(label))
+                        .clicked()
+                    {
+                        self.create_canvas_mask(seed);
+                        ui.close();
+                    }
+                }
+            });
+        }
     }
     /// Add mask, in one click: the selection when there is one, else a mask
     /// that shows everything.

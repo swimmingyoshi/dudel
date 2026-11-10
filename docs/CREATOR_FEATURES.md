@@ -57,7 +57,7 @@ operating system or Linux compositor, including its tiling rules.
 
 **File > Minimize window**, **Maximize window / Restore window** and **Exit**
 provide menu alternatives. Exit, the close button and Alt+F4 use the same
-Save / Discard / Cancel flow for unsaved artwork. Closing waits for existing
+Save / Don't save / Cancel flow for unsaved artwork. Closing waits for existing
 save and export cleanup. Fullscreen disables resizing and maximize controls.
 
 ## Themes

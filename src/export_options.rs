@@ -273,8 +273,7 @@ impl Dudel {
                     "{} × {} px at {} DPI",
                     self.doc.width, self.doc.height, self.doc.dpi
                 ));
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
+                crate::dialogs::dialog_buttons(ui, |ui| {
                     export = ui
                         .add(crate::workspace::primary_button(ui, "Export…"))
                         .clicked();

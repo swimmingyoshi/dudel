@@ -207,7 +207,7 @@ impl Dudel {
         let mut changed_option = false;
         let response = egui::Modal::new(egui::Id::new("new canvas form")).show(ctx, |ui| {
             ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, 440.0));
-            ui.heading("New canvas");
+            cancel |= crate::dialogs::dialog_title(ui, "New canvas");
             ui.label("Choose a starting size, then make it yours.");
             egui::ScrollArea::vertical()
                 .id_salt("new canvas fields")
@@ -369,15 +369,16 @@ impl Dudel {
             if let Err(error) = dimensions {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
-            ui.horizontal(|ui| {
+            crate::dialogs::dialog_buttons(ui, |ui| {
                 create = ui
                     .add_enabled(
                         dimensions.is_ok() && self.new_canvas_form.resolution().is_ok() && !self.tab_open_pending(),
                         crate::workspace::primary_button(ui, "Create canvas"),
                     )
+                    .on_hover_text("Enter")
                     .clicked();
                 let button = ui.button("Cancel").on_hover_text("Esc");
-                cancel = button.clicked() || (enter && button.has_focus());
+                cancel |= button.clicked() || (enter && button.has_focus());
             });
         });
         if cancel || response.should_close() {

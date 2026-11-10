@@ -94,7 +94,7 @@ state, not part of the saved artwork or undo history.
    (10,000 x 10,000, or a tall 800 x 16,384 strip). Very large canvases with many fully painted
    layers can reach the 2 GiB artwork budget; Dudel reports that clearly. The new canvas
    opens in its own tab (see [Tabs](#tabs-preview-window-and-folders)); at the tab
-   limit it replaces the current project after Save, Discard or Cancel.
+   limit it replaces the current project after Save, Don't save or Cancel.
 2. The tool rail has four paint tools: **Pencil**, **Pen**, **Brush** and
    **Airbrush**. Press **B** for the paint tools and tap **B** again to step
    through them. Each one lists its own presets in the brush selector and keeps
@@ -196,8 +196,8 @@ The blend list has 26 modes in the usual groups (darken, lighten, contrast,
 comparative and color component modes). Hover it and scroll, or press Up/Down,
 to step through modes and judge each one on the canvas.
 
-The sparkle (**fx**) button in the layer action row opens Layer Effects for the
-selected layer, and a sparkle badge on a layer row marks layers with effects (click it
+**Layer effects…** in the layer toolbar's **⋯** menu (or **Layer > Layer effects**)
+opens Layer Effects for the selected layer, and a sparkle badge on a layer row marks layers with effects (click it
 to edit them; it is crossed out when all are switched off). Effects include drop and
 inner shadows, outer and inner glows, strokes, color/gradient/pattern overlays,
 satin, and bevel and emboss. Effects follow the layer's pixels or a folder's
@@ -211,7 +211,8 @@ fill share the layer's soft edge and mask, so overlays do not thicken that edge.
 Gradient effects have editable color and opacity stops; pattern effects can load
 an image. Layer effects and adjustments require a build that reads project v6.
 
-**Adjustment layers:** the half-circle button in the layer action row adds levels,
+**Adjustment layers:** **New adjustment layer** in the layer toolbar's **⋯** menu
+(or the **Layer** menu) adds levels,
 curves, brightness/contrast, exposure, hue/saturation, vibrance, color balance, black &
 white, photo filter, channel mixer, selective color, gradient map, invert, posterize or
 threshold above the selected layer. It recolors everything below it
@@ -242,11 +243,12 @@ inside them and four commands in the middle. Star brushes in the brush library t
 add them; choose the commands in Settings > Drawing. Tap anything to use it, or
 tap outside or press Esc to close.
 
-**Masks:** **Add mask** under the layer properties adds one in a click: it shows
-everything, or only the selection when there is one, and you paint on it at once.
-**Mask actions** also adds one that hides everything. A masked layer shows its mask
-thumbnail beside the artwork. Click the
-mask thumbnail (or **Mask** under the layer properties) to paint the mask: the
+**Masks:** the mask button in the layer toolbar (a frame around a dot) adds one in
+a click: it shows everything, or only the selection when there is one, and you paint
+on it at once. **Layer > Layer mask** (also in the toolbar's **⋯** menu) adds one that
+hides everything. A masked layer shows its mask thumbnail beside the artwork, and an
+**Artwork / Mask** row appears under the layer properties. Click the
+mask thumbnail (or **Mask** in that row) to paint the mask: the
 targeted thumbnail gets an accent outline and the options bar shows **Mask**. Paint
 black to hide, white to reveal. **Mask actions > Show mask on canvas** (or Alt+click on the
 mask thumbnail) shows the mask itself on the canvas in grays while you edit it; click
@@ -283,8 +285,8 @@ selected afterward. Turn **Mirror pair** off for an ordinary one-sided edit.
 **G** selects Fill and **I** selects Picker. **Alt+click** temporarily samples a
 visible color. **Help > Keyboard shortcuts** lists the full bindings.
 
-To draw from a picture, use **Layer > Add reference image…** (or the picture
-button above the layer list). References are listed with the layers but are never
+To draw from a picture, use **Layer > Add reference image…** (or the layer
+toolbar's **⋯** menu). References are listed with the layers but are never
 part of the artwork: painting, fill, export and undo ignore them. Use the
 **Pointer (O)** to manage them: press on a reference to select and move it, drag a
 corner to scale and the top handle to rotate (**Shift** snaps to 15°); pressing

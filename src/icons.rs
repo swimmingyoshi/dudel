@@ -43,12 +43,15 @@ pub enum Icon {
     Pointer,
     /// The Text tool: a capital T.
     Text,
-    Image,
     Transparency,
     /// Layer effects: a sparkle.
     Effects,
     /// Adjustment layers: a half-filled circle.
     Adjustment,
+    /// Layer mask: a frame around a filled circle.
+    Mask,
+    /// More actions: three dots.
+    More,
 }
 
 pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
@@ -201,6 +204,15 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 .collect();
             filled(half);
         }
+        Icon::Mask => {
+            closed(&[p(0.14, 0.20), p(0.86, 0.20), p(0.86, 0.80), p(0.14, 0.80)]);
+            painter.circle_filled(p(0.5, 0.5), side * 0.18, color);
+        }
+        Icon::More => {
+            for x in [0.22, 0.5, 0.78] {
+                painter.circle_filled(p(x, 0.5), side * 0.075, color);
+            }
+        }
         Icon::Effects => {
             let star = |cx: f32, cy: f32, r: f32| -> Vec<Pos2> {
                 (0..8)
@@ -229,17 +241,6 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 p(0.82, 0.82),
                 p(0.50, 0.82),
             ]);
-        }
-        Icon::Image => {
-            closed(&[p(0.14, 0.22), p(0.86, 0.22), p(0.86, 0.80), p(0.14, 0.80)]);
-            polyline(&[
-                p(0.20, 0.72),
-                p(0.42, 0.46),
-                p(0.58, 0.62),
-                p(0.68, 0.52),
-                p(0.80, 0.70),
-            ]);
-            painter.circle_stroke(p(0.66, 0.36), side * 0.06, line);
         }
         Icon::Pointer => {
             closed(&[

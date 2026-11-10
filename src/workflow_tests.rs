@@ -927,7 +927,7 @@ fn window_controls_and_file_exit_preserve_unsaved_artwork() {
         w.text("Save your painting?");
         assert!(!w.app.close_ready);
         assert!(crate::document::same_snapshot(&source, &w.app.doc));
-        w.click(w.text("Discard"));
+        w.click(w.text("Don't save"));
         assert!(w.app.close_ready);
     }
 }
@@ -1850,24 +1850,40 @@ fn short_inspector_keeps_layers_masks_and_navigator_reachable_without_overlap() 
         let layer = w.app.layer_thumbnails[&w.app.doc.layers[0].id].id();
         let thumbnail = w.texture_rect(layer);
         assert!(thumbnail.height() >= 39.0, "{size:?}: {thumbnail:?}");
-        if !w
+        let compact = !w
             .output
             .shapes
             .iter()
-            .any(|s| text_rect(&s.shape, "Artwork").is_some())
-        {
+            .any(|s| text_rect(&s.shape, "Normal").is_some());
+        if compact {
             w.click(w.text("Layer"));
             w.settle();
         }
-        for label in ["Artwork", "Add mask", "Mask actions", "Normal"] {
-            visible(&w, label);
-        }
-        // One click adds a mask that shows everything, and paints on it.
-        w.click(w.text("Add mask"));
+        visible(&w, "Normal");
+        // The mask target row appears only once the layer has a mask.
+        let shows = |w: &Workspace, label: &str| {
+            w.output
+                .shapes
+                .iter()
+                .any(|s| text_rect(&s.shape, label).is_some())
+        };
+        assert!(!shows(&w, "Artwork") && !shows(&w, "Mask actions"));
+        // Adding a mask (the toolbar's mask button) paints on it at once.
+        assert!(w.app.add_mask());
         w.app.flush_render_queue();
         w.settle();
         assert!(!w.app.input_stroke_target().is_raster());
         assert!(w.app.doc.layers[w.app.doc.active].mask.is_some());
+        for label in ["Artwork", "Mask", "Mask actions"] {
+            visible(&w, label);
+        }
+        w.click(w.text("Artwork"));
+        assert!(w.app.input_stroke_target().is_raster());
+        w.settle();
+        if compact && !shows(&w, "Mask") {
+            w.click(w.text("Layer"));
+            w.settle();
+        }
         w.click(w.text("Mask"));
         assert!(!w.app.input_stroke_target().is_raster());
         w.key(egui::Key::Escape, Default::default());
@@ -2651,7 +2667,7 @@ fn new_canvas_unsaved_cancel_returns_to_draft_and_discard_replaces_only_after_co
     assert!(w.app.new_canvas && w.app.unsaved_action.is_none() && w.app.history.can_undo());
     assert_eq!(w.app.new_canvas_form.dimensions().unwrap(), [12, 7]);
     w.click(w.text("Create canvas"));
-    w.click(w.text("Discard"));
+    w.click(w.text("Don't save"));
     w.settle();
     assert!(!w.app.new_canvas && !w.app.modified && !w.app.history.can_undo());
     assert_eq!([w.app.doc.width, w.app.doc.height], [12, 7]);
@@ -2974,7 +2990,8 @@ fn normal_mask_workflow_creates_paints_selects_duplicates_transforms_saves_reope
         ..Default::default()
     };
     ui.settle();
-    ui.click(ui.text("Mask actions"));
+    ui.click(ui.text("Layer"));
+    ui.click(ui.text("Layer mask"));
     ui.click(ui.text("Add mask showing all"));
     finish_jobs(&mut ui.app);
     let first_mask = ui.app.doc.layers[0].mask.as_ref().unwrap().id;

@@ -38,6 +38,75 @@ struct Confirm {
     then: Reply,
 }
 
+/// Every Dudel dialog shares one look: a title row with a close button,
+/// the content, then the buttons at the bottom right with the main action
+/// highlighted and Cancel last. The close button and Esc both cancel.
+pub(crate) fn dialog_title(ui: &mut egui::Ui, title: &str) -> bool {
+    let mut close = false;
+    ui.horizontal(|ui| {
+        ui.heading(title);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            close = close_button(ui).clicked();
+        });
+    });
+    ui.add_space(4.0);
+    close
+}
+
+fn close_button(ui: &mut egui::Ui) -> egui::Response {
+    // Like a window's close box, it is clicked, not reached with Tab.
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::CLICK);
+    let visuals = ui.style().interact(&response);
+    if response.hovered() {
+        ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
+    }
+    let cross = rect.shrink(7.0);
+    let stroke = egui::Stroke::new(1.5_f32, visuals.fg_stroke.color);
+    ui.painter()
+        .line_segment([cross.left_top(), cross.right_bottom()], stroke);
+    ui.painter()
+        .line_segment([cross.right_top(), cross.left_bottom()], stroke);
+    response.on_hover_text("Close (Esc)")
+}
+
+/// The button row at the bottom of a dialog, at the right: add the main
+/// action first and Cancel last, so Tab visits them in reading order.
+pub(crate) fn dialog_buttons<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    dialog_buttons_beside(ui, |_| {}, add)
+}
+
+/// [`dialog_buttons`] with a secondary action, such as Reset, at the left.
+pub(crate) fn dialog_buttons_beside<R>(
+    ui: &mut egui::Ui,
+    left: impl FnOnce(&mut egui::Ui),
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.add_space(4.0);
+    ui.separator();
+    ui.horizontal(|ui| {
+        left(ui);
+        // Right-aligned by last frame's width; a changed width redraws the
+        // frame before it is shown, so the row never jumps.
+        let id = ui.id().with("dialog buttons width");
+        let width = ui.ctx().data(|d| d.get_temp::<f32>(id));
+        ui.add_space((ui.available_width() - width.unwrap_or(0.0)).max(0.0));
+        let row = ui.scope(add);
+        let measured = row.response.rect.width();
+        if width.is_none_or(|w| (w - measured).abs() > 0.5) {
+            ui.ctx().data_mut(|d| d.insert_temp(id, measured));
+            // A dialog's first frame is an invisible sizing pass, and
+            // discarding it would drop focus requests made while opening.
+            if width.is_some() {
+                ui.ctx().request_discard("dialog buttons resized");
+            } else {
+                ui.ctx().request_repaint();
+            }
+        }
+        row.inner
+    })
+    .inner
+}
+
 /// Repaints when a dialog answers, so the reply runs without other input.
 struct Repaint(egui::Context);
 impl Wake for Repaint {
@@ -183,11 +252,12 @@ impl Dudel {
         let mut answer = None;
         let response = egui::Modal::new(egui::Id::new("confirm dialog")).show(ctx, |ui| {
             ui.set_width(360.0);
-            ui.heading(&confirm.title);
-            ui.add_space(8.0);
+            if dialog_title(ui, &confirm.title) {
+                answer = Some(false);
+            }
             ui.label(&confirm.text);
-            ui.add_space(16.0);
-            ui.horizontal(|ui| {
+            ui.add_space(12.0);
+            dialog_buttons(ui, |ui| {
                 if ui
                     .add(crate::workspace::primary_button(ui, confirm.action))
                     .clicked()

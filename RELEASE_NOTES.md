@@ -18,8 +18,15 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   internet by itself.
 - Empty checkboxes and radio buttons are clearly visible in dark themes; before,
   they blended into dialog backgrounds.
-- The main button of each dialog (Create canvas, Export…, Apply, and the action
-  in confirmations) is highlighted.
+- **Dialogs share one layout:** a title with a close button, and the buttons
+  at the bottom right with the main action highlighted and Cancel last. Esc or
+  the close button cancels. Unsaved-changes questions offer **Save**, **Don't
+  save** and **Cancel**.
+- **A tidier layer toolbar:** new layer, folder, duplicate, merge, delete, add
+  mask and the three locks stay; layer effects, adjustment layers, reference
+  images and every mask command are in its **⋯** menu. The Artwork/Mask row
+  appears only for layers that have a mask, leaving room for another layer.
+  **Layer > Layer mask** has the mask commands too.
 - **Color and Navigator are tabs** above the Layers panel, so the color wheel
   always has room and no longer scrolls out of sight on smaller screens. Dudel
   remembers the tab you chose. When the tool settings panel is open, color sits

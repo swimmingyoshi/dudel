@@ -218,7 +218,7 @@ impl Dudel {
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("assign shortcut")).show(ctx, |ui| {
             ui.set_width((ctx.content_rect().width() - 48.0).clamp(220.0, 400.0));
-            ui.heading("Assign shortcut");
+            cancel |= crate::dialogs::dialog_title(ui, "Assign shortcut");
             ui.label(crate::commands::get(action).label);
             ui.label(
                 self.shortcut_editor
@@ -235,14 +235,14 @@ impl Dudel {
                 );
             }
             ui.small("Apply replaces this command's current shortcuts. Escape cancels.");
-            ui.horizontal(|ui| {
+            crate::dialogs::dialog_buttons(ui, |ui| {
                 apply = ui
                     .add_enabled(
                         matches!(proposed, Some(Ok(_))),
-                        egui::Button::new("Apply shortcut"),
+                        crate::workspace::primary_button(ui, "Apply shortcut"),
                     )
                     .clicked();
-                cancel = ui.button("Cancel").clicked();
+                cancel |= ui.button("Cancel").clicked();
             });
         });
         if apply && let Some(Ok(next)) = proposed {

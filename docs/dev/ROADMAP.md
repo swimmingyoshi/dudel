@@ -25,9 +25,9 @@ A polish release with no large new features.
 - [x] Docs reorganized under `docs/`; process records archived.
 - [ ] Find three to five testers on other tablets (Wacom, Huion, XP-Pen
       models besides the Artist 12) and act on their reports first.
-- [ ] Layers panel: move rarely used toolbar actions into a menu, and show the
-      mask row only when it is useful.
-- [ ] One dialog style: title, close button and button order everywhere.
+- [x] Layers panel: rarely used toolbar actions in a menu; the mask row only
+      for layers with a mask.
+- [x] One dialog style: title, close button and button order everywhere.
 - [ ] Build and attach the Linux tarball for each release.
 
 ## Next tools

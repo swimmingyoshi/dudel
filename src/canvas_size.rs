@@ -166,7 +166,7 @@ impl crate::Dudel {
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("canvas size")).show(ctx, |ui| {
             ui.set_width(400.0);
-            ui.heading("Canvas size");
+            cancel |= crate::dialogs::dialog_title(ui, "Canvas size");
             egui::ScrollArea::vertical().id_salt("canvas size controls")
                 .max_height((ctx.content_rect().height() - 96.0).max(80.0))
                 .show(ui, |ui| {
@@ -210,9 +210,9 @@ impl crate::Dudel {
             });
             let valid = settings.validate();
             if let Err(error) = &valid { ui.colored_label(ui.visuals().error_fg_color, error); }
-            ui.horizontal(|ui| {
+            crate::dialogs::dialog_buttons(ui, |ui| {
                 apply = ui.add_enabled(valid.is_ok() && ([settings.width,settings.height] != [self.doc.width,self.doc.height] || settings.dpi.is_some_and(|dpi| dpi != self.doc.dpi)), crate::workspace::primary_button(ui, "Apply")).clicked();
-                cancel = ui.button("Cancel").clicked();
+                cancel |= ui.button("Cancel").clicked();
             });
         });
         if apply {
