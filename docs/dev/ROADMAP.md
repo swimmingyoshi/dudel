@@ -41,8 +41,9 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        model. Later: a library of named gradients.
 2. [x] **Filters:** Gaussian blur, sharpen (unsharp mask) and add noise, each
        with a live preview (blur reuses the layer-effects blur).
-   [ ] Every adjustment-layer type (curves, posterize, threshold, color
-       balance and the rest) also applied directly from the Filter menu.
+   [x] Every adjustment-layer type (curves, posterize, threshold, color
+       balance and the rest) also applied directly: **Filter > More
+       adjustments**, with the Adjustment window's editors.
 3. [x] **Blending brushes:** a brush Mode that smudges (drags color along the
        stroke) or blurs instead of painting, with built-in Smudge and Blur
        presets. Later: a color-mixing ("wet paint") mode that also lays down

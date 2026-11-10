@@ -236,8 +236,12 @@ menu also provides adjustment actions.
 with a live preview and one undo step: **Filter > Brightness / contrast**, **Hue
 / saturation** and **Levels**; **Gaussian blur** (blurs spread into clear areas
 unless Lock transparency is on); **Sharpen**, an unsharp mask with amount and
-radius; and **Add noise**, in color or monochrome grain. **Invert**,
-**Grayscale** and extension filters are in the same menu.
+radius; and **Add noise**, in color or monochrome grain. **Filter > More
+adjustments** applies any other adjustment-layer type the same way, with the
+same editor as the Adjustment window: Curves, Exposure, Hue/Saturation/Luminosity,
+Gradient Map, Vibrance, Color Balance, Black & White, Photo Filter, Channel Mixer,
+Selective Color, Posterize and Threshold. **Invert**, **Grayscale** and extension
+filters are in the same menu.
 
 **Clipping:** the clip button in the layer action row limits a layer or adjustment
 to the layer below it. The Layers panel joins clipped rows to their base with a

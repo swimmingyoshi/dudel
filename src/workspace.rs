@@ -692,6 +692,14 @@ impl Dudel {
                     ui.close();
                 }
             }
+            ui.menu_button("More adjustments", |ui| {
+                for kind in crate::adjustments::LAYER_KINDS {
+                    if ui.button(format!("{}\u{2026}", kind.name())).clicked() {
+                        self.start_adjustment(kind);
+                        ui.close();
+                    }
+                }
+            });
             ui.separator();
             for kind in [
                 crate::adjustments::Kind::GaussianBlur,

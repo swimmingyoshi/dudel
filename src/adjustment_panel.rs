@@ -254,7 +254,7 @@ fn slider(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::Rang
 }
 
 /// Controls for an adjustment's settings.
-fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings, histogram: Option<&Counts>) {
+pub(crate) fn settings_ui(ui: &mut egui::Ui, settings: &mut Settings, histogram: Option<&Counts>) {
     match settings {
         Settings::Invert => {
             ui.label("Inverts the colors below. There is nothing to set.");

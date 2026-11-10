@@ -13,6 +13,10 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   makes a soft fade.
 - **New filters:** **Filter > Gaussian blur**, **Sharpen** (unsharp mask) and
   **Add noise**, with a live preview, inside the selection, as one undo step.
+- **Filter > More adjustments:** every adjustment-layer type (Curves, Gradient
+  Map, Color Balance, Selective Color, Posterize, Threshold and the rest) can
+  also change the layer's pixels directly, with the same editor and a live
+  preview.
 - **Smudge and blur brushes:** a brush's new **Mode** setting smudges (drags the
   paint under the brush along the stroke) or blurs instead of painting, with
   Opacity as the strength. New libraries include **Smudge** and **Blur**

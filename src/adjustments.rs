@@ -16,7 +16,27 @@ pub(crate) enum Kind {
     GaussianBlur,
     Sharpen,
     AddNoise,
+    /// An adjustment-layer kind, by its index in `adjustment::presets()`,
+    /// applied to the pixels.
+    Layer(u8),
 }
+
+/// Adjustment-layer kinds offered as filters: all but the ones the Filter
+/// menu already has (levels, brightness/contrast, hue/saturation, invert).
+pub(crate) const LAYER_KINDS: [Kind; 12] = [
+    Kind::Layer(1),
+    Kind::Layer(3),
+    Kind::Layer(5),
+    Kind::Layer(6),
+    Kind::Layer(7),
+    Kind::Layer(8),
+    Kind::Layer(9),
+    Kind::Layer(10),
+    Kind::Layer(11),
+    Kind::Layer(12),
+    Kind::Layer(14),
+    Kind::Layer(15),
+];
 
 #[cfg(test)]
 mod tests {
@@ -287,6 +307,62 @@ mod tests {
         assert!(!app.modified);
     }
     #[test]
+    fn every_offered_adjustment_layer_kind_works_as_a_filter() {
+        use crate::adjustment::Settings as Layer;
+        // Each listed kind names itself and round-trips through kind().
+        let names: Vec<_> = LAYER_KINDS.iter().map(|k| k.name()).collect();
+        for kind in LAYER_KINDS {
+            assert_eq!(kind.defaults().kind(), kind);
+            kind.defaults().validate().unwrap();
+        }
+        for name in [
+            "Curves",
+            "Posterize",
+            "Threshold",
+            "Gradient Map",
+            "Selective Color",
+        ] {
+            assert!(names.contains(&name), "{name} offered");
+        }
+        for name in ["Levels", "Invert", "Hue/Saturation", "Brightness/Contrast"] {
+            assert!(!names.contains(&name), "{name} already in the Filter menu");
+        }
+        // Posterize to 2 levels, inside a selection: the red pixel at the
+        // start stays red, the dim one becomes black; outside is untouched.
+        let source = fixture();
+        let mut doc = source.clone();
+        doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 64,
+            bottom: 1,
+        });
+        let posterized = run(&doc, Settings::Layer(Layer::Posterize { levels: 2 }));
+        assert_eq!(posterized.layers[0].pixels.rgba(0), [0, 0, 255, 255]);
+        assert_eq!(posterized.layers[0].pixels.rgba(63), [0, 0, 0, 128]);
+        assert_eq!(
+            posterized.layers[0].pixels.rgba(129),
+            source.layers[0].pixels.rgba(129)
+        );
+        // A curve through the app: preview, apply as one step, undo.
+        let mut app = app();
+        let before = app.doc.composite_transparent();
+        app.start_adjustment(Kind::Layer(1));
+        app.adjustment.as_mut().unwrap().settings = Settings::Layer(Layer::Curves {
+            channels: vec![(0, vec![[0, 0], [128, 200], [255, 255]])],
+            bezier: false,
+        });
+        wait(&mut app);
+        let curved = app.doc.composite_transparent();
+        assert_ne!(before, curved);
+        app.apply_adjustment();
+        wait(&mut app);
+        assert_eq!(app.doc.composite_transparent(), curved);
+        app.undo();
+        wait(&mut app);
+        assert_eq!(app.doc.composite_transparent(), before);
+    }
+    #[test]
     fn neighborhood_filters_preview_apply_and_undo_in_one_step() {
         for settings in [
             Kind::GaussianBlur.defaults(),
@@ -296,7 +372,7 @@ mod tests {
             let mut app = app();
             let source = app.doc.composite_transparent();
             app.start_adjustment(settings.kind());
-            app.adjustment.as_mut().unwrap().settings = settings;
+            app.adjustment.as_mut().unwrap().settings = settings.clone();
             wait(&mut app);
             let filtered = app.doc.composite_transparent();
             assert_ne!(source, filtered, "{settings:?} previews a change");
@@ -426,6 +502,7 @@ impl Kind {
             Self::GaussianBlur => "Gaussian blur",
             Self::Sharpen => "Sharpen",
             Self::AddNoise => "Add noise",
+            Self::Layer(index) => crate::adjustment::presets()[usize::from(index)].name(),
         }
     }
     pub(crate) fn defaults(self) -> Settings {
@@ -455,10 +532,16 @@ impl Kind {
                 amount: 10.0,
                 monochrome: false,
             },
+            Self::Layer(index) => Settings::Layer(
+                crate::adjustment::presets()
+                    .into_iter()
+                    .nth(usize::from(index))
+                    .expect("a listed adjustment kind"),
+            ),
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Settings {
     BrightnessContrast {
         brightness: f32,
@@ -490,9 +573,11 @@ pub(crate) enum Settings {
         amount: f32,
         monochrome: bool,
     },
+    /// Any adjustment-layer setting, applied to the pixels.
+    Layer(crate::adjustment::Settings),
 }
 impl Settings {
-    fn kind(self) -> Kind {
+    fn kind(&self) -> Kind {
         match self {
             Self::BrightnessContrast { .. } => Kind::BrightnessContrast,
             Self::HueSaturation { .. } => Kind::HueSaturation,
@@ -500,20 +585,29 @@ impl Settings {
             Self::GaussianBlur { .. } => Kind::GaussianBlur,
             Self::Sharpen { .. } => Kind::Sharpen,
             Self::AddNoise { .. } => Kind::AddNoise,
+            Self::Layer(settings) => Kind::Layer(
+                crate::adjustment::presets()
+                    .iter()
+                    .position(|p| p.name() == settings.name())
+                    .unwrap_or_default() as u8,
+            ),
         }
     }
     /// Settings that leave every pixel as it is.
-    fn is_identity(self) -> bool {
-        match self {
+    fn is_identity(&self) -> bool {
+        match *self {
             Self::GaussianBlur { radius } => radius < 0.3,
             Self::Sharpen { amount, .. } | Self::AddNoise { amount, .. } => amount == 0.0,
-            other => other == other.kind().defaults(),
+            // Some neutral-looking presets (posterize, threshold) still change
+            // pixels, so these always run.
+            Self::Layer(_) => false,
+            ref other => *other == other.kind().defaults(),
         }
     }
     /// The neighborhood filter these settings describe, if any.
-    fn filter(self) -> Option<crate::filters::Filter> {
+    fn filter(&self) -> Option<crate::filters::Filter> {
         use crate::filters::Filter;
-        match self {
+        match *self {
             Self::GaussianBlur { radius } => Some(Filter::Blur { radius }),
             Self::Sharpen { amount, radius } => Some(Filter::Sharpen {
                 amount: amount / 100.0,
@@ -526,9 +620,12 @@ impl Settings {
             _ => None,
         }
     }
-    pub(crate) fn validate(self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if let Self::Layer(settings) = self {
+            return crate::adjustment::Adjustment::try_from(settings.clone()).map(|_| ());
+        }
         let percent = |v: f32| v.is_finite() && (-100.0..=100.0).contains(&v);
-        let valid = match self {
+        let valid = match *self {
             Self::BrightnessContrast {
                 brightness,
                 contrast,
@@ -563,6 +660,7 @@ impl Settings {
                     && (0.1..=100.0).contains(&radius)
             }
             Self::AddNoise { amount, .. } => amount.is_finite() && (0.0..=100.0).contains(&amount),
+            Self::Layer(_) => unreachable!("checked above"),
         };
         if valid {
             Ok(())
@@ -570,8 +668,8 @@ impl Settings {
             Err("Adjustment settings are outside their supported range".into())
         }
     }
-    fn channel(self, channel: u8) -> u8 {
-        let value = match self {
+    fn channel(&self, channel: u8) -> u8 {
+        let value = match *self {
             Self::BrightnessContrast {
                 brightness,
                 contrast,
@@ -599,12 +697,12 @@ impl Settings {
         };
         (value.clamp(0.0, 1.0) * 255.0).round() as u8
     }
-    fn hsl(self, mut pixel: [u8; 4]) -> [u8; 4] {
+    fn hsl(&self, mut pixel: [u8; 4]) -> [u8; 4] {
         let Self::HueSaturation {
             hue,
             saturation,
             lightness,
-        } = self
+        } = *self
         else {
             return pixel;
         };
@@ -685,6 +783,22 @@ pub(crate) fn prepare(
             [source.width, source.height],
             filter,
             control,
+        )?;
+    } else if let Settings::Layer(layer_settings) = &settings {
+        let adjustment = crate::adjustment::Adjustment::try_from(layer_settings.clone())?;
+        crate::plugins::filter_pixels_masked(
+            layer,
+            source.selection,
+            source.selection_mask.as_ref(),
+            source.width,
+            control,
+            |mut p| {
+                let c = adjustment.apply([p[0], p[1], p[2]].map(f32::from));
+                for i in 0..3 {
+                    p[i] = c[i].round().clamp(0.0, 255.0) as u8;
+                }
+                Ok(p)
+            },
         )?;
     } else if matches!(settings, Settings::HueSaturation { .. }) {
         crate::plugins::filter_pixels_masked(
@@ -911,7 +1025,8 @@ impl Dudel {
                 Err(error) => preview.error = Some(error),
                 Ok(()) => {
                     let source = preview.source.as_ref().unwrap().clone();
-                    let settings = preview.settings;
+                    let settings = preview.settings.clone();
+                    let job_settings = settings.clone();
                     let target = preview.target;
                     let control = FilterControl::default();
                     let worker_control = control.clone();
@@ -920,7 +1035,7 @@ impl Dudel {
                             prepare(&source, target, settings, &worker_control)
                         }),
                         control,
-                        settings,
+                        settings: job_settings,
                     });
                 }
             }
@@ -997,7 +1112,7 @@ impl Dudel {
                     .id_salt("adjustment controls")
                     .max_height((ctx.content_rect().height() - 140.0).max(80.0))
                     .show(ui, |ui| {
-                        let before = preview.settings;
+                        let before = preview.settings.clone();
                         ui.add_enabled_ui(preview.source.is_some(), |ui| match &mut preview.settings {
                             Settings::BrightnessContrast { brightness, contrast } => {
                                 crate::workspace::labeled_slider(ui, "Brightness", egui::Slider::new(brightness, -100.0..=100.0).integer());
@@ -1028,6 +1143,7 @@ impl Dudel {
                                 crate::workspace::labeled_slider(ui, "Amount", egui::Slider::new(amount, 0.0..=100.0).suffix("%").max_decimals(1));
                                 ui.checkbox(monochrome, "Monochrome").on_hover_text("The same grain on every channel, so colors keep their hue");
                             }
+                            Settings::Layer(settings) => crate::adjustment_panel::settings_ui(ui, settings, None),
                         });
                         if before != preview.settings { preview.error = None; }
                         ui.checkbox(&mut preview.enabled, "Preview");
