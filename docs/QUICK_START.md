@@ -361,16 +361,26 @@ use **Tip**, **Texture** and **Advanced** for detailed tuning.
 **Brush graphs** (Brush Studio > **Brush graph**) let nodes decide each dab's
 size, opacity, flow and spacing. **Make graph from current settings** turns the
 brush's pressure and dynamics settings into a graph that paints exactly the
-same, as a starting point. Then:
+same, as a starting point, or **Start from a template** (also in the
+**Templates** menu) for effects the plain settings cannot make: Downstroke ink
+(thick going down, thin going up), Twisting ribbon, Dashed line, Wobbly ink,
+Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
 
-- **Add node** (or right-click the canvas) adds inputs such as Pressure, Speed,
-  Tilt, Twist, Distance and Random; shaping nodes (Curve, Remap, Invert);
-  combine nodes (Multiply, Add, Minimum, Maximum, Mix); the Size, Opacity,
-  Flow and Spacing outputs; and color outputs: **Hue shift** (turns each dab's
-  hue up to a set range either way), **Saturation**, **Brightness** and
-  **Color mix** (blends the main color toward the secondary color). For
-  example, Random into Hue shift gives color jitter, and Pressure into Color
-  mix paints the secondary color where you press hard.
+- **Add node** (or right-click the canvas) adds:
+  - inputs: Pressure, Speed, Tilt, Twist, Distance, Random, Constant,
+    **Direction** (which way the stroke heads), **Tilt direction** (which way
+    the pen leans), **Wave** (repeats along the stroke: smooth, triangle,
+    dashes or ramp) and **Noise** (smooth wandering along the stroke);
+  - shaping: Curve, Remap, Invert and **Steps** (snaps to a few levels);
+  - combining: Multiply, Add, Minimum, Maximum, Mix;
+  - outputs: Size, Opacity, Flow, Spacing, **Rotation** (turns the tip),
+    **Scatter** (moves dabs off the line), and the color outputs **Hue
+    shift**, **Saturation**, **Brightness** and **Color mix** (toward the
+    secondary color).
+
+  For example, Random into Hue shift gives color jitter, Pressure into Color
+  mix paints the secondary color where you press hard, Wave (dashes) into
+  Opacity draws a dashed line, and Speed into Scatter sprays faster strokes.
 - Drag from a node's right dot to another node's left dot to wire them; drag a
   wire's end off an input to move or remove it. A wire that would make a loop
   is refused.

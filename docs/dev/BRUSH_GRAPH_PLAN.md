@@ -4,7 +4,9 @@ Status: accepted 2026-11-10; milestones 1 (the engine, [section
 13](#13-milestone-1-as-built)), 2 (the editor, [section
 14](#14-milestone-2-as-built)), 3 (sharing, [section
 15](#15-milestone-3-as-built)) and 4 (color, [section
-16](#16-milestone-4-as-built)) are implemented. It answers the "first deliverable" of
+16](#16-milestone-4-as-built)) are implemented, followed by the nodes and
+templates in [section 17](#17-unique-nodes-and-templates). Milestone 5 is
+[proposed for review](#18-proposal-milestone-5-groups-and-formulas). It answers the "first deliverable" of
 the brush graph brief: how a node-based brush editor fits the brush engine
 Dudel already has, and what to build first.
 
@@ -410,3 +412,74 @@ Studio. Where it differs from section 7:
   gray or dark paper; it can be hidden. A pad shown in two places handles
   each frame's pen input once. `--capture-color-brush` shows a color brush
   on the pad.
+
+## 17. Unique nodes and templates
+
+2026-11-10, after the question "is the graph just a second editor for the
+same settings?". Milestone 1 deliberately made every pressure and dynamics
+setting convertible to a graph, so on its own the graph overlapped the
+Dynamics section. What it could do that the panels cannot was color, Add /
+Minimum / Maximum / Mix (dynamics only multiply), Twist and Distance, and
+several independent random values. This round adds what no panel expresses:
+
+- **Rotation** (range up to 180°; 0.5 keeps the brush angle) and **Scatter**
+  (0 to two brush sizes) outputs. A graph that wires one owns it: the Turns
+  with, Jitter and Scatter controls grey out. Brushes without them take the
+  old path in `Stroke::scatter`, including its random draw order, so they
+  paint identically.
+- **Direction** and **Tilt direction** inputs, centered so 0.5 is rightward:
+  with a 180° Rotation range the tip turns exactly with the stroke. The
+  stroke's heading travels on `Sample::heading`, set only when a graph reads
+  it.
+- **Wave** (smooth, triangle, dashes, ramp; period in pixels along the
+  stroke), **Noise** (smooth value noise along the stroke, seeded) and
+  **Steps** (2–32 levels). All are pure functions of the dab, so replay and
+  undo stay exact.
+- **Templates** (Brush Studio > Brush graph > Templates, or Start from a
+  template), each replacing the graph as one undo step: Downstroke ink,
+  Twisting ribbon, Dashed line, Wobbly ink, Color jitter, Pressure color,
+  Speed spray, Stipple, Tilt shading. A test paints each and checks it
+  differs from the plain brush; an opt-in test
+  (`DUDEL_TEMPLATE_SHEET=out.png cargo test template_sheet -- --ignored`)
+  draws them all on one sheet.
+- A first "Calligraphy" template (tip turns with the stroke) was dropped: the
+  plain **Turns with: Stroke** setting already does it. Templates should only
+  show what the graph adds.
+
+## 18. Proposal: milestone 5, groups and formulas
+
+For review; nothing here is built. The brief asked for sub-graphs and
+extension-provided nodes under a controlled capability model.
+
+**Groups (sub-graphs).** Select nodes and choose **Group**: they become one
+node whose unwired inputs and outputs are its ports, with a name the artist
+picks. Groups can be opened to edit, saved to a personal node library and
+shared inside brush files. They are plain data inside the graph, compiled by
+inlining into the same flat operation list, so they cost nothing per dab and
+add no security surface. Limits: groups nest four deep, and a graph stays at
+most 64 operations after inlining (raising the cap to 128 is possible; the
+register file is the only cost).
+
+**Formula node instead of script nodes.** A node with up to three inputs
+(a, b, c) and an expression such as `clamp(a * 2 - b, 0, 1)` or
+`mix(a, b, smoothstep(0.2, 0.8, c))`. The expression language is Dudel's own:
+numbers, `+ - * /`, parentheses, and a fixed list of functions (min, max,
+clamp, abs, floor, fract, sqrt, pow, sin, cos, mix, smoothstep, step). No
+variables, loops, strings, calls out or state, at most 64 tokens. It is
+parsed once and lowered into the same operations as other nodes. There is
+nothing to sandbox, because the language can only compute a number;
+non-finite results count as missing, like an absent sensor.
+
+**Why not Rhai or WASM per dab.** A stroke paints thousands of dabs at about
+3 µs each in the benchmark. Entering a script engine twice per dab would
+roughly double stroke time, and each engine brings its own sandbox to
+maintain. If extensions ever provide nodes, the proposal is "bake once": the
+extension runs when the node is added or its settings change (under the
+existing filter limits), produces a curve or a 256-entry table, and the graph
+stores only that result. Shared brushes then carry data, never code.
+
+**Questions for review.**
+1. Groups and the Formula node first, extension "bake" nodes later or never?
+2. Raise the 64-node cap to 128 for grouped graphs?
+3. Should groups also be shareable on their own (a node-library file), or
+   only inside brushes?

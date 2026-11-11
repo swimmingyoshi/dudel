@@ -344,6 +344,36 @@ impl Dudel {
         self.scratchpad
             .demo(&self.brush, color, secondary, [900, 160]);
     }
+    /// Replace the graph with a template's, as one undo step.
+    pub(crate) fn apply_graph_template(&mut self, template: crate::brush_graph::Template) {
+        self.graph_checkpoint();
+        self.brush.graph_layout = crate::brush_graph::auto_layout(&template.graph);
+        self.brush.graph = Some(template.graph);
+        self.graph_editor.selected = None;
+        self.graph_editor.fit = true;
+        // A round tip cannot show turning; give it a flat one.
+        self.status = if template.flat_tip && self.brush.aspect >= 0.99 {
+            self.brush.aspect = 0.35;
+            format!("{}: tip flattened to 35% so turning shows", template.name)
+        } else {
+            format!("{}: {}", template.name, template.description)
+        };
+    }
+    /// The Templates menu's entries; returns the one chosen.
+    fn templates_menu(ui: &mut egui::Ui) -> Option<crate::brush_graph::Template> {
+        let mut chosen = None;
+        for template in crate::brush_graph::templates() {
+            if ui
+                .button(template.name)
+                .on_hover_text(template.description)
+                .clicked()
+            {
+                chosen = Some(template);
+                ui.close();
+            }
+        }
+        chosen
+    }
     /// Make a graph from the brush's pressure and dynamics settings.
     pub(crate) fn make_brush_graph(&mut self) {
         self.graph_checkpoint();
@@ -403,6 +433,13 @@ impl Dudel {
                     .clicked()
                 {
                     self.make_brush_graph();
+                }
+                let mut template = None;
+                ui.menu_button("Start from a template", |ui| {
+                    template = Self::templates_menu(ui);
+                });
+                if let Some(template) = template {
+                    self.apply_graph_template(template);
                 }
                 if ui.button("Start an empty graph").clicked() {
                     self.graph_checkpoint();
@@ -479,6 +516,14 @@ impl Dudel {
                     ui.close();
                 }
             });
+            let mut template = None;
+            ui.menu_button("Templates", |ui| {
+                ui.weak("Replaces this graph (Undo brings it back)");
+                template = Self::templates_menu(ui);
+            });
+            if let Some(template) = template {
+                self.apply_graph_template(template);
+            }
             if ui
                 .add_enabled(
                     !self.graph_editor.undo.is_empty(),
@@ -856,6 +901,49 @@ impl Dudel {
                 });
                 note(ui, "Seed 0 is the same random value brush dynamics use.");
             }
+            NodeKind::Wave { period, shape } => {
+                labeled(
+                    ui,
+                    "Repeats every",
+                    egui::Slider::new(period, 2.0..=2000.0)
+                        .logarithmic(true)
+                        .suffix(" px"),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    for option in crate::brush_graph::WaveShape::ALL {
+                        ui.selectable_value(shape, option, option.name());
+                    }
+                });
+            }
+            NodeKind::Noise { scale, seed } => {
+                labeled(
+                    ui,
+                    "Bump length",
+                    egui::Slider::new(scale, 2.0..=2000.0)
+                        .logarithmic(true)
+                        .suffix(" px"),
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Seed");
+                    ui.add(egui::DragValue::new(seed).range(0..=9999));
+                });
+            }
+            NodeKind::Steps { count } => {
+                labeled(ui, "Levels", egui::Slider::new(count, 2..=32));
+            }
+            NodeKind::RotationOutput { degrees } => {
+                labeled(
+                    ui,
+                    "Range",
+                    egui::Slider::new(degrees, 0.0..=180.0)
+                        .suffix("°")
+                        .integer(),
+                );
+                note(
+                    ui,
+                    "0 turns the tip this far one way, 1 the other, 0.5 not at all. With 180°, Direction or Tilt direction steer it fully.",
+                );
+            }
             NodeKind::HueOutput { degrees } => {
                 labeled(
                     ui,
@@ -936,7 +1024,12 @@ fn setting_label(kind: &NodeKind) -> Option<String> {
         NodeKind::Distance { length } => Some(format!("{length:.0} px")),
         NodeKind::Random { seed } => Some(format!("Seed {seed}")),
         NodeKind::Constant { value } => Some(format!("{value:.2}")),
-        NodeKind::HueOutput { degrees } => Some(format!("±{degrees:.0}°")),
+        NodeKind::HueOutput { degrees } | NodeKind::RotationOutput { degrees } => {
+            Some(format!("±{degrees:.0}°"))
+        }
+        NodeKind::Wave { period, shape } => Some(format!("{} · {period:.0} px", shape.name())),
+        NodeKind::Noise { scale, .. } => Some(format!("{scale:.0} px bumps")),
+        NodeKind::Steps { count } => Some(format!("{count} levels")),
         _ => None,
     }
 }

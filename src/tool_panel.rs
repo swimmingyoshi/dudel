@@ -860,6 +860,10 @@ impl Dudel {
             });
     }
 
+    /// Whether the brush graph sets `output`.
+    pub(crate) fn graph_drives(&self, output: crate::brush_graph::Output) -> bool {
+        self.brush.graph.as_ref().is_some_and(|g| g.drives(output))
+    }
     /// Size, opacity, flow and spacing: whether the brush graph sets each.
     pub(crate) fn graph_driven(&self) -> [bool; 4] {
         use crate::brush_graph::Output;
@@ -987,6 +991,11 @@ impl Dudel {
                 marked(ui, "Angle", &mut self.brush.angle, saved, |ui, v| {
                     ui.add(egui::Slider::new(v, -180.0..=180.0).suffix("°"))
                 });
+                let rotation = self.graph_drives(crate::brush_graph::Output::Rotation);
+                if rotation {
+                    ui.weak("Turning: set by the brush graph");
+                }
+                ui.add_enabled_ui(!rotation, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     use crate::brush::AngleSource;
                     ui.label("Turns with");
@@ -1015,6 +1024,7 @@ impl Dudel {
                     },
                 )
                 .on_hover_text("Turns each dab randomly by up to this much");
+                });
                 if ui.button("Import PNG tip…").clicked() {
                     self.import_tip();
                 }
@@ -1024,9 +1034,15 @@ impl Dudel {
                 );
             }
             Section::Scatter => {
+                let scatter = self.graph_drives(crate::brush_graph::Output::Scatter);
+                if scatter {
+                    ui.weak("Scatter distance: set by the brush graph");
+                }
                 let saved = self.saved_value(|b| b.scatter);
-                marked(ui, "Scatter", &mut self.brush.scatter, saved, |ui, v| {
-                    ui.add(egui::Slider::new(v, 0.0..=2.0))
+                ui.add_enabled_ui(!scatter, |ui| {
+                    marked(ui, "Scatter", &mut self.brush.scatter, saved, |ui, v| {
+                        ui.add(egui::Slider::new(v, 0.0..=2.0))
+                    });
                 });
                 labeled(ui, "Seed", |ui| {
                     ui.add(egui::DragValue::new(&mut self.brush.scatter_seed))

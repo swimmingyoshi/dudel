@@ -382,6 +382,7 @@ impl Brush {
             twist: sample.twist,
             random: sample.random,
             distance: sample.distance,
+            heading: sample.heading,
         }))
     }
     /// Size, opacity, flow and spacing factors for one dab, running the

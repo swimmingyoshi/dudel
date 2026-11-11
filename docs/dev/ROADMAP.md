@@ -50,8 +50,9 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
 4. [x] **Brush graph, milestones 1–4** (engine, editor, sharing single
        brushes as `.dudelbrush` files, per-dab color): see the
        [brush graph plan](BRUSH_GRAPH_PLAN.md). Brush Studio opens as its own
-       tab with a test pad in view. Next for the graph: milestone 5
-       (subgraphs, extension nodes), which needs its own security review.
+       tab with a test pad in view; Rotation and Scatter outputs, rhythm and
+       noise nodes, and templates followed. Next for the graph: milestone 5,
+       [proposed for review](BRUSH_GRAPH_PLAN.md#18-proposal-milestone-5-groups-and-formulas).
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 

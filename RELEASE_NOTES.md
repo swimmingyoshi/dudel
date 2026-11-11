@@ -39,6 +39,11 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
 - **Color in brush graphs:** Hue shift, Saturation, Brightness and Color mix
   outputs change each dab's color: color jitter, pressure toward the
   secondary color, darker or paler by speed or tilt.
+- **More brush graph nodes and templates:** Rotation and Scatter outputs;
+  Direction, Tilt direction, Wave, Noise and Steps nodes; and templates for
+  effects the plain settings cannot make: Downstroke ink, Twisting ribbon,
+  Dashed line, Wobbly ink, Color jitter, Pressure color, Speed spray, Stipple
+  and Tilt shading.
 - **Test pad in view:** Brush Studio keeps a true-size test pad below its
   settings, with Undo, color stripes for trying smudge and blur, and a choice
   of paper.

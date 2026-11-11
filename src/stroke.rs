@@ -22,6 +22,8 @@ pub struct Sample {
     pub rotation: Option<f32>,
     /// Arc length before scattering/symmetry; f64 avoids long-stroke precision loss.
     pub distance: f64,
+    /// Stroke direction in degrees at this dab, for brush graphs that read it.
+    pub heading: Option<f32>,
 }
 
 #[derive(Default)]
@@ -44,6 +46,8 @@ pub struct Stroke {
     /// tips that turn with the stroke.
     heading_from: Option<[f32; 2]>,
     heading: f32,
+    /// The stroke has moved, so `heading` means something.
+    heading_known: bool,
     /// View zoom of the latest sample; sizes the rope in screen pixels.
     zoom: f32,
     /// Optional native-output allowance for extension-generated strokes.
@@ -158,6 +162,7 @@ impl Stroke {
         self.length = 0.0;
         self.heading_from = None;
         self.heading = 0.0;
+        self.heading_known = false;
         self.zoom = 1.0;
     }
     fn spacing(brush: &Brush, sample: &Sample) -> f32 {
@@ -551,16 +556,33 @@ impl Stroke {
             };
             let value = random();
             dab.random = Some(value);
+            // A brush graph that wires Rotation or Scatter owns that setting;
+            // brushes without one take exactly the old path.
+            let graph = brush.graph.as_ref().and_then(|g| g.compiled().ok());
+            let graph_rotation =
+                graph.is_some_and(|g| g.drives(crate::brush_graph::Output::Rotation));
+            let graph_scatter =
+                graph.is_some_and(|g| g.drives(crate::brush_graph::Output::Scatter));
+            let legacy_rotation = !graph_rotation
+                && (brush.angle_source != crate::brush::AngleSource::Fixed
+                    || brush.angle_jitter > 0.0);
+            let track = graph.is_some_and(|g| g.needs_heading());
             // Rotation is measured on the unscattered path. Its random draw
             // only happens with jitter on, so other brushes paint as before.
-            if brush.angle_source != crate::brush::AngleSource::Fixed || brush.angle_jitter > 0.0 {
+            if legacy_rotation || track {
                 if let Some(from) = self.heading_from {
                     let (dx, dy) = (dab.x - from[0], dab.y - from[1]);
                     if dx.hypot(dy) > 0.01 {
                         self.heading = dy.atan2(dx).to_degrees();
+                        self.heading_known = true;
                     }
                 }
                 self.heading_from = Some([dab.x, dab.y]);
+            }
+            if track && self.heading_known {
+                dab.heading = Some(self.heading);
+            }
+            if legacy_rotation {
                 let base = match brush.angle_source {
                     crate::brush::AngleSource::Fixed => 0.0,
                     crate::brush::AngleSource::Direction => self.heading,
@@ -575,6 +597,22 @@ impl Stroke {
                     0.0
                 };
                 dab.rotation = Some(base + jitter);
+            }
+            if graph_rotation || graph_scatter {
+                let values = brush.graph_values(dab).unwrap_or_default();
+                if graph_rotation {
+                    dab.rotation = values.rotation;
+                }
+                if graph_scatter {
+                    let amount = values.scatter.unwrap_or(0.0);
+                    if amount > 0.0 {
+                        let angle = value * std::f32::consts::TAU;
+                        let radius = amount * 2.0 * brush.size * brush.size_factor(dab);
+                        dab.x += angle.cos() * radius;
+                        dab.y += angle.sin() * radius;
+                    }
+                    continue;
+                }
             }
             if brush.scatter == 0.0 {
                 continue;

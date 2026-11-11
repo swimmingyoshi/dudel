@@ -51,6 +51,21 @@ pub enum NodeKind {
     Constant {
         value: f32,
     },
+    /// Which way the stroke is heading: 0.5 rightward, 0.75 down, 0.25 up,
+    /// 0 or 1 leftward.
+    Direction,
+    /// Which way the pen leans, on the same scale as Direction.
+    TiltDirection,
+    /// Repeats along the stroke every `period` pixels.
+    Wave {
+        period: f32,
+        shape: WaveShape,
+    },
+    /// Smooth, repeatable wandering along the stroke; `scale` pixels per bump.
+    Noise {
+        scale: f32,
+        seed: u32,
+    },
     Curve(Curve),
     /// Maps `in_low..in_high` onto `out_low..out_high`, clamping outside.
     Remap {
@@ -61,6 +76,10 @@ pub enum NodeKind {
     },
     /// One minus the input.
     Invert,
+    /// Snaps the input to `count` evenly spaced levels from 0 to 1.
+    Steps {
+        count: u8,
+    },
     Multiply,
     Add,
     Minimum,
@@ -71,6 +90,12 @@ pub enum NodeKind {
     OpacityOutput,
     FlowOutput,
     SpacingOutput,
+    /// Turns the tip: 0 is `degrees` one way, 1 the other, 0.5 none.
+    RotationOutput {
+        degrees: f32,
+    },
+    /// Moves the dab off the stroke, up to two brush sizes at 1.
+    ScatterOutput,
     /// Turns the dab's hue: 0 is `degrees` one way, 1 the other, 0.5 none.
     HueOutput {
         degrees: f32,
@@ -83,6 +108,65 @@ pub enum NodeKind {
     ColorMixOutput,
 }
 
+/// The shape a Wave node repeats.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WaveShape {
+    /// Smooth rise and fall.
+    #[default]
+    Sine,
+    Triangle,
+    /// On for the first half of each period, off for the second: dashes.
+    Square,
+    /// Rises steadily, then drops.
+    Saw,
+}
+impl WaveShape {
+    pub const ALL: [WaveShape; 4] = [Self::Sine, Self::Triangle, Self::Square, Self::Saw];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sine => "Smooth",
+            Self::Triangle => "Triangle",
+            Self::Square => "Dashes",
+            Self::Saw => "Ramp",
+        }
+    }
+    /// The value at `phase` periods along, from 0 at the start.
+    fn at(self, phase: f64) -> f32 {
+        let f = phase.rem_euclid(1.0) as f32;
+        match self {
+            Self::Sine => 0.5 - 0.5 * (f * std::f32::consts::TAU).cos(),
+            Self::Triangle => 1.0 - (1.0 - 2.0 * f).abs(),
+            Self::Square => {
+                if f < 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Self::Saw => f,
+        }
+    }
+}
+
+/// Smooth 1-D value noise in 0..=1: random heights at whole numbers, eased
+/// between them.
+fn smooth_noise(x: f64, seed: u32) -> f32 {
+    let height = |i: i64| {
+        let mut h = (i as u32).wrapping_mul(0x9E37_79B1) ^ seed.wrapping_mul(0x85EB_CA77);
+        h ^= h >> 16;
+        h = h.wrapping_mul(0x7FEB_352D);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x846C_A68B);
+        h ^= h >> 16;
+        (h & 0xFFFF) as f32 / 65535.0
+    };
+    let i = x.floor();
+    let t = (x - i) as f32;
+    let t = t * t * (3.0 - 2.0 * t);
+    let (a, b) = (height(i as i64), height(i as i64 + 1));
+    a + (b - a) * t
+}
+
 impl NodeKind {
     /// How many input ports the node has.
     pub fn inputs(&self) -> u8 {
@@ -93,10 +177,17 @@ impl NodeKind {
             | Self::Twist
             | Self::Distance { .. }
             | Self::Random { .. }
-            | Self::Constant { .. } => 0,
+            | Self::Constant { .. }
+            | Self::Direction
+            | Self::TiltDirection
+            | Self::Wave { .. }
+            | Self::Noise { .. } => 0,
             Self::Curve(_)
             | Self::Remap { .. }
             | Self::Invert
+            | Self::Steps { .. }
+            | Self::RotationOutput { .. }
+            | Self::ScatterOutput
             | Self::SizeOutput
             | Self::OpacityOutput
             | Self::FlowOutput
@@ -116,6 +207,8 @@ impl NodeKind {
             Self::OpacityOutput => Some(Output::Opacity),
             Self::FlowOutput => Some(Output::Flow),
             Self::SpacingOutput => Some(Output::Spacing),
+            Self::RotationOutput { .. } => Some(Output::Rotation),
+            Self::ScatterOutput => Some(Output::Scatter),
             Self::HueOutput { .. } => Some(Output::Hue),
             Self::SaturationOutput => Some(Output::Saturation),
             Self::BrightnessOutput => Some(Output::Brightness),
@@ -136,6 +229,16 @@ impl NodeKind {
                     Self::Distance { length: 200.0 },
                     Self::Random { seed: 1 },
                     Self::Constant { value: 0.5 },
+                    Self::Direction,
+                    Self::TiltDirection,
+                    Self::Wave {
+                        period: 40.0,
+                        shape: WaveShape::Sine,
+                    },
+                    Self::Noise {
+                        scale: 80.0,
+                        seed: 1,
+                    },
                 ],
             ),
             (
@@ -149,6 +252,7 @@ impl NodeKind {
                         out_high: 1.0,
                     },
                     Self::Invert,
+                    Self::Steps { count: 3 },
                 ],
             ),
             (
@@ -168,6 +272,8 @@ impl NodeKind {
                     Self::OpacityOutput,
                     Self::FlowOutput,
                     Self::SpacingOutput,
+                    Self::RotationOutput { degrees: 180.0 },
+                    Self::ScatterOutput,
                     Self::HueOutput { degrees: 30.0 },
                     Self::SaturationOutput,
                     Self::BrightnessOutput,
@@ -196,6 +302,11 @@ impl NodeKind {
             Self::Distance { .. } => "Distance along the stroke, 1 after the set length",
             Self::Random { .. } => "A repeatable random value per dab",
             Self::Constant { .. } => "A fixed value",
+            Self::Direction => "Which way the stroke heads: 0.5 right, 0.75 down, 0.25 up",
+            Self::TiltDirection => "Which way the pen leans: 0.5 right, 0.75 down, 0.25 up",
+            Self::Wave { .. } => "Repeats along the stroke: dashes, dots, rhythms",
+            Self::Noise { .. } => "Smooth, repeatable wandering along the stroke",
+            Self::Steps { .. } => "Snaps its input to a few levels",
             Self::Curve(_) => "Reshapes its input with a curve",
             Self::Remap { .. } => "Maps one range onto another",
             Self::Invert => "One minus its input",
@@ -208,6 +319,8 @@ impl NodeKind {
             Self::OpacityOutput => "Dab opacity, before taper",
             Self::FlowOutput => "Paint delivered per dab",
             Self::SpacingOutput => "Distance to the next dab",
+            Self::RotationOutput { .. } => "Turns the tip: 0.5 keeps the brush angle",
+            Self::ScatterOutput => "Moves dabs off the stroke: up to two sizes at 1",
             Self::HueOutput { .. } => "Turns each dab's hue: 0.5 keeps it",
             Self::SaturationOutput => "Each dab's color saturation: 1 keeps it, 0 is gray",
             Self::BrightnessOutput => "Each dab's brightness: 1 keeps it, 0 is black",
@@ -223,6 +336,11 @@ impl NodeKind {
             Self::Distance { .. } => "Distance",
             Self::Random { .. } => "Random",
             Self::Constant { .. } => "Constant",
+            Self::Direction => "Direction",
+            Self::TiltDirection => "Tilt direction",
+            Self::Wave { .. } => "Wave",
+            Self::Noise { .. } => "Noise",
+            Self::Steps { .. } => "Steps",
             Self::Curve(_) => "Curve",
             Self::Remap { .. } => "Remap",
             Self::Invert => "Invert",
@@ -235,6 +353,8 @@ impl NodeKind {
             Self::OpacityOutput => "Opacity",
             Self::FlowOutput => "Flow",
             Self::SpacingOutput => "Spacing",
+            Self::RotationOutput { .. } => "Rotation",
+            Self::ScatterOutput => "Scatter",
             Self::HueOutput { .. } => "Hue shift",
             Self::SaturationOutput => "Saturation",
             Self::BrightnessOutput => "Brightness",
@@ -245,7 +365,12 @@ impl NodeKind {
         let amount = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
         let ok = match self {
             Self::Distance { length } => length.is_finite() && (1.0..=100_000.0).contains(length),
-            Self::HueOutput { degrees } => degrees.is_finite() && (0.0..=180.0).contains(degrees),
+            Self::HueOutput { degrees } | Self::RotationOutput { degrees } => {
+                degrees.is_finite() && (0.0..=180.0).contains(degrees)
+            }
+            Self::Wave { period, .. } => period.is_finite() && (1.0..=100_000.0).contains(period),
+            Self::Noise { scale, .. } => scale.is_finite() && (1.0..=100_000.0).contains(scale),
+            Self::Steps { count } => (2..=32).contains(count),
             Self::Constant { value } => amount(*value),
             Self::Curve(curve) => return curve.validate(),
             Self::Remap {
@@ -322,12 +447,15 @@ pub enum Output {
     Opacity,
     Flow,
     Spacing,
+    Rotation,
+    Scatter,
+    // Color outputs last: `Values` reads them as one range.
     Hue,
     Saturation,
     Brightness,
     ColorMix,
 }
-const OUTPUTS: usize = 8;
+const OUTPUTS: usize = 10;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -427,7 +555,18 @@ impl BrushGraph {
             match &node.kind {
                 NodeKind::Pressure { shaped } => shaped.hash(hasher),
                 NodeKind::Distance { length } => values(hasher, &[*length]),
-                NodeKind::HueOutput { degrees } => values(hasher, &[*degrees]),
+                NodeKind::HueOutput { degrees } | NodeKind::RotationOutput { degrees } => {
+                    values(hasher, &[*degrees])
+                }
+                NodeKind::Wave { period, shape } => {
+                    values(hasher, &[*period]);
+                    (*shape as u8).hash(hasher);
+                }
+                NodeKind::Noise { scale, seed } => {
+                    values(hasher, &[*scale]);
+                    seed.hash(hasher);
+                }
+                NodeKind::Steps { count } => count.hash(hasher),
                 NodeKind::Random { seed } => seed.hash(hasher),
                 NodeKind::Constant { value } => values(hasher, &[*value]),
                 NodeKind::Curve(curve) => {
@@ -498,6 +637,183 @@ impl BrushGraph {
         }
         Self::new(builder.nodes, builder.links)
     }
+}
+
+/// A ready-made graph showing what nodes can do, to start from.
+pub struct Template {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub graph: BrushGraph,
+    /// Shows best with a flat tip (aspect below 1).
+    pub flat_tip: bool,
+}
+
+/// Starting graphs for effects the plain brush settings cannot make.
+pub fn templates() -> Vec<Template> {
+    use NodeKind::*;
+    let remap = |low: f32, high: f32| Remap {
+        in_low: 0.0,
+        in_high: 1.0,
+        out_low: low,
+        out_high: high,
+    };
+    // Size from pressure, as most brushes have it.
+    let pressure_size = |b: &mut Builder| {
+        let pressure = b.node(Pressure { shaped: true });
+        let floor = b.node(Constant { value: 0.05 });
+        let size = b.combine(Maximum, pressure, floor);
+        let output = b.node(SizeOutput);
+        b.link(size, output, 0);
+    };
+    let wire = |b: &mut Builder, from: NodeKind, to: NodeKind| {
+        let from = b.node(from);
+        let to = b.node(to);
+        b.link(from, to, 0);
+        to
+    };
+    let chain = |b: &mut Builder, kinds: Vec<NodeKind>| {
+        let mut previous: Option<NodeId> = None;
+        for kind in kinds {
+            let node = b.node(kind);
+            if let Some(previous) = previous {
+                b.link(previous, node, 0);
+            }
+            previous = Some(node);
+        }
+    };
+    let make = |name, description, flat_tip, build: &dyn Fn(&mut Builder)| {
+        let mut b = Builder::default();
+        build(&mut b);
+        Template {
+            name,
+            description,
+            graph: BrushGraph::new(b.nodes, b.links),
+            flat_tip,
+        }
+    };
+    vec![
+        make(
+            "Downstroke ink",
+            "Thick going down, thin going up, like a pointed pen",
+            false,
+            &|b| {
+                let pressure = b.node(Pressure { shaped: true });
+                let direction = b.node(Direction);
+                // Up (0.25) thin, down (0.75) full, sideways between.
+                let shape = b.node(Curve(crate::dynamics::Curve {
+                    points: vec![[0.0, 0.35], [0.25, 0.3], [0.75, 1.0], [1.0, 0.35]],
+                }));
+                b.link(direction, shape, 0);
+                let width = b.combine(Multiply, pressure, shape);
+                let output = b.node(SizeOutput);
+                b.link(width, output, 0);
+            },
+        ),
+        make(
+            "Twisting ribbon",
+            "A flat tip that slowly twists along the stroke",
+            true,
+            &|b| {
+                pressure_size(b);
+                wire(
+                    b,
+                    Noise {
+                        scale: 140.0,
+                        seed: 2,
+                    },
+                    RotationOutput { degrees: 90.0 },
+                );
+            },
+        ),
+        make(
+            "Dashed line",
+            "Dashes along the stroke, every 28 pixels",
+            false,
+            &|b| {
+                pressure_size(b);
+                wire(
+                    b,
+                    Wave {
+                        period: 28.0,
+                        shape: WaveShape::Square,
+                    },
+                    OpacityOutput,
+                );
+            },
+        ),
+        make(
+            "Wobbly ink",
+            "The width wanders smoothly, like a hand-cut line",
+            false,
+            &|b| {
+                let pressure = b.node(Pressure { shaped: true });
+                let noise = b.node(Noise {
+                    scale: 60.0,
+                    seed: 1,
+                });
+                let range = b.node(remap(0.45, 1.0));
+                b.link(noise, range, 0);
+                let width = b.combine(Multiply, pressure, range);
+                let output = b.node(SizeOutput);
+                b.link(width, output, 0);
+            },
+        ),
+        make(
+            "Color jitter",
+            "Each dab a slightly different hue and shade",
+            false,
+            &|b| {
+                pressure_size(b);
+                wire(b, Random { seed: 1 }, HueOutput { degrees: 20.0 });
+                chain(
+                    b,
+                    vec![Random { seed: 2 }, remap(0.8, 1.0), BrightnessOutput],
+                );
+            },
+        ),
+        make(
+            "Pressure color",
+            "Pressing harder paints toward the secondary color",
+            false,
+            &|b| {
+                pressure_size(b);
+                wire(b, Pressure { shaped: false }, ColorMixOutput);
+            },
+        ),
+        make(
+            "Speed spray",
+            "Dabs spread out as you draw faster, with uneven density",
+            false,
+            &|b| {
+                pressure_size(b);
+                wire(b, Speed, ScatterOutput);
+                chain(b, vec![Random { seed: 3 }, remap(0.3, 1.0), OpacityOutput]);
+            },
+        ),
+        make(
+            "Stipple",
+            "Scattered dots, each either on or off",
+            false,
+            &|b| {
+                pressure_size(b);
+                chain(
+                    b,
+                    vec![Random { seed: 4 }, Steps { count: 2 }, OpacityOutput],
+                );
+                chain(b, vec![Random { seed: 5 }, remap(0.0, 0.4), ScatterOutput]);
+            },
+        ),
+        make(
+            "Tilt shading",
+            "Leaning the pen widens and softens the stroke; the tip points where it leans",
+            true,
+            &|b| {
+                chain(b, vec![Tilt, Invert, remap(0.35, 1.0), SizeOutput]);
+                chain(b, vec![Tilt, remap(0.25, 1.0), OpacityOutput]);
+                wire(b, TiltDirection, RotationOutput { degrees: 180.0 });
+            },
+        ),
+    ]
 }
 
 #[derive(Default)]
@@ -575,6 +891,11 @@ enum Op {
     Distance(f32),
     Random(u32),
     Constant(f32),
+    Direction,
+    TiltDirection,
+    Wave(f32, WaveShape),
+    Noise(f32, u32),
+    Steps(u8, u8),
     Curve(u8, Curve),
     Remap(u8, [f32; 4]),
     Invert(u8),
@@ -595,8 +916,11 @@ pub struct Compiled {
     /// Register feeding each output, in `Output` order.
     outputs: [Option<u8>; OUTPUTS],
     shaped_pressure: bool,
-    /// The Hue shift output's range in degrees.
+    /// The Hue shift and Rotation outputs' ranges in degrees.
     hue_degrees: f32,
+    rotation_degrees: f32,
+    /// The graph reads the stroke's direction.
+    heading: bool,
 }
 
 /// Per-dab values the graph reads.
@@ -610,6 +934,8 @@ pub struct Inputs {
     pub twist: Option<f32>,
     pub random: Option<f32>,
     pub distance: f64,
+    /// Stroke direction in degrees, once the stroke has moved.
+    pub heading: Option<f32>,
 }
 
 /// Graph results; `None` where the graph does not drive the setting.
@@ -619,6 +945,10 @@ pub struct Values {
     pub opacity: Option<f32>,
     pub flow: Option<f32>,
     pub spacing: Option<f32>,
+    /// Degrees to turn the tip, when Rotation is wired (missing: no turn).
+    pub rotation: Option<f32>,
+    /// Scatter distance from 0 to 1, when Scatter is wired (missing: none).
+    pub scatter: Option<f32>,
     /// Per-dab color change, when any color output is wired.
     pub color: Option<ColorShift>,
 }
@@ -656,6 +986,11 @@ impl ColorShift {
     }
 }
 
+/// An angle in degrees as an amount: 0.5 for 0°, 0 and 1 for ±180°.
+fn centered_turn(degrees: f32) -> f32 {
+    ((degrees + 180.0).rem_euclid(360.0)) / 360.0
+}
+
 /// A deterministic stream per seed, derived from the dab's own random value.
 fn random_stream(value: f32, seed: u32) -> f32 {
     let mut h = value.to_bits() ^ seed.wrapping_mul(0x9E37_79B9);
@@ -670,6 +1005,14 @@ fn random_stream(value: f32, seed: u32) -> f32 {
 impl Compiled {
     pub fn needs_shaped_pressure(&self) -> bool {
         self.shaped_pressure
+    }
+    /// Whether the graph reads the stroke's direction.
+    pub fn needs_heading(&self) -> bool {
+        self.heading
+    }
+    /// Whether a wired output node drives `output`.
+    pub fn drives(&self, output: Output) -> bool {
+        self.outputs[output as usize].is_some()
     }
     /// Run the graph for one dab. No allocation: registers live on the stack.
     pub fn evaluate(&self, inputs: &Inputs) -> Values {
@@ -699,6 +1042,21 @@ impl Compiled {
                     .twist
                     .map_or(f32::NAN, |t| t.rem_euclid(360.0) / 360.0),
                 Op::Distance(length) => (inputs.distance / f64::from(*length)).min(1.0) as f32,
+                // Centered so 0.5 is rightward: with a 180° Rotation range
+                // the tip turns exactly with the stroke.
+                Op::Direction => inputs.heading.map_or(f32::NAN, centered_turn),
+                Op::TiltDirection => inputs
+                    .tilt
+                    .filter(|[x, y]| x.hypot(*y) > 1.0)
+                    .map_or(f32::NAN, |[x, y]| centered_turn(y.atan2(x).to_degrees())),
+                Op::Wave(period, shape) => shape.at(inputs.distance / f64::from(*period)),
+                Op::Noise(scale, seed) => smooth_noise(inputs.distance / f64::from(*scale), *seed),
+                Op::Steps(source, count) => {
+                    let x = at(*source);
+                    let n = f32::from(*count);
+                    ((x.clamp(0.0, 1.0) * n).floor().min(n - 1.0) / (n - 1.0)).max(0.0)
+                        + if x.is_nan() { f32::NAN } else { 0.0 }
+                }
                 Op::Random(0) => inputs.random.unwrap_or(f32::NAN),
                 Op::Random(seed) => inputs.random.map_or(f32::NAN, |v| random_stream(v, *seed)),
                 Op::Constant(value) => *value,
@@ -745,11 +1103,18 @@ impl Compiled {
                 brightness: raw(Output::Brightness).unwrap_or(1.0),
                 mix: raw(Output::ColorMix).unwrap_or(0.0),
             });
+        let rotation = self.outputs[Output::Rotation as usize].map(|_| {
+            raw(Output::Rotation).map_or(0.0, |v| (v * 2.0 - 1.0) * self.rotation_degrees)
+        });
+        let scatter =
+            self.outputs[Output::Scatter as usize].map(|_| raw(Output::Scatter).unwrap_or(0.0));
         Values {
             size: value(self.outputs[0]),
             opacity: value(self.outputs[1]),
             flow: value(self.outputs[2]),
             spacing: value(self.outputs[3]),
+            rotation,
+            scatter,
             color,
         }
     }
@@ -826,6 +1191,8 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
     let mut outputs = [None; OUTPUTS];
     let mut shaped_pressure = false;
     let mut hue_degrees = 0.0;
+    let mut rotation_degrees = 0.0;
+    let mut heading = false;
     for &index in &order {
         let port = |p: usize| sources[index][p].map_or(MISSING, |s| register[s]);
         let op = match &graph.nodes[index].kind {
@@ -840,6 +1207,14 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             NodeKind::Distance { length } => Op::Distance(*length),
             NodeKind::Random { seed } => Op::Random(*seed),
             NodeKind::Constant { value } => Op::Constant(*value),
+            NodeKind::Direction => {
+                heading = true;
+                Op::Direction
+            }
+            NodeKind::TiltDirection => Op::TiltDirection,
+            NodeKind::Wave { period, shape } => Op::Wave(*period, *shape),
+            NodeKind::Noise { scale, seed } => Op::Noise(*scale, *seed),
+            NodeKind::Steps { count } => Op::Steps(port(0), *count),
             NodeKind::Curve(curve) => Op::Curve(port(0), curve.clone()),
             NodeKind::Remap {
                 in_low,
@@ -855,8 +1230,10 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             NodeKind::Mix => Op::Mix([port(0), port(1), port(2)]),
             kind => {
                 let output = kind.output().expect("only outputs remain");
-                if let NodeKind::HueOutput { degrees } = kind {
-                    hue_degrees = *degrees;
+                match kind {
+                    NodeKind::HueOutput { degrees } => hue_degrees = *degrees,
+                    NodeKind::RotationOutput { degrees } => rotation_degrees = *degrees,
+                    _ => {}
                 }
                 if let Some(source) = sources[index][0] {
                     outputs[output as usize] = Some(register[source]);
@@ -872,6 +1249,8 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
         outputs,
         shaped_pressure,
         hue_degrees,
+        rotation_degrees,
+        heading,
     })
 }
 
@@ -908,6 +1287,7 @@ mod tests {
             twist: None,
             random: Some(0.25),
             distance: 0.0,
+            heading: None,
         }
     }
 
@@ -1210,6 +1590,196 @@ mod tests {
     }
 
     #[test]
+    fn wave_noise_steps_and_direction_nodes() {
+        use NodeKind::*;
+        let flow = |kind: NodeKind, i: Inputs| {
+            graph(vec![kind, FlowOutput], &[(1, 2, 0)])
+                .compiled()
+                .unwrap()
+                .evaluate(&i)
+                .flow
+                .unwrap()
+        };
+        let at = |distance: f64| Inputs {
+            distance,
+            ..inputs(1.0)
+        };
+        // Dashes: on for the first half of each 20 px period.
+        let dashes = Wave {
+            period: 20.0,
+            shape: WaveShape::Square,
+        };
+        assert_eq!(flow(dashes.clone(), at(5.0)), 1.0);
+        assert_eq!(flow(dashes.clone(), at(15.0)), 0.0);
+        assert_eq!(flow(dashes, at(25.0)), 1.0);
+        let smooth = |d| {
+            flow(
+                Wave {
+                    period: 20.0,
+                    shape: WaveShape::Sine,
+                },
+                at(d),
+            )
+        };
+        assert!(smooth(0.0) < 0.01 && smooth(10.0) > 0.99);
+        // Noise: repeatable, within 0..1, and smooth from pixel to pixel.
+        let noise = |d| {
+            flow(
+                Noise {
+                    scale: 50.0,
+                    seed: 9,
+                },
+                at(d),
+            )
+        };
+        let values: Vec<f32> = (0..400).map(|d| noise(f64::from(d))).collect();
+        assert!(values.iter().all(|v| (0.0..=1.0).contains(v)));
+        assert!(values.windows(2).all(|w| (w[0] - w[1]).abs() < 0.05));
+        assert!(
+            values.iter().cloned().fold(0.0, f32::max) - values.iter().cloned().fold(1.0, f32::min)
+                > 0.3
+        );
+        assert_eq!(noise(123.0), noise(123.0));
+        // Steps: two levels make 0 or 1.
+        let stepped = |x: f32| {
+            graph(
+                vec![Constant { value: x }, Steps { count: 2 }, FlowOutput],
+                &[(1, 2, 0), (2, 3, 0)],
+            )
+            .compiled()
+            .unwrap()
+            .evaluate(&inputs(1.0))
+            .flow
+            .unwrap()
+        };
+        assert_eq!((stepped(0.3), stepped(0.7), stepped(1.0)), (0.0, 1.0, 1.0));
+        // Direction: rightward is 0.5, down the screen 0.75, up 0.25.
+        let heading = |h| {
+            flow(
+                Direction,
+                Inputs {
+                    heading: Some(h),
+                    ..inputs(1.0)
+                },
+            )
+        };
+        assert_eq!(
+            (heading(0.0), heading(90.0), heading(-90.0)),
+            (0.5, 0.75, 0.25)
+        );
+        let lean = flow(
+            TiltDirection,
+            Inputs {
+                tilt: Some([0.0, 30.0]),
+                ..inputs(1.0)
+            },
+        );
+        assert_eq!(lean, 0.75);
+    }
+
+    /// Dabs of a straight stroke from `from` to `to`.
+    fn stroke_dabs(
+        brush: &crate::brush::Brush,
+        from: [f32; 2],
+        to: [f32; 2],
+    ) -> Vec<crate::stroke::Sample> {
+        let mut stroke = crate::stroke::Stroke::default();
+        let mut dabs = Vec::new();
+        for i in 0..=20 {
+            let t = i as f32 / 20.0;
+            let sample = crate::stroke::Sample {
+                x: from[0] + (to[0] - from[0]) * t,
+                y: from[1] + (to[1] - from[1]) * t,
+                pressure: 1.0,
+                pressure_known: true,
+                ..Default::default()
+            };
+            dabs.extend(if i == 20 {
+                stroke.finish(sample, brush)
+            } else {
+                stroke.sample(sample, brush)
+            });
+        }
+        dabs
+    }
+
+    #[test]
+    fn rotation_follows_the_stroke_and_scatter_moves_dabs() {
+        use NodeKind::*;
+        let turning = crate::brush::Brush {
+            aspect: 0.3,
+            pressure_size: false,
+            graph: Some(graph(
+                vec![Direction, RotationOutput { degrees: 180.0 }],
+                &[(1, 2, 0)],
+            )),
+            ..Default::default()
+        };
+        let rotations = |to: [f32; 2]| {
+            stroke_dabs(&turning, [100.0, 100.0], to)
+                .into_iter()
+                .skip(2)
+                .map(|d| d.rotation.unwrap())
+                .collect::<Vec<_>>()
+        };
+        // Across, then down: the tip turns with the stroke.
+        assert!(rotations([300.0, 100.0]).iter().all(|r| r.abs() < 0.5));
+        assert!(
+            rotations([100.0, 300.0])
+                .iter()
+                .all(|r| (r - 90.0).abs() < 0.5)
+        );
+        // Scatter: none at 0, off the line at 1, within two sizes.
+        let scatter = |amount: f32| crate::brush::Brush {
+            size: 10.0,
+            pressure_size: false,
+            graph: Some(graph(
+                vec![Constant { value: amount }, ScatterOutput],
+                &[(1, 2, 0)],
+            )),
+            ..Default::default()
+        };
+        let offsets = |brush| {
+            stroke_dabs(&brush, [0.0, 100.0], [300.0, 100.0])
+                .into_iter()
+                .map(|d| (d.y - 100.0).abs())
+                .collect::<Vec<_>>()
+        };
+        assert!(offsets(scatter(0.0)).iter().all(|o| *o < 1e-4));
+        let spread = offsets(scatter(1.0));
+        assert!(spread.iter().any(|o| *o > 5.0) && spread.iter().all(|o| *o <= 20.0 + 1e-3));
+    }
+
+    #[test]
+    fn every_template_is_valid_and_paints_something_new() {
+        let plain = crate::brush::Brush {
+            name: "Template test".into(),
+            size: 20.0,
+            spacing: 0.08,
+            ..Default::default()
+        };
+        let reference = paint(&plain);
+        let templates = templates();
+        assert!(templates.len() >= 8);
+        for template in templates {
+            let brush = crate::brush::Brush {
+                aspect: if template.flat_tip { 0.35 } else { 1.0 },
+                graph: Some(template.graph),
+                ..plain.clone()
+            };
+            brush
+                .validate()
+                .unwrap_or_else(|e| panic!("{}: {e}", template.name));
+            let painted = paint(&brush);
+            assert!(
+                painted != reference,
+                "{} looks like the plain brush",
+                template.name
+            );
+        }
+    }
+
+    #[test]
     fn converted_brushes_paint_identical_pixels() {
         use crate::dynamics::{Curve, Dynamics, Effector, Input, MinimumMode};
         let curve = |points: Vec<[f32; 2]>| Curve { points };
@@ -1360,4 +1930,68 @@ mod tests {
         g.edit().1.clear();
         assert!(!g.drives(Output::Size));
     }
+}
+
+/// `DUDEL_TEMPLATE_SHEET=out.png cargo test template_sheet -- --ignored`
+/// draws one stroke per template, top to bottom in menu order.
+#[cfg(test)]
+#[test]
+#[ignore = "writes a picture for review"]
+fn template_sheet() {
+    let Ok(path) = std::env::var("DUDEL_TEMPLATE_SHEET") else {
+        return;
+    };
+    let templates = templates();
+    let (width, row) = (900usize, 90usize);
+    let mut doc = crate::document::Document::new(width, row * templates.len());
+    for (index, template) in templates.into_iter().enumerate() {
+        let brush = crate::brush::Brush {
+            size: 22.0,
+            spacing: 0.06,
+            aspect: if template.flat_tip { 0.3 } else { 1.0 },
+            graph: Some(template.graph),
+            ..Default::default()
+        };
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: brush.clone(),
+            color: [40, 90, 200],
+            secondary: [235, 120, 40],
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        };
+        let mut stroke = crate::stroke::Stroke::default();
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        let top = (index * row) as f32;
+        for i in 0..=120 {
+            let t = i as f32 / 120.0;
+            let sample = crate::stroke::Sample {
+                x: 40.0 + t * (width as f32 - 80.0),
+                y: top + row as f32 / 2.0 + (t * std::f32::consts::TAU * 1.5).sin() * 22.0,
+                pressure: (t * std::f32::consts::PI).sin().max(0.1),
+                time: Some(f64::from(i) * (0.004 + 0.012 * f64::from(t))),
+                tilt: Some([50.0 * (1.0 - t), 40.0 * t]),
+                pressure_known: true,
+                ..Default::default()
+            };
+            let dabs = if i == 120 {
+                stroke.finish(sample, &brush)
+            } else {
+                stroke.sample(sample, &brush)
+            };
+            for dab in dabs {
+                buffer.paint(&mut doc, dab, &settings);
+            }
+        }
+        buffer.finish_tail(&mut doc, &settings);
+    }
+    image::save_buffer(
+        path,
+        &doc.composite(),
+        width as u32,
+        doc.height as u32,
+        image::ExtendedColorType::Rgba8,
+    )
+    .unwrap();
 }
