@@ -307,6 +307,65 @@ mod tests {
         assert!(!app.modified);
     }
     #[test]
+    fn blur_radius_slider_spreads_radii_over_its_whole_length() {
+        // Click along a 200 point slider and read the radius each gives.
+        let ctx = egui::Context::default();
+        let radius_at = |fraction: f32| {
+            let mut radius = 4.0f32;
+            // One frame; returns where the slider was drawn.
+            let frame = |events: Vec<egui::Event>, radius: &mut f32| {
+                let mut rect = egui::Rect::NOTHING;
+                let _ = ctx.run(
+                    egui::RawInput {
+                        events,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            ui.spacing_mut().slider_width = 200.0;
+                            rect = ui.add(blur_radius_slider(radius)).rect;
+                        });
+                    },
+                );
+                rect
+            };
+            let rect = frame(vec![], &mut radius);
+            // The handle travels the slider's width minus its own size.
+            let rail = rect.left() + 8.0;
+            let at = egui::pos2(rail + fraction * (200.0 - 16.0), rect.center().y);
+            // Press on the slider, drag to the spot (past an end clamps), let go.
+            let start = rect.center();
+            let button = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            frame(
+                vec![egui::Event::PointerMoved(start), button(start, true)],
+                &mut radius,
+            );
+            frame(vec![egui::Event::PointerMoved(at)], &mut radius);
+            frame(vec![egui::Event::PointerMoved(at)], &mut radius);
+            frame(vec![button(at, false)], &mut radius);
+            radius
+        };
+        let quarter = radius_at(0.25);
+        let half = radius_at(0.5);
+        let three_quarters = radius_at(0.75);
+        // Every part of the slider picks a different, visible radius.
+        assert!(
+            quarter >= 0.3 && quarter < half && half < three_quarters,
+            "{quarter} {half} {three_quarters}"
+        );
+        assert!(
+            (3.0..=20.0).contains(&half),
+            "the middle is a useful radius: {half}"
+        );
+        // Past either end: none and the largest radius.
+        assert!(radius_at(-0.1) == 0.0 && radius_at(1.1) == 250.0);
+    }
+    #[test]
     fn every_offered_adjustment_layer_kind_works_as_a_filter() {
         use crate::adjustment::Settings as Layer;
         // Each listed kind names itself and round-trips through kind().
@@ -753,6 +812,18 @@ impl Settings {
         pixel
     }
 }
+/// The Gaussian blur radius slider. Logarithmic, so small radii get room,
+/// but its scale starts at 0.3 px, the smallest radius that changes
+/// anything: from 0, egui's scale would start at a millionth of a pixel and
+/// spend half the slider on radii that all show as 0.0.
+fn blur_radius_slider(radius: &mut f32) -> egui::Slider<'_> {
+    egui::Slider::new(radius, 0.0..=250.0)
+        .logarithmic(true)
+        .smallest_positive(0.3)
+        .suffix(" px")
+        .max_decimals(1)
+}
+
 pub(crate) fn prepare(
     source: &Document,
     target: LayerId,
@@ -1133,7 +1204,7 @@ impl Dudel {
                                 crate::workspace::labeled_slider(ui, "White", egui::Slider::new(output_white, *output_black..=255));
                             }
                             Settings::GaussianBlur { radius } => {
-                                crate::workspace::labeled_slider(ui, "Radius", egui::Slider::new(radius, 0.0..=250.0).logarithmic(true).suffix(" px").max_decimals(1));
+                                crate::workspace::labeled_slider(ui, "Radius", blur_radius_slider(radius));
                             }
                             Settings::Sharpen { amount, radius } => {
                                 crate::workspace::labeled_slider(ui, "Amount", egui::Slider::new(amount, 0.0..=500.0).suffix("%").integer());
