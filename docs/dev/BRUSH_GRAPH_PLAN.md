@@ -1,8 +1,9 @@
 # Brush graph
 
 Status: accepted 2026-11-10; milestones 1 (the engine, [section
-13](#13-milestone-1-as-built)) and 2 (the editor, [section
-14](#14-milestone-2-as-built)) are implemented. It answers the "first deliverable" of
+13](#13-milestone-1-as-built)), 2 (the editor, [section
+14](#14-milestone-2-as-built)) and 3 (sharing, [section
+15](#15-milestone-3-as-built)) are implemented. It answers the "first deliverable" of
 the brush graph brief: how a node-based brush editor fits the brush engine
 Dudel already has, and what to build first.
 
@@ -348,3 +349,31 @@ Studio. Where it differs from section 7:
   layout direction, and a workflow test at 1366 × 768 that makes a graph,
   adds a node from the menu, drags it, wires it with the mouse, undoes and
   redoes, and deletes it. `--capture-brush-graph` takes a screenshot.
+
+## 15. Milestone 3 as built
+
+`src/brush_share.rs` and `src/brush_pack.rs`, 2026-11-10.
+
+- **`.dudelbrush`** is a one-brush pack: the same JSON as `.dudelbrushes`
+  (version 3 with a graph, 2 without), plus an optional `info` object with
+  author, license and description (100, 100 and 1000 characters, no control
+  characters except newlines in the description). Older Dudel ignores `info`.
+- **Export:** **Preset > Export brush…** opens a form (author and license are
+  remembered in preferences; **Common licenses** offers CC0 1.0, CC BY 4.0,
+  CC BY-SA 4.0 and All rights reserved), then the save dialog with a file name
+  made from the brush name.
+- **Import:** **Import brush…**, **Import pack…** and dropped `.dudelbrush` or
+  `.dudelbrushes` files all open one review dialog before anything joins the
+  library: a sample stroke rendered from the brush itself, the name (and how
+  many more for packs), author, license, description, and notes when a brush
+  uses a graph or smudges or blurs. Plain `.json` brushes from older Dudel
+  still import. Files are read up to 16 MB.
+- **Refused:** malformed JSON, unknown versions ("made by a newer Dudel"),
+  version 1–2 packs claiming a graph, invalid brushes or graphs, and
+  over-long or control-character details; nothing reaches the dialog.
+- **Deviation:** no stored preview image. Dudel renders the brush itself in
+  the dialog, which cannot disagree with how it paints and keeps files small.
+- **Brush Studio as a tab** (asked for alongside this milestone): the Studio
+  opens as a tab beside the project tabs and fills the canvas area; the canvas
+  keeps its background work (render queue, previews) while hidden. **Float as
+  window** restores the floating window; the choice is a preference.

@@ -1541,6 +1541,8 @@ fn brush_studio_compact_creation_revert_and_sections_fit_after_viewport_resize()
     }
     for size in [[960.0, 700.0], [640.0, 400.0], [480.0, 320.0]] {
         let mut w = Workspace::sized(size);
+        // This test is about the floating window fitting small screens.
+        w.app.studio_as_tab = false;
         w.app.brush_studio = true;
         w.app.brush_studio_section = crate::brush_studio::Section::Stabilizer;
         w.app.brush.stabilization = 12.0;
@@ -1643,6 +1645,7 @@ impl Workspace {
             self.app
                 .canvas_after_tool_change(ctx, packets, previous_tool);
             self.app.brush_studio_ui(ctx);
+            self.app.brush_share_ui(ctx);
             self.app.effects_window(ctx);
             self.app.adjustment_window(ctx);
             self.app.unsaved_dialog(ctx);
@@ -5062,4 +5065,74 @@ fn brush_graph_editor_adds_moves_wires_undoes_and_deletes_in_the_studio() {
     );
     // Pressure toggles the graph now sets are disabled elsewhere.
     assert!(!ui.app.graph_driven()[0], "Size is unwired now");
+}
+
+#[test]
+fn brush_studio_opens_as_a_tab_and_project_tabs_return_to_the_canvas() {
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.settle();
+    let zoom = ui.app.zoom;
+    ui.app.brush_studio = true;
+    ui.settle();
+    assert!(ui.app.studio_tab_shown());
+    ui.text("Float as window");
+    // A stroke-free project tab click shows the canvas, Studio stays open.
+    ui.click(ui.text("Untitled"));
+    assert!(!ui.app.studio_tab_shown() && ui.app.brush_studio);
+    // Still fitted, now under the tab bar.
+    assert!(
+        ui.app.zoom > 0.0 && (ui.app.zoom - zoom).abs() < 0.1,
+        "{zoom} {}",
+        ui.app.zoom
+    );
+    ui.click(ui.text("Brush Studio"));
+    assert!(ui.app.studio_tab_shown());
+    // Float it: a window over the canvas, remembered in preferences.
+    ui.click(ui.text("Float as window"));
+    assert!(!ui.app.studio_as_tab && ui.app.brush_studio);
+    ui.text("Open as tab");
+    let prefs =
+        crate::preferences::Preferences::decode(&ui.app.encode_preferences().unwrap()).unwrap();
+    assert!(!prefs.studio_as_tab);
+    ui.click(ui.text("Open as tab"));
+    assert!(ui.app.studio_tab_shown());
+}
+
+#[test]
+fn brush_files_are_reviewed_in_a_dialog_and_export_asks_for_details() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shared.dudelbrush");
+    let pack = crate::brush_pack::BrushPack::single(
+        crate::brush::Brush {
+            name: "Shared smudger".into(),
+            blend: crate::brush::Blend::Smudge,
+            ..Default::default()
+        },
+        crate::brush_pack::PackInfo {
+            author: "Grace".into(),
+            license: "CC0 1.0 (public domain)".into(),
+            description: String::new(),
+        },
+    );
+    std::fs::write(&path, serde_json::to_vec(&pack).unwrap()).unwrap();
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.settle();
+    let before = ui.app.brushes.len();
+    ui.app.import_brush_pack(path);
+    ui.settle();
+    ui.text("Shared smudger");
+    ui.text("By Grace");
+    ui.text("Smudge or blur brush");
+    ui.click(ui.text("Add to library"));
+    assert_eq!(ui.app.brushes.len(), before + 1);
+    assert_eq!(ui.app.brush.name, "Shared smudger");
+    assert!(ui.app.brush_import.is_none());
+    // Export asks for details first; Cancel leaves nothing open.
+    ui.app.brush_author = "Grace".into();
+    ui.app.open_brush_export();
+    ui.settle();
+    ui.text("Export brush");
+    ui.text("Common licenses");
+    ui.click(ui.text("Cancel"));
+    assert!(ui.app.brush_export.is_none());
 }

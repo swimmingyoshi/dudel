@@ -256,53 +256,122 @@ impl Section {
 }
 
 impl Dudel {
-    /// The Brush Studio: sections on the left, a large live preview and the
-    /// chosen section's settings on the right.
+    /// Whether Brush Studio is open as a tab and showing in the canvas area.
+    pub(crate) fn studio_tab_shown(&self) -> bool {
+        self.brush_studio && self.studio_as_tab && self.studio_tab_active
+    }
+
+    /// The Brush Studio as a floating window, when it is not a tab.
     pub(crate) fn brush_studio_ui(&mut self, ctx: &egui::Context) {
-        if !self.brush_studio {
+        if !self.brush_studio || self.studio_as_tab {
             return;
         }
         let mut open = true;
+        let mut dock = false;
         let bounds = ctx.content_rect().shrink(8.0);
         let maximum = (bounds.size() - egui::vec2(16.0, 40.0)).max(egui::vec2(200.0, 140.0));
         egui::Window::new("Brush Studio")
             .id(egui::Id::new("brush studio"))
             .open(&mut open)
-            .default_size(egui::vec2(760.0, 560.0).min(maximum))
+            .default_size(egui::vec2(920.0, 660.0).min(maximum))
             .min_size(egui::vec2(300.0, 240.0).min(maximum))
             .max_size(maximum)
             .constrain_to(bounds)
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(&self.brush.name).strong()).truncate());
+                dock = self.brush_studio_header(
+                    ui,
+                    "Open as tab",
+                    "Show Brush Studio in its own tab, using the whole canvas area",
+                );
                 ui.separator();
-                let compact = ui.available_width() < 650.0 || ui.available_height() < 440.0;
-                // Reserve the action row and state line outside the settings scroll.
-                let footer = ui.spacing().interact_size.y
-                    + ui.text_style_height(&egui::TextStyle::Small)
-                    + 4.0 * ui.spacing().item_spacing.y
-                    + 8.0;
-                let height = (ui.available_height() - footer).max(32.0);
-                let (body_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), height),
-                    egui::Sense::hover(),
-                );
-                let mut body = ui.new_child(
-                    egui::UiBuilder::new()
-                        .id_salt("brush studio body")
-                        .max_rect(body_rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                );
-                body.set_clip_rect(body_rect.intersect(ui.clip_rect()));
-                {
-                    let ui = &mut body;
-                    if compact {
-                        egui::ComboBox::from_id_salt("brush studio section")
-                            .selected_text(self.brush_studio_section.title())
-                            .width(ui.available_width())
-                            .height((bounds.height() - 100.0).max(60.0))
-                            .show_ui(ui, |ui| {
+                self.brush_studio_body(ui, bounds.height());
+            });
+        if dock {
+            self.studio_as_tab = true;
+            self.studio_tab_active = true;
+        }
+        self.brush_studio = open;
+    }
+
+    /// Brush Studio filling the canvas area, while its tab is selected.
+    pub(crate) fn brush_studio_tab(&mut self, ui: &mut egui::Ui) {
+        let float = self.brush_studio_header(
+            ui,
+            "Float as window",
+            "Show Brush Studio in a window over the canvas instead",
+        );
+        ui.separator();
+        let height = ui.available_height();
+        self.brush_studio_body(ui, height);
+        if float {
+            self.studio_as_tab = false;
+        }
+    }
+
+    /// The brush name and a button that moves the Studio between tab and
+    /// window; returns whether the button was clicked.
+    fn brush_studio_header(&mut self, ui: &mut egui::Ui, label: &str, hint: &str) -> bool {
+        let row = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+        ui.allocate_ui_with_layout(
+            row,
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                let clicked = ui.button(label).on_hover_text(hint).clicked();
+                ui.add(egui::Label::new(egui::RichText::new(&self.brush.name).strong()).truncate());
+                clicked
+            },
+        )
+        .inner
+    }
+
+    /// Sections, preview and settings, then the preset actions.
+    fn brush_studio_body(&mut self, ui: &mut egui::Ui, height_limit: f32) {
+        let compact = ui.available_width() < 650.0 || ui.available_height() < 440.0;
+        // Reserve the action row and state line outside the settings scroll.
+        let footer = ui.spacing().interact_size.y
+            + ui.text_style_height(&egui::TextStyle::Small)
+            + 4.0 * ui.spacing().item_spacing.y
+            + 8.0;
+        let height = (ui.available_height() - footer).max(32.0);
+        let (body_rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), height),
+            egui::Sense::hover(),
+        );
+        let mut body = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt("brush studio body")
+                .max_rect(body_rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        body.set_clip_rect(body_rect.intersect(ui.clip_rect()));
+        {
+            let ui = &mut body;
+            if compact {
+                egui::ComboBox::from_id_salt("brush studio section")
+                    .selected_text(self.brush_studio_section.title())
+                    .width(ui.available_width())
+                    .height((height_limit - 100.0).max(60.0))
+                    .show_ui(ui, |ui| {
+                        for section in Section::STUDIO {
+                            ui.selectable_value(
+                                &mut self.brush_studio_section,
+                                section,
+                                section.title(),
+                            );
+                        }
+                    });
+                self.brush_studio_settings(ui, true);
+            } else {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(150.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("brush studio sections")
+                            .max_height(height)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
                                 for section in Section::STUDIO {
                                     ui.selectable_value(
                                         &mut self.brush_studio_section,
@@ -311,86 +380,66 @@ impl Dudel {
                                     );
                                 }
                             });
-                        self.brush_studio_settings(ui, true);
-                    } else {
-                        ui.horizontal_top(|ui| {
-                            ui.vertical(|ui| {
-                                ui.set_width(150.0);
-                                egui::ScrollArea::vertical()
-                                    .id_salt("brush studio sections")
-                                    .max_height(height)
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        for section in Section::STUDIO {
-                                            ui.selectable_value(
-                                                &mut self.brush_studio_section,
-                                                section,
-                                                section.title(),
-                                            );
-                                        }
-                                    });
-                            });
-                            ui.separator();
-                            ui.vertical(|ui| {
-                                ui.set_width(ui.available_width());
-                                self.brush_studio_settings(ui, false);
-                            });
-                        });
-                    }
-                }
-                ui.separator();
-                let modified = self.brush_preset_modified();
-                let valid = self.brush.validate().is_ok();
-                ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .add_enabled(
-                            self.brushes.len() < 512 && valid,
-                            egui::Button::new("Save as new"),
-                        )
-                        .on_hover_text("Add these settings as a new library preset")
-                        .on_disabled_hover_text(if self.brushes.len() >= 512 {
-                            "The library has 512 presets. Delete one before adding another."
-                        } else {
-                            "Correct the brush settings shown below before saving."
-                        })
-                        .clicked()
-                    {
-                        self.save_new_brush_preset();
-                    }
-                    if ui
-                        .add_enabled(modified && valid, egui::Button::new("Update preset…"))
-                        .on_hover_text("Replace the selected preset's saved settings")
-                        .clicked()
-                    {
-                        self.update_brush_preset();
-                    }
-                    if ui
-                        .add_enabled(modified, egui::Button::new("Revert"))
-                        .on_hover_text("Restore the selected preset's saved settings")
-                        .clicked()
-                    {
-                        self.revert_brush_preset();
-                    }
-                });
-                if let Err(error) = self.brush.validate() {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&error)
-                                .small()
-                                .color(ui.visuals().error_fg_color),
-                        )
-                        .truncate(),
-                    )
-                    .on_hover_text(error);
-                } else {
-                    ui.small(if self.brush_preset_modified() {
-                        "Unsaved preset changes"
-                    } else {
-                        "Saved preset"
                     });
-                }
+                    ui.separator();
+                    ui.vertical(|ui| {
+                        ui.set_width(ui.available_width());
+                        self.brush_studio_settings(ui, false);
+                    });
+                });
+            }
+        }
+        ui.separator();
+        let modified = self.brush_preset_modified();
+        let valid = self.brush.validate().is_ok();
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(
+                    self.brushes.len() < 512 && valid,
+                    egui::Button::new("Save as new"),
+                )
+                .on_hover_text("Add these settings as a new library preset")
+                .on_disabled_hover_text(if self.brushes.len() >= 512 {
+                    "The library has 512 presets. Delete one before adding another."
+                } else {
+                    "Correct the brush settings shown below before saving."
+                })
+                .clicked()
+            {
+                self.save_new_brush_preset();
+            }
+            if ui
+                .add_enabled(modified && valid, egui::Button::new("Update preset…"))
+                .on_hover_text("Replace the selected preset's saved settings")
+                .clicked()
+            {
+                self.update_brush_preset();
+            }
+            if ui
+                .add_enabled(modified, egui::Button::new("Revert"))
+                .on_hover_text("Restore the selected preset's saved settings")
+                .clicked()
+            {
+                self.revert_brush_preset();
+            }
+        });
+        if let Err(error) = self.brush.validate() {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&error)
+                        .small()
+                        .color(ui.visuals().error_fg_color),
+                )
+                .truncate(),
+            )
+            .on_hover_text(error);
+        } else {
+            ui.small(if self.brush_preset_modified() {
+                "Unsaved preset changes"
+            } else {
+                "Saved preset"
             });
-        self.brush_studio = open;
+        }
     }
     fn brush_studio_settings(&mut self, ui: &mut egui::Ui, compact: bool) {
         // The graph editor needs the room more than a large preview.

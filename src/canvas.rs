@@ -540,7 +540,26 @@ impl Dudel {
             && !self.pointer_grabs_text(view.to_doc(origin))
     }
     pub(crate) fn canvas(&mut self, ctx: &egui::Context, packets: &[input::Packet]) {
+        // Opening Brush Studio as a tab brings its tab forward.
+        if self.brush_studio != self.studio_was_open {
+            self.studio_was_open = self.brush_studio;
+            self.studio_tab_active = self.brush_studio;
+        }
+        let studio_was_shown = self.studio_tab_shown();
         self.tab_bar(ctx);
+        if self.studio_tab_shown() {
+            if !studio_was_shown {
+                self.close_input_gestures();
+            }
+            egui::CentralPanel::default().show(ctx, |ui| self.brush_studio_tab(ui));
+            // The canvas is hidden, but its background work keeps going.
+            self.poll_affine_preview();
+            self.pump_render_queue(ctx);
+            self.upload_canvas(ctx);
+            self.text_editor(ctx);
+            self.quick_menu_ui(ctx);
+            return;
+        }
         egui::TopBottomPanel::top("editing target").show(ctx, |ui| self.editing_target_ui(ui));
         egui::CentralPanel::default()
             .frame(

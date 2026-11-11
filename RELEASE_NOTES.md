@@ -21,9 +21,8 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   a name and switches between saved arrangements.
 - **Smudge and blur brushes:** a brush's new **Mode** setting smudges (drags the
   paint under the brush along the stroke) or blurs instead of painting, with
-  Opacity as the strength. New libraries include **Smudge** and **Blur**
-  presets; in an existing library, set Mode on any brush and save it as a new
-  preset.
+  Opacity as the strength, and built-in **Smudge** and **Blur** presets (in an
+  existing library: **Library > Add built-in brushes**).
 - **Brush graphs:** Brush Studio's new **Brush graph** section wires pen
   inputs (pressure, speed, tilt, twist, distance, random) through curves and
   math nodes into a brush's size, opacity, flow and spacing, with a live
@@ -31,6 +30,12 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   the brush as it is and paints identically. Brush packs that contain a graph
   are written as version 3, which older Dudel refuses rather than importing
   without the graph.
+- **Brush Studio in its own tab:** the Studio opens as a tab beside your
+  projects and uses the whole canvas area, so the graph editor has room.
+  **Float as window** brings back the floating window.
+- **Sharing brushes:** **Export brush…** saves a `.dudelbrush` file with your
+  name, a license and a description. **Import brush…** (or dropping a file)
+  shows the brush, who made it and its license before adding it.
 
 ## 0.3.0 (2026-11-10)
 

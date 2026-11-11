@@ -742,11 +742,15 @@ impl Dudel {
         }
     }
     pub(crate) fn tab_bar(&mut self, ctx: &egui::Context) {
-        if self.tabs.len() < 2 {
+        let studio = self.brush_studio && self.studio_as_tab;
+        if self.tabs.len() < 2 && !studio {
             return;
         }
+        let studio_shown = self.studio_tab_shown();
         let mut select = None;
         let mut close = None;
+        let mut studio_clicked = false;
+        let mut studio_closed = false;
         egui::TopBottomPanel::top("project tabs")
             .frame(
                 egui::Frame::NONE
@@ -761,7 +765,7 @@ impl Dudel {
                             ui.spacing_mut().item_spacing.x = 2.0;
                             for index in 0..self.tabs.len() {
                                 let (name, modified) = self.tab_title(index);
-                                let active = index == self.tabs.active;
+                                let active = index == self.tabs.active && !studio_shown;
                                 // The bundled font has no bullet glyph; editors use a trailing star.
                                 let label = if modified {
                                     format!("{name} *")
@@ -831,6 +835,20 @@ impl Dudel {
                                 });
                                 ui.add_space(4.0);
                             }
+                            if studio {
+                                let (response, close_clicked) = project_tab(
+                                    ui,
+                                    egui::Id::new("brush studio tab"),
+                                    "Brush Studio",
+                                    studio_shown,
+                                );
+                                studio_closed = close_clicked;
+                                studio_clicked = response
+                                    .on_hover_text("Brush Studio: edit the current brush")
+                                    .clicked()
+                                    && !close_clicked;
+                                ui.add_space(4.0);
+                            }
                             if crate::icons::button(
                                 ui,
                                 crate::icons::Icon::Plus,
@@ -849,10 +867,19 @@ impl Dudel {
                         });
                     });
             });
+        if studio_closed {
+            self.brush_studio = false;
+        } else if studio_clicked {
+            self.studio_tab_active = true;
+        }
         if let Some(index) = close {
             self.close_tab(index);
         } else if let Some(index) = select {
-            self.request_tab(index);
+            // A project tab shows the canvas again.
+            self.studio_tab_active = false;
+            if index != self.tabs.active {
+                self.request_tab(index);
+            }
         }
     }
 }

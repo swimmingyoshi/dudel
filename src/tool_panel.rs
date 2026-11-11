@@ -718,7 +718,7 @@ impl Dudel {
                     }
                     ui.separator();
                     if ui.button("Export brush…").clicked() {
-                        self.brush_file(false);
+                        self.open_brush_export();
                         ui.close();
                     }
                     if ui

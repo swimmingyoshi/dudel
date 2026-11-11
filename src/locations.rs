@@ -44,7 +44,7 @@ impl Kind {
             Self::Exports => "PNG exports of finished artwork",
             Self::Packages => ".zip project packages (layers as PNG plus the project)",
             Self::Themes => ".dudeltheme files",
-            Self::Brushes => "Brush JSON and .dudelbrushes packs",
+            Self::Brushes => ".dudelbrush files and .dudelbrushes packs",
             Self::Palettes => ".dudelpalette files",
             Self::Timelapses => "Timelapse recordings, one folder of PNG frames per canvas",
         }

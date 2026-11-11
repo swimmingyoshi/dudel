@@ -1,4 +1,4 @@
-use crate::{Dudel, brush::Brush, read_bounded, storage};
+use crate::{Dudel, brush::Brush, storage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -6,6 +6,43 @@ pub struct BrushPack {
     pub format: String,
     pub version: u32,
     pub brushes: Vec<Brush>,
+    /// Who made the brushes and how they may be used. Older Dudel ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<PackInfo>,
+}
+
+/// A shared brush's details, shown before it is imported.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PackInfo {
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub license: String,
+    #[serde(default)]
+    pub description: String,
+}
+impl PackInfo {
+    pub fn validate(&self) -> Result<(), String> {
+        let line = |s: &str| s.chars().count() <= 100 && !s.chars().any(char::is_control);
+        if !line(&self.author)
+            || !line(&self.license)
+            || self.description.chars().count() > 1000
+            || self
+                .description
+                .chars()
+                .any(|c| c.is_control() && c != '\n')
+        {
+            return Err(
+                "The author, license or description is too long or has control characters".into(),
+            );
+        }
+        Ok(())
+    }
+    fn is_empty(&self) -> bool {
+        [&self.author, &self.license, &self.description]
+            .iter()
+            .all(|s| s.trim().is_empty())
+    }
 }
 impl BrushPack {
     /// Packs holding a brush graph are version 3, which older Dudel refuses
@@ -19,11 +56,42 @@ impl BrushPack {
                 2
             },
             brushes,
+            info: None,
         }
+    }
+    /// One brush with its details: the contents of a `.dudelbrush` file.
+    pub fn single(brush: Brush, info: PackInfo) -> Self {
+        let mut pack = Self::new(vec![brush]);
+        pack.info = (!info.is_empty()).then(|| PackInfo {
+            author: info.author.trim().into(),
+            license: info.license.trim().into(),
+            description: info.description.trim().into(),
+        });
+        pack
+    }
+    /// A pack, or a single brush saved as plain JSON by older Dudel, checked.
+    pub fn read(source: &str) -> Result<Self, String> {
+        let value: serde_json::Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
+        let pack = if value.get("format").is_some() {
+            if value["format"] == "dudel-brush-pack"
+                && value["version"].as_u64().is_some_and(|v| v > 3)
+            {
+                return Err("This brush file was made by a newer Dudel".into());
+            }
+            serde_json::from_value(value).map_err(|e| e.to_string())?
+        } else {
+            let brush: Brush = serde_json::from_value(value).map_err(|e| e.to_string())?;
+            Self::new(vec![brush])
+        };
+        pack.validate()?;
+        Ok(pack)
     }
     pub fn validate(&self) -> Result<(), String> {
         if self.format != "dudel-brush-pack" || !matches!(self.version, 1..=3) {
             return Err("Unsupported brush pack format/version".into());
+        }
+        if let Some(info) = &self.info {
+            info.validate()?;
         }
         if self.version < 3 && self.brushes.iter().any(|b| b.graph.is_some()) {
             return Err("Brush graphs need a version 3 brush pack".into());
@@ -57,22 +125,6 @@ impl Dudel {
         } else {
             let dialog = dialog.set_file_name("My brushes.dudelbrushes");
             self.ask_save_file(dialog, Self::export_brush_pack);
-        }
-    }
-    pub(crate) fn import_brush_pack(&mut self, path: std::path::PathBuf) {
-        let result = (|| {
-            let source = read_bounded(&path, 128 * 1024 * 1024)?;
-            let pack: BrushPack = serde_json::from_str(&source).map_err(|e| e.to_string())?;
-            pack.append_to(&mut self.brushes)
-        })();
-        match result {
-            Ok(first) => {
-                self.selected_brush = first;
-                self.brush = self.brushes[first].clone();
-                self.brush_search.clear();
-                self.status = "Brush pack imported".into();
-            }
-            Err(e) => self.status = format!("Brush pack: {e}"),
         }
     }
     fn export_brush_pack(&mut self, path: std::path::PathBuf) {

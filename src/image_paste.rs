@@ -161,7 +161,7 @@ pub(crate) fn classify(path: PathBuf) -> Dropped {
         _ if is_image(&path) => Dropped::Image(path),
         Some("dudel" | "clip" | "psd" | "psb" | "didx") => Dropped::Project(path),
         Some("zip") => Dropped::Package(path),
-        Some("dudelbrushes") => Dropped::Brushes(path),
+        Some("dudelbrushes" | "dudelbrush") => Dropped::Brushes(path),
         Some("dudelpalette") => Dropped::Palette(path),
         Some("dudeltheme") => Dropped::Theme(path),
         _ => Dropped::Unsupported(path),

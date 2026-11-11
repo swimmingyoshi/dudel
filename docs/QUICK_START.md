@@ -339,7 +339,11 @@ focus, and **Space** or **Enter** activates a button. **Escape** leaves a field 
 dismisses the current popup. With no control focused, **Tab** hides or shows panels.
 
 For brush editing, open the brush selector, choose **Brush settings**, then
-**Open Brush Studio**. Choose **Test pad** to try strokes with the brush.
+**Open Brush Studio**. It opens as a **Brush Studio** tab beside your project
+tabs and uses the whole canvas area; click a project tab to draw again, or the
+Studio tab's × to close it. **Float as window** shows it over the canvas
+instead (and **Open as tab** brings it back); Dudel remembers the choice.
+Choose **Test pad** to try strokes with the brush.
 The tool property's **Basic** page keeps Mode, Size, Opacity, Stabilizer and
 Follow visible. **Mode** turns any brush into a **Smudge** brush, which drags the
 paint under it along the stroke like a finger, or a **Blur** brush, which softens
@@ -373,8 +377,17 @@ shows the result as you work.
 
 **Save as new** keeps a new
 preset; **Update preset** replaces the selected preset after confirmation;
-**Revert** returns to its saved settings. Brush export/import supports moving
-presets between installations.
+**Revert** returns to its saved settings.
+
+**Sharing a brush:** **Preset > Export brush…** asks for your name, a license
+(**Common licenses** fills in CC0, CC BY and others) and a short description,
+then saves a `.dudelbrush` file with the brush's tip, grain and graph inside.
+**Library > Import brush…** (or dropping the file on the window) shows the
+brush drawing a sample stroke with its author, license and description before
+**Add to library** adds it. Brush files from older Dudel (`.json`) and packs
+(`.dudelbrushes`, from **Library > Export library…**) open the same way.
+**Library > Add built-in brushes** adds any built-in preset your library is
+missing, such as the Smudge and Blur presets.
 
 ## Save, reopen and export
 

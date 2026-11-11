@@ -1518,7 +1518,7 @@ impl Dudel {
             }
             ui.menu_button("Library", |ui| {
                 if ui.button("Import brush…").clicked() {
-                    self.brush_file(true);
+                    self.brush_import_file();
                     ui.close();
                 }
                 if ui.button("Import pack…").clicked() {

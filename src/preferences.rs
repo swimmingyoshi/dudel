@@ -67,6 +67,14 @@ pub struct Preferences {
     /// Named panel arrangements (View > Workspaces).
     #[serde(default)]
     pub workspaces: Vec<crate::workspace_layouts::Workspace>,
+    /// Brush Studio opens as a tab (true) or a floating window.
+    #[serde(default = "default_welcome")]
+    pub studio_as_tab: bool,
+    /// Author and license last used when exporting a brush.
+    #[serde(default)]
+    pub brush_author: String,
+    #[serde(default)]
+    pub brush_license: String,
 }
 
 /// Heights the artist dragged in the side panels; None keeps the automatic size.
@@ -257,6 +265,9 @@ mod tests {
                 recent: vec![],
             },
             workspaces: vec![],
+            studio_as_tab: false,
+            brush_author: String::new(),
+            brush_license: String::new(),
         };
         let restored = Preferences::decode(&serde_json::to_string(&p).unwrap()).unwrap();
         assert_eq!(restored.theme, p.theme);

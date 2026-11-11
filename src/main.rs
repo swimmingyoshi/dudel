@@ -23,6 +23,7 @@ mod brush_graph;
 mod brush_library;
 mod brush_pack;
 mod brush_previews;
+mod brush_share;
 mod brush_studio;
 mod canvas;
 mod canvas_size;
@@ -397,6 +398,18 @@ struct Dudel {
     sidebar_widths: [Option<f32>; 2],
     /// Brush Studio's node editor: view, selection and its own undo steps.
     graph_editor: graph_editor::GraphEditor,
+    /// Brush Studio opens as a tab beside the projects rather than a window;
+    /// whether that tab is the one showing; whether the Studio was open last
+    /// frame, to bring the tab forward when it opens.
+    studio_as_tab: bool,
+    studio_tab_active: bool,
+    studio_was_open: bool,
+    /// Sharing brushes: the open Export and Import dialogs, and the author
+    /// and license last used, offered again next time.
+    brush_export: Option<brush_share::ExportForm>,
+    brush_import: Option<brush_share::PendingImport>,
+    brush_author: String,
+    brush_license: String,
     /// Named panel arrangements, and the name being typed for a new one.
     workspaces: Vec<workspace_layouts::Workspace>,
     workspace_name: String,
@@ -681,6 +694,13 @@ impl Default for Dudel {
             inspector_navigator: false,
             sidebar_widths: [None; 2],
             graph_editor: Default::default(),
+            studio_as_tab: true,
+            studio_tab_active: false,
+            studio_was_open: false,
+            brush_export: None,
+            brush_import: None,
+            brush_author: String::new(),
+            brush_license: String::new(),
             workspaces: Vec::new(),
             workspace_name: String::new(),
             canvas_area: egui::Rect::NOTHING,
@@ -943,6 +963,9 @@ impl Dudel {
         self.inspector_override = p.inspector_override;
         self.tool_panel_override = p.tool_panel_override;
         self.workspaces = p.workspaces;
+        self.studio_as_tab = p.studio_as_tab;
+        self.brush_author = p.brush_author.chars().take(100).collect();
+        self.brush_license = p.brush_license.chars().take(100).collect();
         self.recent = p.recent;
         self.secondary = p.secondary;
         self.recent_colors = p.recent_colors;
@@ -1029,6 +1052,9 @@ impl Dudel {
             timelapse: self.timelapse.prefs.clone(),
             new_canvas: self.new_canvas_form.prefs.clone(),
             workspaces: self.workspaces.clone(),
+            studio_as_tab: self.studio_as_tab,
+            brush_author: self.brush_author.clone(),
+            brush_license: self.brush_license.clone(),
             shortcuts: self.shortcuts.clone(),
             shortcuts_dropped: 0,
             graphs_dropped: 0,
@@ -1141,52 +1167,6 @@ impl Dudel {
             total,
         });
         self.status = "Filter running in background".into();
-    }
-    fn brush_file(&mut self, import: bool) {
-        let dialog = self.dialog_in(
-            crate::locations::Kind::Brushes,
-            rfd::AsyncFileDialog::new().add_filter("Brush JSON", &["json"]),
-        );
-        if import {
-            self.ask_open_file(dialog, Self::import_brush);
-        } else {
-            self.ask_save_file(
-                dialog.set_file_name("custom-brush.json"),
-                Self::export_brush,
-            );
-        }
-    }
-    fn import_brush(&mut self, path: PathBuf) {
-        let result = (|| {
-            let b: Brush = serde_json::from_str(&read_bounded(&path, 512 * 1024)?)
-                .map_err(|e| e.to_string())?;
-            b.validate()?;
-            Ok::<_, String>(b)
-        })();
-        match result {
-            Ok(b) => {
-                if self.brushes.len() >= 512 {
-                    self.status = "Brush library is full (512 presets)".into();
-                    return;
-                }
-                self.brushes.push(b.clone());
-                self.selected_brush = self.brushes.len() - 1;
-                self.brush = b;
-                self.status = "Brush imported".into();
-            }
-            Err(e) => self.status = e,
-        }
-    }
-    fn export_brush(&mut self, path: PathBuf) {
-        let result = self
-            .brush
-            .validate()
-            .and_then(|()| serde_json::to_vec_pretty(&self.brush).map_err(|e| e.to_string()))
-            .and_then(|data| storage::atomic_write(&path, &data));
-        self.status = match result {
-            Ok(()) => "Brush saved".into(),
-            Err(e) => e,
-        };
     }
 }
 
@@ -1361,6 +1341,7 @@ impl eframe::App for Dudel {
         self.note_preview_pointer(ctx);
         self.preview_window(ctx);
         self.brush_studio_ui(ctx);
+        self.brush_share_ui(ctx);
         let recovery_capture = preference_recovery::CaptureStorage;
         self.preference_recovery_ui(
             ctx,
@@ -1953,6 +1934,7 @@ fn run() -> eframe::Result {
     let capture_filter = mode.as_deref() == Some("--capture-filter");
     let capture_smudge = mode.as_deref() == Some("--capture-smudge");
     let capture_brush_graph = mode.as_deref() == Some("--capture-brush-graph");
+    let capture_brush_import = mode.as_deref() == Some("--capture-brush-import");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2025,6 +2007,7 @@ fn run() -> eframe::Result {
         || capture_filter
         || capture_smudge
         || capture_brush_graph
+        || capture_brush_import
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2724,6 +2707,9 @@ fn run() -> eframe::Result {
                 }
                 if capture_brush_graph {
                     app.brush_graph_capture_fixture();
+                }
+                if capture_brush_import {
+                    app.brush_import_capture_fixture();
                 }
                 if capture_welcome {
                     app.welcome_open = true;
