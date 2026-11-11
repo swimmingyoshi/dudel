@@ -42,6 +42,8 @@ pub struct Manifest {
     pub reference_boards: Vec<crate::reference_layers::ReferenceLayer>,
     #[serde(default)]
     pub guides: Option<Box<crate::guides::Guides>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paper: Option<crate::paper::Paper>,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct LayerEntry {
@@ -310,6 +312,7 @@ pub(crate) fn write(
             references,
             reference_boards: doc.references.clone(),
             guides: doc.guides.clone(),
+            paper: doc.paper,
         };
         zip.start_file(MANIFEST, deflated).map_err(zip_error)?;
         serde_json::to_writer_pretty(&mut zip, &manifest).map_err(|e| e.to_string())?;
@@ -524,6 +527,10 @@ fn rebuild<R: Read + Seek>(
     doc.layers = layers;
     doc.active = doc.layers.iter().rposition(|l| !l.folder).unwrap_or(0);
     doc.guides = manifest.guides.clone();
+    if let Some(paper) = &manifest.paper {
+        paper.validate()?;
+    }
+    doc.paper = manifest.paper;
     let expected = manifest
         .reference_boards
         .iter()

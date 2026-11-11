@@ -133,6 +133,7 @@ mod new_canvas;
 mod paint_target;
 mod palette;
 mod palette_assist;
+mod paper;
 mod parallel;
 mod pending_layers;
 mod performance;
@@ -409,6 +410,8 @@ struct Dudel {
     studio_pad_hidden: bool,
     /// Sharing brushes: the open Export and Import dialogs, and the author
     /// and license last used, offered again next time.
+    /// The open Canvas > Paper dialog.
+    paper_form: Option<paper::PaperForm>,
     brush_export: Option<brush_share::ExportForm>,
     brush_import: Option<brush_share::PendingImport>,
     brush_author: String,
@@ -701,6 +704,7 @@ impl Default for Dudel {
             studio_tab_active: false,
             studio_was_open: false,
             studio_pad_hidden: false,
+            paper_form: None,
             brush_export: None,
             brush_import: None,
             brush_author: String::new(),
@@ -1346,6 +1350,7 @@ impl eframe::App for Dudel {
         self.preview_window(ctx);
         self.brush_studio_ui(ctx);
         self.brush_share_ui(ctx);
+        self.paper_dialog(ctx);
         let recovery_capture = preference_recovery::CaptureStorage;
         self.preference_recovery_ui(
             ctx,
@@ -1941,6 +1946,7 @@ fn run() -> eframe::Result {
     let capture_brush_import = mode.as_deref() == Some("--capture-brush-import");
     let capture_color_brush = mode.as_deref() == Some("--capture-color-brush");
     let capture_brush_group = mode.as_deref() == Some("--capture-brush-group");
+    let capture_paper = mode.as_deref() == Some("--capture-paper");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2016,6 +2022,7 @@ fn run() -> eframe::Result {
         || capture_brush_import
         || capture_color_brush
         || capture_brush_group
+        || capture_paper
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2725,6 +2732,10 @@ fn run() -> eframe::Result {
                 }
                 if capture_brush_group {
                     app.graph_group_capture_fixture();
+                }
+                if capture_paper {
+                    app.doc.paper = Some(paper::Paper::presets()[1].1);
+                    app.open_paper_dialog();
                 }
                 if capture_welcome {
                     app.welcome_open = true;

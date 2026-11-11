@@ -1053,6 +1053,19 @@ impl Dudel {
                 );
             }
             Section::Grain => {
+                let saved = self.saved_value(|b| b.paper_response);
+                percent_marked(
+                    ui,
+                    "Paper texture",
+                    &mut self.brush.paper_response,
+                    0.0,
+                    saved,
+                );
+                hint(
+                    ui,
+                    "How much this brush feels the canvas's paper (Canvas › Paper…). The grain below belongs to the brush itself.",
+                );
+                ui.separator();
                 let saved = self.saved_value(|b| b.grain_amount);
                 percent_marked(ui, "Amount", &mut self.brush.grain_amount, 0.0, saved);
                 let saved = self.saved_value(|b| b.grain_scale);
@@ -1116,6 +1129,8 @@ impl Dudel {
     pub(crate) fn test_pad_ui(&mut self, ui: &mut egui::Ui, height: Option<f32>) {
         let color = self.paint_color();
         let secondary = self.secondary_paint_color();
+        // Test strokes land on the project's paper.
+        self.scratchpad.set_paper(self.doc.paper);
         if self.scratchpad.ui(
             ui,
             &self.brush,

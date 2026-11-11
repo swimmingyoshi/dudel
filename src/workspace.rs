@@ -567,6 +567,13 @@ impl Dudel {
             if menu_item(ui, "Canvas size…", "", true) {
                 self.open_canvas_size();
             }
+            let paper = match &self.doc.paper {
+                None => "Paper… (smooth)".to_owned(),
+                Some(paper) => format!("Paper… ({})", paper.preset_name().unwrap_or("custom")),
+            };
+            if menu_item(ui, &paper, "", true) {
+                self.open_paper_dialog();
+            }
             if menu_item(
                 ui,
                 "Crop to selection bounds",

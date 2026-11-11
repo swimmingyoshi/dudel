@@ -601,6 +601,9 @@ pub struct Document {
     /// images travel in the project trailer, never in serialized metadata.
     #[serde(default, skip_serializing)]
     pub references: Vec<crate::reference_layers::ReferenceLayer>,
+    /// The surface brushes paint on; None is a smooth canvas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paper: Option<crate::paper::Paper>,
 }
 
 /// Final 8-bit output of a premultiplied composite value: on white paper, or
@@ -644,6 +647,7 @@ impl Document {
             selection_mask: None,
             guides: None,
             references: Vec::new(),
+            paper: None,
         }
     }
 
@@ -712,6 +716,9 @@ impl Document {
     }
     pub fn validate_metadata(&self) -> Result<(), String> {
         validate_dpi(self.dpi)?;
+        if let Some(paper) = &self.paper {
+            paper.validate()?;
+        }
         if self.layers.iter().any(|l| l.display_reference.is_some()) {
             return Err("Reference display snapshots cannot be saved as artwork".into());
         }
@@ -1811,6 +1818,7 @@ impl Document {
         first_row: i32,
         last_row: i32,
     ) {
+        let paper = self.paper;
         let [x, y] = raster.position;
         let radius = raster.radius;
         let opacity = raster.opacity;
@@ -1842,6 +1850,7 @@ impl Document {
             && interval_ratio.is_none()
             && self.selection.is_none()
             && self.selection_mask.is_none()
+            && paper.is_none()
             && raster.right >= raster.left
             && raster.right - raster.left < 512
             && buffer.as_ref().is_some_and(|b| b.is_prefix_pass())
@@ -1883,6 +1892,10 @@ impl Document {
         }
         // The eraser end still erases with a smudge or blur brush.
         let blending = !brush.blend.is_paint() && !erase;
+        // Paper tooth holds back paint laid on artwork; erasing, smudging
+        // and mask painting ignore it.
+        let paper = paper
+            .filter(|_| target.is_raster() && !erase && !blending && brush.paper_response > 0.0);
         // A graph that sets color gives this dab its own color, mixed into
         // the stroke pixel by pixel.
         let tracking = raster.color_shift.is_some() && !erase;
@@ -1966,6 +1979,14 @@ impl Document {
                         || crate::brush_edge::compensated_delivery(a / brush.opacity, ratio),
                         |lookup| lookup.evaluate(a / opacity),
                     );
+            }
+            if let Some(paper) = &paper {
+                a *= paper.hold(
+                    px as usize,
+                    py as usize,
+                    a / brush.opacity.max(f32::MIN_POSITIVE),
+                    brush.paper_response,
+                );
             }
             if a <= 0.0 {
                 return None;
@@ -2298,6 +2319,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
         || before.width != after.width
         || before.height != after.height
         || before.dpi != after.dpi
+        || before.paper != after.paper
         || before.canvas_frame != after.canvas_frame
         || before.layers.len() != after.layers.len()
     {

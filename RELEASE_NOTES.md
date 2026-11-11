@@ -51,6 +51,11 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   eight outputs. Select several nodes with Ctrl-click or a Shift-drag box;
   Delete, Ctrl+Z, Ctrl+G and the other editor keys work while the pointer is
   over the graph. Graphs hold up to 128 nodes.
+- **Paper:** **Canvas > Paper…** gives the canvas a surface (Hot-pressed,
+  Cold-pressed, Rough, Canvas, Washi, Pastel paper, or custom) that breaks
+  light and soft strokes into grain while firm strokes cover. Saved with the
+  project; each brush has a Paper texture amount. Older Dudel opens such
+  projects without the paper.
 - **Test pad in view:** Brush Studio keeps a true-size test pad below its
   settings, with Undo, color stripes for trying smudge and blur, and a choice
   of paper.

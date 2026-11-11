@@ -1646,6 +1646,7 @@ impl Workspace {
                 .canvas_after_tool_change(ctx, packets, previous_tool);
             self.app.brush_studio_ui(ctx);
             self.app.brush_share_ui(ctx);
+            self.app.paper_dialog(ctx);
             self.app.effects_window(ctx);
             self.app.adjustment_window(ctx);
             self.app.unsaved_dialog(ctx);
@@ -5340,4 +5341,30 @@ fn graph_keys_act_on_the_graph_and_never_on_the_document() {
     );
     assert!(ui.app.doc.composite_transparent() == document);
     assert_eq!(ui.app.history.can_undo(), history);
+}
+
+#[test]
+fn canvas_paper_is_chosen_in_a_dialog_and_undone_like_any_edit() {
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.settle();
+    assert!(ui.app.doc.paper.is_none());
+    ui.click(ui.text("Canvas"));
+    ui.click(ui.text("Paper… (smooth)"));
+    ui.text("Smooth");
+    ui.click(ui.text("Rough"));
+    ui.text("Roughness");
+    ui.click(ui.text("Apply"));
+    ui.finish_geometry();
+    let rough = crate::paper::Paper::presets()[2].1;
+    assert_eq!(ui.app.doc.paper, Some(rough));
+    assert_eq!(ui.app.status, "Paper changed");
+    // The menu names the paper; Cancel changes nothing; Undo restores smooth.
+    ui.click(ui.text("Canvas"));
+    ui.click(ui.text("Paper… (Rough)"));
+    ui.click(ui.text("Canvas"));
+    ui.click(ui.text("Cancel"));
+    assert_eq!(ui.app.doc.paper, Some(rough));
+    ui.key(egui::Key::Z, egui::Modifiers::CTRL);
+    ui.finish_geometry();
+    assert!(ui.app.doc.paper.is_none());
 }

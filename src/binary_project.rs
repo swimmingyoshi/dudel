@@ -19,6 +19,9 @@ struct Metadata<'a> {
     /// readers ignore it.
     #[serde(skip_serializing_if = "Option::is_none")]
     guides: Option<&'a crate::guides::Guides>,
+    /// Optional like the guides: older readers ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paper: Option<crate::paper::Paper>,
     /// Reference layer settings; their images follow in the project trailer.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     references: &'a [crate::reference_layers::ReferenceLayer],
@@ -102,6 +105,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
             })
             .collect(),
         guides: doc.guides.as_deref(),
+        paper: doc.paper,
         references: &doc.references,
     };
     let data = serde_json::to_vec(&metadata).map_err(|e| e.to_string())?;

@@ -57,6 +57,18 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 
+## Canvas materials
+
+The canvas as a surface that paint reacts to, in stages:
+
+1. [x] **Paper surfaces:** a per-project paper (`src/paper.rs`) with a
+       procedural height field (grain, weave, fibers, tooth), roughness, grain
+       size, direction and absorbency. Dabs deliver less paint in valleys
+       unless they press hard enough; no stored texture and no simulation.
+2. [ ] Pigment deposition: granulation and buildup that follow the surface.
+3. [ ] Wetness: local moisture, spreading and drying around fresh strokes.
+4. [ ] Material-aware layers (watercolor, dry media, paint thickness).
+
 ## Later
 
 These wait for tester feedback or for a reason to do them:

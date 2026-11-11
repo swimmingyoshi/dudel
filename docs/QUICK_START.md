@@ -232,6 +232,17 @@ it and double-click to remove it. Hue/saturation exposes individual color ranges
 gradient maps have editable middle stops, and Levels shows a histogram. The Layer
 menu also provides adjustment actions.
 
+**Paper:** **Canvas > Paper…** gives the canvas a surface that brushes feel:
+Hot-pressed, Cold-pressed, Rough, Canvas, Washi or Pastel paper, or your own
+mix of surface, roughness, grain size, absorbency and direction. Paint lands
+on the raised parts first, so light or soft strokes break up into grain and
+firm strokes cover; absorbent paper lets strokes sink in more evenly. The
+dialog previews a soft and a firm stroke. Paper changes how paint is laid
+down from then on (paint already there stays), is saved with the project and
+can be undone. A brush's **Paper texture** setting (Brush settings > Texture)
+says how much it feels the paper; erasing, smudge and blur ignore it, and
+Brush Studio's test pad uses the project's paper.
+
 **Filters** change the selected layer's pixels directly, inside the selection,
 with a live preview and one undo step: **Filter > Brightness / contrast**, **Hue
 / saturation** and **Levels**; **Gaussian blur** (blurs spread into clear areas

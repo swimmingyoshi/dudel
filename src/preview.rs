@@ -101,6 +101,10 @@ impl Scratchpad {
             .chunks_exact(4)
             .any(|p| p[3] > 0)
     }
+    /// The paper test strokes are painted on.
+    pub fn set_paper(&mut self, paper: Option<crate::paper::Paper>) {
+        self.document.paper = paper;
+    }
     fn remember(&mut self) {
         self.undo.push(self.document.clone());
         if self.undo.len() > UNDO_STEPS {
@@ -114,6 +118,7 @@ impl Scratchpad {
             return;
         }
         let mut document = Document::new(width, height);
+        document.paper = self.document.paper;
         {
             let old = &self.document;
             let mut writer = document.layers[0].pixels.writer();

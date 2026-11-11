@@ -200,6 +200,9 @@ pub struct Brush {
     /// how the brush paints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graph_layout: Vec<crate::brush_graph::NodePosition>,
+    /// How much the brush feels the canvas's paper: 0 ignores it, 1 fully.
+    #[serde(default = "linear_pressure")]
+    pub paper_response: f32,
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
@@ -345,6 +348,7 @@ impl Default for Brush {
             group: None,
             graph: None,
             graph_layout: Vec::new(),
+            paper_response: 1.0,
             blend: Blend::Paint,
         }
     }
@@ -593,6 +597,7 @@ impl Brush {
             (self.grain_scale, 0.25, 16.0),
             (self.scatter, 0.0, 2.0),
             (self.angle_jitter, 0.0, 180.0),
+            (self.paper_response, 0.0, 1.0),
         ] {
             if !value.is_finite() || value < min || value > max {
                 return Err("Brush setting outside supported range".into());

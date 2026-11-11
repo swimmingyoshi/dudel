@@ -56,6 +56,7 @@ pub(crate) fn fingerprint(brush: &Brush) -> u64 {
         brush.angle,
         brush.grain_amount,
         brush.grain_scale,
+        brush.paper_response,
         brush.scatter,
     ]
     .into_iter()

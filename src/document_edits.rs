@@ -70,6 +70,8 @@ pub enum Edit {
     },
     /// A gradient dragged with the Fill tool's Gradient mode.
     Gradient(Box<crate::gradient_tool::Settings>),
+    /// The canvas's paper surface; None is smooth.
+    Paper(Option<crate::paper::Paper>),
     FeatherSelection(u8),
     InvertSelection,
     Property {
@@ -308,6 +310,7 @@ impl Edit {
                 Err("Invalid lasso opacity".into())
             }
             Self::Gradient(settings) => settings.validate(),
+            Self::Paper(Some(paper)) => paper.validate(),
             Self::DuplicateTarget { copies, .. }
                 if copies.is_empty() || copies.len() > crate::document::MAX_ENTRIES =>
             {
@@ -518,6 +521,11 @@ impl Edit {
                 doc.selection = mask.bounds();
                 doc.selection_mask = Some(mask);
                 outcome.changed = doc.selection_mask != source.selection_mask;
+                outcome.redraw = false;
+            }
+            Self::Paper(paper) => {
+                doc.paper = *paper;
+                outcome.changed = doc.paper != source.paper;
                 outcome.redraw = false;
             }
             Self::InvertSelection => {
