@@ -19,6 +19,7 @@ mod blend;
 mod blend_brush;
 mod brush;
 mod brush_edge;
+mod brush_formula;
 mod brush_graph;
 mod brush_library;
 mod brush_pack;
@@ -1939,6 +1940,7 @@ fn run() -> eframe::Result {
     let capture_brush_graph = mode.as_deref() == Some("--capture-brush-graph");
     let capture_brush_import = mode.as_deref() == Some("--capture-brush-import");
     let capture_color_brush = mode.as_deref() == Some("--capture-color-brush");
+    let capture_brush_group = mode.as_deref() == Some("--capture-brush-group");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2013,6 +2015,7 @@ fn run() -> eframe::Result {
         || capture_brush_graph
         || capture_brush_import
         || capture_color_brush
+        || capture_brush_group
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2719,6 +2722,9 @@ fn run() -> eframe::Result {
                 }
                 if capture_color_brush {
                     app.color_brush_capture_fixture();
+                }
+                if capture_brush_group {
+                    app.graph_group_capture_fixture();
                 }
                 if capture_welcome {
                     app.welcome_open = true;

@@ -5186,3 +5186,95 @@ fn the_studio_keeps_a_test_pad_in_view_for_trying_the_brush() {
     ui.click(ui.text("Show test pad"));
     ui.text("Stripes");
 }
+
+impl Workspace {
+    /// A click with Ctrl held, as for adding to a selection.
+    fn ctrl_click(&mut self, at: egui::Pos2) {
+        let modifiers = egui::Modifiers {
+            ctrl: true,
+            command: !cfg!(target_os = "macos"),
+            ..Default::default()
+        };
+        self.modifiers = modifiers;
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        };
+        self.frame(vec![egui::Event::PointerMoved(at), button(true)]);
+        self.frame(vec![button(false)]);
+        self.modifiers = Default::default();
+        self.settle();
+    }
+}
+
+#[test]
+fn brush_graph_groups_are_made_opened_and_unpacked_in_the_studio() {
+    use crate::brush_graph::NodeKind;
+    let mut ui = Workspace::sized([1366.0, 900.0]);
+    ui.app.brush_studio = true;
+    ui.app.brush_studio_section = crate::brush_studio::Section::Graph;
+    // The test pad has its own Undo; keep the graph's the only one.
+    ui.app.studio_pad_hidden = true;
+    ui.settle();
+    ui.click(ui.text("Make graph from current settings"));
+    ui.settle();
+    let find = |ui: &Workspace, pick: fn(&NodeKind) -> bool| {
+        ui.app
+            .brush
+            .graph
+            .as_ref()
+            .unwrap()
+            .nodes()
+            .iter()
+            .find(|n| pick(&n.kind))
+            .map(|n| n.id)
+    };
+    let constant = find(&ui, |k| matches!(k, NodeKind::Constant { .. })).unwrap();
+    let maximum = find(&ui, |k| *k == NodeKind::Maximum).unwrap();
+    // Click one node's body, Ctrl-click another: both selected.
+    let body = |ui: &Workspace, id| {
+        ui.app
+            .graph_editor
+            .port_pos(&ui.app.brush, id, None)
+            .unwrap()
+            - egui::vec2(30.0, 0.0)
+    };
+    ui.click(body(&ui, constant));
+    ui.ctrl_click(body(&ui, maximum));
+    ui.text("2 nodes selected");
+    ui.click(ui.text("Group"));
+    let group = find(&ui, |k| matches!(k, NodeKind::Group(_))).expect("a group node");
+    assert!(find(&ui, |k| *k == NodeKind::Maximum).is_none());
+    ui.app.brush.validate().unwrap();
+    // Double-click opens it; Back leaves it.
+    let at = body(&ui, group);
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    // Let the earlier clicks age out of egui's double-click window.
+    for _ in 0..15 {
+        ui.frame(vec![]);
+    }
+    for _ in 0..2 {
+        ui.frame(vec![egui::Event::PointerMoved(at), button(true)]);
+        ui.frame(vec![button(false)]);
+    }
+    ui.settle();
+    assert_eq!(ui.app.graph_editor_path(), &[group]);
+    ui.text("Main graph");
+    ui.text("Group result");
+    ui.click(ui.text("Back"));
+    assert!(ui.app.graph_editor_path().is_empty());
+    // Ungroup puts the nodes back; Undo regroups.
+    ui.click(body(&ui, group));
+    ui.click(ui.text("Ungroup"));
+    assert!(find(&ui, |k| matches!(k, NodeKind::Group(_))).is_none());
+    assert!(find(&ui, |k| *k == NodeKind::Maximum).is_some());
+    ui.click(ui.text("Undo"));
+    assert!(find(&ui, |k| matches!(k, NodeKind::Group(_))).is_some());
+}

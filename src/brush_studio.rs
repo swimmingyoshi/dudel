@@ -340,7 +340,14 @@ impl Dudel {
         // A tall Studio keeps the test pad in view below the settings, so
         // every change can be tried at once.
         let room = !compact && available >= 460.0;
-        let pad = (room && !self.studio_pad_hidden).then(|| (available * 0.36).clamp(150.0, 320.0));
+        // The graph editor needs height more than the other sections.
+        let share = if self.brush_studio_section == Section::Graph {
+            0.28
+        } else {
+            0.36
+        };
+        let pad =
+            (room && !self.studio_pad_hidden).then(|| (available * share).clamp(150.0, 320.0));
         let reopen = room && self.studio_pad_hidden;
         let height = available
             - pad.map_or(0.0, |pad| pad + 10.0)

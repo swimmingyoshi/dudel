@@ -51,8 +51,9 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        brushes as `.dudelbrush` files, per-dab color): see the
        [brush graph plan](BRUSH_GRAPH_PLAN.md). Brush Studio opens as its own
        tab with a test pad in view; Rotation and Scatter outputs, rhythm and
-       noise nodes, and templates followed. Next for the graph: milestone 5,
-       [proposed for review](BRUSH_GRAPH_PLAN.md#18-proposal-milestone-5-groups-and-formulas).
+       noise nodes, templates, and milestone 5 (groups and the Formula node)
+       followed. Next: refine the editor from testers' use, then special
+       canvases.
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 

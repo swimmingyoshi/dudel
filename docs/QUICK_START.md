@@ -385,7 +385,20 @@ Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
   wire's end off an input to move or remove it. A wire that would make a loop
   is refused.
 - Drag nodes to arrange them, drag empty space to pan, and use the wheel to
-  zoom; **Fit** shows every node.
+  zoom; **Fit** shows every node. Ctrl- or Shift-click adds a node to the
+  selection, and Shift-dragging empty space selects a box of them; dragging
+  moves all selected nodes.
+- **Formula** (under Combine) computes a value from its inputs a, b and c with
+  something like `clamp(a * 2 - b, 0, 1)` or `mix(a, b, smoothstep(0, 1, c))`.
+  It only accepts a formula once it is complete, and says what is wrong
+  otherwise. Unwired inputs count as 0.
+- **Group** packs the selected nodes into one node: values wired in become
+  its inputs (up to four) and the one value it gives becomes its result.
+  Double-click a group or choose **Open group** to edit inside it; **Back**
+  or **Main graph** returns. Rename it in its settings, or **Ungroup** to
+  unpack it. Groups travel with a brush when you export it, and every group
+  in your library appears under **Add node › Groups** in your other brushes.
+  A graph holds up to 128 nodes, counting those inside groups.
 - Click a node to change its settings beside the canvas, such as a Curve's
   shape.
 - **Undo** and **Redo** step through graph changes; **Remove graph** returns to

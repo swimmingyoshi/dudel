@@ -17,8 +17,12 @@ use std::sync::{Arc, OnceLock};
 
 /// The graph format this Dudel writes and reads.
 pub const VERSION: u32 = 1;
-const MAX_NODES: usize = 64;
-const MAX_LINKS: usize = 128;
+/// Most nodes, counting every node inside groups.
+const MAX_NODES: usize = 128;
+const MAX_LINKS: usize = 256;
+/// Most inputs a group takes, and how deep groups nest.
+pub const GROUP_INPUTS: u8 = 4;
+const GROUP_DEPTH: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -106,6 +110,31 @@ pub enum NodeKind {
     BrightnessOutput,
     /// Blends the main color toward the secondary color: 0 main, 1 secondary.
     ColorMixOutput,
+    /// Computes a value from inputs a, b and c with a written formula.
+    Formula {
+        expression: String,
+    },
+    /// Several nodes shown and shared as one.
+    Group(Box<Group>),
+    /// Inside a group: the value wired into the group's input `index`.
+    GroupInput {
+        index: u8,
+    },
+    /// Inside a group: the value the group gives.
+    GroupResult,
+}
+
+/// Nodes packed into one, with up to four inputs and one result. Its own
+/// nodes use their own ids; a group is opened up (inlined) when compiled.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Group {
+    pub name: String,
+    pub inputs: u8,
+    pub nodes: Vec<Node>,
+    pub links: Vec<Link>,
+    /// Where the editor shows the nodes inside.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layout: Vec<NodePosition>,
 }
 
 /// The shape a Wave node repeats.
@@ -197,8 +226,23 @@ impl NodeKind {
             | Self::BrightnessOutput
             | Self::ColorMixOutput => 1,
             Self::Multiply | Self::Add | Self::Minimum | Self::Maximum => 2,
-            Self::Mix => 3,
+            Self::Mix | Self::Formula { .. } => 3,
+            Self::Group(group) => group.inputs,
+            Self::GroupInput { .. } => 0,
+            Self::GroupResult => 1,
         }
+    }
+    /// The node's title: a group's own name, else the kind's name.
+    pub fn title(&self) -> String {
+        match self {
+            Self::Group(group) => group.name.clone(),
+            Self::GroupInput { index } => format!("Group input {}", index + 1),
+            other => other.name().to_owned(),
+        }
+    }
+    /// Whether other nodes can be wired from this one.
+    pub fn has_output_port(&self) -> bool {
+        self.output().is_none() && *self != Self::GroupResult
     }
     /// Which brush output this node drives, if it is an output node.
     pub fn output(&self) -> Option<Output> {
@@ -263,6 +307,9 @@ impl NodeKind {
                     Self::Minimum,
                     Self::Maximum,
                     Self::Mix,
+                    Self::Formula {
+                        expression: "a * b".into(),
+                    },
                 ],
             ),
             (
@@ -284,6 +331,15 @@ impl NodeKind {
     }
     /// Names of the input ports.
     pub fn port_names(&self) -> &'static [&'static str] {
+        const GROUP_PORTS: [&str; 4] = ["In 1", "In 2", "In 3", "In 4"];
+        match self {
+            Self::Formula { .. } => return &["a", "b", "c"],
+            Self::GroupResult => return &["Value"],
+            Self::Group(group) => {
+                return &GROUP_PORTS[..usize::from(group.inputs.min(GROUP_INPUTS))];
+            }
+            _ => {}
+        }
         match self.inputs() {
             0 => &[],
             1 if self.output().is_some() => &["Value"],
@@ -307,6 +363,10 @@ impl NodeKind {
             Self::Wave { .. } => "Repeats along the stroke: dashes, dots, rhythms",
             Self::Noise { .. } => "Smooth, repeatable wandering along the stroke",
             Self::Steps { .. } => "Snaps its input to a few levels",
+            Self::Formula { .. } => "Computes a value from a, b and c with a formula",
+            Self::Group(_) => "Several nodes as one; Open group to edit them",
+            Self::GroupInput { .. } => "A value wired into the group from outside",
+            Self::GroupResult => "The value the group gives",
             Self::Curve(_) => "Reshapes its input with a curve",
             Self::Remap { .. } => "Maps one range onto another",
             Self::Invert => "One minus its input",
@@ -341,6 +401,10 @@ impl NodeKind {
             Self::Wave { .. } => "Wave",
             Self::Noise { .. } => "Noise",
             Self::Steps { .. } => "Steps",
+            Self::Formula { .. } => "Formula",
+            Self::Group(_) => "Group",
+            Self::GroupInput { .. } => "Group input",
+            Self::GroupResult => "Group result",
             Self::Curve(_) => "Curve",
             Self::Remap { .. } => "Remap",
             Self::Invert => "Invert",
@@ -371,6 +435,19 @@ impl NodeKind {
             Self::Wave { period, .. } => period.is_finite() && (1.0..=100_000.0).contains(period),
             Self::Noise { scale, .. } => scale.is_finite() && (1.0..=100_000.0).contains(scale),
             Self::Steps { count } => (2..=32).contains(count),
+            Self::Formula { expression } => {
+                return crate::brush_formula::Program::parse(expression)
+                    .map(|_| ())
+                    .map_err(|error| format!("Formula: {error}"));
+            }
+            Self::Group(group) => {
+                let name = group.name.trim();
+                !name.is_empty()
+                    && name.chars().count() <= 40
+                    && !name.chars().any(char::is_control)
+                    && group.inputs <= GROUP_INPUTS
+            }
+            Self::GroupInput { index } => *index < GROUP_INPUTS,
             Self::Constant { value } => amount(*value),
             Self::Curve(curve) => return curve.validate(),
             Self::Remap {
@@ -567,6 +644,15 @@ impl BrushGraph {
                     seed.hash(hasher);
                 }
                 NodeKind::Steps { count } => count.hash(hasher),
+                NodeKind::Formula { expression } => expression.hash(hasher),
+                NodeKind::GroupInput { index } => index.hash(hasher),
+                NodeKind::Group(group) => {
+                    // Positions do not change painting; the contents do.
+                    group.name.hash(hasher);
+                    group.inputs.hash(hasher);
+                    let inner = BrushGraph::new(group.nodes.clone(), group.links.clone());
+                    inner.hash_into(hasher);
+                }
                 NodeKind::Random { seed } => seed.hash(hasher),
                 NodeKind::Constant { value } => values(hasher, &[*value]),
                 NodeKind::Curve(curve) => {
@@ -904,6 +990,8 @@ enum Op {
     Minimum([u8; 2]),
     Maximum([u8; 2]),
     Mix([u8; 3]),
+    /// Inputs a, b, c; an unwired one reads 0.
+    Formula([Option<u8>; 3], crate::brush_formula::Program),
 }
 
 /// Register 0 is always missing; unconnected inputs read it.
@@ -1074,6 +1162,7 @@ impl Compiled {
                 Op::Add([a, b]) => sum(at(*a), at(*b)),
                 Op::Minimum([a, b]) => at(*a).min(at(*b)),
                 Op::Maximum([a, b]) => at(*a).max(at(*b)),
+                Op::Formula(ports, program) => program.run(ports.map(|p| p.map_or(0.0, at))),
                 Op::Mix([a, b, t]) => {
                     let (a, b, t) = (at(*a), at(*b), at(*t));
                     a + (b - a) * t.clamp(0.0, 1.0)
@@ -1132,44 +1221,249 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             "Brush graphs hold at most {MAX_NODES} nodes and {MAX_LINKS} links"
         ));
     }
-    let index_of = |id: NodeId| graph.nodes.iter().position(|n| n.id == id);
+    check_level(&graph.nodes, &graph.links, None)?;
     let mut seen_outputs = [false; OUTPUTS];
-    for (i, node) in graph.nodes.iter().enumerate() {
-        if graph.nodes[..i].iter().any(|n| n.id == node.id) {
-            return Err("Two brush graph nodes share an id".into());
-        }
-        node.kind.validate()?;
+    for node in &graph.nodes {
         if let Some(output) = node.kind.output()
             && std::mem::replace(&mut seen_outputs[output as usize], true)
         {
             return Err(format!("The graph has two {} outputs", node.kind.name()));
         }
     }
-    // Each input port's source, by node index.
-    let mut sources: Vec<[Option<usize>; 3]> = vec![[None; 3]; graph.nodes.len()];
-    for link in &graph.links {
+    let mut flat = Inlined::default();
+    inline(&graph.nodes, &graph.links, &[], 0, &mut flat)?;
+    if flat.nodes.len() > MAX_NODES {
+        return Err(format!(
+            "Brush graphs hold at most {MAX_NODES} nodes, counting those inside groups"
+        ));
+    }
+    lower(&flat.nodes, &flat.links)
+}
+
+/// Check one level of a graph: the top, or the inside of a group taking
+/// `group_inputs` inputs.
+fn check_level(nodes: &[Node], links: &[Link], group_inputs: Option<u8>) -> Result<(), String> {
+    let index_of = |id: NodeId| nodes.iter().position(|n| n.id == id);
+    let mut results = 0;
+    let mut seen_inputs = [false; GROUP_INPUTS as usize];
+    for (i, node) in nodes.iter().enumerate() {
+        if nodes[..i].iter().any(|n| n.id == node.id) {
+            return Err("Two brush graph nodes share an id".into());
+        }
+        node.kind.validate()?;
+        match (&node.kind, group_inputs) {
+            (NodeKind::GroupResult, Some(_)) => results += 1,
+            (NodeKind::GroupInput { index }, Some(inputs)) => {
+                if *index >= inputs
+                    || std::mem::replace(&mut seen_inputs[usize::from(*index)], true)
+                {
+                    return Err("A group's inputs are numbered wrongly".into());
+                }
+            }
+            (NodeKind::GroupResult | NodeKind::GroupInput { .. }, None) => {
+                return Err("Group inputs and results belong inside a group".into());
+            }
+            (kind, Some(_)) if kind.output().is_some() => {
+                return Err(format!(
+                    "{} outputs belong in the main graph, not in a group",
+                    kind.name()
+                ));
+            }
+            _ => {}
+        }
+    }
+    if group_inputs.is_some() && results != 1 {
+        return Err("A group needs exactly one result".into());
+    }
+    let mut used = std::collections::HashSet::new();
+    for link in links {
         let (Some(from), Some(to)) = (index_of(link.from), index_of(link.to)) else {
             return Err("A brush graph link points to a missing node".into());
         };
-        if graph.nodes[from].kind.output().is_some() {
+        if !nodes[from].kind.has_output_port() {
             return Err(format!(
-                "{} is an output and has nothing to connect from",
-                graph.nodes[from].kind.name()
+                "{} has nothing to connect from",
+                nodes[from].kind.title()
             ));
         }
-        let kind = &graph.nodes[to].kind;
+        let kind = &nodes[to].kind;
         if link.port >= kind.inputs() {
-            return Err(format!("{} has no input {}", kind.name(), link.port + 1));
+            return Err(format!("{} has no input {}", kind.title(), link.port + 1));
         }
-        let slot = &mut sources[to][usize::from(link.port)];
-        if slot.is_some() {
-            return Err(format!("{} has two links into one input", kind.name()));
+        if !used.insert((link.to, link.port)) {
+            return Err(format!("{} has two links into one input", kind.title()));
         }
-        *slot = Some(from);
+    }
+    Ok(())
+}
+
+/// A graph with every group opened up, under fresh ids.
+#[derive(Default)]
+struct Inlined {
+    nodes: Vec<Node>,
+    links: Vec<Link>,
+    next: u32,
+}
+
+/// Copy one level into `out`, opening groups. `inputs` are the flat nodes
+/// feeding this group's inputs. Returns what feeds the group's result.
+fn inline(
+    nodes: &[Node],
+    links: &[Link],
+    inputs: &[Option<NodeId>],
+    depth: usize,
+    out: &mut Inlined,
+) -> Result<Option<NodeId>, String> {
+    if depth > GROUP_DEPTH {
+        return Err(format!("Groups nest at most {GROUP_DEPTH} deep"));
+    }
+    if out.nodes.len() > MAX_NODES {
+        return Err(format!(
+            "Brush graphs hold at most {MAX_NODES} nodes, counting those inside groups"
+        ));
+    }
+    // Plain nodes get fresh ids up front.
+    let mut fresh = std::collections::HashMap::new();
+    for node in nodes {
+        if !matches!(
+            node.kind,
+            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult
+        ) {
+            out.next += 1;
+            let id = NodeId(out.next);
+            fresh.insert(node.id, id);
+            out.nodes.push(Node {
+                id,
+                kind: node.kind.clone(),
+            });
+        }
+    }
+    // Groups open on first use; `opening` catches groups feeding each other.
+    let mut results: std::collections::HashMap<NodeId, Option<NodeId>> = Default::default();
+    let mut opening = std::collections::HashSet::new();
+    #[allow(clippy::too_many_arguments)]
+    fn source(
+        id: NodeId,
+        nodes: &[Node],
+        links: &[Link],
+        inputs: &[Option<NodeId>],
+        depth: usize,
+        fresh: &std::collections::HashMap<NodeId, NodeId>,
+        results: &mut std::collections::HashMap<NodeId, Option<NodeId>>,
+        opening: &mut std::collections::HashSet<NodeId>,
+        out: &mut Inlined,
+    ) -> Result<Option<NodeId>, String> {
+        if let Some(id) = fresh.get(&id) {
+            return Ok(Some(*id));
+        }
+        let node = nodes.iter().find(|n| n.id == id).expect("checked link");
+        match &node.kind {
+            NodeKind::GroupInput { index } => {
+                Ok(inputs.get(usize::from(*index)).copied().flatten())
+            }
+            NodeKind::Group(group) => {
+                if let Some(result) = results.get(&id) {
+                    return Ok(*result);
+                }
+                if !opening.insert(id) {
+                    return Err("The brush graph has a loop".into());
+                }
+                let mut feeds = Vec::new();
+                for port in 0..group.inputs {
+                    let from = links.iter().find(|l| l.to == id && l.port == port);
+                    feeds.push(match from {
+                        Some(link) => source(
+                            link.from, nodes, links, inputs, depth, fresh, results, opening, out,
+                        )?,
+                        None => None,
+                    });
+                }
+                check_level(&group.nodes, &group.links, Some(group.inputs))?;
+                let result = inline(&group.nodes, &group.links, &feeds, depth + 1, out)?;
+                results.insert(id, result);
+                Ok(result)
+            }
+            _ => Ok(None),
+        }
+    }
+    let mut result = None;
+    for link in links {
+        let to = nodes
+            .iter()
+            .find(|n| n.id == link.to)
+            .expect("checked link");
+        match &to.kind {
+            NodeKind::Group(_) | NodeKind::GroupInput { .. } => {}
+            NodeKind::GroupResult => {
+                result = source(
+                    link.from,
+                    nodes,
+                    links,
+                    inputs,
+                    depth,
+                    &fresh,
+                    &mut results,
+                    &mut opening,
+                    out,
+                )?;
+            }
+            _ => {
+                if let Some(from) = source(
+                    link.from,
+                    nodes,
+                    links,
+                    inputs,
+                    depth,
+                    &fresh,
+                    &mut results,
+                    &mut opening,
+                    out,
+                )? {
+                    out.links.push(Link {
+                        from,
+                        to: fresh[&link.to],
+                        port: link.port,
+                    });
+                }
+            }
+        }
+    }
+    // Unused groups are still checked.
+    for node in nodes {
+        if matches!(node.kind, NodeKind::Group(_)) && !results.contains_key(&node.id) {
+            source(
+                node.id,
+                nodes,
+                links,
+                inputs,
+                depth,
+                &fresh,
+                &mut results,
+                &mut opening,
+                out,
+            )?;
+        }
+    }
+    if out.links.len() > MAX_LINKS * 2 {
+        return Err("The brush graph has too many links".into());
+    }
+    Ok(result)
+}
+
+/// Lower a flat, checked graph to operations.
+fn lower(nodes: &[Node], links: &[Link]) -> Result<Compiled, String> {
+    let index_of = |id: NodeId| nodes.iter().position(|n| n.id == id);
+    // Each input port's source, by node index.
+    let mut sources: Vec<[Option<usize>; 4]> = vec![[None; 4]; nodes.len()];
+    for link in links {
+        let (Some(from), Some(to)) = (index_of(link.from), index_of(link.to)) else {
+            return Err("A brush graph link points to a missing node".into());
+        };
+        sources[to][usize::from(link.port)] = Some(from);
     }
     // Topological order (Kahn), keeping the saved order among ready nodes so
     // compiling is deterministic.
-    let count = graph.nodes.len();
+    let count = nodes.len();
     let mut waiting: Vec<usize> = sources
         .iter()
         .map(|s| s.iter().filter(|s| s.is_some()).count())
@@ -1195,7 +1489,7 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
     let mut heading = false;
     for &index in &order {
         let port = |p: usize| sources[index][p].map_or(MISSING, |s| register[s]);
-        let op = match &graph.nodes[index].kind {
+        let op = match &nodes[index].kind {
             NodeKind::Pressure { shaped: true } => {
                 shaped_pressure = true;
                 Op::ShapedPressure
@@ -1228,6 +1522,16 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             NodeKind::Minimum => Op::Minimum([port(0), port(1)]),
             NodeKind::Maximum => Op::Maximum([port(0), port(1)]),
             NodeKind::Mix => Op::Mix([port(0), port(1), port(2)]),
+            NodeKind::Formula { expression } => {
+                let wired = |p: usize| sources[index][p].map(|s| register[s]);
+                Op::Formula(
+                    [wired(0), wired(1), wired(2)],
+                    crate::brush_formula::Program::parse(expression)?,
+                )
+            }
+            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult => {
+                unreachable!("groups are opened before lowering")
+            }
             kind => {
                 let output = kind.output().expect("only outputs remain");
                 match kind {
@@ -1338,7 +1642,7 @@ mod tests {
         let mut newer = graph(vec![Speed], &[]);
         newer.version = VERSION + 1;
         refused(newer, "newer Dudel");
-        let crowded = graph((0..65).map(|_| Speed).collect(), &[]);
+        let crowded = graph((0..129).map(|_| Speed).collect(), &[]);
         refused(crowded, "at most");
         // A refused graph never drives anything.
         assert!(!graph(vec![Invert, Invert], &[(1, 2, 0), (2, 1, 0)]).drives(Output::Size));

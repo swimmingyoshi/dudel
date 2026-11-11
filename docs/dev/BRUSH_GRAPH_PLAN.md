@@ -5,8 +5,9 @@ Status: accepted 2026-11-10; milestones 1 (the engine, [section
 14](#14-milestone-2-as-built)), 3 (sharing, [section
 15](#15-milestone-3-as-built)) and 4 (color, [section
 16](#16-milestone-4-as-built)) are implemented, followed by the nodes and
-templates in [section 17](#17-unique-nodes-and-templates). Milestone 5 is
-[proposed for review](#18-proposal-milestone-5-groups-and-formulas). It answers the "first deliverable" of
+templates in [section 17](#17-unique-nodes-and-templates). Milestone 5
+(groups and formulas) was [proposed](#18-proposal-milestone-5-groups-and-formulas),
+accepted and [built](#19-milestone-5-as-built). It answers the "first deliverable" of
 the brush graph brief: how a node-based brush editor fits the brush engine
 Dudel already has, and what to build first.
 
@@ -483,3 +484,44 @@ stores only that result. Shared brushes then carry data, never code.
 2. Raise the 64-node cap to 128 for grouped graphs?
 3. Should groups also be shareable on their own (a node-library file), or
    only inside brushes?
+
+## 19. Milestone 5 as built
+
+2026-11-10. Answers to section 18: groups and the Formula node, yes; a
+128-node cap, yes; groups shared inside brushes, with no separate file. No
+extension code runs per dab.
+
+- **Formula** (`src/brush_formula.rs`): numbers, `+ - * /`, brackets, `a b c
+  pi`, and min, max, clamp, abs, floor, fract, sqrt, pow, sin, cos, mix,
+  smoothstep, step; at most 200 characters and 64 tokens. Parsed once into a
+  stack program (stack of 32, no allocation per dab). Unwired inputs read 0;
+  a wired input whose sensor is missing stays missing, and so does any
+  non-finite result. Mistakes are explained ("min needs 2 values", "“x” is
+  not a known name"); the editor keeps the last valid formula on the node
+  while the text is being fixed and notes inputs the formula does not read.
+- **Groups** (`NodeKind::Group`): a name, up to four inputs, inner nodes and
+  links with their own ids, and an inner layout. Inside are Group input
+  nodes (one per input) and exactly one Group result. Brush outputs stay in
+  the main graph. Groups nest four deep. Compiling inlines groups under fresh
+  ids before lowering, so they cost nothing per dab; the 128-node cap counts
+  the inlined graph; the main graph holds at most 256 links.
+- **Making groups:** select nodes and choose Group. Values wired in from
+  outside become inputs (distinct sources, at most four); the selection must
+  give exactly one value outward (or, if nothing outside reads it yet, end in
+  exactly one node). Ungroup reverses it, rewiring inputs and the result;
+  grouping and ungrouping keep the brush's output identical (tested).
+- **Editing:** every edit runs on a copy of the current level (main graph or
+  open group) and is kept only if the whole graph validates. Double-click or
+  Open group enters a group; a breadcrumb (Back, Main graph › …) leaves it.
+  Multi-select with Ctrl- or Shift-click and Shift-drag boxes; dragging moves
+  the selection; Delete and Group act on all of it. Group inputs and results
+  cannot be deleted on their own.
+- **Reuse:** Add node › Groups lists every group in the brush library's
+  graphs once (by name and contents). Sharing a group means exporting a brush
+  that holds it.
+- **Tests:** formula grammar and refusals; group/ungroup equivalence; refusals
+  (outputs, several results); nested groups with a formula evaluating
+  correctly and surviving save and load; the inlined-node cap; library
+  de-duplication; and a Studio workflow test that selects two nodes with
+  click and Ctrl-click, groups them, opens the group by double-click, goes
+  back, ungroups and undoes. `--capture-brush-group` shows an open group.
