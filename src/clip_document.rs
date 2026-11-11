@@ -168,6 +168,7 @@ pub(crate) fn assemble(
         guides: None,
         references: Vec::new(),
         paper: None,
+        wet: Default::default(),
         canvas_frame: crate::canvas_size::Frame::identity(),
     };
     doc.validate()?;

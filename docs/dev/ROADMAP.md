@@ -65,8 +65,15 @@ The canvas as a surface that paint reacts to, in stages:
        procedural height field (grain, weave, fibers, tooth), roughness, grain
        size, direction and absorbency. Dabs deliver less paint in valleys
        unless they press hard enough; no stored texture and no simulation.
-2. [ ] Pigment deposition: granulation and buildup that follow the surface.
-3. [ ] Wetness: local moisture, spreading and drying around fresh strokes.
+2. [x] Pigment deposition: a brush's Granulation makes paint settle into the
+       paper's valleys. Buildup by paint thickness waits for stage 4.
+3. [x] Wetness (`src/wet.rs`): Wet brushes leave water in a sparse per-layer
+       map. Live: a wet dab blends into still-wet paint under it. After the
+       stroke: wet tiles exchange paint with wet neighbors (conserving it),
+       water spreads and evaporates by the paper's absorbency, fibers carry
+       paint along their direction; drying is one undo step and uses at most
+       about a quarter of frame time. Not yet: edge darkening, blooms and
+       rewetting dried paint; timelapse replays do not include drying.
 4. [ ] Material-aware layers (watercolor, dry media, paint thickness).
 
 ## Later

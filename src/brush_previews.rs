@@ -57,6 +57,8 @@ pub(crate) fn fingerprint(brush: &Brush) -> u64 {
         brush.grain_amount,
         brush.grain_scale,
         brush.paper_response,
+        brush.wetness,
+        brush.granulation,
         brush.scatter,
     ]
     .into_iter()
@@ -131,7 +133,7 @@ pub fn render(brush: &Brush) -> Vec<u8> {
         layer: 0,
         symmetry: Default::default(),
     };
-    if !brush.blend.is_paint() {
+    if brush.blend.moves_paint() {
         crate::blend_brush::preview_stripes(&mut doc, settings.color, [0, WIDTH]);
     }
     let steps = 80;
@@ -154,6 +156,7 @@ pub fn render(brush: &Brush) -> Vec<u8> {
         }
     }
     buffer.finish_tail(&mut doc, &settings);
+    crate::wet::settle(&mut doc);
     std::mem::take(&mut doc.layers[0].pixels).into_vec()
 }
 

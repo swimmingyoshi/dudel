@@ -148,7 +148,7 @@ pub(crate) fn capture(
 ) {
     let reach = match blend {
         Blend::Smudge => smear[0].abs().max(smear[1].abs()).ceil() as i32 + 2,
-        Blend::Blur => blur_radius(radius) as i32,
+        Blend::Blur | Blend::Wet => blur_radius(radius) as i32,
         Blend::Paint => 0,
     };
     let clamp = |v: i32, limit: usize| v.clamp(0, limit as i32) as usize;
@@ -165,7 +165,7 @@ pub(crate) fn capture(
             scratch.values.push(premultiply(read(x, y)));
         }
     }
-    if blend == Blend::Blur {
+    if matches!(blend, Blend::Blur | Blend::Wet) {
         let r = blur_radius(radius);
         // Two box passes approximate a smooth (tent) blur.
         for _ in 0..2 {

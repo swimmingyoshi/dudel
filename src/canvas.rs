@@ -259,6 +259,8 @@ impl Dudel {
     pub(crate) fn undo(&mut self) {
         self.cancel_adjustment();
         self.close_input_gestures();
+        // What was wet is gone with the step; nothing keeps drying.
+        self.drying.reset = true;
         if self.render_queue.busy() {
             self.status = match self.render_queue.undo() {
                 Ok(()) => "Undo queued after preceding artwork".into(),
@@ -276,6 +278,7 @@ impl Dudel {
     pub(crate) fn redo(&mut self) {
         self.cancel_adjustment();
         self.close_input_gestures();
+        self.drying.reset = true;
         if self.render_queue.busy() {
             self.status = match self.render_queue.redo() {
                 Ok(()) => "Redo queued after preceding artwork".into(),
@@ -545,6 +548,7 @@ impl Dudel {
             self.studio_was_open = self.brush_studio;
             self.studio_tab_active = self.brush_studio;
         }
+        self.dry_tick(ctx);
         let studio_was_shown = self.studio_tab_shown();
         self.tab_bar(ctx);
         if self.studio_tab_shown() {

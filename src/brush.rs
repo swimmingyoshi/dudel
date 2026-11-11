@@ -200,6 +200,14 @@ pub struct Brush {
     /// how the brush paints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graph_layout: Vec<crate::brush_graph::NodePosition>,
+    /// Water a Wet brush leaves with its paint: more stays wet longer and
+    /// spreads further.
+    #[serde(default = "half")]
+    pub wetness: f32,
+    /// How much paint settles into the paper's valleys instead of lying
+    /// evenly. Needs a paper on the canvas.
+    #[serde(default)]
+    pub granulation: f32,
     /// How much the brush feels the canvas's paper: 0 ignores it, 1 fully.
     #[serde(default = "linear_pressure")]
     pub paper_response: f32,
@@ -218,9 +226,16 @@ pub enum Blend {
     Smudge,
     /// Soften the paint under the tip.
     Blur,
+    /// Paint with water: blends into paint that is still wet, and keeps
+    /// spreading until it dries.
+    Wet,
 }
 impl Blend {
-    pub const ALL: [Blend; 3] = [Self::Paint, Self::Smudge, Self::Blur];
+    pub const ALL: [Blend; 4] = [Self::Paint, Self::Wet, Self::Smudge, Self::Blur];
+    /// Smudge and blur move paint that is already there.
+    pub fn moves_paint(&self) -> bool {
+        matches!(self, Self::Smudge | Self::Blur)
+    }
     pub fn is_paint(&self) -> bool {
         *self == Self::Paint
     }
@@ -229,6 +244,7 @@ impl Blend {
             Self::Paint => "Paint",
             Self::Smudge => "Smudge",
             Self::Blur => "Blur",
+            Self::Wet => "Wet",
         }
     }
     pub fn hint(self) -> &'static str {
@@ -239,6 +255,9 @@ impl Blend {
             }
             Self::Blur => {
                 "Soften the paint under the brush · opacity sets the strength · taper out does not apply"
+            }
+            Self::Wet => {
+                "Paint with water: blends into paint that is still wet and keeps spreading until it dries · flow sets how fast paint builds · taper out does not apply"
             }
         }
     }
@@ -304,6 +323,9 @@ pub enum AngleSource {
 fn linear_pressure() -> f32 {
     1.0
 }
+fn half() -> f32 {
+    0.5
+}
 fn linear_curve() -> [f32; 5] {
     [0.0, 0.25, 0.5, 0.75, 1.0]
 }
@@ -348,6 +370,8 @@ impl Default for Brush {
             group: None,
             graph: None,
             graph_layout: Vec::new(),
+            wetness: 0.5,
+            granulation: 0.0,
             paper_response: 1.0,
             blend: Blend::Paint,
         }
@@ -598,6 +622,8 @@ impl Brush {
             (self.scatter, 0.0, 2.0),
             (self.angle_jitter, 0.0, 180.0),
             (self.paper_response, 0.0, 1.0),
+            (self.wetness, 0.0, 1.0),
+            (self.granulation, 0.0, 1.0),
         ] {
             if !value.is_finite() || value < min || value > max {
                 return Err("Brush setting outside supported range".into());

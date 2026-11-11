@@ -243,6 +243,16 @@ can be undone. A brush's **Paper texture** setting (Brush settings > Texture)
 says how much it feels the paper; erasing, smudge and blur ignore it, and
 Brush Studio's test pad uses the project's paper.
 
+**Wet paint:** a brush in **Wet** mode (the **Watercolor wash** and
+**Watercolor round** presets, or Mode > Wet on any brush) paints with water.
+Painting into paint that is still wet blends the two; on dry paint or paper
+the stroke stays crisp. After you lift the pen, wet areas keep running
+together and dry over a few seconds; that drying is its own undo step, and
+water waits while you are painting. **Water** sets how long a stroke stays
+wet, and Flow how fast paint builds. One layer is wet at a time, and undo
+dries the canvas. **Granulation** (Brush settings > Texture) makes paint
+settle into the paper's valleys, on canvases with a paper.
+
 **Filters** change the selected layer's pixels directly, inside the selection,
 with a live preview and one undo step: **Filter > Brightness / contrast**, **Hue
 / saturation** and **Levels**; **Gaussian blur** (blurs spread into clear areas

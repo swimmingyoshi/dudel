@@ -107,6 +107,7 @@ macro_rules! project_session {
 
 project_session! {
     doc: crate::document::Document,
+    drying: crate::wet::Drying,
     history: crate::document::History,
     path: Option<PathBuf>,
     modified: bool,

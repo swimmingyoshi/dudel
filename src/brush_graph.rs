@@ -1818,7 +1818,7 @@ mod tests {
     fn paint(brush: &crate::brush::Brush) -> Vec<u8> {
         use crate::stroke::{Sample, Stroke};
         let mut doc = crate::document::Document::new(320, 200);
-        if !brush.blend.is_paint() {
+        if brush.blend.moves_paint() {
             crate::blend_brush::preview_stripes(&mut doc, [200, 60, 40], [0, 320]);
         }
         let start = doc.layers[0].pixels.region(320, [0, 0, 320, 200]).to_vec();

@@ -185,7 +185,7 @@ pub fn render(brush: &Brush, [width, height]: [usize; 2]) -> Vec<u8> {
     let mut path = stroke::Stroke::default();
     let left = tip_side + 12.0 + sample_brush.size / 2.0;
     let right = width as f32 - 10.0 - sample_brush.size / 2.0;
-    if !brush.blend.is_paint() {
+    if brush.blend.moves_paint() {
         crate::blend_brush::preview_stripes(&mut doc, INK, [tip_side as usize + 6, width]);
     }
     let steps = 120;
@@ -208,6 +208,7 @@ pub fn render(brush: &Brush, [width, height]: [usize; 2]) -> Vec<u8> {
         }
     }
     buffer.finish_tail(&mut doc, &stroke_settings);
+    crate::wet::settle(&mut doc);
     // Over white paper, opaque, so the texture shows exactly what paints.
     doc.composite()
 }

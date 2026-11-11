@@ -313,7 +313,15 @@ impl Dudel {
             if pending.pack.brushes.iter().any(|b| b.graph.is_some()) {
                 notes.push("Uses a brush graph");
             }
-            if pending.pack.brushes.iter().any(|b| !b.blend.is_paint()) {
+            if pending
+                .pack
+                .brushes
+                .iter()
+                .any(|b| b.blend == crate::brush::Blend::Wet)
+            {
+                notes.push("Wet brush");
+            }
+            if pending.pack.brushes.iter().any(|b| b.blend.moves_paint()) {
                 notes.push("Smudge or blur brush");
             }
             if !notes.is_empty() {

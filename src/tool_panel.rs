@@ -832,8 +832,17 @@ impl Dudel {
         });
     }
 
+    /// Water for Wet brushes.
+    fn brush_water_ui(&mut self, ui: &mut egui::Ui) {
+        if self.brush.blend == crate::brush::Blend::Wet {
+            let saved = self.saved_value(|b| b.wetness);
+            percent_marked(ui, "Water", &mut self.brush.wetness, 0.0, saved);
+        }
+    }
+
     fn brush_quick_controls_ui(&mut self, ui: &mut egui::Ui) {
         self.brush_blend_ui(ui);
+        self.brush_water_ui(ui);
         self.brush_size_opacity_ui(ui);
         let saved = self.saved_value(|b| b.stabilization);
         marked(
@@ -889,6 +898,7 @@ impl Dudel {
         match section {
             Section::SizeOpacity => {
                 self.brush_blend_ui(ui);
+                self.brush_water_ui(ui);
                 self.brush_size_opacity_ui(ui);
                 self.brush_flow_hardness_ui(ui);
                 ui.horizontal(|ui| {
@@ -1053,19 +1063,6 @@ impl Dudel {
                 );
             }
             Section::Grain => {
-                let saved = self.saved_value(|b| b.paper_response);
-                percent_marked(
-                    ui,
-                    "Paper texture",
-                    &mut self.brush.paper_response,
-                    0.0,
-                    saved,
-                );
-                hint(
-                    ui,
-                    "How much this brush feels the canvas's paper (Canvas › Paper…). The grain below belongs to the brush itself.",
-                );
-                ui.separator();
                 let saved = self.saved_value(|b| b.grain_amount);
                 percent_marked(ui, "Amount", &mut self.brush.grain_amount, 0.0, saved);
                 let saved = self.saved_value(|b| b.grain_scale);
@@ -1086,6 +1083,25 @@ impl Dudel {
                         self.brush.grain = None;
                     }
                 });
+                ui.separator();
+                let saved = self.saved_value(|b| b.paper_response);
+                percent_marked(
+                    ui,
+                    "Paper texture",
+                    &mut self.brush.paper_response,
+                    0.0,
+                    saved,
+                );
+                hint(
+                    ui,
+                    "How much this brush feels the canvas's paper (Canvas › Paper…). The grain above belongs to the brush itself.",
+                );
+                let saved = self.saved_value(|b| b.granulation);
+                percent_marked(ui, "Granulation", &mut self.brush.granulation, 0.0, saved);
+                hint(
+                    ui,
+                    "Paint settles into the paper's valleys, like granulating watercolor. Needs a paper on the canvas.",
+                );
             }
             Section::Tags => {
                 labeled(ui, "Name", |ui| {

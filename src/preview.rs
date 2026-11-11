@@ -101,6 +101,16 @@ impl Scratchpad {
             .chunks_exact(4)
             .any(|p| p[3] > 0)
     }
+    /// Let wet test strokes spread and dry; true while any are still wet.
+    pub fn dry(&mut self) -> bool {
+        if self.last.is_some() || self.document.wet.is_empty() {
+            return false;
+        }
+        if crate::wet::dry_step(&mut self.document).is_some_and(|r| r[2] > 0) {
+            self.dirty = true;
+        }
+        !self.document.wet.is_empty()
+    }
     /// The paper test strokes are painted on.
     pub fn set_paper(&mut self, paper: Option<crate::paper::Paper>) {
         self.document.paper = paper;
@@ -337,6 +347,10 @@ impl Scratchpad {
             } else {
                 self.settings = Some(settings);
             }
+        }
+        if self.dry() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(33));
         }
         if self.dirty || self.texture.is_none() {
             let image = egui::ColorImage::from_rgba_unmultiplied(

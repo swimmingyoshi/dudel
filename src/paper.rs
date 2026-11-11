@@ -119,6 +119,12 @@ impl Paper {
         }
         .clamp(0.0, 1.0)
     }
+    /// Granulation: how much more (above 1) or less paint settles at a
+    /// pixel, valleys collecting it.
+    pub fn pool(&self, x: usize, y: usize, granulation: f32) -> f32 {
+        (1.0 + granulation * self.roughness.max(0.3) * (0.5 - self.height(x, y)) * 3.0)
+            .clamp(0.15, 2.0)
+    }
     /// The share of a dab's paint that lands at a pixel. `delivery` is how
     /// strongly the dab paints there (0 to 1, its alpha over the brush's
     /// opacity); `response` is the brush's Paper texture setting.

@@ -56,6 +56,11 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   light and soft strokes into grain while firm strokes cover. Saved with the
   project; each brush has a Paper texture amount. Older Dudel opens such
   projects without the paper.
+- **Wet paint:** a new **Wet** brush mode with **Watercolor wash** and
+  **Watercolor round** presets. Wet strokes blend into paint that is still
+  wet, stay crisp on dry paint, and keep spreading and drying for a few
+  seconds after the stroke. A **Granulation** setting lets paint settle into
+  the paper's valleys.
 - **Test pad in view:** Brush Studio keeps a true-size test pad below its
   settings, with Undo, color stripes for trying smudge and blur, and a choice
   of paper.

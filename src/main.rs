@@ -201,6 +201,7 @@ mod wasm_filters;
 #[cfg(target_os = "linux")]
 mod wayland_pen;
 mod welcome;
+mod wet;
 mod window_chrome;
 #[cfg(test)]
 mod workflow_tests;
@@ -410,6 +411,8 @@ struct Dudel {
     studio_pad_hidden: bool,
     /// Sharing brushes: the open Export and Import dialogs, and the author
     /// and license last used, offered again next time.
+    /// Wet paint drying on the open project.
+    drying: wet::Drying,
     /// The open Canvas > Paper dialog.
     paper_form: Option<paper::PaperForm>,
     brush_export: Option<brush_share::ExportForm>,
@@ -704,6 +707,7 @@ impl Default for Dudel {
             studio_tab_active: false,
             studio_was_open: false,
             studio_pad_hidden: false,
+            drying: Default::default(),
             paper_form: None,
             brush_export: None,
             brush_import: None,

@@ -604,6 +604,9 @@ pub struct Document {
     /// The surface brushes paint on; None is a smooth canvas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paper: Option<crate::paper::Paper>,
+    /// Where paint is still wet. Never saved.
+    #[serde(skip)]
+    pub(crate) wet: crate::wet::Field,
 }
 
 /// Final 8-bit output of a premultiplied composite value: on white paper, or
@@ -648,6 +651,7 @@ impl Document {
             guides: None,
             references: Vec::new(),
             paper: None,
+            wet: Default::default(),
         }
     }
 
@@ -1892,10 +1896,11 @@ impl Document {
         }
         // The eraser end still erases with a smudge or blur brush.
         let blending = !brush.blend.is_paint() && !erase;
-        // Paper tooth holds back paint laid on artwork; erasing, smudging
-        // and mask painting ignore it.
-        let paper = paper
-            .filter(|_| target.is_raster() && !erase && !blending && brush.paper_response > 0.0);
+        let wet = brush.blend == crate::brush::Blend::Wet && !erase;
+        // Paper tooth holds back paint laid on artwork, and granulating
+        // paint settles in its valleys; erasing, smudging and mask painting
+        // ignore the paper.
+        let paper = paper.filter(|_| target.is_raster() && !erase && !brush.blend.moves_paint());
         // A graph that sets color gives this dab its own color, mixed into
         // the stroke pixel by pixel.
         let tracking = raster.color_shift.is_some() && !erase;
@@ -1981,12 +1986,18 @@ impl Document {
                     );
             }
             if let Some(paper) = &paper {
-                a *= paper.hold(
-                    px as usize,
-                    py as usize,
-                    a / brush.opacity.max(f32::MIN_POSITIVE),
-                    brush.paper_response,
-                );
+                if brush.paper_response > 0.0 {
+                    a *= paper.hold(
+                        px as usize,
+                        py as usize,
+                        a / brush.opacity.max(f32::MIN_POSITIVE),
+                        brush.paper_response,
+                    );
+                }
+                if brush.granulation > 0.0 {
+                    a = (a * paper.pool(px as usize, py as usize, brush.granulation))
+                        .min(brush.opacity);
+                }
             }
             if a <= 0.0 {
                 return None;
@@ -2017,20 +2028,58 @@ impl Document {
                     radius,
                 );
             }
+            let layer_id = layer.id;
+            let watering = wet && target.is_raster();
+            let span = (right - left + 1) as usize;
+            // Water already here, and water this dab leaves, per row.
+            let (mut was_wet, mut water) = if wet {
+                (vec![0.0f32; span], vec![0.0f32; span])
+            } else {
+                (Vec::new(), Vec::new())
+            };
             let mut writer = target.writer(layer, width);
             for py in top..=bottom {
+                if watering {
+                    self.wet
+                        .read_row(layer_id, py as usize, left as usize, &mut was_wet);
+                    water.fill(0.0);
+                }
                 for px in left..=right {
-                    let Some((a, _)) = coverage_at(px, py) else {
+                    let Some((a, ceiling)) = coverage_at(px, py) else {
                         continue;
                     };
+                    let column = (px - left) as usize;
                     let (px, py) = (px as usize, py as usize);
                     let source = scratch.source(brush.blend, raster.smear, px, py);
                     writer.edit(px, py, |pixel| {
                         if let Some(buffer) = buffer.as_deref_mut() {
                             buffer.remember_at(active, px, py, pixel);
                         }
-                        crate::blend_brush::mix(pixel, source, a, alpha_locked);
+                        if wet {
+                            // Wet-on-wet: paint still wet here runs together
+                            // before the new paint lands. Dry paint stays put.
+                            let strength = a / ceiling.max(f32::MIN_POSITIVE);
+                            let damp = was_wet.get(column).copied().unwrap_or(0.0);
+                            if damp > 0.0 {
+                                crate::blend_brush::mix(
+                                    pixel,
+                                    source,
+                                    (damp * strength).min(1.0) * 0.7,
+                                    alpha_locked,
+                                );
+                            }
+                            paint_pixel(pixel, a, color, false, alpha_locked);
+                            if watering {
+                                water[column] = strength.min(1.0) * brush.wetness;
+                            }
+                        } else {
+                            crate::blend_brush::mix(pixel, source, a, alpha_locked);
+                        }
                     });
+                }
+                if watering {
+                    self.wet
+                        .add_row(layer_id, py as usize, left as usize, &water);
                 }
             }
             if let Some(buffer) = buffer.as_deref_mut() {

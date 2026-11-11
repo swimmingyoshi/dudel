@@ -108,7 +108,9 @@ impl Dudel {
             && self.input_stroke_target().is_raster()
             && self.vector_target().is_some()
         {
-            return Some("Smudge and blur work on raster layers — rasterize this layer first");
+            return Some(
+                "Wet, smudge and blur brushes work on raster layers — rasterize this layer first",
+            );
         }
         self.stroke_target_blocker(
             self.input_stroke_target(),
