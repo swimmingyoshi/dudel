@@ -837,6 +837,7 @@ mod tests {
                 ..Default::default()
             },
             color: [30, 40, 50],
+            secondary: [30, 40, 50],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

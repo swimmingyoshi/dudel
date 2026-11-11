@@ -1050,6 +1050,7 @@ mod tests {
                 ..Default::default()
             },
             color,
+            secondary: color,
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1425,6 +1426,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default()
@@ -1793,6 +1795,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default()
@@ -2111,6 +2114,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: app.brush.clone(),
             color: app.color,
+            secondary: app.color,
             erase: false,
             layer: expected.active,
             symmetry: app.symmetry,
@@ -2349,6 +2353,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default()
@@ -2451,6 +2456,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -2606,6 +2612,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: app.brush.clone(),
             color: app.color,
+            secondary: app.color,
             erase: false,
             layer: 0,
             symmetry: app.symmetry,

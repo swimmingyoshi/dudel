@@ -3361,6 +3361,7 @@ fn draw(app: &mut Dudel, point: [f32; 2]) {
         target: crate::paint_target::Target::Raster,
         brush: app.brush.clone(),
         color: app.color,
+        secondary: app.color,
         erase: false,
         layer: app.doc.active,
         symmetry: Default::default(),
@@ -5135,4 +5136,53 @@ fn brush_files_are_reviewed_in_a_dialog_and_export_asks_for_details() {
     ui.text("Common licenses");
     ui.click(ui.text("Cancel"));
     assert!(ui.app.brush_export.is_none());
+}
+
+#[test]
+fn the_studio_keeps_a_test_pad_in_view_for_trying_the_brush() {
+    let mut ui = Workspace::sized([1366.0, 900.0]);
+    ui.app.brush_studio = true;
+    ui.app.brush = crate::brush::Brush {
+        size: 12.0,
+        pressure_size: false,
+        ..Default::default()
+    };
+    ui.settle();
+    ui.text("Test pad");
+    // Draw on it with the pen: the pad shows marks, the project does not.
+    let project = ui.app.doc.composite_transparent();
+    let paper = ui.text(
+        "Draw here to try the brush as you change it. Test strokes never touch your project.",
+    );
+    let a = paper - egui::vec2(-60.0, 70.0);
+    let b = a + egui::vec2(200.0, 20.0);
+    let sample = |p: egui::Pos2| crate::stroke::Sample {
+        x: p.x,
+        y: p.y,
+        pressure: 1.0,
+        ..Default::default()
+    };
+    for packets in [
+        vec![crate::input::Packet::Start(sample(a))],
+        vec![crate::input::Packet::Move(sample(b))],
+        vec![crate::input::Packet::End(sample(b))],
+    ] {
+        ui.app.frame_packets = packets;
+        ui.frame(vec![]);
+    }
+    ui.app.frame_packets.clear();
+    ui.settle();
+    assert!(ui.app.scratchpad.marked(), "the stroke reached the pad");
+    assert!(ui.app.doc.composite_transparent() == project);
+    // Undo takes the stroke back; Stripes fills the pad; Clear empties it.
+    ui.click(ui.text("Undo"));
+    assert!(!ui.app.scratchpad.marked());
+    ui.click(ui.text("Stripes"));
+    assert!(ui.app.scratchpad.marked());
+    ui.click(ui.text("Clear"));
+    assert!(!ui.app.scratchpad.marked());
+    // Hide gives the settings the room; Show test pad brings it back.
+    ui.click(ui.text("Hide"));
+    ui.click(ui.text("Show test pad"));
+    ui.text("Stripes");
 }

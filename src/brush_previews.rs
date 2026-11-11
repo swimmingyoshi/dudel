@@ -125,6 +125,7 @@ pub fn render(brush: &Brush) -> Vec<u8> {
         target: crate::paint_target::Target::Raster,
         brush: sample_brush.clone(),
         color: [232, 236, 244],
+        secondary: [240, 150, 96],
         erase: false,
         layer: 0,
         symmetry: Default::default(),

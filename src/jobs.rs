@@ -101,6 +101,7 @@ mod gesture_order_tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

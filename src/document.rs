@@ -51,6 +51,9 @@ pub(crate) struct DabRaster {
     pub bottom: i32,
     /// Smudge: how far the tip moved since the previous dab.
     pub(crate) smear: [f32; 2],
+    /// Brush graph color for this dab, and the stroke's secondary color.
+    pub(crate) color_shift: Option<crate::brush_graph::ColorShift>,
+    pub(crate) secondary: Option<[u8; 3]>,
 }
 impl DabRaster {
     pub fn new(
@@ -101,6 +104,8 @@ impl DabRaster {
             top: ((y - extent).floor() as i32).max(0),
             bottom: ((y + extent).ceil() as i32).min(height as i32 - 1),
             smear: [0.0; 2],
+            color_shift: factors.color,
+            secondary: None,
         }
     }
 }
@@ -1878,6 +1883,12 @@ impl Document {
         }
         // The eraser end still erases with a smudge or blur brush.
         let blending = !brush.blend.is_paint() && !erase;
+        // A graph that sets color gives this dab its own color, mixed into
+        // the stroke pixel by pixel.
+        let tracking = raster.color_shift.is_some() && !erase;
+        let color = raster
+            .color_shift
+            .map_or(color, |shift| shift.apply(color, raster.secondary));
         let (color, erase, alpha_locked) = target.params(color, erase, layer.alpha_locked);
         let prefix_pass = buffer.as_ref().is_some_and(|b| b.is_prefix_pass());
         // Clip the iteration domain before evaluating coverage or touching COW
@@ -2008,6 +2019,7 @@ impl Document {
         }
         // Large dabs on raster tiles blend in row bands across cores.
         if !prefix_pass
+            && !tracking
             && target.is_raster()
             && layer.pixels.is_tiled()
             && let Some(buffer) = buffer.as_deref_mut()
@@ -2061,8 +2073,15 @@ impl Document {
                     }
                     if scalar_writes {
                         writer.as_mut().unwrap().edit(px, py, |pixels| {
+                            let mut color = color;
                             if let Some(buffer) = buffer.as_deref_mut() {
-                                a = buffer.accumulate_at(active, px, py, pixels, a, ceiling);
+                                if tracking {
+                                    (a, color) = buffer.accumulate_color_at(
+                                        active, px, py, pixels, a, ceiling, color,
+                                    );
+                                } else {
+                                    a = buffer.accumulate_at(active, px, py, pixels, a, ceiling);
+                                }
                             }
                             paint_pixel(pixels, a, color, erase, alpha_locked);
                         });
@@ -2091,15 +2110,30 @@ impl Document {
                         |offset, pixels| {
                             let index = start + offset;
                             let mut a = delivery[index * 2];
+                            let mut color = color;
                             if let Some(buffer) = buffer.as_deref_mut() {
-                                a = buffer.accumulate_at(
-                                    active,
-                                    chunk_left as usize + index,
-                                    py as usize,
-                                    pixels,
-                                    a,
-                                    delivery[index * 2 + 1],
-                                );
+                                let (x, ceiling) =
+                                    (chunk_left as usize + index, delivery[index * 2 + 1]);
+                                if tracking {
+                                    (a, color) = buffer.accumulate_color_at(
+                                        active,
+                                        x,
+                                        py as usize,
+                                        pixels,
+                                        a,
+                                        ceiling,
+                                        color,
+                                    );
+                                } else {
+                                    a = buffer.accumulate_at(
+                                        active,
+                                        x,
+                                        py as usize,
+                                        pixels,
+                                        a,
+                                        ceiling,
+                                    );
+                                }
                             }
                             paint_pixel(pixels, a, color, erase, alpha_locked);
                         },

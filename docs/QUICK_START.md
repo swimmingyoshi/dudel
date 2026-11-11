@@ -343,7 +343,13 @@ For brush editing, open the brush selector, choose **Brush settings**, then
 tabs and uses the whole canvas area; click a project tab to draw again, or the
 Studio tab's × to close it. **Float as window** shows it over the canvas
 instead (and **Open as tab** brings it back); Dudel remembers the choice.
-Choose **Test pad** to try strokes with the brush.
+Below the settings, a **Test pad** stays in view so you can try the brush as
+you change it: it draws at true size, **Undo** takes back test strokes,
+**Stripes** fills it with bands of your two colors for trying smudge and blur,
+and **White**, **Gray** or **Dark** paper shows light and dark brushes. Test
+strokes never touch your project. **Hide** gives the settings the room (**Show
+test pad** brings it back); in a small Studio window it is the **Test pad**
+section instead.
 The tool property's **Basic** page keeps Mode, Size, Opacity, Stabilizer and
 Follow visible. **Mode** turns any brush into a **Smudge** brush, which drags the
 paint under it along the stroke like a finger, or a **Blur** brush, which softens
@@ -359,8 +365,12 @@ same, as a starting point. Then:
 
 - **Add node** (or right-click the canvas) adds inputs such as Pressure, Speed,
   Tilt, Twist, Distance and Random; shaping nodes (Curve, Remap, Invert);
-  combine nodes (Multiply, Add, Minimum, Maximum, Mix); and the Size, Opacity,
-  Flow and Spacing outputs.
+  combine nodes (Multiply, Add, Minimum, Maximum, Mix); the Size, Opacity,
+  Flow and Spacing outputs; and color outputs: **Hue shift** (turns each dab's
+  hue up to a set range either way), **Saturation**, **Brightness** and
+  **Color mix** (blends the main color toward the secondary color). For
+  example, Random into Hue shift gives color jitter, and Pressure into Color
+  mix paints the secondary color where you press hard.
 - Drag from a node's right dot to another node's left dot to wire them; drag a
   wire's end off an input to move or remove it. A wire that would make a loop
   is refused.
@@ -372,7 +382,9 @@ same, as a starting point. Then:
   the plain settings.
 
 A connected output takes over its setting: the matching pressure checkboxes
-and dynamics are greyed out while it is wired. The preview above the graph
+and dynamics are greyed out while it is wired. Brushes whose graph sets color
+mix each dab's color into the stroke as it is drawn, so Taper out does not
+apply to them. The preview above the graph
 shows the result as you work.
 
 **Save as new** keeps a new

@@ -211,6 +211,7 @@ mod tests {
             target: app.input_stroke_target(),
             brush: app.brush.clone(),
             color: [0; 3],
+            secondary: [0; 3],
             erase: true,
             layer: 0,
             symmetry: Default::default(),

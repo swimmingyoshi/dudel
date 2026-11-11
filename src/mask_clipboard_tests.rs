@@ -335,6 +335,7 @@ fn pending_mask_paste_blocks_following_captured_stroke_and_snapshot() {
             ..Default::default()
         },
         color: [255; 3],
+        secondary: [255; 3],
         erase: false,
         symmetry: Default::default(),
     };

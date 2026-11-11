@@ -1681,6 +1681,7 @@ mod tests {
                 ..Default::default()
             },
             color: [201, 17, 83],
+            secondary: [201, 17, 83],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1752,6 +1753,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [201, 17, 83],
+            secondary: [201, 17, 83],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1959,6 +1961,7 @@ mod tests {
                 ..Default::default()
             },
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

@@ -18,6 +18,9 @@ pub struct Settings {
     pub target: crate::paint_target::Target,
     pub brush: crate::brush::Brush,
     pub color: [u8; 3],
+    /// The secondary color, for brush graphs that blend toward it.
+    #[serde(default)]
+    pub secondary: [u8; 3],
     pub erase: bool,
     pub layer: usize,
     pub symmetry: crate::symmetry::Symmetry,
@@ -56,6 +59,9 @@ pub struct StrokeBuffer {
     /// previous dab was (before symmetry).
     pub(crate) blend_scratch: crate::blend_brush::Scratch,
     pub(crate) blend_last: Option<[f32; 2]>,
+    /// The stroke's mixed color per pixel, for brushes whose graph varies
+    /// color; allocated per block only when such a dab reaches it.
+    colors: Vec<Option<Box<[[f32; 3]]>>>,
 }
 /// Own original pixels until rollback completes. The controller must prevent
 /// document replacement/edits and retain the history checkpoint during restore.
@@ -265,6 +271,7 @@ mod restore_tests {
                     target: crate::paint_target::Target::Raster,
                     brush: brush.clone(),
                     color: [38, 44, 59],
+                    secondary: [38, 44, 59],
                     erase: case % 5 == 0 && !actual.layers[0].alpha_locked,
                     layer: 0,
                     symmetry: crate::symmetry::Symmetry {
@@ -396,6 +403,7 @@ mod restore_tests {
                         ..Default::default()
                     },
                     color: [20, 80, 160],
+                    secondary: [20, 80, 160],
                     erase: false,
                     layer: 0,
                     symmetry: Default::default(),
@@ -456,6 +464,7 @@ mod restore_tests {
                 ..Default::default()
             },
             color: [1, 2, 3],
+            secondary: [1, 2, 3],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -645,6 +654,7 @@ impl StrokeBuffer {
                 doc.height,
             );
             raster.smear = moves.get(copy).copied().unwrap_or_default();
+            raster.secondary = Some(settings.secondary);
             let (top, bottom) = (raster.top, raster.bottom);
             doc.paint_dab_rows(
                 &raster,
@@ -842,6 +852,13 @@ impl StrokeBuffer {
             + self.prefix.capacity() * std::mem::size_of::<Option<Box<[f32]>>>()
             + self.tail.capacity() * std::mem::size_of::<crate::stroke::Sample>()
             + self.blend_scratch.capacity_bytes()
+            + self.colors.capacity() * std::mem::size_of::<Option<Box<[[f32; 3]]>>>()
+            + self
+                .colors
+                .iter()
+                .flatten()
+                .map(|c| c.len() * std::mem::size_of::<[f32; 3]>())
+                .sum::<usize>()
     }
     /// After tail finalization, prefix coverage and retained dabs are no longer
     /// needed. Original pixels and total coverage remain available for rollback.
@@ -910,8 +927,57 @@ impl StrokeBuffer {
             self.blocks
                 .push(vec![([0; 4], -1.0); 32 * 32].into_boxed_slice());
             self.prefix.push(None);
+            self.colors.push(None);
             index
         })
+    }
+    /// Like `accumulate_at`, also mixing `dab` into the stroke's color at
+    /// the pixel in proportion to what this dab delivers. Returns the alpha
+    /// and color to paint over the original.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn accumulate_color_at(
+        &mut self,
+        layer: usize,
+        x: usize,
+        y: usize,
+        pixel: &mut [u8],
+        dab_alpha: f32,
+        ceiling: f32,
+        dab: [u8; 3],
+    ) -> (f32, [u8; 3]) {
+        let key = (layer, x / 32, y / 32);
+        let block = if let Some((cached_key, block)) = self.cached
+            && cached_key == key
+        {
+            block
+        } else {
+            let block = self.block(key);
+            self.cached = Some((key, block));
+            block
+        };
+        let offset = (y % 32) * 32 + x % 32;
+        let colors =
+            self.colors[block].get_or_insert_with(|| vec![[0.0; 3]; 1024].into_boxed_slice());
+        let entry = &mut self.blocks[block][offset];
+        let mixed = &mut colors[offset];
+        if entry.1 < 0.0 {
+            *entry = (pixel.try_into().unwrap(), 0.0);
+        }
+        let delivery = (dab_alpha / ceiling.max(f32::MIN_POSITIVE)).clamp(0.0, 1.0);
+        let before = entry.1;
+        let after = before + delivery * (1.0 - before);
+        if after > 0.0 {
+            for c in 0..3 {
+                mixed[c] =
+                    (f32::from(dab[c]) * delivery + mixed[c] * before * (1.0 - delivery)) / after;
+            }
+        }
+        entry.1 = after;
+        pixel.copy_from_slice(&entry.0);
+        (
+            after * ceiling,
+            mixed.map(|v| v.round().clamp(0.0, 255.0) as u8),
+        )
     }
     /// Record `pixel` as the original at (`x`, `y`) if the stroke has not
     /// touched it yet. Smudge and blur change pixels in place, so rollback
@@ -1103,6 +1169,7 @@ mod tests {
                     ..Default::default()
                 },
                 color: [210, 90, 35],
+                secondary: [210, 90, 35],
                 erase,
                 layer: 0,
                 symmetry: crate::symmetry::Symmetry {
@@ -1175,6 +1242,7 @@ mod tests {
                 ..Default::default()
             },
             color: [1, 2, 3],
+            secondary: [1, 2, 3],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1212,6 +1280,7 @@ mod tests {
                 ..Default::default()
             },
             color: [1, 80, 200],
+            secondary: [1, 80, 200],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

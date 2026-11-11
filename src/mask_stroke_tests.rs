@@ -31,6 +31,7 @@ fn stroke_settings(doc: &Document) -> Settings {
             ..Default::default()
         },
         color: [0; 3],
+        secondary: [0; 3],
         erase: false,
         layer: doc.active,
         symmetry: Default::default(),

@@ -151,6 +151,7 @@ impl Stroke {
             target: crate::paint_target::Target::Raster,
             brush: (*self.brush).clone(),
             color: self.color,
+            secondary: self.color,
             erase: false,
             layer,
             symmetry: self.symmetry,

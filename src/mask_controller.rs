@@ -387,6 +387,7 @@ mod tests {
                 ..Default::default()
             },
             color: [0; 3],
+            secondary: [0; 3],
             erase: false,
             symmetry: Default::default(),
         }

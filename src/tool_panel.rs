@@ -1091,11 +1091,25 @@ impl Dudel {
                     "Up to 8 tags, separated by commas. Library search matches names and tags.",
                 );
             }
-            Section::TestPad => {
-                let color = self.paint_color();
-                self.scratchpad
-                    .ui(ui, &self.brush, color, &self.frame_packets);
-            }
+            Section::TestPad => self.test_pad_ui(ui, None),
+        }
+    }
+
+    /// The brush test pad, `height` points tall (or a 16 : 5 shape). A pad
+    /// with a height is the Studio's strip, which can be hidden.
+    pub(crate) fn test_pad_ui(&mut self, ui: &mut egui::Ui, height: Option<f32>) {
+        let color = self.paint_color();
+        let secondary = self.secondary_paint_color();
+        if self.scratchpad.ui(
+            ui,
+            &self.brush,
+            color,
+            secondary,
+            &self.frame_packets,
+            height,
+            height.is_some(),
+        ) {
+            self.studio_pad_hidden = true;
         }
     }
 

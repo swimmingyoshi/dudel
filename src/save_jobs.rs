@@ -625,6 +625,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -666,6 +667,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -970,6 +972,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1018,6 +1021,7 @@ mod tests {
                 ..Default::default()
             },
             color,
+            secondary: color,
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1081,6 +1085,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: Default::default(),
             color: [17, 83, 201],
+            secondary: [17, 83, 201],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1147,6 +1152,7 @@ mod tests {
                 ..Default::default()
             },
             color: [30, 40, 50],
+            secondary: [30, 40, 50],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -1303,6 +1309,7 @@ mod tests {
                         ..Default::default()
                     },
                     color: [17, 83, 201],
+                    secondary: [17, 83, 201],
                     erase: false,
                     layer: 0,
                     symmetry: Default::default(),
@@ -1373,6 +1380,7 @@ mod tests {
                         ..Default::default()
                     },
                     color: if canceled { [0; 3] } else { [255; 3] },
+                    secondary: if canceled { [0; 3] } else { [255; 3] },
                     erase: false,
                     layer: 0,
                     symmetry: Default::default(),

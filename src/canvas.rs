@@ -1005,6 +1005,7 @@ impl Dudel {
                         target: self.input_stroke_target(),
                         brush,
                         color: self.paint_color(),
+                        secondary: self.secondary_paint_color(),
                         erase: self.tool == Tool::Eraser || sample.eraser,
                         layer,
                         symmetry: self.active_symmetry(),
@@ -2431,6 +2432,7 @@ mod cancellation_tests {
                 ..Default::default()
             },
             color: [0, 255, 0],
+            secondary: [0, 255, 0],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -3055,6 +3057,7 @@ mod cancellation_tests {
                 ..Default::default()
             },
             color: [10, 20, 30],
+            secondary: [10, 20, 30],
             erase: false,
             layer: 0,
             symmetry: Default::default()
@@ -3126,6 +3129,7 @@ mod cancellation_tests {
                 ..Default::default()
             },
             color: [30, 40, 50],
+            secondary: [30, 40, 50],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

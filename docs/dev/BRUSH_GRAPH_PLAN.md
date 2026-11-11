@@ -2,8 +2,9 @@
 
 Status: accepted 2026-11-10; milestones 1 (the engine, [section
 13](#13-milestone-1-as-built)), 2 (the editor, [section
-14](#14-milestone-2-as-built)) and 3 (sharing, [section
-15](#15-milestone-3-as-built)) are implemented. It answers the "first deliverable" of
+14](#14-milestone-2-as-built)), 3 (sharing, [section
+15](#15-milestone-3-as-built)) and 4 (color, [section
+16](#16-milestone-4-as-built)) are implemented. It answers the "first deliverable" of
 the brush graph brief: how a node-based brush editor fits the brush engine
 Dudel already has, and what to build first.
 
@@ -377,3 +378,35 @@ Studio. Where it differs from section 7:
   opens as a tab beside the project tabs and fills the canvas area; the canvas
   keeps its background work (render queue, previews) while hidden. **Float as
   window** restores the floating window; the choice is a preference.
+
+## 16. Milestone 4 as built
+
+2026-11-10.
+
+- **Color outputs:** Hue shift (a range setting, 0 to 180 degrees; 0.5 is no
+  change), Saturation and Brightness (multipliers, 1 is no change) and Color
+  mix (0 main color, 1 secondary). A missing value leaves that part of the
+  color alone. `ColorShift::apply` blends toward the secondary color first,
+  then turns hue and scales saturation and value in HSV.
+- **Secondary color:** `stroke_buffer::Settings` gained `secondary`; canvas
+  strokes pass the real secondary color (mask strokes its gray), the Studio
+  preview and library thumbnails a fixed contrasting one.
+- **Stroke buffer:** for a brush whose graph sets color, each pixel also keeps
+  the stroke's mixed color, allocated per 32 px block only when such a dab
+  reaches it. A dab of color `c` delivering `d` over coverage `C` and color
+  `K` gives coverage `C + d(1 − C)` and color `(c·d + K·C·(1 − d)) / C'`, so
+  overlapping dabs blend instead of the last one winning. The result is
+  composited over the original exactly as before.
+- **Unchanged for other brushes:** brushes without color outputs never take
+  the color path: the pixel-identity test still passes, the buffer adds one
+  empty slot per block, and an interleaved release benchmark against the
+  previous build shows every brush within noise (−5.6% to +1.0%).
+- **Limits:** color brushes skip the multi-core path for very large dabs, and
+  Taper out does not apply to them (re-tapering would have to replay the
+  colors). Smudge and blur ignore color outputs.
+- **Test pad** (asked for alongside): Brush Studio keeps a true-scale test
+  pad below the settings when it is at least 460 points tall, with Clear,
+  Undo (12 strokes), Stripes in the main and secondary colors, and white,
+  gray or dark paper; it can be hidden. A pad shown in two places handles
+  each frame's pen input once. `--capture-color-brush` shows a color brush
+  on the pad.

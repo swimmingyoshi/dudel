@@ -68,6 +68,7 @@ impl Copies {
                 doc.height,
             ));
             raster.smear = self.moves.get(self.at).copied().unwrap_or_default();
+            raster.secondary = Some(settings.secondary);
             let row = raster.top;
             self.raster = Some((raster, row));
             self.peak_payload = self.peak_payload.max(self.payload_capacity_bytes());
@@ -339,6 +340,7 @@ mod tests {
                 ..Default::default()
             },
             color: [210, 90, 35],
+            secondary: [210, 90, 35],
             erase,
             layer: 0,
             symmetry: crate::symmetry::Symmetry {
@@ -447,6 +449,7 @@ mod tests {
                 ..Default::default()
             },
             color: [1, 2, 3],
+            secondary: [1, 2, 3],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -544,6 +547,7 @@ mod tests {
                 ..Default::default()
             },
             color: [30, 140, 220],
+            secondary: [30, 140, 220],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

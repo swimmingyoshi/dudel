@@ -78,6 +78,7 @@ impl crate::Dudel {
                     target: crate::paint_target::Target::Raster,
                     brush,
                     color: [0, 0, 0],
+                    secondary: [0, 0, 0],
                     erase: false,
                     layer: doc.active,
                     symmetry: Default::default(),
@@ -325,6 +326,7 @@ mod tests {
                 ..Default::default()
             },
             color: [0, 0, 255],
+            secondary: [0, 0, 255],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

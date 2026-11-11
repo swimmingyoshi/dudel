@@ -36,6 +36,12 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
 - **Sharing brushes:** **Export brush…** saves a `.dudelbrush` file with your
   name, a license and a description. **Import brush…** (or dropping a file)
   shows the brush, who made it and its license before adding it.
+- **Color in brush graphs:** Hue shift, Saturation, Brightness and Color mix
+  outputs change each dab's color: color jitter, pressure toward the
+  secondary color, darker or paler by speed or tilt.
+- **Test pad in view:** Brush Studio keeps a true-size test pad below its
+  settings, with Undo, color stripes for trying smudge and blur, and a choice
+  of paper.
 
 ## 0.3.0 (2026-11-10)
 

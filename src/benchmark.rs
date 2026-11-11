@@ -374,6 +374,7 @@ fn tail_workload(
         target: crate::paint_target::Target::Raster,
         brush: brush.clone(),
         color: [38, 44, 59],
+        secondary: [38, 44, 59],
         erase: false,
         layer: 0,
         symmetry: crate::symmetry::Symmetry {
@@ -1056,6 +1057,7 @@ pub fn run(path: &std::path::Path, incremental: bool, buffered: bool) -> Result<
             target: crate::paint_target::Target::Raster,
             brush: brush.clone(),
             color: [38, 44, 59],
+            secondary: [38, 44, 59],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

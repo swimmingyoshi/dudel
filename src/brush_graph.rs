@@ -71,6 +71,16 @@ pub enum NodeKind {
     OpacityOutput,
     FlowOutput,
     SpacingOutput,
+    /// Turns the dab's hue: 0 is `degrees` one way, 1 the other, 0.5 none.
+    HueOutput {
+        degrees: f32,
+    },
+    /// Scales the dab color's saturation: 1 keeps it, 0 is gray.
+    SaturationOutput,
+    /// Scales the dab color's brightness: 1 keeps it, 0 is black.
+    BrightnessOutput,
+    /// Blends the main color toward the secondary color: 0 main, 1 secondary.
+    ColorMixOutput,
 }
 
 impl NodeKind {
@@ -90,7 +100,11 @@ impl NodeKind {
             | Self::SizeOutput
             | Self::OpacityOutput
             | Self::FlowOutput
-            | Self::SpacingOutput => 1,
+            | Self::SpacingOutput
+            | Self::HueOutput { .. }
+            | Self::SaturationOutput
+            | Self::BrightnessOutput
+            | Self::ColorMixOutput => 1,
             Self::Multiply | Self::Add | Self::Minimum | Self::Maximum => 2,
             Self::Mix => 3,
         }
@@ -102,6 +116,10 @@ impl NodeKind {
             Self::OpacityOutput => Some(Output::Opacity),
             Self::FlowOutput => Some(Output::Flow),
             Self::SpacingOutput => Some(Output::Spacing),
+            Self::HueOutput { .. } => Some(Output::Hue),
+            Self::SaturationOutput => Some(Output::Saturation),
+            Self::BrightnessOutput => Some(Output::Brightness),
+            Self::ColorMixOutput => Some(Output::ColorMix),
             _ => None,
         }
     }
@@ -150,6 +168,10 @@ impl NodeKind {
                     Self::OpacityOutput,
                     Self::FlowOutput,
                     Self::SpacingOutput,
+                    Self::HueOutput { degrees: 30.0 },
+                    Self::SaturationOutput,
+                    Self::BrightnessOutput,
+                    Self::ColorMixOutput,
                 ],
             ),
         ]
@@ -186,6 +208,10 @@ impl NodeKind {
             Self::OpacityOutput => "Dab opacity, before taper",
             Self::FlowOutput => "Paint delivered per dab",
             Self::SpacingOutput => "Distance to the next dab",
+            Self::HueOutput { .. } => "Turns each dab's hue: 0.5 keeps it",
+            Self::SaturationOutput => "Each dab's color saturation: 1 keeps it, 0 is gray",
+            Self::BrightnessOutput => "Each dab's brightness: 1 keeps it, 0 is black",
+            Self::ColorMixOutput => "Blends toward the secondary color: 0 main, 1 secondary",
         }
     }
     pub fn name(&self) -> &'static str {
@@ -209,12 +235,17 @@ impl NodeKind {
             Self::OpacityOutput => "Opacity",
             Self::FlowOutput => "Flow",
             Self::SpacingOutput => "Spacing",
+            Self::HueOutput { .. } => "Hue shift",
+            Self::SaturationOutput => "Saturation",
+            Self::BrightnessOutput => "Brightness",
+            Self::ColorMixOutput => "Color mix",
         }
     }
     fn validate(&self) -> Result<(), String> {
         let amount = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
         let ok = match self {
             Self::Distance { length } => length.is_finite() && (1.0..=100_000.0).contains(length),
+            Self::HueOutput { degrees } => degrees.is_finite() && (0.0..=180.0).contains(degrees),
             Self::Constant { value } => amount(*value),
             Self::Curve(curve) => return curve.validate(),
             Self::Remap {
@@ -291,7 +322,12 @@ pub enum Output {
     Opacity,
     Flow,
     Spacing,
+    Hue,
+    Saturation,
+    Brightness,
+    ColorMix,
 }
+const OUTPUTS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -355,6 +391,17 @@ impl BrushGraph {
     pub fn validate(&self) -> Result<(), String> {
         self.compiled().map(|_| ())
     }
+    /// Whether any color output is wired, so dabs vary in color.
+    pub fn drives_color(&self) -> bool {
+        [
+            Output::Hue,
+            Output::Saturation,
+            Output::Brightness,
+            Output::ColorMix,
+        ]
+        .into_iter()
+        .any(|output| self.drives(output))
+    }
     /// Whether a connected output node drives `output`.
     pub fn drives(&self, output: Output) -> bool {
         self.compiled()
@@ -380,6 +427,7 @@ impl BrushGraph {
             match &node.kind {
                 NodeKind::Pressure { shaped } => shaped.hash(hasher),
                 NodeKind::Distance { length } => values(hasher, &[*length]),
+                NodeKind::HueOutput { degrees } => values(hasher, &[*degrees]),
                 NodeKind::Random { seed } => seed.hash(hasher),
                 NodeKind::Constant { value } => values(hasher, &[*value]),
                 NodeKind::Curve(curve) => {
@@ -544,9 +592,11 @@ const MISSING: u8 = 0;
 #[derive(Clone, Debug)]
 pub struct Compiled {
     ops: Vec<Op>,
-    /// Register feeding each output (size, opacity, flow, spacing).
-    outputs: [Option<u8>; 4],
+    /// Register feeding each output, in `Output` order.
+    outputs: [Option<u8>; OUTPUTS],
     shaped_pressure: bool,
+    /// The Hue shift output's range in degrees.
+    hue_degrees: f32,
 }
 
 /// Per-dab values the graph reads.
@@ -569,6 +619,41 @@ pub struct Values {
     pub opacity: Option<f32>,
     pub flow: Option<f32>,
     pub spacing: Option<f32>,
+    /// Per-dab color change, when any color output is wired.
+    pub color: Option<ColorShift>,
+}
+
+/// How one dab's color differs from the stroke's main color.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorShift {
+    /// Degrees to turn the hue.
+    pub hue: f32,
+    /// Saturation and brightness multipliers, 1 for none.
+    pub saturation: f32,
+    pub brightness: f32,
+    /// Share of the secondary color, 0 for none.
+    pub mix: f32,
+}
+impl ColorShift {
+    /// The dab's color from the main and (when known) secondary colors.
+    pub fn apply(&self, main: [u8; 3], secondary: Option<[u8; 3]>) -> [u8; 3] {
+        let base = match secondary {
+            Some(other) if self.mix > 0.0 => std::array::from_fn(|i| {
+                let (a, b) = (f32::from(main[i]), f32::from(other[i]));
+                (a + (b - a) * self.mix).round().clamp(0.0, 255.0) as u8
+            }),
+            _ => main,
+        };
+        if self.hue == 0.0 && self.saturation == 1.0 && self.brightness == 1.0 {
+            return base;
+        }
+        let [h, s, v] = crate::color_wheel::rgb_to_hsv(base);
+        crate::color_wheel::hsv_to_rgb([
+            h + self.hue / 360.0,
+            (s * self.saturation).clamp(0.0, 1.0),
+            (v * self.brightness).clamp(0.0, 1.0),
+        ])
+    }
 }
 
 /// A deterministic stream per seed, derived from the dab's own random value.
@@ -644,11 +729,28 @@ impl Compiled {
                 if v.is_nan() { 1.0 } else { v.clamp(0.0, 1.0) }
             })
         };
+        // Color outputs: a missing value leaves that part of the color alone.
+        let raw = |output: Output| {
+            self.outputs[output as usize]
+                .map(|i| r[usize::from(i)])
+                .filter(|v| !v.is_nan())
+                .map(|v| v.clamp(0.0, 1.0))
+        };
+        let color = self.outputs[Output::Hue as usize..]
+            .iter()
+            .any(Option::is_some)
+            .then(|| ColorShift {
+                hue: raw(Output::Hue).map_or(0.0, |v| (v * 2.0 - 1.0) * self.hue_degrees),
+                saturation: raw(Output::Saturation).unwrap_or(1.0),
+                brightness: raw(Output::Brightness).unwrap_or(1.0),
+                mix: raw(Output::ColorMix).unwrap_or(0.0),
+            });
         Values {
             size: value(self.outputs[0]),
             opacity: value(self.outputs[1]),
             flow: value(self.outputs[2]),
             spacing: value(self.outputs[3]),
+            color,
         }
     }
 }
@@ -666,7 +768,7 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
         ));
     }
     let index_of = |id: NodeId| graph.nodes.iter().position(|n| n.id == id);
-    let mut seen_outputs = [false; 4];
+    let mut seen_outputs = [false; OUTPUTS];
     for (i, node) in graph.nodes.iter().enumerate() {
         if graph.nodes[..i].iter().any(|n| n.id == node.id) {
             return Err("Two brush graph nodes share an id".into());
@@ -721,8 +823,9 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
     }
     let mut register = vec![MISSING; count];
     let mut ops = Vec::new();
-    let mut outputs = [None; 4];
+    let mut outputs = [None; OUTPUTS];
     let mut shaped_pressure = false;
+    let mut hue_degrees = 0.0;
     for &index in &order {
         let port = |p: usize| sources[index][p].map_or(MISSING, |s| register[s]);
         let op = match &graph.nodes[index].kind {
@@ -752,6 +855,9 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             NodeKind::Mix => Op::Mix([port(0), port(1), port(2)]),
             kind => {
                 let output = kind.output().expect("only outputs remain");
+                if let NodeKind::HueOutput { degrees } = kind {
+                    hue_degrees = *degrees;
+                }
                 if let Some(source) = sources[index][0] {
                     outputs[output as usize] = Some(register[source]);
                 }
@@ -765,6 +871,7 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
         ops,
         outputs,
         shaped_pressure,
+        hue_degrees,
     })
 }
 
@@ -958,6 +1065,7 @@ mod tests {
             target: crate::paint_target::Target::Raster,
             brush: brush.clone(),
             color: [38, 44, 59],
+            secondary: [220, 60, 40],
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -989,6 +1097,116 @@ mod tests {
         let end = doc.layers[0].pixels.region(320, [0, 0, 320, 200]).to_vec();
         assert!(end != start, "{} changed the layer", brush.name);
         end
+    }
+
+    /// Distinct opaque colors the stroke left.
+    fn colors(pixels: &[u8]) -> std::collections::HashSet<[u8; 3]> {
+        pixels
+            .chunks_exact(4)
+            .filter(|p| p[3] == 255)
+            .map(|p| [p[0], p[1], p[2]])
+            .collect()
+    }
+    fn color_brush(output: NodeKind, input: NodeKind) -> crate::brush::Brush {
+        crate::brush::Brush {
+            name: "Color test".into(),
+            size: 24.0,
+            hardness: 1.0,
+            spacing: 0.1,
+            pressure_size: false,
+            graph: Some(graph(vec![input, output], &[(1, 2, 0)])),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn color_outputs_vary_each_dab_and_mix_toward_the_secondary_color() {
+        use NodeKind::*;
+        // Random hue jitter: many hues, all from the stroke's main color.
+        let jitter = color_brush(HueOutput { degrees: 60.0 }, Random { seed: 3 });
+        jitter.validate().unwrap();
+        assert!(jitter.graph.as_ref().unwrap().drives_color());
+        assert_eq!(
+            jitter.tail_length(),
+            0.0,
+            "color brushes are not re-tapered"
+        );
+        let painted = paint(&jitter);
+        assert!(colors(&painted).len() > 20, "{}", colors(&painted).len());
+        // Pressure blends main (low) toward secondary (high): the stroke's
+        // light middle is red-ish, its ends dark like the main color.
+        let mix = color_brush(ColorMixOutput, Pressure { shaped: false });
+        let painted = paint(&mix);
+        let reddest = colors(&painted).into_iter().map(|c| c[0]).max().unwrap();
+        assert!(reddest > 150, "{reddest}");
+        let at = |x: usize, y: usize| &painted[(y * 320 + x) * 4..][..4];
+        // The stroke starts near (30, 100) with low pressure.
+        let start = (25..40)
+            .flat_map(|x| (90..110).map(move |y| (x, y)))
+            .map(|(x, y)| at(x, y))
+            .find(|p| p[3] == 255)
+            .unwrap();
+        assert!(start[0] < 120, "{start:?}");
+    }
+
+    #[test]
+    fn steady_color_graphs_match_plain_brushes_and_plain_brushes_keep_no_colors() {
+        use NodeKind::*;
+        let plain = crate::brush::Brush {
+            size: 24.0,
+            hardness: 0.6,
+            opacity: 0.7,
+            flow: 0.4,
+            pressure_size: false,
+            ..Default::default()
+        };
+        // Color mix fed a constant 0 keeps the main color but takes the
+        // per-pixel color path; coverage is the same, color within rounding.
+        let steady = crate::brush::Brush {
+            graph: Some(graph(
+                vec![Constant { value: 0.0 }, ColorMixOutput],
+                &[(1, 2, 0)],
+            )),
+            ..plain.clone()
+        };
+        let (a, b) = (paint(&plain), paint(&steady));
+        for (p, q) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+            assert_eq!(p[3], q[3]);
+            for c in 0..3 {
+                assert!(p[c].abs_diff(q[c]) <= 1, "{p:?} {q:?}");
+            }
+        }
+        // Without color outputs the buffer keeps no per-pixel colors.
+        let mut doc = crate::document::Document::new(64, 64);
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: plain,
+            color: [10, 20, 30],
+            secondary: [200, 0, 0],
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        };
+        let dab = crate::stroke::Sample {
+            x: 32.0,
+            y: 32.0,
+            pressure: 1.0,
+            ..Default::default()
+        };
+        buffer.paint(&mut doc, dab, &settings);
+        let plain_bytes = buffer.payload_capacity_bytes();
+        let mut colored = crate::stroke_buffer::StrokeBuffer::default();
+        let color_settings = crate::stroke_buffer::Settings {
+            brush: steady,
+            ..settings
+        };
+        let mut other = crate::document::Document::new(64, 64);
+        colored.paint(&mut other, dab, &color_settings);
+        assert!(colored.payload_capacity_bytes() > plain_bytes);
+        // Cancel restores the layer for color brushes too.
+        colored.restore(&mut other);
+        assert!(other.layers[0].pixels == crate::document::Document::new(64, 64).layers[0].pixels);
     }
 
     #[test]

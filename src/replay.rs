@@ -995,6 +995,7 @@ mod tests {
                 target: crate::paint_target::Target::Raster,
                 brush: app.brush.clone(),
                 color: app.color,
+                secondary: app.color,
                 erase: false,
                 layer: 0,
                 symmetry: app.symmetry,

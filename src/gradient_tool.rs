@@ -307,7 +307,7 @@ pub(crate) fn apply(
 impl crate::Dudel {
     /// The secondary color, or the secondary mask coverage while a mask is
     /// the painting target.
-    fn secondary_paint_color(&self) -> [u8; 3] {
+    pub(crate) fn secondary_paint_color(&self) -> [u8; 3] {
         if self.input_stroke_target().is_raster() {
             self.secondary
         } else {

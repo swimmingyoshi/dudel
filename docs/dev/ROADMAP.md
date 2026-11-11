@@ -47,10 +47,11 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        stroke) or blurs instead of painting, with built-in Smudge and Blur
        presets. Later: a color-mixing ("wet paint") mode that also lays down
        the current color.
-4. [x] **Brush graph, milestones 1–3** (engine, editor, sharing single
-       brushes as `.dudelbrush` files): see the
+4. [x] **Brush graph, milestones 1–4** (engine, editor, sharing single
+       brushes as `.dudelbrush` files, per-dab color): see the
        [brush graph plan](BRUSH_GRAPH_PLAN.md). Brush Studio opens as its own
-       tab. Next for the graph: milestone 4, per-dab color.
+       tab with a test pad in view. Next for the graph: milestone 5
+       (subgraphs, extension nodes), which needs its own security review.
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 

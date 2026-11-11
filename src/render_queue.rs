@@ -1585,6 +1585,7 @@ pub fn benchmark(path: &std::path::Path) -> Result<(), String> {
                     ..Default::default()
                 },
                 color,
+                secondary: color,
                 erase: false,
                 layer: 0,
                 symmetry: crate::symmetry::Symmetry {
@@ -2966,6 +2967,7 @@ mod tests {
                 ..Default::default()
             },
             color,
+            secondary: color,
             erase: false,
             layer: 0,
             symmetry: Default::default(),
@@ -2997,6 +2999,7 @@ mod tests {
                     ..Default::default()
                 },
                 color: [200, 40, 40],
+                secondary: [200, 40, 40],
                 erase: false,
                 layer: 0,
                 symmetry: Default::default(),

@@ -149,6 +149,8 @@ pub fn render(brush: &Brush, [width, height]: [usize; 2]) -> Vec<u8> {
         target: crate::paint_target::Target::Raster,
         brush,
         color: INK,
+        // A contrasting secondary shows color-mix brushes changing color.
+        secondary: [196, 64, 52],
         erase: false,
         layer: 0,
         symmetry: Default::default(),
@@ -334,7 +336,25 @@ impl Dudel {
             + ui.text_style_height(&egui::TextStyle::Small)
             + 4.0 * ui.spacing().item_spacing.y
             + 8.0;
-        let height = (ui.available_height() - footer).max(32.0);
+        let available = (ui.available_height() - footer).max(32.0);
+        // A tall Studio keeps the test pad in view below the settings, so
+        // every change can be tried at once.
+        let room = !compact && available >= 460.0;
+        let pad = (room && !self.studio_pad_hidden).then(|| (available * 0.36).clamp(150.0, 320.0));
+        let reopen = room && self.studio_pad_hidden;
+        let height = available
+            - pad.map_or(0.0, |pad| pad + 10.0)
+            - if reopen {
+                ui.spacing().interact_size.y + 10.0
+            } else {
+                0.0
+            };
+        if pad.is_some() && self.brush_studio_section == Section::TestPad {
+            self.brush_studio_section = Section::SizeOpacity;
+        }
+        let sections = Section::STUDIO
+            .into_iter()
+            .filter(|s| pad.is_none() || *s != Section::TestPad);
         let (body_rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), height),
             egui::Sense::hover(),
@@ -354,7 +374,7 @@ impl Dudel {
                     .width(ui.available_width())
                     .height((height_limit - 100.0).max(60.0))
                     .show_ui(ui, |ui| {
-                        for section in Section::STUDIO {
+                        for section in sections.clone() {
                             ui.selectable_value(
                                 &mut self.brush_studio_section,
                                 section,
@@ -372,7 +392,7 @@ impl Dudel {
                             .max_height(height)
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
-                                for section in Section::STUDIO {
+                                for section in sections.clone() {
                                     ui.selectable_value(
                                         &mut self.brush_studio_section,
                                         section,
@@ -387,6 +407,19 @@ impl Dudel {
                         self.brush_studio_settings(ui, false);
                     });
                 });
+            }
+        }
+        if let Some(pad) = pad {
+            ui.separator();
+            ui.push_id("studio test pad", |ui| self.test_pad_ui(ui, Some(pad)));
+        } else if reopen {
+            ui.separator();
+            if ui
+                .button("Show test pad")
+                .on_hover_text("Try the brush below the settings as you change it")
+                .clicked()
+            {
+                self.studio_pad_hidden = false;
             }
         }
         ui.separator();

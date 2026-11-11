@@ -359,6 +359,8 @@ pub struct Factors {
     pub opacity: f32,
     pub flow: f32,
     pub spacing: f32,
+    /// The dab's color change, when the brush graph sets color.
+    pub color: Option<crate::brush_graph::ColorShift>,
 }
 
 impl Brush {
@@ -392,6 +394,7 @@ impl Brush {
             opacity: taper * graph.opacity.unwrap_or_else(|| self.plain_opacity(sample)),
             flow: graph.flow.unwrap_or_else(|| self.plain_flow(sample)),
             spacing: graph.spacing.unwrap_or_else(|| self.plain_spacing(sample)),
+            color: graph.color,
         }
     }
     pub fn size_factor(&self, sample: &crate::stroke::Sample) -> f32 {
@@ -438,7 +441,9 @@ impl Brush {
     /// How far back the end of a stroke is re-tapered after the pen lifts.
     /// Smudge and blur read the layer as they go, so they cannot be re-tapered.
     pub fn tail_length(&self) -> f32 {
-        if self.blend.is_paint() {
+        // Color brushes mix each dab's color into the stroke as it goes, and
+        // re-tapering would have to replay those colors too.
+        if self.blend.is_paint() && !self.graph.as_ref().is_some_and(|g| g.drives_color()) {
             self.taper_out
         } else {
             0.0

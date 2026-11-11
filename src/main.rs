@@ -404,6 +404,8 @@ struct Dudel {
     studio_as_tab: bool,
     studio_tab_active: bool,
     studio_was_open: bool,
+    /// The Studio's test pad strip is hidden to give the settings room.
+    studio_pad_hidden: bool,
     /// Sharing brushes: the open Export and Import dialogs, and the author
     /// and license last used, offered again next time.
     brush_export: Option<brush_share::ExportForm>,
@@ -697,6 +699,7 @@ impl Default for Dudel {
             studio_as_tab: true,
             studio_tab_active: false,
             studio_was_open: false,
+            studio_pad_hidden: false,
             brush_export: None,
             brush_import: None,
             brush_author: String::new(),
@@ -1935,6 +1938,7 @@ fn run() -> eframe::Result {
     let capture_smudge = mode.as_deref() == Some("--capture-smudge");
     let capture_brush_graph = mode.as_deref() == Some("--capture-brush-graph");
     let capture_brush_import = mode.as_deref() == Some("--capture-brush-import");
+    let capture_color_brush = mode.as_deref() == Some("--capture-color-brush");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2008,6 +2012,7 @@ fn run() -> eframe::Result {
         || capture_smudge
         || capture_brush_graph
         || capture_brush_import
+        || capture_color_brush
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2505,6 +2510,7 @@ fn run() -> eframe::Result {
                             ..Default::default()
                         },
                         color: [0; 3],
+                        secondary: [0; 3],
                         erase: false,
                         layer: 0,
                         symmetry: Default::default(),
@@ -2711,6 +2717,9 @@ fn run() -> eframe::Result {
                 if capture_brush_import {
                     app.brush_import_capture_fixture();
                 }
+                if capture_color_brush {
+                    app.color_brush_capture_fixture();
+                }
                 if capture_welcome {
                     app.welcome_open = true;
                     app.recent = ["Portrait study.dudel", "Comic page 12.dudel"]
@@ -2903,6 +2912,7 @@ mod edit_order_tests {
                 ..Default::default()
             },
             color: [30, 40, 50],
+            secondary: [30, 40, 50],
             erase: false,
             layer: 0,
             symmetry: Default::default(),

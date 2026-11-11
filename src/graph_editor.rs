@@ -293,6 +293,57 @@ impl Dudel {
         self.graph_editor.selected = Some(curve);
         self.graph_editor.fit = true;
     }
+    /// Screenshot scene: a color brush (random hue jitter, pressure blending
+    /// toward the secondary color) with strokes on the Studio's test pad.
+    pub(crate) fn color_brush_capture_fixture(&mut self) {
+        self.brush_studio = true;
+        self.brush_studio_section = crate::brush_studio::Section::Graph;
+        self.graph_editor.owner = Some(self.selected_brush);
+        self.brush = crate::brush::Brush {
+            name: "Confetti marker".into(),
+            size: 22.0,
+            hardness: 0.8,
+            spacing: 0.12,
+            pressure_size: true,
+            ..Default::default()
+        };
+        self.color = [40, 90, 200];
+        self.secondary = [235, 120, 40];
+        self.make_brush_graph();
+        let mut graph = self.brush.graph.clone().unwrap();
+        let mut layout = Vec::new();
+        let random = add_node(
+            &mut graph,
+            &mut layout,
+            NodeKind::Random { seed: 7 },
+            [0.0; 2],
+        )
+        .unwrap();
+        let hue = add_node(
+            &mut graph,
+            &mut layout,
+            NodeKind::HueOutput { degrees: 25.0 },
+            [0.0; 2],
+        )
+        .unwrap();
+        let pressure = add_node(
+            &mut graph,
+            &mut layout,
+            NodeKind::Pressure { shaped: false },
+            [0.0; 2],
+        )
+        .unwrap();
+        let mix = add_node(&mut graph, &mut layout, NodeKind::ColorMixOutput, [0.0; 2]).unwrap();
+        connect(&mut graph, random, hue, 0).unwrap();
+        connect(&mut graph, pressure, mix, 0).unwrap();
+        self.brush.graph_layout = crate::brush_graph::auto_layout(&graph);
+        self.brush.graph = Some(graph);
+        self.graph_editor.selected = Some(hue);
+        self.graph_editor.fit = true;
+        let (color, secondary) = (self.color, self.secondary);
+        self.scratchpad
+            .demo(&self.brush, color, secondary, [900, 160]);
+    }
     /// Make a graph from the brush's pressure and dynamics settings.
     pub(crate) fn make_brush_graph(&mut self) {
         self.graph_checkpoint();
@@ -382,14 +433,21 @@ impl Dudel {
         let height = visible.clamp(180.0, 520.0);
         if side {
             ui.horizontal_top(|ui| {
-                let width = ui.available_width() - 212.0;
+                let width = ui.available_width() - 252.0;
                 self.graph_canvas(ui, egui::vec2(width, height));
                 ui.vertical(|ui| {
-                    ui.set_width(200.0);
+                    ui.set_width(240.0);
                     egui::ScrollArea::vertical()
                         .id_salt("graph node settings")
                         .max_height(height)
-                        .show(ui, |ui| self.graph_node_settings(ui));
+                        .max_width(240.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            // Keep labels, sliders and notes inside the strip.
+                            ui.set_max_width(228.0);
+                            ui.spacing_mut().slider_width = 150.0;
+                            self.graph_node_settings(ui);
+                        });
                 });
             });
         } else {
@@ -756,7 +814,10 @@ impl Dudel {
 
     fn graph_node_settings(&mut self, ui: &mut egui::Ui) {
         let Some(selected) = self.graph_editor.selected else {
-            ui.small("Select a node to change its settings. Right-click the canvas to add nodes.");
+            note(
+                ui,
+                "Select a node to change its settings. Right-click the canvas to add nodes.",
+            );
             return;
         };
         let Some(graph) = &self.brush.graph else {
@@ -773,14 +834,14 @@ impl Dudel {
         };
         let before = kind.clone();
         ui.strong(kind.name());
-        ui.small(kind.description());
+        note(ui, kind.description());
         match &mut kind {
             NodeKind::Pressure { shaped } => {
                 ui.checkbox(shaped, "Shape with the brush's pressure curve")
                     .on_hover_text("Use the Pen pressure section's curve before this node");
             }
             NodeKind::Distance { length } => {
-                crate::workspace::labeled_slider(
+                labeled(
                     ui,
                     "Reaches 1 after",
                     egui::Slider::new(length, 1.0..=5000.0)
@@ -793,10 +854,23 @@ impl Dudel {
                     ui.label("Seed");
                     ui.add(egui::DragValue::new(seed).range(0..=9999));
                 });
-                ui.small("Seed 0 is the same random value brush dynamics use.");
+                note(ui, "Seed 0 is the same random value brush dynamics use.");
+            }
+            NodeKind::HueOutput { degrees } => {
+                labeled(
+                    ui,
+                    "Range",
+                    egui::Slider::new(degrees, 0.0..=180.0)
+                        .suffix("°")
+                        .integer(),
+                );
+                note(
+                    ui,
+                    "0 turns the hue this far one way, 1 the other, 0.5 not at all.",
+                );
             }
             NodeKind::Constant { value } => {
-                crate::workspace::labeled_slider(ui, "Value", egui::Slider::new(value, 0.0..=1.0));
+                labeled(ui, "Value", egui::Slider::new(value, 0.0..=1.0));
             }
             NodeKind::Curve(curve) => {
                 crate::dynamics::curve_ui(ui, curve);
@@ -811,15 +885,11 @@ impl Dudel {
                 out_high,
             } => {
                 ui.label("From");
-                crate::workspace::labeled_slider(ui, "Low", egui::Slider::new(in_low, 0.0..=1.0));
-                crate::workspace::labeled_slider(ui, "High", egui::Slider::new(in_high, 0.0..=1.0));
+                labeled(ui, "Low", egui::Slider::new(in_low, 0.0..=1.0));
+                labeled(ui, "High", egui::Slider::new(in_high, 0.0..=1.0));
                 ui.label("To");
-                crate::workspace::labeled_slider(ui, "Low ", egui::Slider::new(out_low, 0.0..=1.0));
-                crate::workspace::labeled_slider(
-                    ui,
-                    "High ",
-                    egui::Slider::new(out_high, 0.0..=1.0),
-                );
+                labeled(ui, "Low ", egui::Slider::new(out_low, 0.0..=1.0));
+                labeled(ui, "High ", egui::Slider::new(out_high, 0.0..=1.0));
                 if (*in_high - *in_low).abs() < 0.01 {
                     *in_high = if *in_low <= 0.99 {
                         *in_low + 0.01
@@ -847,6 +917,17 @@ impl Dudel {
     }
 }
 
+/// A setting's name above its slider, so it fits the narrow strip.
+fn labeled(ui: &mut egui::Ui, label: &str, slider: egui::Slider) -> egui::Response {
+    ui.label(label);
+    ui.add(slider)
+}
+
+/// Small wrapped help text.
+fn note(ui: &mut egui::Ui, text: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).small()).wrap());
+}
+
 /// A short summary of a node's setting, shown on the node.
 fn setting_label(kind: &NodeKind) -> Option<String> {
     match kind {
@@ -855,6 +936,7 @@ fn setting_label(kind: &NodeKind) -> Option<String> {
         NodeKind::Distance { length } => Some(format!("{length:.0} px")),
         NodeKind::Random { seed } => Some(format!("Seed {seed}")),
         NodeKind::Constant { value } => Some(format!("{value:.2}")),
+        NodeKind::HueOutput { degrees } => Some(format!("±{degrees:.0}°")),
         _ => None,
     }
 }
