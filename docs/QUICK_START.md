@@ -393,12 +393,18 @@ Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
   It only accepts a formula once it is complete, and says what is wrong
   otherwise. Unwired inputs count as 0.
 - **Group** packs the selected nodes into one node: values wired in become
-  its inputs (up to four) and the one value it gives becomes its result.
+  its inputs and values read outside become its outputs (up to eight each,
+  shown as In 1… and Out 1…).
   Double-click a group or choose **Open group** to edit inside it; **Back**
   or **Main graph** returns. Rename it in its settings, or **Ungroup** to
   unpack it. Groups travel with a brush when you export it, and every group
   in your library appears under **Add node › Groups** in your other brushes.
   A graph holds up to 128 nodes, counting those inside groups.
+- With the pointer over the graph, **Delete** removes the selected nodes,
+  **Ctrl+Z** / **Ctrl+Y** (or **Ctrl+Shift+Z**) undo and redo graph changes,
+  **Ctrl+A** selects every node, **Ctrl+G** groups, **Ctrl+Shift+G** ungroups
+  and **Esc** clears the selection or leaves a group. Over the canvas these
+  keys keep their usual meanings.
 - Click a node to change its settings beside the canvas, such as a Curve's
   shape.
 - **Undo** and **Redo** step through graph changes; **Remove graph** returns to

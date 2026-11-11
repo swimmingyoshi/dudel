@@ -525,3 +525,21 @@ extension code runs per dab.
   de-duplication; and a Studio workflow test that selects two nodes with
   click and Ctrl-click, groups them, opens the group by double-click, goes
   back, ungroups and undoes. `--capture-brush-group` shows an open group.
+
+## 20. Limits lifted
+
+2026-11-10, after milestone 5:
+
+- **Groups give several values.** A wire now records which output it leaves
+  from (`Link::from_port`, omitted when 0, so brushes saved before still
+  load). Groups have up to eight outputs ("Out 1…") and eight inputs, one
+  Group result node per output inside. Grouping turns every distinct value
+  read outside into an output; ungrouping rewires each consumer to the value
+  behind its output. Tested: a two-output group paints the same as the nodes
+  it replaced, through save, load and ungroup.
+- **Editor keys.** While the pointer is over the graph canvas (on this or
+  the previous frame): Delete/Backspace, Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z,
+  Ctrl+A, Ctrl+G, Ctrl+Shift+G and Esc. They are taken at the start of the
+  app's shortcut handling, before any document shortcut can see them; a
+  workflow test checks that Delete and Ctrl+Z change the graph and leave the
+  document and its history untouched.

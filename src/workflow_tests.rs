@@ -5267,7 +5267,7 @@ fn brush_graph_groups_are_made_opened_and_unpacked_in_the_studio() {
     ui.settle();
     assert_eq!(ui.app.graph_editor_path(), &[group]);
     ui.text("Main graph");
-    ui.text("Group result");
+    ui.text("Group result 1");
     ui.click(ui.text("Back"));
     assert!(ui.app.graph_editor_path().is_empty());
     // Ungroup puts the nodes back; Undo regroups.
@@ -5277,4 +5277,67 @@ fn brush_graph_groups_are_made_opened_and_unpacked_in_the_studio() {
     assert!(find(&ui, |k| *k == NodeKind::Maximum).is_some());
     ui.click(ui.text("Undo"));
     assert!(find(&ui, |k| matches!(k, NodeKind::Group(_))).is_some());
+}
+
+#[test]
+fn graph_keys_act_on_the_graph_and_never_on_the_document() {
+    use crate::brush_graph::NodeKind;
+    let mut ui = Workspace::sized([1366.0, 900.0]);
+    ui.app.brush_studio = true;
+    ui.app.brush_studio_section = crate::brush_studio::Section::Graph;
+    ui.app.studio_pad_hidden = true;
+    ui.settle();
+    ui.click(ui.text("Make graph from current settings"));
+    ui.settle();
+    let count = |ui: &Workspace| ui.app.brush.graph.as_ref().unwrap().nodes().len();
+    let nodes = count(&ui);
+    let maximum = ui
+        .app
+        .brush
+        .graph
+        .as_ref()
+        .unwrap()
+        .nodes()
+        .iter()
+        .find(|n| n.kind == NodeKind::Maximum)
+        .unwrap()
+        .id;
+    let document = ui.app.doc.composite_transparent();
+    let history = ui.app.history.can_undo();
+    // Select a node, then with the pointer over the graph press Delete.
+    let at = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, maximum, None)
+        .unwrap()
+        - egui::vec2(30.0, 0.0);
+    ui.click(at);
+    ui.key(egui::Key::Delete, egui::Modifiers::NONE);
+    assert_eq!(count(&ui), nodes - 1);
+    // Ctrl+Z undoes the graph change, not a document change.
+    ui.key(egui::Key::Z, egui::Modifiers::CTRL);
+    assert_eq!(count(&ui), nodes);
+    ui.key(egui::Key::Y, egui::Modifiers::CTRL);
+    assert_eq!(count(&ui), nodes - 1);
+    ui.key(egui::Key::Z, egui::Modifiers::CTRL);
+    // Ctrl+A selects every node; Esc clears the selection.
+    ui.key(egui::Key::A, egui::Modifiers::CTRL);
+    assert!(ui.app.graph_editor_selected().is_some());
+    ui.key(egui::Key::Escape, egui::Modifiers::NONE);
+    assert!(ui.app.graph_editor_selected().is_none());
+    // Ctrl+G groups the selected node.
+    ui.click(at);
+    ui.key(egui::Key::G, egui::Modifiers::CTRL);
+    assert!(
+        ui.app
+            .brush
+            .graph
+            .as_ref()
+            .unwrap()
+            .nodes()
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Group(_)))
+    );
+    assert!(ui.app.doc.composite_transparent() == document);
+    assert_eq!(ui.app.history.can_undo(), history);
 }

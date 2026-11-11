@@ -12,7 +12,9 @@
 use crate::{
     Dudel,
     brush::Brush,
-    brush_graph::{BrushGraph, GROUP_INPUTS, Group, Link, Node, NodeId, NodeKind, NodePosition},
+    brush_graph::{
+        BrushGraph, GROUP_INPUTS, GROUP_OUTPUTS, Group, Link, Node, NodeId, NodeKind, NodePosition,
+    },
     egui,
 };
 use std::collections::HashSet;
@@ -34,6 +36,7 @@ enum Drag {
     },
     Wire {
         from: NodeId,
+        from_port: u8,
     },
     Pan,
     /// A selection box from this screen point.
@@ -45,7 +48,7 @@ enum Drag {
 /// What a point on the canvas is over.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Hit {
-    Output(NodeId),
+    Output(NodeId, u8),
     Input(NodeId, u8),
     Node(NodeId),
     Empty,
@@ -73,6 +76,9 @@ pub(crate) struct GraphEditor {
     path: Vec<NodeId>,
     /// A Formula being typed, kept while it does not parse yet.
     formula: Option<(NodeId, String)>,
+    /// The egui pass in which the pointer was last over the canvas; the
+    /// editor's keys apply on the next pass.
+    hovered_pass: Option<u64>,
 }
 
 impl Default for GraphEditor {
@@ -91,6 +97,7 @@ impl Default for GraphEditor {
             editing_setting: false,
             path: Vec::new(),
             formula: None,
+            hovered_pass: None,
         }
     }
 }
@@ -197,13 +204,26 @@ impl GraphEditor {
     ) -> Option<egui::Pos2> {
         self.port_at(&level(brush, &self.path)?, node, input)
     }
+    /// An input dot, or with `None` the first output dot.
     fn port_at(&self, level: &Level, node: NodeId, input: Option<u8>) -> Option<egui::Pos2> {
+        match input {
+            None => self.output_at(level, node, 0),
+            Some(port) => {
+                let top_left = self.to_screen(level.position(node)?);
+                Some(
+                    top_left
+                        + egui::vec2(0.0, HEADER + (f32::from(port) + 0.5) * ROW) * self.zoom(),
+                )
+            }
+        }
+    }
+    /// Output dot `index` (groups can have several).
+    fn output_at(&self, level: &Level, node: NodeId, index: u8) -> Option<egui::Pos2> {
         let top_left = self.to_screen(level.position(node)?);
-        let zoom = self.zoom();
-        Some(match input {
-            None => top_left + egui::vec2(NODE_WIDTH, HEADER + ROW / 2.0) * zoom,
-            Some(port) => top_left + egui::vec2(0.0, HEADER + (f32::from(port) + 0.5) * ROW) * zoom,
-        })
+        Some(
+            top_left
+                + egui::vec2(NODE_WIDTH, HEADER + (f32::from(index) + 0.5) * ROW) * self.zoom(),
+        )
     }
     fn node_rect(&self, level: &Level, node: &Node) -> egui::Rect {
         let at = level.position(node.id).unwrap_or_default();
@@ -213,12 +233,13 @@ impl GraphEditor {
         let reach = (PORT + 4.0) * self.zoom().max(1.0);
         // Topmost (last drawn) first.
         for node in level.nodes.iter().rev() {
-            if node.kind.has_output_port()
-                && self
-                    .port_at(level, node.id, None)
+            for index in 0..node.kind.outputs() {
+                if self
+                    .output_at(level, node.id, index)
                     .is_some_and(|p| p.distance(pointer) <= reach)
-            {
-                return Hit::Output(node.id);
+                {
+                    return Hit::Output(node.id, index);
+                }
             }
             for port in 0..node.kind.inputs() {
                 if self
@@ -238,7 +259,7 @@ impl GraphEditor {
 
 fn node_size(kind: &NodeKind) -> egui::Vec2 {
     // Port rows, then a footer for the node's setting or problem.
-    let rows = kind.inputs().max(1) as f32;
+    let rows = kind.inputs().max(kind.outputs()).max(1) as f32;
     egui::vec2(NODE_WIDTH, HEADER + (rows + 1.0) * ROW)
 }
 
@@ -273,7 +294,10 @@ fn level_add(
             return Err(format!("The graph already has a {} output", kind.name()));
         }
     }
-    if matches!(kind, NodeKind::GroupInput { .. } | NodeKind::GroupResult) {
+    if matches!(
+        kind,
+        NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
+    ) {
         return Err("Group inputs and results come with their group".into());
     }
     let id = next_id(nodes);
@@ -302,30 +326,36 @@ pub(crate) fn connect(
     port: u8,
 ) -> Result<(), String> {
     let mut candidate = graph.clone();
-    level_connect(candidate.edit().1, from, to, port);
+    level_connect(candidate.edit().1, (from, 0), to, port);
     candidate.validate().map_err(friendly)?;
     *graph = candidate;
     Ok(())
 }
 
-fn level_connect(links: &mut Vec<Link>, from: NodeId, to: NodeId, port: u8) {
+fn level_connect(links: &mut Vec<Link>, (from, from_port): (NodeId, u8), to: NodeId, port: u8) {
     links.retain(|l| !(l.to == to && l.port == port));
-    links.push(Link { from, to, port });
+    links.push(Link {
+        from,
+        to,
+        port,
+        from_port,
+    });
 }
 
 /// Remove the wire into input `port` of `to`, returning where it came from.
 #[cfg(test)]
 pub(crate) fn disconnect(graph: &mut BrushGraph, to: NodeId, port: u8) -> Option<NodeId> {
-    level_disconnect(graph.edit().1, to, port)
+    level_disconnect(graph.edit().1, to, port).map(|(from, _)| from)
 }
 
-fn level_disconnect(links: &mut Vec<Link>, to: NodeId, port: u8) -> Option<NodeId> {
+/// Remove the wire into input `port` of `to`; returns its source and output.
+fn level_disconnect(links: &mut Vec<Link>, to: NodeId, port: u8) -> Option<(NodeId, u8)> {
     let link = links
         .iter()
         .find(|l| l.to == to && l.port == port)
         .copied()?;
     links.retain(|l| *l != link);
-    Some(link.from)
+    Some((link.from, link.from_port))
 }
 
 /// Remove a node and every wire touching it from the main graph.
@@ -356,7 +386,7 @@ fn friendly(error: String) -> String {
 }
 
 /// Pack `selection` into one group node: values wired in from outside become
-/// its inputs (at most four), and the one value it gives becomes its result.
+/// its inputs and values read outside become its outputs (up to eight each).
 pub(crate) fn group_nodes(
     nodes: &mut Vec<Node>,
     links: &mut Vec<Link>,
@@ -374,14 +404,19 @@ pub(crate) fn group_nodes(
     if nodes.iter().any(|n| {
         set.contains(&n.id)
             && (n.kind.output().is_some()
-                || matches!(n.kind, NodeKind::GroupInput { .. } | NodeKind::GroupResult))
+                || matches!(
+                    n.kind,
+                    NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
+                ))
     }) {
         return Err("Brush outputs, group inputs and results stay outside a new group".into());
     }
-    let mut sources: Vec<NodeId> = Vec::new();
+    // Inputs: each distinct value from outside that the nodes read.
+    let mut sources: Vec<(NodeId, u8)> = Vec::new();
     for link in links.iter() {
-        if set.contains(&link.to) && !set.contains(&link.from) && !sources.contains(&link.from) {
-            sources.push(link.from);
+        let source = (link.from, link.from_port);
+        if set.contains(&link.to) && !set.contains(&link.from) && !sources.contains(&source) {
+            sources.push(source);
         }
     }
     if sources.len() > usize::from(GROUP_INPUTS) {
@@ -390,46 +425,43 @@ pub(crate) fn group_nodes(
             sources.len()
         ));
     }
-    let mut producers: Vec<NodeId> = Vec::new();
+    // Outputs: each distinct value of theirs that nodes outside read.
+    let mut results: Vec<(NodeId, u8)> = Vec::new();
     for link in links.iter() {
-        if set.contains(&link.from) && !set.contains(&link.to) && !producers.contains(&link.from) {
-            producers.push(link.from);
+        let result = (link.from, link.from_port);
+        if set.contains(&link.from) && !set.contains(&link.to) && !results.contains(&result) {
+            results.push(result);
         }
     }
-    let result = match producers.as_slice() {
-        [one] => *one,
-        [] => {
-            // Nothing outside reads them yet: the one node nothing inside reads.
-            let sinks: Vec<NodeId> = nodes
-                .iter()
-                .filter(|n| {
-                    set.contains(&n.id)
-                        && n.kind.has_output_port()
-                        && !links.iter().any(|l| l.from == n.id && set.contains(&l.to))
-                })
-                .map(|n| n.id)
-                .collect();
-            match sinks.as_slice() {
-                [one] => *one,
-                _ => {
-                    return Err("A group gives one value: choose nodes that end in one node".into());
+    if results.is_empty() {
+        // Nothing outside reads them yet: every value nothing inside reads.
+        for node in nodes.iter().filter(|n| set.contains(&n.id)) {
+            for port in 0..node.kind.outputs() {
+                if !links
+                    .iter()
+                    .any(|l| l.from == node.id && l.from_port == port && set.contains(&l.to))
+                {
+                    results.push((node.id, port));
                 }
             }
         }
-        many => {
-            return Err(format!(
-                "A group gives one value, but {} of these nodes feed nodes outside it",
-                many.len()
-            ));
-        }
-    };
+    }
+    if results.is_empty() {
+        return Err("These nodes give no value for a group to pass on".into());
+    }
+    if results.len() > usize::from(GROUP_OUTPUTS) {
+        return Err(format!(
+            "A group gives at most {GROUP_OUTPUTS} values; these nodes give {}",
+            results.len()
+        ));
+    }
     let position = |id: NodeId| {
         layout
             .iter()
             .find(|p| p.id == id)
             .map_or([0.0, 0.0], |p| [p.x, p.y])
     };
-    // Inside: the chosen nodes keep their ids; inputs and result follow them.
+    // Inside: the chosen nodes keep their ids; inputs and results follow.
     let mut inner_nodes: Vec<Node> = nodes
         .iter()
         .filter(|n| set.contains(&n.id))
@@ -463,42 +495,57 @@ pub(crate) fn group_nodes(
         });
         input_ids.push(id);
     }
-    let result_id = next_id(&inner_nodes);
-    inner_nodes.push(Node {
-        id: result_id,
-        kind: NodeKind::GroupResult,
-    });
-    inner_layout.push(NodePosition {
-        id: result_id,
-        x: max_x + 170.0,
-        y: mean_y,
-    });
+    let mut result_ids = Vec::new();
+    for index in 0..results.len() {
+        let id = next_id(&inner_nodes);
+        inner_nodes.push(Node {
+            id,
+            kind: NodeKind::GroupResult { index: index as u8 },
+        });
+        inner_layout.push(NodePosition {
+            id,
+            x: max_x + 170.0,
+            y: min_y + index as f32 * 90.0,
+        });
+        result_ids.push(id);
+    }
     let mut inner_links: Vec<Link> = Vec::new();
-    for link in links.iter() {
-        if set.contains(&link.to) {
-            if set.contains(&link.from) {
-                inner_links.push(*link);
-            } else {
-                let index = sources.iter().position(|s| *s == link.from).unwrap();
-                inner_links.push(Link {
-                    from: input_ids[index],
-                    to: link.to,
-                    port: link.port,
-                });
-            }
+    for link in links.iter().filter(|l| set.contains(&l.to)) {
+        if set.contains(&link.from) {
+            inner_links.push(*link);
+        } else {
+            let index = sources
+                .iter()
+                .position(|s| *s == (link.from, link.from_port))
+                .unwrap();
+            inner_links.push(Link {
+                from: input_ids[index],
+                to: link.to,
+                port: link.port,
+                from_port: 0,
+            });
         }
     }
-    inner_links.push(Link {
-        from: result,
-        to: result_id,
-        port: 0,
-    });
+    for (index, (from, from_port)) in results.iter().enumerate() {
+        inner_links.push(Link {
+            from: *from,
+            to: result_ids[index],
+            port: 0,
+            from_port: *from_port,
+        });
+    }
     // Outside: one group node where the chosen ones were.
     let group_id = next_id(nodes);
-    let users: Vec<(NodeId, u8)> = links
+    let users: Vec<(u8, NodeId, u8)> = links
         .iter()
-        .filter(|l| l.from == result && !set.contains(&l.to))
-        .map(|l| (l.to, l.port))
+        .filter(|l| set.contains(&l.from) && !set.contains(&l.to))
+        .map(|l| {
+            let index = results
+                .iter()
+                .position(|r| *r == (l.from, l.from_port))
+                .unwrap();
+            (index as u8, l.to, l.port)
+        })
         .collect();
     let ids: Vec<NodeId> = set.iter().copied().collect();
     level_remove(nodes, links, layout, &ids);
@@ -507,31 +554,34 @@ pub(crate) fn group_nodes(
         kind: NodeKind::Group(Box::new(Group {
             name: "Group".into(),
             inputs: sources.len() as u8,
+            outputs: results.len() as u8,
             nodes: inner_nodes,
             links: inner_links,
             layout: inner_layout,
         })),
     });
     set_position(layout, group_id, [(min_x + max_x) / 2.0, mean_y]);
-    for (index, source) in sources.iter().enumerate() {
+    for (index, (from, from_port)) in sources.iter().enumerate() {
         links.push(Link {
-            from: *source,
+            from: *from,
             to: group_id,
             port: index as u8,
+            from_port: *from_port,
         });
     }
-    for (to, port) in users {
+    for (from_port, to, port) in users {
         links.push(Link {
             from: group_id,
             to,
             port,
+            from_port,
         });
     }
     Ok(group_id)
 }
 
-/// Unpack a group node in place, rewiring its inputs and result. Returns the
-/// nodes it held, under their new ids.
+/// Unpack a group node in place, rewiring its inputs and results. Returns
+/// the nodes it held, under their new ids.
 pub(crate) fn ungroup(
     nodes: &mut Vec<Node>,
     links: &mut Vec<Link>,
@@ -546,7 +596,12 @@ pub(crate) fn ungroup(
         .iter()
         .find(|p| p.id == id)
         .map_or([0.0, 0.0], |p| [p.x, p.y]);
-    let plain = |n: &Node| !matches!(n.kind, NodeKind::GroupInput { .. } | NodeKind::GroupResult);
+    let plain = |n: &Node| {
+        !matches!(
+            n.kind,
+            NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
+        )
+    };
     let inner_at = |inner: NodeId| {
         group
             .layout
@@ -586,43 +641,44 @@ pub(crate) fn ungroup(
         links
             .iter()
             .find(|l| l.to == id && l.port == index)
-            .map(|l| l.from)
+            .map(|l| (l.from, l.from_port))
     };
     // What a wire inside reads from, as seen from outside.
-    let resolve = |inner: NodeId| -> Option<NodeId> {
+    let resolve = |inner: NodeId, port: u8| -> Option<(NodeId, u8)> {
         fresh
             .get(&inner)
-            .copied()
+            .map(|new| (*new, port))
             .or_else(|| input_index(inner).and_then(outer_source))
     };
-    let result_id = group
-        .nodes
-        .iter()
-        .find(|n| n.kind == NodeKind::GroupResult)
-        .map(|n| n.id);
-    let result_source = group
-        .links
-        .iter()
-        .find(|l| Some(l.to) == result_id)
-        .and_then(|l| resolve(l.from));
+    let result_source = |index: u8| {
+        let result = group
+            .nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::GroupResult { index })?
+            .id;
+        let link = group.links.iter().find(|l| l.to == result)?;
+        resolve(link.from, link.from_port)
+    };
     let mut new_links = Vec::new();
     for link in &group.links {
         if let Some(to) = fresh.get(&link.to)
-            && let Some(from) = resolve(link.from)
+            && let Some((from, from_port)) = resolve(link.from, link.from_port)
         {
             new_links.push(Link {
                 from,
                 to: *to,
                 port: link.port,
+                from_port,
             });
         }
     }
     for link in links.iter().filter(|l| l.from == id) {
-        if let Some(from) = result_source {
+        if let Some((from, from_port)) = result_source(link.from_port) {
             new_links.push(Link {
                 from,
                 to: link.to,
                 port: link.port,
+                from_port,
             });
         }
     }
@@ -949,7 +1005,7 @@ impl Dudel {
                         ids.contains(&n.id)
                             && !matches!(
                                 n.kind,
-                                NodeKind::GroupInput { .. } | NodeKind::GroupResult
+                                NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
                             )
                     })
                     .map(|n| n.id)
@@ -994,6 +1050,56 @@ impl Dudel {
             self.graph_editor.formula = None;
             self.graph_editor.fit = true;
         }
+    }
+
+    /// Keys for the graph while the pointer is over its canvas: Delete,
+    /// Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z, Ctrl+A, Ctrl+G / Ctrl+Shift+G and Esc.
+    /// They are taken before the app's shortcuts, so they never also act on
+    /// the document. Returns whether one was used.
+    pub(crate) fn graph_editor_keys(&mut self, ctx: &egui::Context) -> bool {
+        use egui::{Key, Modifiers};
+        let pass = ctx.cumulative_pass_nr();
+        if self.brush.graph.is_none()
+            || !self.brush_studio
+            || self
+                .graph_editor
+                .hovered_pass
+                .is_none_or(|hovered| hovered + 1 < pass)
+        {
+            return false;
+        }
+        let key = |modifiers: Modifiers, key: Key| ctx.input_mut(|i| i.consume_key(modifiers, key));
+        let shift_command = Modifiers::COMMAND | Modifiers::SHIFT;
+        let selection = self.graph_editor.selected.clone();
+        if key(shift_command, Key::Z) || key(Modifiers::COMMAND, Key::Y) {
+            self.graph_redo();
+        } else if key(Modifiers::COMMAND, Key::Z) {
+            self.graph_undo();
+        } else if key(shift_command, Key::G) {
+            match selection.as_slice() {
+                [one] => self.ungroup_selected(*one),
+                _ => self.status = "Select one group to ungroup".into(),
+            }
+        } else if key(Modifiers::COMMAND, Key::G) {
+            self.group_selection();
+        } else if key(Modifiers::COMMAND, Key::A) {
+            self.graph_editor.selected = level(&self.brush, &self.graph_editor.path)
+                .map(|l| l.nodes.iter().map(|n| n.id).collect())
+                .unwrap_or_default();
+        } else if key(Modifiers::NONE, Key::Delete) || key(Modifiers::NONE, Key::Backspace) {
+            if !selection.is_empty() {
+                self.remove_graph_nodes(selection);
+            }
+        } else if key(Modifiers::NONE, Key::Escape) {
+            if !selection.is_empty() {
+                self.graph_editor.selected.clear();
+            } else if self.graph_editor.path.pop().is_some() {
+                self.graph_editor.fit = true;
+            }
+        } else {
+            return false;
+        }
+        true
     }
 
     /// The Brush graph section of Brush Studio.
@@ -1134,6 +1240,9 @@ impl Dudel {
     fn graph_canvas(&mut self, ui: &mut egui::Ui, size: egui::Vec2) {
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
         self.graph_editor.canvas = rect;
+        if response.hovered() || response.dragged() {
+            self.graph_editor.hovered_pass = Some(ui.ctx().cumulative_pass_nr());
+        }
         if std::mem::take(&mut self.graph_editor.fit) {
             self.fit_graph_view();
         }
@@ -1317,13 +1426,16 @@ impl Dudel {
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
             let drag = match hit_at(self, origin) {
-                Hit::Output(node) => Drag::Wire { from: node },
+                Hit::Output(node, from_port) => Drag::Wire {
+                    from: node,
+                    from_port,
+                },
                 Hit::Input(node, port) => {
                     // Pick up an existing wire to move it elsewhere.
                     match self.graph_edit(true, |_, links, _| {
                         level_disconnect(links, node, port).ok_or_else(String::new)
                     }) {
-                        Ok(from) => Drag::Wire { from },
+                        Ok((from, from_port)) => Drag::Wire { from, from_port },
                         Err(_) => Drag::Pan,
                     }
                 }
@@ -1380,12 +1492,12 @@ impl Dudel {
                 .interact_pointer_pos()
                 .or(ui.input(|i| i.pointer.latest_pos()));
             match self.graph_editor.drag.take() {
-                Some(Drag::Wire { from }) => {
+                Some(Drag::Wire { from, from_port }) => {
                     if let Some(pointer) = pointer
                         && let Hit::Input(to, port) = hit_at(self, pointer)
                     {
                         let _ = self.graph_try(|_, links, _| {
-                            level_connect(links, from, to, port);
+                            level_connect(links, (from, from_port), to, port);
                             Ok(())
                         });
                     }
@@ -1423,7 +1535,7 @@ impl Dudel {
             && let Some(pointer) = response.interact_pointer_pos()
         {
             match hit_at(self, pointer) {
-                Hit::Node(node) | Hit::Output(node) | Hit::Input(node, _) => {
+                Hit::Node(node) | Hit::Output(node, _) | Hit::Input(node, _) => {
                     let selected = &mut self.graph_editor.selected;
                     if adding {
                         if let Some(index) = selected.iter().position(|id| *id == node) {
@@ -1521,16 +1633,16 @@ impl Dudel {
         };
         for link in level.links {
             if let (Some(a), Some(b)) = (
-                editor.port_at(&level, link.from, None),
+                editor.output_at(&level, link.from, link.from_port),
                 editor.port_at(&level, link.to, Some(link.port)),
             ) {
                 curve(a, b, wire);
             }
         }
         match &editor.drag {
-            Some(Drag::Wire { from }) => {
+            Some(Drag::Wire { from, from_port }) => {
                 if let (Some(a), Some(b)) = (
-                    editor.port_at(&level, *from, None),
+                    editor.output_at(&level, *from, *from_port),
                     response.interact_pointer_pos(),
                 ) {
                     curve(
@@ -1563,7 +1675,7 @@ impl Dudel {
             let is_group = matches!(node.kind, NodeKind::Group(_));
             let is_boundary = matches!(
                 node.kind,
-                NodeKind::GroupInput { .. } | NodeKind::GroupResult
+                NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
             );
             painter.rect(
                 r,
@@ -1629,10 +1741,20 @@ impl Dudel {
                     );
                 }
             }
-            if node.kind.has_output_port()
-                && let Some(p) = editor.port_at(&level, node.id, None)
-            {
-                painter.circle(p, PORT * zoom, visuals.text_color(), egui::Stroke::NONE);
+            let names = node.kind.output_names();
+            for index in 0..node.kind.outputs() {
+                if let Some(p) = editor.output_at(&level, node.id, index) {
+                    painter.circle(p, PORT * zoom, visuals.text_color(), egui::Stroke::NONE);
+                    if let Some(name) = names.get(usize::from(index)) {
+                        painter.text(
+                            p - egui::vec2(10.0 * zoom, 0.0),
+                            egui::Align2::RIGHT_CENTER,
+                            name,
+                            small.clone(),
+                            visuals.text_color(),
+                        );
+                    }
+                }
             }
             // A plain-words problem or setting in the node's footer.
             let sink = !node.kind.has_output_port();
@@ -1674,8 +1796,8 @@ impl Dudel {
             ui.strong(format!("{} nodes selected", selection.len()));
             note(
                 ui,
-                "Group packs them into one node: values wired in become its inputs, the one \
-                 value it gives becomes its result.",
+                "Group packs them into one node: values wired in become its inputs, values \
+                 read outside become its outputs (up to eight each).",
             );
             if ui.button("Group").clicked() {
                 self.group_selection();
@@ -1858,11 +1980,14 @@ impl Dudel {
                 note(
                     ui,
                     &format!(
-                        "{} nodes inside, {} input{}. Groups travel with the brush when it is \
-                         exported, and appear under Add node › Groups in your other brushes.",
+                        "{} nodes inside, {} input{} and {} output{}. Groups travel with the \
+                         brush when it is exported, and appear under Add node › Groups in your \
+                         other brushes.",
                         group.nodes.len(),
                         group.inputs,
-                        if group.inputs == 1 { "" } else { "s" }
+                        if group.inputs == 1 { "" } else { "s" },
+                        group.outputs,
+                        if group.outputs == 1 { "" } else { "s" }
                     ),
                 );
                 ui.horizontal(|ui| {
@@ -2106,21 +2231,83 @@ mod tests {
                 .unwrap_err()
                 .contains("outside")
         );
-        // Two separate values out of one group are refused.
+        // Nine separate values out of one group are too many.
         let mut graph = BrushGraph::new(vec![], vec![]);
         let mut layout = vec![];
-        let a = add_node(&mut graph, &mut layout, NodeKind::Speed, [0.0; 2]).unwrap();
-        let b = add_node(&mut graph, &mut layout, NodeKind::Tilt, [0.0; 2]).unwrap();
-        let size = add_node(&mut graph, &mut layout, NodeKind::SizeOutput, [0.0; 2]).unwrap();
-        let flow = add_node(&mut graph, &mut layout, NodeKind::FlowOutput, [0.0; 2]).unwrap();
-        connect(&mut graph, a, size, 0).unwrap();
-        connect(&mut graph, b, flow, 0).unwrap();
+        let picked: Vec<NodeId> = (0..9)
+            .map(|_| add_node(&mut graph, &mut layout, NodeKind::Speed, [0.0; 2]).unwrap())
+            .collect();
         let (nodes, links) = graph.edit();
         assert!(
-            group_nodes(nodes, links, &mut layout, &[a, b])
+            group_nodes(nodes, links, &mut layout, &picked)
                 .unwrap_err()
-                .contains("one value")
+                .contains("at most 8")
         );
+    }
+
+    #[test]
+    fn groups_give_several_values_and_old_wires_still_load() {
+        let mut graph = BrushGraph::new(vec![], vec![]);
+        let mut layout = vec![];
+        let a = add_node(
+            &mut graph,
+            &mut layout,
+            NodeKind::Pressure { shaped: false },
+            [0.0; 2],
+        )
+        .unwrap();
+        let b = add_node(&mut graph, &mut layout, NodeKind::Invert, [0.0; 2]).unwrap();
+        let size = add_node(&mut graph, &mut layout, NodeKind::SizeOutput, [0.0; 2]).unwrap();
+        let flow = add_node(&mut graph, &mut layout, NodeKind::FlowOutput, [0.0; 2]).unwrap();
+        connect(&mut graph, a, b, 0).unwrap();
+        connect(&mut graph, a, size, 0).unwrap();
+        connect(&mut graph, b, flow, 0).unwrap();
+        let values = |g: &BrushGraph| {
+            let v = g.compiled().unwrap().evaluate(&crate::brush_graph::Inputs {
+                pressure: 0.3,
+                shaped_pressure: 0.3,
+                speed: None,
+                tilt: None,
+                twist: None,
+                random: None,
+                distance: 0.0,
+                heading: None,
+            });
+            (v.size, v.flow)
+        };
+        let before = values(&graph);
+        assert_eq!(before, (Some(0.3), Some(0.7)));
+        // Both nodes into one group: two outputs, one wired to each setting.
+        let (nodes, links) = graph.edit();
+        let group = group_nodes(nodes, links, &mut layout, &[a, b]).unwrap();
+        graph.validate().unwrap();
+        let kind = &graph.nodes().iter().find(|n| n.id == group).unwrap().kind;
+        assert_eq!((kind.inputs(), kind.outputs()), (0, 2));
+        assert_eq!(kind.output_names(), ["Out 1", "Out 2"]);
+        assert_eq!(values(&graph), before);
+        assert!(
+            graph
+                .links()
+                .iter()
+                .any(|l| l.from == group && l.from_port == 1)
+        );
+        // Saved and loaded, then ungrouped: still the same.
+        let json = serde_json::to_string(&graph).unwrap();
+        let mut back: BrushGraph = serde_json::from_str(&json).unwrap();
+        assert_eq!(values(&back), before);
+        let (nodes, links) = back.edit();
+        ungroup(nodes, links, &mut layout, group).unwrap();
+        back.validate().unwrap();
+        assert_eq!(values(&back), before);
+        // Wires saved before outputs were numbered load as output 1.
+        let old = r#"{"version":1,"nodes":[{"id":1,"kind":"Speed"},{"id":2,"kind":"SizeOutput"}],"links":[{"from":1,"to":2,"port":0}]}"#;
+        let loaded: BrushGraph = serde_json::from_str(old).unwrap();
+        loaded.validate().unwrap();
+        assert_eq!(loaded.links()[0].from_port, 0);
+        // A wire from an output a node does not have is refused.
+        let bad = old.replace(r#""port":0}"#, r#""port":0,"from_port":1}"#);
+        let bad: BrushGraph = serde_json::from_str(&bad).unwrap();
+        assert!(bad.validate().unwrap_err().contains("no output 2"));
     }
 
     #[test]
@@ -2133,6 +2320,7 @@ mod tests {
         let inner = crate::brush_graph::Group {
             name: "Half".into(),
             inputs: 1,
+            outputs: 1,
             nodes: vec![
                 Node {
                     id: NodeId(1),
@@ -2144,7 +2332,7 @@ mod tests {
                 },
                 Node {
                     id: NodeId(3),
-                    kind: GroupResult,
+                    kind: GroupResult { index: 0 },
                 },
             ],
             links: vec![
@@ -2152,11 +2340,13 @@ mod tests {
                     from: NodeId(1),
                     to: NodeId(2),
                     port: 0,
+                    from_port: 0,
                 },
                 Link {
                     from: NodeId(2),
                     to: NodeId(3),
                     port: 0,
+                    from_port: 0,
                 },
             ],
             layout: vec![],
@@ -2164,6 +2354,7 @@ mod tests {
         let outer = crate::brush_graph::Group {
             name: "Wrapper".into(),
             inputs: 1,
+            outputs: 1,
             nodes: vec![
                 Node {
                     id: NodeId(1),
@@ -2175,7 +2366,7 @@ mod tests {
                 },
                 Node {
                     id: NodeId(3),
-                    kind: GroupResult,
+                    kind: GroupResult { index: 0 },
                 },
             ],
             links: vec![
@@ -2183,11 +2374,13 @@ mod tests {
                     from: NodeId(1),
                     to: NodeId(2),
                     port: 0,
+                    from_port: 0,
                 },
                 Link {
                     from: NodeId(2),
                     to: NodeId(3),
                     port: 0,
+                    from_port: 0,
                 },
             ],
             layout: vec![],
@@ -2212,11 +2405,13 @@ mod tests {
                     from: NodeId(1),
                     to: NodeId(2),
                     port: 0,
+                    from_port: 0,
                 },
                 Link {
                     from: NodeId(2),
                     to: NodeId(3),
                     port: 0,
+                    from_port: 0,
                 },
             ],
         );
@@ -2259,20 +2454,23 @@ mod tests {
                     from: NodeId(i + 1),
                     to: NodeId(i + 2),
                     port: 0,
+                    from_port: 0,
                 });
             }
             nodes.push(Node {
                 id: NodeId(count + 2),
-                kind: GroupResult,
+                kind: GroupResult { index: 0 },
             });
             links.push(Link {
                 from: NodeId(count + 1),
                 to: NodeId(count + 2),
                 port: 0,
+                from_port: 0,
             });
             Group(Box::new(crate::brush_graph::Group {
                 name: "Chain".into(),
                 inputs: 1,
+                outputs: 1,
                 nodes,
                 links,
                 layout: vec![],
@@ -2299,7 +2497,7 @@ mod tests {
         let bad = BrushGraph::new(
             vec![Node {
                 id: NodeId(1),
-                kind: GroupResult,
+                kind: GroupResult { index: 0 },
             }],
             vec![],
         );

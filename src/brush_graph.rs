@@ -20,8 +20,9 @@ pub const VERSION: u32 = 1;
 /// Most nodes, counting every node inside groups.
 const MAX_NODES: usize = 128;
 const MAX_LINKS: usize = 256;
-/// Most inputs a group takes, and how deep groups nest.
-pub const GROUP_INPUTS: u8 = 4;
+/// Most inputs and outputs a group has, and how deep groups nest.
+pub const GROUP_INPUTS: u8 = 8;
+pub const GROUP_OUTPUTS: u8 = 8;
 const GROUP_DEPTH: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -120,16 +121,24 @@ pub enum NodeKind {
     GroupInput {
         index: u8,
     },
-    /// Inside a group: the value the group gives.
-    GroupResult,
+    /// Inside a group: the value the group gives at output `index`.
+    GroupResult {
+        index: u8,
+    },
 }
 
-/// Nodes packed into one, with up to four inputs and one result. Its own
+fn one() -> u8 {
+    1
+}
+
+/// Nodes packed into one, with up to eight inputs and outputs. Its own
 /// nodes use their own ids; a group is opened up (inlined) when compiled.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub name: String,
     pub inputs: u8,
+    #[serde(default = "one")]
+    pub outputs: u8,
     pub nodes: Vec<Node>,
     pub links: Vec<Link>,
     /// Where the editor shows the nodes inside.
@@ -229,7 +238,7 @@ impl NodeKind {
             Self::Mix | Self::Formula { .. } => 3,
             Self::Group(group) => group.inputs,
             Self::GroupInput { .. } => 0,
-            Self::GroupResult => 1,
+            Self::GroupResult { .. } => 1,
         }
     }
     /// The node's title: a group's own name, else the kind's name.
@@ -237,12 +246,35 @@ impl NodeKind {
         match self {
             Self::Group(group) => group.name.clone(),
             Self::GroupInput { index } => format!("Group input {}", index + 1),
+            Self::GroupResult { index } => format!("Group result {}", index + 1),
             other => other.name().to_owned(),
+        }
+    }
+    /// How many outputs other nodes can be wired from: none for brush
+    /// outputs and group results, a group's own count, else one.
+    pub fn outputs(&self) -> u8 {
+        match self {
+            Self::Group(group) => group.outputs,
+            Self::GroupResult { .. } => 0,
+            kind if kind.output().is_some() => 0,
+            _ => 1,
+        }
+    }
+    /// Names of the outputs when there are several.
+    pub fn output_names(&self) -> &'static [&'static str] {
+        const OUT: [&str; 8] = [
+            "Out 1", "Out 2", "Out 3", "Out 4", "Out 5", "Out 6", "Out 7", "Out 8",
+        ];
+        match self {
+            Self::Group(group) if group.outputs > 1 => {
+                &OUT[..usize::from(group.outputs.min(GROUP_OUTPUTS))]
+            }
+            _ => &[],
         }
     }
     /// Whether other nodes can be wired from this one.
     pub fn has_output_port(&self) -> bool {
-        self.output().is_none() && *self != Self::GroupResult
+        self.outputs() > 0
     }
     /// Which brush output this node drives, if it is an output node.
     pub fn output(&self) -> Option<Output> {
@@ -331,10 +363,12 @@ impl NodeKind {
     }
     /// Names of the input ports.
     pub fn port_names(&self) -> &'static [&'static str] {
-        const GROUP_PORTS: [&str; 4] = ["In 1", "In 2", "In 3", "In 4"];
+        const GROUP_PORTS: [&str; 8] = [
+            "In 1", "In 2", "In 3", "In 4", "In 5", "In 6", "In 7", "In 8",
+        ];
         match self {
             Self::Formula { .. } => return &["a", "b", "c"],
-            Self::GroupResult => return &["Value"],
+            Self::GroupResult { .. } => return &["Value"],
             Self::Group(group) => {
                 return &GROUP_PORTS[..usize::from(group.inputs.min(GROUP_INPUTS))];
             }
@@ -366,7 +400,7 @@ impl NodeKind {
             Self::Formula { .. } => "Computes a value from a, b and c with a formula",
             Self::Group(_) => "Several nodes as one; Open group to edit them",
             Self::GroupInput { .. } => "A value wired into the group from outside",
-            Self::GroupResult => "The value the group gives",
+            Self::GroupResult { .. } => "A value the group gives",
             Self::Curve(_) => "Reshapes its input with a curve",
             Self::Remap { .. } => "Maps one range onto another",
             Self::Invert => "One minus its input",
@@ -404,7 +438,7 @@ impl NodeKind {
             Self::Formula { .. } => "Formula",
             Self::Group(_) => "Group",
             Self::GroupInput { .. } => "Group input",
-            Self::GroupResult => "Group result",
+            Self::GroupResult { .. } => "Group result",
             Self::Curve(_) => "Curve",
             Self::Remap { .. } => "Remap",
             Self::Invert => "Invert",
@@ -446,8 +480,10 @@ impl NodeKind {
                     && name.chars().count() <= 40
                     && !name.chars().any(char::is_control)
                     && group.inputs <= GROUP_INPUTS
+                    && (1..=GROUP_OUTPUTS).contains(&group.outputs)
             }
             Self::GroupInput { index } => *index < GROUP_INPUTS,
+            Self::GroupResult { index } => *index < GROUP_OUTPUTS,
             Self::Constant { value } => amount(*value),
             Self::Curve(curve) => return curve.validate(),
             Self::Remap {
@@ -540,12 +576,19 @@ pub struct Node {
     pub kind: NodeKind,
 }
 
+fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
 /// A wire from a node's output to input `port` of another node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Link {
     pub from: NodeId,
     pub to: NodeId,
     pub port: u8,
+    /// Which of the source's outputs; only groups have more than one.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub from_port: u8,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -645,11 +688,14 @@ impl BrushGraph {
                 }
                 NodeKind::Steps { count } => count.hash(hasher),
                 NodeKind::Formula { expression } => expression.hash(hasher),
-                NodeKind::GroupInput { index } => index.hash(hasher),
+                NodeKind::GroupInput { index } | NodeKind::GroupResult { index } => {
+                    index.hash(hasher)
+                }
                 NodeKind::Group(group) => {
                     // Positions do not change painting; the contents do.
                     group.name.hash(hasher);
                     group.inputs.hash(hasher);
+                    group.outputs.hash(hasher);
                     let inner = BrushGraph::new(group.nodes.clone(), group.links.clone());
                     inner.hash_into(hasher);
                 }
@@ -914,7 +960,12 @@ impl Builder {
         id
     }
     fn link(&mut self, from: NodeId, to: NodeId, port: u8) {
-        self.links.push(Link { from, to, port });
+        self.links.push(Link {
+            from,
+            to,
+            port,
+            from_port: 0,
+        });
     }
     fn combine(&mut self, kind: NodeKind, a: NodeId, b: NodeId) -> NodeId {
         let node = self.node(kind);
@@ -1240,27 +1291,33 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
     lower(&flat.nodes, &flat.links)
 }
 
-/// Check one level of a graph: the top, or the inside of a group taking
-/// `group_inputs` inputs.
-fn check_level(nodes: &[Node], links: &[Link], group_inputs: Option<u8>) -> Result<(), String> {
+/// Check one level of a graph: the top (`group` is None), or the inside of
+/// a group with this many inputs and outputs.
+fn check_level(nodes: &[Node], links: &[Link], group: Option<(u8, u8)>) -> Result<(), String> {
     let index_of = |id: NodeId| nodes.iter().position(|n| n.id == id);
-    let mut results = 0;
     let mut seen_inputs = [false; GROUP_INPUTS as usize];
+    let mut seen_results = [false; GROUP_OUTPUTS as usize];
     for (i, node) in nodes.iter().enumerate() {
         if nodes[..i].iter().any(|n| n.id == node.id) {
             return Err("Two brush graph nodes share an id".into());
         }
         node.kind.validate()?;
-        match (&node.kind, group_inputs) {
-            (NodeKind::GroupResult, Some(_)) => results += 1,
-            (NodeKind::GroupInput { index }, Some(inputs)) => {
+        match (&node.kind, group) {
+            (NodeKind::GroupResult { index }, Some((_, outputs))) => {
+                if *index >= outputs
+                    || std::mem::replace(&mut seen_results[usize::from(*index)], true)
+                {
+                    return Err("A group's results are numbered wrongly".into());
+                }
+            }
+            (NodeKind::GroupInput { index }, Some((inputs, _))) => {
                 if *index >= inputs
                     || std::mem::replace(&mut seen_inputs[usize::from(*index)], true)
                 {
                     return Err("A group's inputs are numbered wrongly".into());
                 }
             }
-            (NodeKind::GroupResult | NodeKind::GroupInput { .. }, None) => {
+            (NodeKind::GroupResult { .. } | NodeKind::GroupInput { .. }, None) => {
                 return Err("Group inputs and results belong inside a group".into());
             }
             (kind, Some(_)) if kind.output().is_some() => {
@@ -1272,19 +1329,25 @@ fn check_level(nodes: &[Node], links: &[Link], group_inputs: Option<u8>) -> Resu
             _ => {}
         }
     }
-    if group_inputs.is_some() && results != 1 {
-        return Err("A group needs exactly one result".into());
+    if let Some((_, outputs)) = group
+        && seen_results[..usize::from(outputs.min(GROUP_OUTPUTS))]
+            .iter()
+            .any(|seen| !seen)
+    {
+        return Err("A group is missing one of its results".into());
     }
     let mut used = std::collections::HashSet::new();
     for link in links {
         let (Some(from), Some(to)) = (index_of(link.from), index_of(link.to)) else {
             return Err("A brush graph link points to a missing node".into());
         };
-        if !nodes[from].kind.has_output_port() {
-            return Err(format!(
-                "{} has nothing to connect from",
-                nodes[from].kind.title()
-            ));
+        let source = &nodes[from].kind;
+        if link.from_port >= source.outputs() {
+            return Err(if source.outputs() == 0 {
+                format!("{} has nothing to connect from", source.title())
+            } else {
+                format!("{} has no output {}", source.title(), link.from_port + 1)
+            });
         }
         let kind = &nodes[to].kind;
         if link.port >= kind.inputs() {
@@ -1305,15 +1368,88 @@ struct Inlined {
     next: u32,
 }
 
+/// One level being opened up.
+struct Opening<'a> {
+    nodes: &'a [Node],
+    links: &'a [Link],
+    /// The flat nodes feeding this level's group inputs.
+    inputs: &'a [Option<NodeId>],
+    depth: usize,
+    fresh: std::collections::HashMap<NodeId, NodeId>,
+    /// What feeds each output of the groups opened so far.
+    opened: std::collections::HashMap<NodeId, Vec<Option<NodeId>>>,
+    /// Groups being opened, to catch groups feeding each other.
+    busy: std::collections::HashSet<NodeId>,
+}
+impl Opening<'_> {
+    /// The flat node behind output `port` of node `id` at this level.
+    fn source(
+        &mut self,
+        id: NodeId,
+        port: u8,
+        out: &mut Inlined,
+    ) -> Result<Option<NodeId>, String> {
+        if let Some(id) = self.fresh.get(&id) {
+            return Ok(Some(*id));
+        }
+        let nodes = self.nodes;
+        let node = nodes.iter().find(|n| n.id == id).expect("checked link");
+        match &node.kind {
+            NodeKind::GroupInput { index } => {
+                Ok(self.inputs.get(usize::from(*index)).copied().flatten())
+            }
+            NodeKind::Group(group) => Ok(self
+                .open(id, group, out)?
+                .get(usize::from(port))
+                .copied()
+                .flatten()),
+            _ => Ok(None),
+        }
+    }
+    fn open(
+        &mut self,
+        id: NodeId,
+        group: &Group,
+        out: &mut Inlined,
+    ) -> Result<Vec<Option<NodeId>>, String> {
+        if let Some(results) = self.opened.get(&id) {
+            return Ok(results.clone());
+        }
+        if !self.busy.insert(id) {
+            return Err("The brush graph has a loop".into());
+        }
+        let mut feeds = Vec::new();
+        for port in 0..group.inputs {
+            let link = self
+                .links
+                .iter()
+                .find(|l| l.to == id && l.port == port)
+                .copied();
+            feeds.push(match link {
+                Some(link) => self.source(link.from, link.from_port, out)?,
+                None => None,
+            });
+        }
+        check_level(
+            &group.nodes,
+            &group.links,
+            Some((group.inputs, group.outputs)),
+        )?;
+        let results = inline(&group.nodes, &group.links, &feeds, self.depth + 1, out)?;
+        self.opened.insert(id, results.clone());
+        Ok(results)
+    }
+}
+
 /// Copy one level into `out`, opening groups. `inputs` are the flat nodes
-/// feeding this group's inputs. Returns what feeds the group's result.
+/// feeding this group's inputs. Returns what feeds each of its results.
 fn inline(
     nodes: &[Node],
     links: &[Link],
     inputs: &[Option<NodeId>],
     depth: usize,
     out: &mut Inlined,
-) -> Result<Option<NodeId>, String> {
+) -> Result<Vec<Option<NodeId>>, String> {
     if depth > GROUP_DEPTH {
         return Err(format!("Groups nest at most {GROUP_DEPTH} deep"));
     }
@@ -1327,7 +1463,7 @@ fn inline(
     for node in nodes {
         if !matches!(
             node.kind,
-            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult
+            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. }
         ) {
             out.next += 1;
             let id = NodeId(out.next);
@@ -1338,55 +1474,24 @@ fn inline(
             });
         }
     }
-    // Groups open on first use; `opening` catches groups feeding each other.
-    let mut results: std::collections::HashMap<NodeId, Option<NodeId>> = Default::default();
-    let mut opening = std::collections::HashSet::new();
-    #[allow(clippy::too_many_arguments)]
-    fn source(
-        id: NodeId,
-        nodes: &[Node],
-        links: &[Link],
-        inputs: &[Option<NodeId>],
-        depth: usize,
-        fresh: &std::collections::HashMap<NodeId, NodeId>,
-        results: &mut std::collections::HashMap<NodeId, Option<NodeId>>,
-        opening: &mut std::collections::HashSet<NodeId>,
-        out: &mut Inlined,
-    ) -> Result<Option<NodeId>, String> {
-        if let Some(id) = fresh.get(&id) {
-            return Ok(Some(*id));
-        }
-        let node = nodes.iter().find(|n| n.id == id).expect("checked link");
-        match &node.kind {
-            NodeKind::GroupInput { index } => {
-                Ok(inputs.get(usize::from(*index)).copied().flatten())
-            }
-            NodeKind::Group(group) => {
-                if let Some(result) = results.get(&id) {
-                    return Ok(*result);
-                }
-                if !opening.insert(id) {
-                    return Err("The brush graph has a loop".into());
-                }
-                let mut feeds = Vec::new();
-                for port in 0..group.inputs {
-                    let from = links.iter().find(|l| l.to == id && l.port == port);
-                    feeds.push(match from {
-                        Some(link) => source(
-                            link.from, nodes, links, inputs, depth, fresh, results, opening, out,
-                        )?,
-                        None => None,
-                    });
-                }
-                check_level(&group.nodes, &group.links, Some(group.inputs))?;
-                let result = inline(&group.nodes, &group.links, &feeds, depth + 1, out)?;
-                results.insert(id, result);
-                Ok(result)
-            }
-            _ => Ok(None),
-        }
-    }
-    let mut result = None;
+    let outputs = nodes
+        .iter()
+        .filter_map(|n| match n.kind {
+            NodeKind::GroupResult { index } => Some(usize::from(index) + 1),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let mut results = vec![None; outputs];
+    let mut level = Opening {
+        nodes,
+        links,
+        inputs,
+        depth,
+        fresh,
+        opened: Default::default(),
+        busy: Default::default(),
+    };
     for link in links {
         let to = nodes
             .iter()
@@ -1394,35 +1499,16 @@ fn inline(
             .expect("checked link");
         match &to.kind {
             NodeKind::Group(_) | NodeKind::GroupInput { .. } => {}
-            NodeKind::GroupResult => {
-                result = source(
-                    link.from,
-                    nodes,
-                    links,
-                    inputs,
-                    depth,
-                    &fresh,
-                    &mut results,
-                    &mut opening,
-                    out,
-                )?;
+            NodeKind::GroupResult { index } => {
+                results[usize::from(*index)] = level.source(link.from, link.from_port, out)?;
             }
             _ => {
-                if let Some(from) = source(
-                    link.from,
-                    nodes,
-                    links,
-                    inputs,
-                    depth,
-                    &fresh,
-                    &mut results,
-                    &mut opening,
-                    out,
-                )? {
+                if let Some(from) = level.source(link.from, link.from_port, out)? {
                     out.links.push(Link {
                         from,
-                        to: fresh[&link.to],
+                        to: level.fresh[&link.to],
                         port: link.port,
+                        from_port: 0,
                     });
                 }
             }
@@ -1430,24 +1516,16 @@ fn inline(
     }
     // Unused groups are still checked.
     for node in nodes {
-        if matches!(node.kind, NodeKind::Group(_)) && !results.contains_key(&node.id) {
-            source(
-                node.id,
-                nodes,
-                links,
-                inputs,
-                depth,
-                &fresh,
-                &mut results,
-                &mut opening,
-                out,
-            )?;
+        if let NodeKind::Group(group) = &node.kind
+            && !level.opened.contains_key(&node.id)
+        {
+            level.open(node.id, group, out)?;
         }
     }
     if out.links.len() > MAX_LINKS * 2 {
         return Err("The brush graph has too many links".into());
     }
-    Ok(result)
+    Ok(results)
 }
 
 /// Lower a flat, checked graph to operations.
@@ -1529,7 +1607,7 @@ fn lower(nodes: &[Node], links: &[Link]) -> Result<Compiled, String> {
                     crate::brush_formula::Program::parse(expression)?,
                 )
             }
-            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult => {
+            NodeKind::Group(_) | NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. } => {
                 unreachable!("groups are opened before lowering")
             }
             kind => {
@@ -1578,6 +1656,7 @@ mod tests {
                     from: NodeId(from),
                     to: NodeId(to),
                     port,
+                    from_port: 0,
                 })
                 .collect(),
         )
@@ -2212,6 +2291,7 @@ mod tests {
             from: NodeId(999),
             to: NodeId(1),
             port: 0,
+            from_port: 0,
         });
         prefs.brushes = vec![brush.clone(), damaged];
         let json = serde_json::to_string(&prefs).unwrap();

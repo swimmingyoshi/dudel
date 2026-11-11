@@ -47,8 +47,10 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
 - **Groups and formulas in brush graphs:** pack nodes into a named group that
   opens to edit and travels with the brush (and appears under Add node ›
   Groups in your other brushes), or write a **Formula** such as
-  `clamp(a * 2 - b, 0, 1)`. Select several nodes with Ctrl-click or a
-  Shift-drag box. Graphs hold up to 128 nodes.
+  `clamp(a * 2 - b, 0, 1)`. Groups take up to eight inputs and give up to
+  eight outputs. Select several nodes with Ctrl-click or a Shift-drag box;
+  Delete, Ctrl+Z, Ctrl+G and the other editor keys work while the pointer is
+  over the graph. Graphs hold up to 128 nodes.
 - **Test pad in view:** Brush Studio keeps a true-size test pad below its
   settings, with Undo, color stripes for trying smudge and blur, and a choice
   of paper.

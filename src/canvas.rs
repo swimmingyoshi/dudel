@@ -333,7 +333,7 @@ impl Dudel {
         {
             return;
         }
-        if self.quick_resize_keys(ctx) {
+        if self.graph_editor_keys(ctx) || self.quick_resize_keys(ctx) {
             return;
         }
         let opening_new = self.shortcuts.consume(ctx, crate::commands::Action::New);
