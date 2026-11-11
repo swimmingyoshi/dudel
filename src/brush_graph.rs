@@ -105,6 +105,89 @@ impl NodeKind {
             _ => None,
         }
     }
+    /// Every kind, grouped as the editor lists them, with default settings.
+    pub fn catalog() -> [(&'static str, Vec<NodeKind>); 4] {
+        [
+            (
+                "Inputs",
+                vec![
+                    Self::Pressure { shaped: true },
+                    Self::Speed,
+                    Self::Tilt,
+                    Self::Twist,
+                    Self::Distance { length: 200.0 },
+                    Self::Random { seed: 1 },
+                    Self::Constant { value: 0.5 },
+                ],
+            ),
+            (
+                "Shaping",
+                vec![
+                    Self::Curve(Curve::default()),
+                    Self::Remap {
+                        in_low: 0.0,
+                        in_high: 1.0,
+                        out_low: 0.0,
+                        out_high: 1.0,
+                    },
+                    Self::Invert,
+                ],
+            ),
+            (
+                "Combine",
+                vec![
+                    Self::Multiply,
+                    Self::Add,
+                    Self::Minimum,
+                    Self::Maximum,
+                    Self::Mix,
+                ],
+            ),
+            (
+                "Outputs",
+                vec![
+                    Self::SizeOutput,
+                    Self::OpacityOutput,
+                    Self::FlowOutput,
+                    Self::SpacingOutput,
+                ],
+            ),
+        ]
+    }
+    /// Names of the input ports.
+    pub fn port_names(&self) -> &'static [&'static str] {
+        match self.inputs() {
+            0 => &[],
+            1 if self.output().is_some() => &["Value"],
+            1 => &["In"],
+            2 => &["A", "B"],
+            _ => &["From", "To", "Amount"],
+        }
+    }
+    /// One line on what the node does.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Pressure { .. } => "Pen pressure, 0 to 1",
+            Self::Speed => "Pen speed: 1 at 1000 screen pixels per second",
+            Self::Tilt => "How upright the pen is: 1 straight up, 0 flat",
+            Self::Twist => "Barrel rotation: one turn from 0 to 1",
+            Self::Distance { .. } => "Distance along the stroke, 1 after the set length",
+            Self::Random { .. } => "A repeatable random value per dab",
+            Self::Constant { .. } => "A fixed value",
+            Self::Curve(_) => "Reshapes its input with a curve",
+            Self::Remap { .. } => "Maps one range onto another",
+            Self::Invert => "One minus its input",
+            Self::Multiply => "A × B; a missing input counts as 1",
+            Self::Add => "A + B; a missing input counts as 0",
+            Self::Minimum => "The smaller of A and B",
+            Self::Maximum => "The larger of A and B",
+            Self::Mix => "Blends From toward To by Amount",
+            Self::SizeOutput => "Brush size for each dab, before taper",
+            Self::OpacityOutput => "Dab opacity, before taper",
+            Self::FlowOutput => "Paint delivered per dab",
+            Self::SpacingOutput => "Distance to the next dab",
+        }
+    }
     pub fn name(&self) -> &'static str {
         match self {
             Self::Pressure { .. } => "Pressure",
@@ -153,6 +236,52 @@ impl NodeKind {
             Err(format!("{} node has a setting out of range", self.name()))
         }
     }
+}
+
+/// Where the editor draws a node; saved with the brush, never compiled.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NodePosition {
+    pub id: NodeId,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// Columns by depth from the inputs, so wires run left to right.
+pub fn auto_layout(graph: &BrushGraph) -> Vec<NodePosition> {
+    let index_of = |id: NodeId| graph.nodes.iter().position(|n| n.id == id);
+    let mut depth = vec![0usize; graph.nodes.len()];
+    // Longest path from a source; bounded passes cover any acyclic graph.
+    for _ in 0..graph.nodes.len() {
+        let mut changed = false;
+        for link in &graph.links {
+            if let (Some(from), Some(to)) = (index_of(link.from), index_of(link.to))
+                && depth[to] < depth[from] + 1
+            {
+                depth[to] = depth[from] + 1;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    // Each column stacks its nodes by their drawn height (header, a row per
+    // input, a footer row) plus a gap.
+    let mut tops = vec![0.0f32; graph.nodes.len() + 1];
+    graph
+        .nodes
+        .iter()
+        .zip(&depth)
+        .map(|(node, &column)| {
+            let y = tops[column];
+            tops[column] += 22.0 + f32::from(node.kind.inputs().max(1) + 1) * 20.0 + 16.0;
+            NodePosition {
+                id: node.id,
+                x: column as f32 * 160.0,
+                y,
+            }
+        })
+        .collect()
 }
 
 /// The brush settings a graph can drive.
@@ -212,8 +341,13 @@ impl BrushGraph {
             compiled: OnceLock::new(),
         }
     }
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+    pub fn links(&self) -> &[Link] {
+        &self.links
+    }
     /// Change the graph; the compiled form is rebuilt on next use.
-    #[allow(dead_code, reason = "the Studio's graph editor, phase 2")]
     pub fn edit(&mut self) -> (&mut Vec<Node>, &mut Vec<Link>) {
         self.compiled = OnceLock::new();
         (&mut self.nodes, &mut self.links)
@@ -222,7 +356,6 @@ impl BrushGraph {
         self.compiled().map(|_| ())
     }
     /// Whether a connected output node drives `output`.
-    #[allow(dead_code, reason = "the Studio greys out driven settings, phase 2")]
     pub fn drives(&self, output: Output) -> bool {
         self.compiled()
             .is_ok_and(|c| c.outputs[output as usize].is_some())

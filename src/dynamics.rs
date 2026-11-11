@@ -263,15 +263,24 @@ pub struct BrushDynamics {
     pub spacing: Option<Dynamics>,
 }
 
-pub fn editor(ui: &mut eframe::egui::Ui, settings: &mut BrushDynamics) {
+/// `driven` marks size, opacity, flow and spacing when a brush graph sets
+/// them instead; those are shown but cannot be changed.
+pub fn editor(ui: &mut eframe::egui::Ui, settings: &mut BrushDynamics, driven: [bool; 4]) {
     use eframe::egui;
     ui.small("Each enabled parameter uses its own curves. Missing speed or tilt leaves that input unchanged.");
-    for (label, setting) in [
+    for ((label, setting), driven) in [
         ("Size", &mut settings.size),
         ("Opacity", &mut settings.opacity),
         ("Flow", &mut settings.flow),
         ("Spacing", &mut settings.spacing),
-    ] {
+    ]
+    .into_iter()
+    .zip(driven)
+    {
+        if driven {
+            ui.weak(format!("{label}: set by the brush graph"));
+            continue;
+        }
         ui.push_id(label, |ui| {
             let mut enabled = setting.is_some();
             if ui

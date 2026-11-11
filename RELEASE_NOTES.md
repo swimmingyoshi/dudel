@@ -24,9 +24,13 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   Opacity as the strength. New libraries include **Smudge** and **Blur**
   presets; in an existing library, set Mode on any brush and save it as a new
   preset.
-- Brushes can carry a brush graph (an engine for the coming node editor). It is
-  not editable yet. Brush packs that contain one are written as version 3,
-  which older Dudel refuses rather than importing without the graph.
+- **Brush graphs:** Brush Studio's new **Brush graph** section wires pen
+  inputs (pressure, speed, tilt, twist, distance, random) through curves and
+  math nodes into a brush's size, opacity, flow and spacing, with a live
+  preview and its own undo. **Make graph from current settings** starts from
+  the brush as it is and paints identically. Brush packs that contain a graph
+  are written as version 3, which older Dudel refuses rather than importing
+  without the graph.
 
 ## 0.3.0 (2026-11-10)
 

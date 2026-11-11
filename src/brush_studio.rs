@@ -218,6 +218,7 @@ pub(crate) enum Section {
     Pressure,
     Stabilizer,
     Dynamics,
+    Graph,
     Tip,
     Scatter,
     Grain,
@@ -226,10 +227,11 @@ pub(crate) enum Section {
 }
 
 impl Section {
-    pub(crate) const STUDIO: [Section; 9] = [
+    pub(crate) const STUDIO: [Section; 10] = [
         Section::SizeOpacity,
         Section::Pressure,
         Section::Dynamics,
+        Section::Graph,
         Section::Tip,
         Section::Stabilizer,
         Section::Scatter,
@@ -243,6 +245,7 @@ impl Section {
             Section::Pressure => "Pen pressure",
             Section::Stabilizer => "Stabilizer",
             Section::Dynamics => "Dynamics",
+            Section::Graph => "Brush graph",
             Section::Tip => "Tip shape",
             Section::Scatter => "Scatter",
             Section::Grain => "Paper grain",
@@ -390,8 +393,10 @@ impl Dudel {
         self.brush_studio = open;
     }
     fn brush_studio_settings(&mut self, ui: &mut egui::Ui, compact: bool) {
-        let preview_height = (ui.available_height() * if compact { 0.2 } else { 0.3 })
-            .clamp(32.0, if compact { 64.0 } else { 150.0 });
+        // The graph editor needs the room more than a large preview.
+        let small = compact || self.brush_studio_section == Section::Graph;
+        let preview_height = (ui.available_height() * if small { 0.2 } else { 0.3 })
+            .clamp(32.0, if small { 72.0 } else { 150.0 });
         self.brush_studio_preview.show(
             ui,
             &self.brush,

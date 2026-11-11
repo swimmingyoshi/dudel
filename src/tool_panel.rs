@@ -849,14 +849,23 @@ impl Dudel {
             .id_salt("basic paint and pressure")
             .show(ui, |ui| {
                 self.brush_flow_hardness_ui(ui);
+                let [size, opacity, ..] = self.graph_driven();
                 ui.horizontal(|ui| {
                     ui.label("Pressure");
-                    ui.checkbox(&mut self.brush.pressure_size, "Size")
+                    pressure_toggle(ui, &mut self.brush.pressure_size, "Size", size)
                         .on_hover_text("Pen pressure changes brush size");
-                    ui.checkbox(&mut self.brush.pressure_opacity, "Opacity")
+                    pressure_toggle(ui, &mut self.brush.pressure_opacity, "Opacity", opacity)
                         .on_hover_text("Pen pressure changes opacity");
                 });
             });
+    }
+
+    /// Size, opacity, flow and spacing: whether the brush graph sets each.
+    pub(crate) fn graph_driven(&self) -> [bool; 4] {
+        use crate::brush_graph::Output;
+        let graph = self.brush.graph.as_ref();
+        [Output::Size, Output::Opacity, Output::Flow, Output::Spacing]
+            .map(|output| graph.is_some_and(|g| g.drives(output)))
     }
 
     /// A value of the selected library preset, to mark settings the current
@@ -911,8 +920,19 @@ impl Dudel {
                 );
             }
             Section::Pressure => {
-                ui.checkbox(&mut self.brush.pressure_size, "Pressure changes size");
-                ui.checkbox(&mut self.brush.pressure_opacity, "Pressure changes opacity");
+                let [size, opacity, ..] = self.graph_driven();
+                pressure_toggle(
+                    ui,
+                    &mut self.brush.pressure_size,
+                    "Pressure changes size",
+                    size,
+                );
+                pressure_toggle(
+                    ui,
+                    &mut self.brush.pressure_opacity,
+                    "Pressure changes opacity",
+                    opacity,
+                );
                 crate::pressure_editor::ui(ui, &mut self.brush, self.pressure);
             }
             Section::Stabilizer => {
@@ -939,7 +959,11 @@ impl Dudel {
                     },
                 );
             }
-            Section::Dynamics => crate::dynamics::editor(ui, &mut self.brush.dynamics),
+            Section::Dynamics => {
+                let driven = self.graph_driven();
+                crate::dynamics::editor(ui, &mut self.brush.dynamics, driven);
+            }
+            Section::Graph => self.brush_graph_ui(ui),
             Section::Tip => {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.brush.tip, Tip::Round, "Round");
@@ -1194,4 +1218,15 @@ fn percent_marked(ui: &mut egui::Ui, label: &str, value: &mut f32, min: f32, sav
         }
         response
     });
+}
+
+/// A pressure checkbox, disabled while the brush graph sets that value.
+fn pressure_toggle(
+    ui: &mut egui::Ui,
+    value: &mut bool,
+    label: &str,
+    driven: bool,
+) -> egui::Response {
+    ui.add_enabled(!driven, egui::Checkbox::new(value, label))
+        .on_disabled_hover_text("Set by the brush graph (Brush Studio > Brush graph)")
 }

@@ -65,6 +65,7 @@ mod folders;
 #[cfg(feature = "allocation-profile")]
 mod gpu_profile;
 mod gradient_tool;
+mod graph_editor;
 mod guides;
 mod history_pixels;
 mod icons;
@@ -394,6 +395,8 @@ struct Dudel {
     inspector_navigator: bool,
     /// Dragged widths of the tool property panel and the inspector.
     sidebar_widths: [Option<f32>; 2],
+    /// Brush Studio's node editor: view, selection and its own undo steps.
+    graph_editor: graph_editor::GraphEditor,
     /// Named panel arrangements, and the name being typed for a new one.
     workspaces: Vec<workspace_layouts::Workspace>,
     workspace_name: String,
@@ -677,6 +680,7 @@ impl Default for Dudel {
             navigator_height: None,
             inspector_navigator: false,
             sidebar_widths: [None; 2],
+            graph_editor: Default::default(),
             workspaces: Vec::new(),
             workspace_name: String::new(),
             canvas_area: egui::Rect::NOTHING,
@@ -1948,6 +1952,7 @@ fn run() -> eframe::Result {
     let capture_gradient = mode.as_deref() == Some("--capture-gradient");
     let capture_filter = mode.as_deref() == Some("--capture-filter");
     let capture_smudge = mode.as_deref() == Some("--capture-smudge");
+    let capture_brush_graph = mode.as_deref() == Some("--capture-brush-graph");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2019,6 +2024,7 @@ fn run() -> eframe::Result {
         || capture_gradient
         || capture_filter
         || capture_smudge
+        || capture_brush_graph
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2715,6 +2721,9 @@ fn run() -> eframe::Result {
                 }
                 if capture_smudge {
                     app.smudge_capture_fixture();
+                }
+                if capture_brush_graph {
+                    app.brush_graph_capture_fixture();
                 }
                 if capture_welcome {
                     app.welcome_open = true;

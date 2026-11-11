@@ -347,6 +347,30 @@ it; Opacity sets how strongly. The built-in **Smudge** and **Blur** presets are
 ready-made ones. Both work on the layer's own paint, honor selections and Lock
 transparency, and ignore Taper out; the pen's eraser end still erases. Expand **Paint & pressure** for Flow, Hardness and pressure controls;
 use **Tip**, **Texture** and **Advanced** for detailed tuning.
+
+**Brush graphs** (Brush Studio > **Brush graph**) let nodes decide each dab's
+size, opacity, flow and spacing. **Make graph from current settings** turns the
+brush's pressure and dynamics settings into a graph that paints exactly the
+same, as a starting point. Then:
+
+- **Add node** (or right-click the canvas) adds inputs such as Pressure, Speed,
+  Tilt, Twist, Distance and Random; shaping nodes (Curve, Remap, Invert);
+  combine nodes (Multiply, Add, Minimum, Maximum, Mix); and the Size, Opacity,
+  Flow and Spacing outputs.
+- Drag from a node's right dot to another node's left dot to wire them; drag a
+  wire's end off an input to move or remove it. A wire that would make a loop
+  is refused.
+- Drag nodes to arrange them, drag empty space to pan, and use the wheel to
+  zoom; **Fit** shows every node.
+- Click a node to change its settings beside the canvas, such as a Curve's
+  shape.
+- **Undo** and **Redo** step through graph changes; **Remove graph** returns to
+  the plain settings.
+
+A connected output takes over its setting: the matching pressure checkboxes
+and dynamics are greyed out while it is wired. The preview above the graph
+shows the result as you work.
+
 **Save as new** keeps a new
 preset; **Update preset** replaces the selected preset after confirmation;
 **Revert** returns to its saved settings. Brush export/import supports moving

@@ -196,6 +196,10 @@ pub struct Brush {
     /// connected output replaces that setting's pressure toggle and dynamics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<crate::brush_graph::BrushGraph>,
+    /// Where the graph editor shows each node. Moving nodes never changes
+    /// how the brush paints.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graph_layout: Vec<crate::brush_graph::NodePosition>,
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
@@ -340,6 +344,7 @@ impl Default for Brush {
             angle_jitter: 0.0,
             group: None,
             graph: None,
+            graph_layout: Vec::new(),
             blend: Blend::Paint,
         }
     }
@@ -515,6 +520,14 @@ impl Brush {
         self.dynamics.validate()?;
         if let Some(graph) = &self.graph {
             graph.validate()?;
+        }
+        if self.graph_layout.len() > 64
+            || self
+                .graph_layout
+                .iter()
+                .any(|p| !p.x.is_finite() || !p.y.is_finite() || p.x.abs().max(p.y.abs()) > 1e6)
+        {
+            return Err("Brush graph layout is damaged".into());
         }
         if self.pressure_curve[0] != 0.0
             || self.pressure_curve[4] != 1.0

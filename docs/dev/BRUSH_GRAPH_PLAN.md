@@ -1,7 +1,8 @@
 # Brush graph
 
-Status: accepted 2026-11-10; milestone 1 (the engine) is implemented, see
-[section 13](#13-milestone-1-as-built). It answers the "first deliverable" of
+Status: accepted 2026-11-10; milestones 1 (the engine, [section
+13](#13-milestone-1-as-built)) and 2 (the editor, [section
+14](#14-milestone-2-as-built)) are implemented. It answers the "first deliverable" of
 the brush graph brief: how a node-based brush editor fits the brush engine
 Dudel already has, and what to build first.
 
@@ -314,3 +315,36 @@ before the editor design is settled.
   pack claiming a graph is refused. A damaged graph in preferences is removed
   on load, with a status message, and the brush keeps its plain settings.
 
+## 14. Milestone 2 as built
+
+`src/graph_editor.rs`, 2026-11-10: the **Brush graph** section of Brush
+Studio. Where it differs from section 7:
+
+- **Canvas:** nodes with named input dots on the left, an output dot on the
+  right and a footer that shows the node's setting or a problem in plain words
+  ("Not connected", "Needs an input"). Wires are curves. Drag a node to move
+  it, drag from an output to an input to wire, drag an input's wire away to
+  move or remove it; drag empty space (or the middle button) to pan; the wheel
+  zooms about the pointer. **Fit** frames every node.
+- **Always valid:** every edit is checked on a copy first. A wire into a used
+  input replaces it; a wire that would make a loop is refused with a message;
+  outputs already present are greyed out in the node list. The graph a brush
+  paints with is therefore never invalid.
+- **Adding:** **Add node** in the toolbar or a right-click on the canvas, as a
+  grouped list (Inputs, Shaping, Combine, Outputs) with a description on
+  hover. Right-click a node to delete it. Single selection only; multi-select
+  and duplicate are left for later.
+- **Settings strip:** beside the canvas when the section is at least 540
+  points wide, below it otherwise. Curve nodes use the dynamics curve editor.
+- **Undo:** up to 100 graph-and-layout snapshots per preset, separate from
+  document history; a setting dragged on a slider or curve is one step. No
+  keyboard shortcuts, so Delete and Ctrl+Z keep their document meanings.
+- **Taken-over settings:** the pressure checkboxes and the Dynamics section
+  show "set by the brush graph" for outputs the graph drives.
+- **Layout:** node positions are `Brush::graph_layout`, saved with the brush
+  and excluded from the preview cache key. "Make graph from current settings"
+  lays nodes out in columns by depth.
+- **Tests:** model edits (loops refused, replaced and removed wires), the
+  layout direction, and a workflow test at 1366 × 768 that makes a graph,
+  adds a node from the menu, drags it, wires it with the mouse, undoes and
+  redoes, and deletes it. `--capture-brush-graph` takes a screenshot.

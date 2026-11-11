@@ -4967,3 +4967,99 @@ fn view_menu_saves_and_switches_named_workspaces() {
     assert_eq!(ui.app.inspector_override, None);
     assert_eq!(ui.app.status, "Workspace “Painting”");
 }
+
+impl Workspace {
+    /// Press at `from`, move to `to` in steps, release: a mouse drag.
+    fn mouse_drag(&mut self, from: egui::Pos2, to: egui::Pos2) {
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame(vec![egui::Event::PointerMoved(from), button(from, true)]);
+        for step in 1..=6 {
+            let at = from + (to - from) * (step as f32 / 6.0);
+            self.frame(vec![egui::Event::PointerMoved(at)]);
+        }
+        self.frame(vec![button(to, false)]);
+        self.settle();
+    }
+}
+
+#[test]
+fn brush_graph_editor_adds_moves_wires_undoes_and_deletes_in_the_studio() {
+    use crate::brush_graph::NodeKind;
+    let mut ui = Workspace::sized([1366.0, 768.0]);
+    ui.app.brush_studio = true;
+    ui.app.brush_studio_section = crate::brush_studio::Section::Graph;
+    ui.settle();
+    ui.click(ui.text("Make graph from current settings"));
+    ui.settle();
+    let made = ui.app.brush.graph.clone().expect("a graph");
+    let find = |ui: &Workspace, kind: fn(&NodeKind) -> bool| {
+        let graph = ui.app.brush.graph.as_ref().unwrap();
+        graph.nodes().iter().find(|n| kind(&n.kind)).map(|n| n.id)
+    };
+    let size = find(&ui, |k| *k == NodeKind::SizeOutput).unwrap();
+    let feeds_size = |ui: &Workspace| {
+        let graph = ui.app.brush.graph.as_ref().unwrap();
+        graph.links().iter().find(|l| l.to == size).map(|l| l.from)
+    };
+    let original_source = feeds_size(&ui).unwrap();
+    // Add a Speed node from the toolbar menu.
+    ui.click(ui.text("Add node"));
+    ui.click(ui.text("Inputs"));
+    ui.click(ui.text("Speed"));
+    let speed = find(&ui, |k| *k == NodeKind::Speed).expect("Speed added");
+    assert_eq!(ui.app.graph_editor_selected(), Some(speed));
+    // Drag it by its body to the canvas's lower left, clear of the others.
+    let canvas = ui.app.graph_editor.canvas_rect();
+    let output = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, speed, None)
+        .unwrap();
+    let body = output - egui::vec2(30.0, 0.0);
+    let target = canvas.left_bottom() + egui::vec2(140.0, -40.0);
+    ui.mouse_drag(body, target);
+    let moved = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, speed, None)
+        .unwrap();
+    assert!(
+        (moved - (output + (target - body))).length() < 2.0,
+        "{moved:?}"
+    );
+    // Wire Speed into Size: it replaces what fed Size.
+    let input = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, size, Some(0))
+        .unwrap();
+    ui.mouse_drag(moved, input);
+    assert_eq!(feeds_size(&ui), Some(speed));
+    ui.app.brush.validate().unwrap();
+    // Undo puts the old wire back; redo restores the new one.
+    ui.click(ui.text("Undo"));
+    assert_eq!(feeds_size(&ui), Some(original_source));
+    ui.click(ui.text("Redo"));
+    assert_eq!(feeds_size(&ui), Some(speed));
+    // Select Speed and delete it: its wire goes too.
+    let at = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, speed, None)
+        .unwrap();
+    ui.click(at - egui::vec2(30.0, 0.0));
+    ui.click(ui.text("Delete node"));
+    assert!(find(&ui, |k| *k == NodeKind::Speed).is_none());
+    assert_eq!(feeds_size(&ui), None);
+    assert_eq!(
+        ui.app.brush.graph.as_ref().unwrap().nodes().len(),
+        made.nodes().len()
+    );
+    // Pressure toggles the graph now sets are disabled elsewhere.
+    assert!(!ui.app.graph_driven()[0], "Size is unwired now");
+}

@@ -47,9 +47,9 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        stroke) or blurs instead of painting, with built-in Smudge and Blur
        presets. Later: a color-mixing ("wet paint") mode that also lays down
        the current color.
-4. [x] **Brush graph, milestone 1** (engine only): see the
-       [brush graph plan](BRUSH_GRAPH_PLAN.md). Next: milestone 2, the
-       editor.
+4. [x] **Brush graph, milestones 1 and 2** (engine and editor): see the
+       [brush graph plan](BRUSH_GRAPH_PLAN.md). Next: milestone 3,
+       sharing single brushes (`.dudelbrush`).
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 
