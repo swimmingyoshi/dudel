@@ -58,6 +58,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && crate::vector_layer::same(&a.vector, &b.vector)
                 && a.text == b.text
                 && crate::layer_mask::same_snapshot(&a.mask, &b.mask)
+                && crate::material::same(&a.material, &b.material)
                 && a.pixels.shares(&b.pixels)
         })
 }
@@ -265,9 +266,16 @@ impl Settlement {
                     self.record_payload();
                     continue;
                 }
+                let (was, now) = (
+                    &self.before.layers[self.layer].material,
+                    &self.after.layers[self.layer].material,
+                );
+                let relief = (!crate::material::same(was, now))
+                    .then(|| was.as_ref().and_then(|m| m.relief.clone()));
                 let patch = Patch {
                     layer: self.layer,
                     regions: std::mem::take(&mut self.regions),
+                    relief,
                     active: self.before.active,
                     selection: self.before.selection,
                     selection_mask: self.before.selection_mask.clone(),

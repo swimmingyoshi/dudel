@@ -2080,97 +2080,28 @@ impl Document {
             }
             Some((a * selected, brush.opacity * selected))
         };
-        // Thick paint: the dab builds the relief where it paints (once per
-        // dab; a prefix pass repeats dabs already painted), and erasing
-        // flattens it. Smudge carries the relief along with the paint, like
-        // a palette knife, and blur smooths it.
-        let smearing = !erase && brush.blend.moves_paint();
+        // Thick paint: the dab builds, wears or carries the relief where it
+        // paints (once per dab; a prefix pass repeats dabs already painted).
         if kind == Some(crate::material::Kind::Paint)
             && !prefix_pass
-            && (erase || smearing || brush.thickness > 0.0)
             && let Some(material) = layer.material.as_mut()
         {
-            let (width, height) = (self.width, self.height);
-            let relief = material.relief.get_or_insert_with(|| {
-                crate::layer_mask::Mask::new(width, height, 0).expect("relief of a valid canvas")
-            });
-            let (hs, hc) = raster
-                .heading
-                .map_or((sin, cos), |h| h.to_radians().sin_cos());
-            // The relief under and around the dab before it moves.
-            let reach = match brush.blend {
-                crate::brush::Blend::Smudge => {
-                    raster.smear[0].abs().max(raster.smear[1].abs()).ceil() as i32 + 2
-                }
-                _ => 3,
-            };
-            let area = [
-                (left - reach).max(0),
-                (top - reach).max(0),
-                (right + reach).min(width as i32 - 1),
-                (bottom + reach).min(height as i32 - 1),
-            ];
-            let area_width = (area[2] - area[0] + 1) as usize;
-            let before: Vec<f32> = if smearing {
-                (area[1]..=area[3])
-                    .flat_map(|y| (area[0]..=area[2]).map(move |x| (x, y)))
-                    .map(|(x, y)| f32::from(relief.at(x as usize, y as usize)))
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            let held = |x: i32, y: i32| {
-                let x = x.clamp(area[0], area[2]);
-                let y = y.clamp(area[1], area[3]);
-                before[(y - area[1]) as usize * area_width + (x - area[0]) as usize]
-            };
-            let mut writer = relief.writer();
-            for py in top..=bottom {
-                for px in left..=right {
-                    let Some((a, ceiling)) = coverage_at(px, py) else {
-                        continue;
-                    };
-                    let share = a / ceiling.max(f32::MIN_POSITIVE);
-                    let (ux, uy) = (px as usize, py as usize);
-                    if erase {
-                        crate::material::wear(&mut writer, ux, uy, share);
-                    } else if smearing {
-                        let source = if brush.blend == crate::brush::Blend::Smudge {
-                            // Where this pixel's paint was one dab ago.
-                            let fx = px as f32 - raster.smear[0];
-                            let fy = py as f32 - raster.smear[1];
-                            let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
-                            let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
-                            let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
-                            let lower =
-                                held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
-                            upper + (lower - upper) * ty
-                        } else {
-                            let mut sum = 0.0;
-                            for dy in -3..=3 {
-                                for dx in -3..=3 {
-                                    sum += held(px + dx, py + dy);
-                                }
-                            }
-                            sum / 49.0
-                        };
-                        let old = held(px, py);
-                        let new = old + (source - old) * share.min(1.0);
-                        writer.set(ux, uy, new.round().clamp(0.0, 255.0) as u8);
-                    } else {
-                        // Until the stroke has a direction (its first dab),
-                        // there are no streaks to follow.
-                        let streak = if raster.heading.is_some() {
-                            let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
-                            crate::material::bristle(-dx * hs + dy * hc, radius)
-                        } else {
-                            0.75
-                        };
-                        let height = brush.thickness * streak;
-                        crate::material::build(&mut writer, ux, uy, height, share);
-                    }
-                }
-            }
+            crate::material::touch_relief(
+                material,
+                [self.width, self.height],
+                &crate::material::Touch {
+                    rect: [left, top, right, bottom],
+                    center: [x, y],
+                    radius,
+                    // Streaks follow the stroke once it has a direction.
+                    heading: raster.heading.map(|h| h.to_radians().sin_cos()),
+                    smear: raster.smear,
+                    blend: brush.blend,
+                    thickness: brush.thickness,
+                    erase,
+                },
+                &coverage_at,
+            );
         }
         if blending && !prefix_pass {
             let width = self.width;
@@ -2454,6 +2385,10 @@ impl Document {
 struct Patch {
     layer: usize,
     regions: Vec<RegionPatch>,
+    /// The layer's thick paint relief on the other side of the action,
+    /// when the action changed it. A relief shares every tile the action
+    /// left alone, so this holds only what changed.
+    relief: Option<Option<crate::layer_mask::Mask>>,
     active: usize,
     selection: Option<crate::selection::Selection>,
     selection_mask: Option<crate::selection_mask::Mask>,
@@ -2496,6 +2431,11 @@ impl Entry {
                     for region in &mut patch.regions {
                         target.swap_region(width, region.rect, region.pixels.raw_mut());
                     }
+                }
+                if let Some(relief) = &mut patch.relief
+                    && let Some(material) = &mut doc.layers[patch.layer].material
+                {
+                    std::mem::swap(&mut material.relief, relief);
                 }
                 std::mem::swap(&mut doc.active, &mut patch.active);
                 std::mem::swap(&mut doc.selection, &mut patch.selection);
@@ -2568,11 +2508,11 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || !crate::vector_layer::same(&a.vector, &b.vector)
             || a.text != b.text
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
-            || !crate::material::same(&a.material, &b.material)
+            || !crate::material::same_settings(&a.material, &b.material)
         {
             return None;
         }
-        if !a.pixels.shares(&b.pixels) {
+        if !a.pixels.shares(&b.pixels) || !crate::material::same(&a.material, &b.material) {
             if edited.is_some() {
                 return None;
             }
@@ -2614,9 +2554,24 @@ fn compact(before: &Document, after: &Document) -> Option<Patch> {
             })
             .collect()
     });
+    // Thick paint: the relief before the action, if the action changed it.
+    let relief = edited
+        .filter(|_| {
+            !crate::material::same(
+                &before.layers[layer].material,
+                &after.layers[layer].material,
+            )
+        })
+        .map(|_| {
+            before.layers[layer]
+                .material
+                .as_ref()
+                .and_then(|m| m.relief.clone())
+        });
     Some(Patch {
         layer,
         regions,
+        relief,
         active: before.active,
         selection: before.selection,
         selection_mask: before.selection_mask.clone(),
@@ -2819,6 +2774,9 @@ impl History {
                         std::mem::size_of::<Patch>()
                             + patch.regions.capacity() * std::mem::size_of::<RegionPatch>(),
                     );
+                    if let Some(Some(relief)) = &patch.relief {
+                        relief.visit_allocations(|id, bytes| registry.add_pixels(id, bytes));
+                    }
                     for region in &patch.regions {
                         registry.add_buffer(
                             region.pixels.allocation_identity(),
@@ -3351,6 +3309,7 @@ mod tests {
         let mut history = History::new();
         history.undo.push(Entry::Patch(Patch {
             layer: 0,
+            relief: None,
             regions,
             active: 0,
             selection: None,

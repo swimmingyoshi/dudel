@@ -1063,6 +1063,7 @@ fn apply_pixels(
                 (sx.is_finite() && sy.is_finite() && sx >= 0.0 && sy >= 0.0)
                     .then_some([sx as usize, sy as usize])
             },
+            None,
             cancel,
         )?),
         None => None,

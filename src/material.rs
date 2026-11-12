@@ -187,6 +187,12 @@ pub(crate) fn same(a: &Option<Box<Material>>, b: &Option<Box<Material>>) -> bool
     }
 }
 
+/// Whether two layers have the same kind of material with the same
+/// settings; their reliefs may differ.
+pub(crate) fn same_settings(a: &Option<Box<Material>>, b: &Option<Box<Material>>) -> bool {
+    a.as_ref().map(|m| m.settings) == b.as_ref().map(|m| m.settings)
+}
+
 /// Check a layer's material against the document size.
 pub(crate) fn validate(material: &Material, size: [usize; 2], folder: bool) -> Result<(), String> {
     material.settings.validate()?;
@@ -222,7 +228,7 @@ pub(crate) fn dry_paper(paper: Option<crate::paper::Paper>, tooth: f32) -> crate
 /// Bristle streaks: how much paint a bristle at `across` pixels from the
 /// middle of the tip carries, 0.5 to 1. Bristles keep their place across
 /// the tip as it moves, so streaks run along the stroke.
-pub(crate) fn bristle(across: f32, radius: f32) -> f32 {
+fn bristle(across: f32, radius: f32) -> f32 {
     let spacing = (radius * 0.16).clamp(1.2, 6.0);
     let hash = |n: f32, seed: i64| {
         let n = (n as i64).wrapping_add(seed).wrapping_mul(0x2545_F491) as u64;
@@ -241,29 +247,121 @@ pub(crate) fn bristle(across: f32, radius: f32) -> f32 {
     0.5 + 0.5 * (0.55 * clumps + 0.45 * hairs)
 }
 
-/// Thick paint left by one dab at a pixel: the relief there moves toward
-/// `height` (0 to 1) by `share`, and never sinks under new paint.
-#[inline]
-pub(crate) fn build(
-    writer: &mut crate::layer_mask::Writer<'_>,
-    x: usize,
-    y: usize,
-    height: f32,
-    share: f32,
-) {
-    let old = f32::from(writer.at(x, y));
-    let target = (height * 255.0).clamp(0.0, 255.0);
-    if target <= old || share <= 0.0 {
-        return;
-    }
-    let new = old + (target - old) * share.min(1.0);
-    writer.set(x, y, new.round() as u8);
+/// One dab on a thick paint layer, as the relief sees it.
+pub(crate) struct Touch {
+    /// The dab's pixels: left, top, right, bottom, inclusive.
+    pub rect: [i32; 4],
+    pub center: [f32; 2],
+    pub radius: f32,
+    /// Sine and cosine of the stroke's direction, once it has one.
+    pub heading: Option<(f32, f32)>,
+    /// Smudge: how far the tip moved since the previous dab.
+    pub smear: [f32; 2],
+    pub blend: crate::brush::Blend,
+    /// The brush's Thickness.
+    pub thickness: f32,
+    pub erase: bool,
 }
 
-/// An eraser takes the paint's height away with its color.
-#[inline]
-pub(crate) fn wear(writer: &mut crate::layer_mask::Writer<'_>, x: usize, y: usize, share: f32) {
-    writer.paint(x, y, 0, share);
+/// What one dab does to a thick paint layer's relief. `coverage` gives the
+/// dab's alpha and its ceiling at a pixel, as for the paint itself.
+///
+/// - Painting builds: the relief moves toward the brush's thickness times
+///   its bristle streaks, by the dab's strength, and never sinks under new
+///   paint.
+/// - Erasing wears it away with the color.
+/// - Smudge carries it along with the paint, like a palette knife: each
+///   pixel takes the height from where its paint was one dab ago. Blur
+///   smooths it.
+pub(crate) fn touch_relief(
+    material: &mut Material,
+    [width, height]: [usize; 2],
+    touch: &Touch,
+    coverage: &impl Fn(i32, i32) -> Option<(f32, f32)>,
+) {
+    let smearing = !touch.erase && touch.blend.moves_paint();
+    if !(touch.erase || smearing || touch.thickness > 0.0) {
+        return;
+    }
+    let [left, top, right, bottom] = touch.rect;
+    let relief = material
+        .relief
+        .get_or_insert_with(|| Mask::new(width, height, 0).expect("relief of a valid canvas"));
+    // Smearing reads the relief as it was before this dab, under and
+    // around it.
+    let reach = match touch.blend {
+        crate::brush::Blend::Smudge => {
+            touch.smear[0].abs().max(touch.smear[1].abs()).ceil() as i32 + 2
+        }
+        _ => 3,
+    };
+    let area = [
+        (left - reach).max(0),
+        (top - reach).max(0),
+        (right + reach).min(width as i32 - 1),
+        (bottom + reach).min(height as i32 - 1),
+    ];
+    let area_width = (area[2] - area[0] + 1) as usize;
+    let before: Vec<f32> = if smearing {
+        (area[1]..=area[3])
+            .flat_map(|y| (area[0]..=area[2]).map(move |x| (x, y)))
+            .map(|(x, y)| f32::from(relief.at(x as usize, y as usize)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let held = |x: i32, y: i32| {
+        let x = x.clamp(area[0], area[2]);
+        let y = y.clamp(area[1], area[3]);
+        before[(y - area[1]) as usize * area_width + (x - area[0]) as usize]
+    };
+    let mut writer = relief.writer();
+    for py in top..=bottom {
+        for px in left..=right {
+            let Some((a, ceiling)) = coverage(px, py) else {
+                continue;
+            };
+            let share = (a / ceiling.max(f32::MIN_POSITIVE)).min(1.0);
+            let (ux, uy) = (px as usize, py as usize);
+            if touch.erase {
+                writer.paint(ux, uy, 0, share);
+            } else if smearing {
+                let source = if touch.blend == crate::brush::Blend::Smudge {
+                    let fx = px as f32 - touch.smear[0];
+                    let fy = py as f32 - touch.smear[1];
+                    let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                    let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                    let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
+                    let lower = held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
+                    upper + (lower - upper) * ty
+                } else {
+                    let mut sum = 0.0;
+                    for dy in -3..=3 {
+                        for dx in -3..=3 {
+                            sum += held(px + dx, py + dy);
+                        }
+                    }
+                    sum / 49.0
+                };
+                let old = held(px, py);
+                let new = old + (source - old) * share;
+                writer.set(ux, uy, new.round().clamp(0.0, 255.0) as u8);
+            } else {
+                // Until the stroke has a direction (its first dab), there
+                // are no streaks to follow.
+                let streak = touch.heading.map_or(0.75, |(sin, cos)| {
+                    let dx = px as f32 + 0.5 - touch.center[0];
+                    let dy = py as f32 + 0.5 - touch.center[1];
+                    bristle(-dx * sin + dy * cos, touch.radius)
+                });
+                let old = f32::from(writer.at(ux, uy));
+                let target = (touch.thickness * streak * 255.0).clamp(0.0, 255.0);
+                if target > old && share > 0.0 {
+                    writer.set(ux, uy, (old + (target - old) * share).round() as u8);
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -594,15 +692,27 @@ pub(crate) fn selected(doc: &Document) -> impl Fn(usize, usize) -> f32 + '_ {
 
 /// The relief after selected paint moved: what was not taken along stays,
 /// and what was arrives where `source` says the paint at each pixel came
-/// from. Where both meet, the higher paint shows.
+/// from. Where both meet, the higher paint shows. `lands` bounds where moved
+/// paint can arrive, when the caller knows (None: anywhere); the rest of
+/// the canvas is skipped, so a small stroke on a huge canvas stays cheap.
 pub(crate) fn moved_relief(
     relief: &Mask,
     selected: impl Fn(usize, usize) -> f32,
     source: impl Fn(usize, usize) -> Option<[usize; 2]>,
+    lands: Option<[usize; 4]>,
     cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<Mask, String> {
     let [w, h] = relief.dimensions();
+    let Some(painted) = relief.painted_bounds() else {
+        return Ok(relief.clone());
+    };
+    let inside = |rect: [usize; 4], x: usize, y: usize| {
+        x >= rect[0] && x < rect[2] && y >= rect[1] && y < rect[3]
+    };
     Mask::generate(w, h, 0, cancel, |x, y| {
+        if !inside(painted, x, y) && lands.is_some_and(|lands| !inside(lands, x, y)) {
+            return Ok(0);
+        }
         let stays = f32::from(relief.at(x, y)) * (1.0 - selected(x, y));
         let arrives = source(x, y)
             .filter(|[sx, sy]| *sx < w && *sy < h)
@@ -988,6 +1098,9 @@ impl Dudel {
 
     pub(crate) fn material_dialog(&mut self, ctx: &egui::Context) {
         let Some(form) = &mut self.material_form else {
+            if self.material_preview.take().is_some() {
+                self.dirty = true;
+            }
             return;
         };
         let (mut apply, mut cancel) = (false, false);
@@ -1083,15 +1196,27 @@ impl Dudel {
             }
             ui.small(
                 "The material is saved with the layer. Watercolor and dry media change how new \
-                 strokes behave; thick paint's light can be changed at any time.",
+                 strokes behave; thick paint's light shows on the canvas as you change it.",
             );
             crate::dialogs::dialog_buttons(ui, |ui| {
                 apply = ui.add(crate::workspace::primary_button(ui, "Apply")).clicked();
                 cancel |= ui.button("Cancel").clicked();
             });
         });
+        // Thick paint's light is tried on the canvas itself while the dialog
+        // is open; the other settings only change strokes to come.
+        let preview = self.material_form.as_ref().and_then(|form| {
+            form.settings
+                .filter(|s| s.kind == Kind::Paint)
+                .map(|s| (form.target, s))
+        });
+        if preview != self.material_preview {
+            self.material_preview = preview;
+            self.dirty = true;
+        }
         let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if apply {
+            self.material_preview = None;
             let Some(form) = self.material_form.take() else {
                 return;
             };
@@ -1109,6 +1234,8 @@ impl Dudel {
             }
         } else if cancel || (response.should_close() && escape) {
             self.material_form = None;
+            self.material_preview = None;
+            self.dirty = true;
         }
     }
 }
@@ -1547,6 +1674,65 @@ mod tests {
             "outside the selection unchanged"
         );
         doc.validate().unwrap();
+    }
+
+    #[test]
+    fn thick_strokes_undo_and_redo_with_their_relief_as_small_patches() {
+        let mut doc = Document::new(1024, 1024);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        let mut history = crate::document::History::new();
+        history.begin_stroke_checkpoint(&doc);
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        history.settle(&doc);
+        history.begin_stroke_checkpoint(&doc);
+        paint(&mut doc, &thick(), [40, 80, 200], 60.0, false);
+        history.settle(&doc);
+        let relief = |doc: &Document| doc.layers[0].material.as_ref().unwrap().relief.clone();
+        let both = relief(&doc).unwrap();
+        let pixels = doc.layers[0].pixels.region(1024, [0, 0, 200, 100]);
+        // Two strokes kept as changed regions, far below a layer's 4 MiB.
+        assert!(
+            history.retained_bytes() < 600_000,
+            "{}",
+            history.retained_bytes()
+        );
+        assert!(history.undo(&mut doc));
+        let one = relief(&doc).unwrap();
+        assert!(one.at(80, 30) > 100 && one.at(80, 60) == 0);
+        assert!(history.undo(&mut doc));
+        assert!(relief(&doc).is_none_or(|r| r.painted_bounds().is_none()));
+        assert!(history.redo(&mut doc) && history.redo(&mut doc));
+        assert!(relief(&doc).unwrap().equivalent(&both, None).unwrap());
+        assert_eq!(doc.layers[0].pixels.region(1024, [0, 0, 200, 100]), pixels);
+        doc.validate().unwrap();
+    }
+
+    #[test]
+    fn the_dialog_tries_a_light_on_the_canvas_without_changing_the_document() {
+        let mut app = Dudel {
+            doc: Document::new(160, 60),
+            ..Default::default()
+        };
+        app.doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut app.doc, &thick(), [200, 80, 40], 30.0, false);
+        let saved = app.doc.layers[0].material.as_ref().unwrap().settings;
+        let ctx = egui::Context::default();
+        let frame = |app: &mut Dudel| {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.material_dialog(ctx));
+        };
+        app.open_material_dialog();
+        let form = app.material_form.as_mut().unwrap();
+        form.settings.as_mut().unwrap().light = -45.0;
+        app.dirty = false;
+        frame(&mut app);
+        let (layer, tried) = app.material_preview.expect("the light is being tried");
+        assert_eq!((layer, tried.light), (app.doc.layers[0].id, -45.0));
+        assert!(app.dirty, "the canvas redraws with it");
+        assert_eq!(app.doc.layers[0].material.as_ref().unwrap().settings, saved);
+        // Closing without Apply puts the canvas back.
+        app.material_form = None;
+        frame(&mut app);
+        assert!(app.material_preview.is_none());
     }
 
     #[test]

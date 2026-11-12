@@ -1472,6 +1472,19 @@ impl Dudel {
         let scene = self.reference_layers.display_document(&self.doc);
         let mask_view = self.mask_view_document();
         let base = mask_view.as_ref().or(scene.as_ref()).unwrap_or(&self.doc);
+        // A light being tried in the Material dialog shows on the canvas.
+        let previewed = self.material_preview.and_then(|(id, settings)| {
+            let index = base.layers.iter().position(|l| l.id == id)?;
+            let material = base.layers[index].material.as_ref()?;
+            (material.lit() && material.settings != settings).then(|| {
+                let mut doc = base.clone();
+                if let Some(material) = &mut doc.layers[index].material {
+                    material.settings = settings;
+                }
+                doc
+            })
+        });
+        let base = previewed.as_ref().unwrap_or(base);
         // Layer effects are drawn as extra layers. A layer whose drawing is
         // out of date shows its previous one while a background worker
         // redraws around what changed, so effects follow a stroke and

@@ -175,6 +175,17 @@ fn compute(
         && let Some(material) = &mut material
         && let Some(relief) = &material.relief
     {
+        // Moved paint lands where the painted relief is, shifted.
+        let lands = relief.painted_bounds().map(|[l, t, r, b]| {
+            let shift =
+                |v: usize, by: i64, limit: usize| (v as i64 + by).clamp(0, limit as i64) as usize;
+            [
+                shift(l, offset[0], source.width),
+                shift(t, offset[1], source.height),
+                shift(r, offset[0], source.width),
+                shift(b, offset[1], source.height),
+            ]
+        });
         material.relief = Some(crate::material::moved_relief(
             relief,
             crate::material::selected(source),
@@ -183,6 +194,7 @@ fn compute(
                 let sy = (y as i64).checked_sub(offset[1])?;
                 (sx >= 0 && sy >= 0).then_some([sx as usize, sy as usize])
             },
+            lands,
             Some(cancel),
         )?);
     }

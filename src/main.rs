@@ -419,6 +419,9 @@ struct Dudel {
     /// The open Canvas > Paper dialog.
     paper_form: Option<paper::PaperForm>,
     material_form: Option<material::MaterialForm>,
+    /// A thick paint light being tried in the Material dialog: shown on
+    /// the canvas, not yet in the document.
+    material_preview: Option<(document::LayerId, material::Settings)>,
     paper_view: paper_view::PaperView,
     brush_export: Option<brush_share::ExportForm>,
     brush_import: Option<brush_share::PendingImport>,
@@ -715,6 +718,7 @@ impl Default for Dudel {
             drying: Default::default(),
             paper_form: None,
             material_form: None,
+            material_preview: None,
             paper_view: Default::default(),
             brush_export: None,
             brush_import: None,

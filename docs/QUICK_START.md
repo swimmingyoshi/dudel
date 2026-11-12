@@ -273,7 +273,8 @@ changes the selected layer's. The dialog previews a stroke on the material.
   its own. Dry media layers hold no water.
 - **Thick paint:** brushes leave paint that stands up from the canvas, with
   bristle streaks along each stroke, lit by a light you place (**Light
-  from**, **Depth**, **Shine**; change them at any time). Each brush's
+  from**, **Depth**, **Shine**; change them at any time, and watch the canvas follow
+  as you drag). Each brush's
   **Thickness** (Brush settings > Texture) says how thick it paints; the
   eraser flattens what it removes. The **Impasto** and **Palette knife**
   presets are made for it, and **Soft pastel** for dry media.

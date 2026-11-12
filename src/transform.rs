@@ -227,6 +227,7 @@ impl Document {
                         relief,
                         crate::material::selected(doc),
                         mirror,
+                        Some(rect),
                         cancel,
                     )
                 })
