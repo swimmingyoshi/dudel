@@ -771,7 +771,7 @@ impl Dudel {
                 egui::Checkbox::new(&mut self.paper_view.show, "Paper texture"),
             )
             .on_hover_text(
-                "Show the canvas's paper (Canvas › Paper…) on the canvas. Only the view shows it;                  exports do not.",
+                "Show the canvas's paper (Canvas › Paper…) on the canvas. Only the view shows it; exports do not.",
             );
             ui.separator();
             ui.menu_button(

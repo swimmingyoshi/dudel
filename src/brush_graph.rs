@@ -1060,10 +1060,20 @@ pub struct Compiled {
     rotation_degrees: f32,
     /// The graph reads the stroke's direction.
     heading: bool,
-    /// Where each main-graph node's value lives: (node, output port,
-    /// register). For an output node, the value wired into it. Editors show
-    /// these; painting never reads them.
-    probes: Vec<(NodeId, u8, u8)>,
+    /// Where each node's value lives: (the groups it is inside, outermost
+    /// first; node; output port; register). For an output node or a group
+    /// result, the value wired into it. Editors show these; painting never
+    /// reads them.
+    probes: Vec<Probe>,
+}
+
+/// Where one node output's value lives; see `Compiled::trace`.
+#[derive(Clone, Debug)]
+struct Probe {
+    path: Vec<NodeId>,
+    node: NodeId,
+    port: u8,
+    register: u8,
 }
 
 /// Per-dab values the graph reads.
@@ -1166,13 +1176,16 @@ impl Compiled {
             self.run::<{ MAX_NODES + 1 }>(inputs)
         }
     }
-    /// Every main-graph node's value for one dab, for editors: (node,
-    /// output port, value); NaN where a value is missing.
-    pub fn trace(&self, inputs: &Inputs) -> Vec<(NodeId, u8, f32)> {
+    /// The values of the nodes at one level for one dab, for editors:
+    /// (node, output port, value); NaN where a value is missing. `path` is
+    /// the groups opened to reach the level, outermost first (empty for the
+    /// main graph).
+    pub fn trace(&self, inputs: &Inputs, path: &[NodeId]) -> Vec<(NodeId, u8, f32)> {
         let r = self.registers::<{ MAX_NODES + 1 }>(inputs);
         self.probes
             .iter()
-            .map(|&(id, port, register)| (id, port, r[usize::from(register)]))
+            .filter(|probe| probe.path == path)
+            .map(|probe| (probe.node, probe.port, r[usize::from(probe.register)]))
             .collect()
     }
     fn run<const REGISTERS: usize>(&self, inputs: &Inputs) -> Values {
@@ -1302,7 +1315,7 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
         }
     }
     let mut flat = Inlined::default();
-    inline(&graph.nodes, &graph.links, &[], 0, &mut flat)?;
+    inline(&graph.nodes, &graph.links, &[], &[], &mut flat)?;
     if flat.nodes.len() > MAX_NODES {
         return Err(format!(
             "Brush graphs hold at most {MAX_NODES} nodes, counting those inside groups"
@@ -1311,12 +1324,15 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
     let (mut compiled, registers) = lower(&flat.nodes, &flat.links)?;
     let registers: std::collections::HashMap<NodeId, u8> = registers.into_iter().collect();
     compiled.probes = flat
-        .top
-        .iter()
-        .filter_map(|&((id, port), flat_id)| {
-            registers
-                .get(&flat_id)
-                .map(|register| (id, port, *register))
+        .shown
+        .into_iter()
+        .filter_map(|(path, (node, port), flat_id)| {
+            registers.get(&flat_id).map(|register| Probe {
+                path,
+                node,
+                port,
+                register: *register,
+            })
         })
         .collect();
     Ok(compiled)
@@ -1397,8 +1413,9 @@ struct Inlined {
     nodes: Vec<Node>,
     links: Vec<Link>,
     next: u32,
-    /// Main-graph nodes' output ports and the flat nodes behind them.
-    top: Vec<((NodeId, u8), NodeId)>,
+    /// Every level's node outputs (by the groups around them) and the flat
+    /// nodes behind them.
+    shown: Vec<(Vec<NodeId>, (NodeId, u8), NodeId)>,
 }
 
 /// One level being opened up.
@@ -1407,7 +1424,8 @@ struct Opening<'a> {
     links: &'a [Link],
     /// The flat nodes feeding this level's group inputs.
     inputs: &'a [Option<NodeId>],
-    depth: usize,
+    /// The groups around this level, outermost first.
+    path: &'a [NodeId],
     fresh: std::collections::HashMap<NodeId, NodeId>,
     /// What feeds each output of the groups opened so far.
     opened: std::collections::HashMap<NodeId, Vec<Option<NodeId>>>,
@@ -1468,7 +1486,9 @@ impl Opening<'_> {
             &group.links,
             Some((group.inputs, group.outputs)),
         )?;
-        let results = inline(&group.nodes, &group.links, &feeds, self.depth + 1, out)?;
+        let mut inside = self.path.to_vec();
+        inside.push(id);
+        let results = inline(&group.nodes, &group.links, &feeds, &inside, out)?;
         self.opened.insert(id, results.clone());
         Ok(results)
     }
@@ -1480,10 +1500,10 @@ fn inline(
     nodes: &[Node],
     links: &[Link],
     inputs: &[Option<NodeId>],
-    depth: usize,
+    path: &[NodeId],
     out: &mut Inlined,
 ) -> Result<Vec<Option<NodeId>>, String> {
-    if depth > GROUP_DEPTH {
+    if path.len() > GROUP_DEPTH {
         return Err(format!("Groups nest at most {GROUP_DEPTH} deep"));
     }
     if out.nodes.len() > MAX_NODES {
@@ -1520,7 +1540,7 @@ fn inline(
         nodes,
         links,
         inputs,
-        depth,
+        path,
         fresh,
         opened: Default::default(),
         busy: Default::default(),
@@ -1555,19 +1575,27 @@ fn inline(
             level.open(node.id, group, out)?;
         }
     }
-    if depth == 0 {
-        for node in nodes {
-            match &node.kind {
-                NodeKind::Group(_) => {
-                    for (port, flat) in level.opened[&node.id].iter().enumerate() {
-                        if let Some(flat) = flat {
-                            out.top.push(((node.id, port as u8), *flat));
-                        }
-                    }
-                }
-                NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. } => {}
-                _ => out.top.push(((node.id, 0), level.fresh[&node.id])),
+    // What each node at this level shows: a group its results, a group
+    // input what feeds it from outside, a group result what is wired in.
+    for node in nodes {
+        let mut show = |port: u8, flat: Option<NodeId>| {
+            if let Some(flat) = flat {
+                out.shown.push((path.to_vec(), (node.id, port), flat));
             }
+        };
+        match &node.kind {
+            NodeKind::Group(_) => {
+                for (port, flat) in level.opened[&node.id].iter().enumerate() {
+                    show(port as u8, *flat);
+                }
+            }
+            NodeKind::GroupInput { index } => {
+                show(0, inputs.get(usize::from(*index)).copied().flatten())
+            }
+            NodeKind::GroupResult { index } => {
+                show(0, results.get(usize::from(*index)).copied().flatten())
+            }
+            _ => show(0, level.fresh.get(&node.id).copied()),
         }
     }
     if out.links.len() > MAX_LINKS * 2 {

@@ -169,22 +169,22 @@ fn compute(
             })
         })?
     };
+    // Thick paint's relief moves with the selected paint.
     let mut material = layer.material.clone();
     if offset != [0, 0]
-        && source.selection.is_none()
-        && source.selection_mask.is_none()
         && let Some(material) = &mut material
         && let Some(relief) = &material.relief
     {
-        material.relief =
-            Some(
-                relief.remap(source.width, source.height, 0, Some(cancel), |[x, y]| {
-                    let sx = (x as i64).checked_sub(offset[0])?;
-                    let sy = (y as i64).checked_sub(offset[1])?;
-                    (sx >= 0 && sy >= 0 && sx < source.width as i64 && sy < source.height as i64)
-                        .then_some([sx as usize, sy as usize])
-                })?,
-            );
+        material.relief = Some(crate::material::moved_relief(
+            relief,
+            crate::material::selected(source),
+            |x, y| {
+                let sx = (x as i64).checked_sub(offset[0])?;
+                let sy = (y as i64).checked_sub(offset[1])?;
+                (sx >= 0 && sy >= 0).then_some([sx as usize, sy as usize])
+            },
+            Some(cancel),
+        )?);
     }
     let differs = |doc: &Document| {
         Ok::<_, String>(

@@ -83,8 +83,9 @@ The canvas as a surface that paint reacts to, in stages:
        the project's `RELF` trailer, built by each dab with bristle streaks
        along the stroke heading, lowered by the eraser; a light layer
        clipped to the paint is drawn at composite time and redrawn only on
-       relief tiles that changed). The relief follows whole-layer moves,
-       transforms, flips, canvas rotation and resizing. The paper shows on
+       relief tiles that changed). The relief follows moves, transforms
+       and flips (of the whole layer or of a selection), canvas rotation
+       and resizing. The paper shows on
        the canvas display (`src/paper_view.rs`).
 5. [x] Advanced materials: pigment mixing (`src/pigment.rs`: colors as
        16-band reflectance spectra from seven overlapping primaries, mixed
@@ -94,8 +95,8 @@ The canvas as a surface that paint reacts to, in stages:
        watercolor and thick paint layers. Clear water: a Wet brush's
        Pigment setting; water re-wets dried paint and lifts a little.
        Palette knife: Smudge on thick paint carries the relief with the
-       paint, Blur smooths it. Not yet: pigment mixing in the drying
-       simulation itself (it still exchanges paint linearly), and paint
+       paint, Blur smooths it. Drying mixes too: paint running in from each
+       wet neighbor mixes as pigment where its color differs. Not yet: paint
        thickness changing how colors mix.
 
 ## Later

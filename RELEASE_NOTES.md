@@ -70,11 +70,15 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   the paper's tooth) or Thick paint (paint stands up with bristle streaks,
   lit by a light you place; a brush's new **Thickness** setting says how
   thick). New **Impasto**, **Palette knife** and **Soft pastel** presets.
-  Projects with material layers are refused by older Dudel.
+  Thick paint's height moves with the paint, a selection's or the whole
+  layer's. Where a brush setting needs a material (water, thickness), the
+  brush settings offer to make the layer that kind. Projects with material
+  layers are refused by older Dudel.
 - **Paint that mixes like paint:** on watercolor and thick paint layers,
   wet-on-wet, smudging and blending mix colors as pigments (a small
   spectral model with Kubelka–Munk mixing): blue and yellow make green, red
-  and blue purple, white tints.
+  and blue purple, white tints. Wet paint running together as it dries
+  mixes the same way.
 - **Clear water and the palette knife:** a Wet brush's new **Pigment**
   setting at 0% is clear water (**Water brush** preset) that re-wets dried
   paint so it runs again and lifts a little of it; on thick paint, Smudge
@@ -87,7 +91,7 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   in **Try inputs**, or for your latest dab on the test pad; letting a new
   wire go over empty canvas opens a node search that adds the node already
   wired; **Add node** has a search; hovering a node, input or output explains
-  it. In the Brush graph section the preview strip gives its room to the
+  it. Values show inside groups too. In the Brush graph section the preview strip gives its room to the
   graph while the test pad is shown.
 
 ## 0.3.0 (2026-11-10)

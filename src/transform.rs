@@ -202,6 +202,36 @@ impl Document {
             bottom: self.height,
         });
         let rect = [bounds.left, bounds.top, bounds.right, bounds.bottom];
+        // Thick paint's relief turns with the selected paint.
+        let mirror = |x: usize, y: usize| -> Option<[usize; 2]> {
+            if x < bounds.left || x >= bounds.right || y < bounds.top || y >= bounds.bottom {
+                return None;
+            }
+            let (fx, fy) = (
+                bounds.left + bounds.right - 1 - x,
+                bounds.top + bounds.bottom - 1 - y,
+            );
+            Some(match transform {
+                Transform::FlipHorizontal => [fx, y],
+                Transform::FlipVertical => [x, fy],
+                Transform::RotateHalfTurn => [fx, fy],
+            })
+        };
+        let turned_relief = |doc: &Document| {
+            doc.layers[doc.active]
+                .material
+                .as_ref()
+                .and_then(|m| m.relief.as_ref())
+                .map(|relief| {
+                    crate::material::moved_relief(
+                        relief,
+                        crate::material::selected(doc),
+                        mirror,
+                        cancel,
+                    )
+                })
+                .transpose()
+        };
         if let Some(mask) = &self.selection_mask {
             let (pixels, moved) = remapped_masked_control(
                 &layer.pixels,
@@ -213,7 +243,13 @@ impl Document {
             )?;
             let changed = !pixels.shares(&layer.pixels) || moved != *mask;
             if changed {
+                let relief = turned_relief(self)?;
                 self.layers[self.active].pixels = pixels;
+                if let Some(relief) = relief
+                    && let Some(material) = &mut self.layers[self.active].material
+                {
+                    material.relief = Some(relief);
+                }
                 self.selection = moved.bounds();
                 self.selection_mask = Some(moved);
             }
@@ -260,19 +296,12 @@ impl Document {
         }
         crate::fill::check_cancel(cancel)?;
         if changed {
+            let relief = turned_relief(self)?;
             self.layers[self.active].pixels = pixels;
-            // Thick paint turns with its paint.
-            if whole {
-                let (width, height) = (self.width, self.height);
-                crate::material::follow(&mut self.layers[self.active], |relief| {
-                    relief.remap(width, height, 0, cancel, |[x, y]| {
-                        Some(match transform {
-                            Transform::FlipHorizontal => [width - 1 - x, y],
-                            Transform::FlipVertical => [x, height - 1 - y],
-                            Transform::RotateHalfTurn => [width - 1 - x, height - 1 - y],
-                        })
-                    })
-                })?;
+            if let Some(relief) = relief
+                && let Some(material) = &mut self.layers[self.active].material
+            {
+                material.relief = Some(relief);
             }
         }
         if mask_changed {

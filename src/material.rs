@@ -576,6 +576,43 @@ pub(crate) fn follow(
     Ok(())
 }
 
+/// How much of the pixel at (x, y) an edit limited to `doc`'s selection
+/// takes along: 0 to 1, and everything without a selection.
+pub(crate) fn selected(doc: &Document) -> impl Fn(usize, usize) -> f32 + '_ {
+    move |x, y| {
+        if let Some(mask) = &doc.selection_mask {
+            f32::from(mask.at(x, y)) / 255.0
+        } else if let Some(s) = doc.selection {
+            f32::from(u8::from(
+                x >= s.left && x < s.right && y >= s.top && y < s.bottom,
+            ))
+        } else {
+            1.0
+        }
+    }
+}
+
+/// The relief after selected paint moved: what was not taken along stays,
+/// and what was arrives where `source` says the paint at each pixel came
+/// from. Where both meet, the higher paint shows.
+pub(crate) fn moved_relief(
+    relief: &Mask,
+    selected: impl Fn(usize, usize) -> f32,
+    source: impl Fn(usize, usize) -> Option<[usize; 2]>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<Mask, String> {
+    let [w, h] = relief.dimensions();
+    Mask::generate(w, h, 0, cancel, |x, y| {
+        let stays = f32::from(relief.at(x, y)) * (1.0 - selected(x, y));
+        let arrives = source(x, y)
+            .filter(|[sx, sy]| *sx < w && *sy < h)
+            .map_or(0.0, |[sx, sy]| {
+                f32::from(relief.at(sx, sy)) * selected(sx, sy)
+            });
+        Ok(stays.max(arrives).round() as u8)
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Dialog
 
@@ -1334,6 +1371,46 @@ mod tests {
     }
 
     #[test]
+    fn wet_paint_running_together_mixes_as_pigment_while_it_dries() {
+        let seam = |kind: Option<Kind>| {
+            let mut doc = Document::new(64, 16);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for y in 0..16 {
+                    for x in 0..64 {
+                        let color = if x < 32 {
+                            [20, 40, 200]
+                        } else {
+                            [250, 220, 20]
+                        };
+                        writer
+                            .rgba_mut(y * 64 + x)
+                            .copy_from_slice(&[color[0], color[1], color[2], 255]);
+                    }
+                }
+            }
+            let id = doc.layers[0].id;
+            for y in 0..16 {
+                doc.wet.add_row(id, y, 0, &[1.0; 64]);
+            }
+            crate::wet::settle(&mut doc);
+            doc.layers[0].pixels.rgba(8 * 64 + 32)
+        };
+        let green = |[r, g, b, _]: [u8; 4]| {
+            let [r, g, b] = [r, g, b].map(i32::from);
+            g > r + 25 && g > b + 25
+        };
+        let watercolor = seam(Some(Kind::Watercolor));
+        assert!(
+            green(watercolor),
+            "blue and yellow ran into green: {watercolor:?}"
+        );
+        let plain = seam(None);
+        assert!(!green(plain), "a plain layer mixes in RGB: {plain:?}");
+    }
+
+    #[test]
     fn clear_water_rewets_dried_paint_and_lifts_some() {
         let mut doc = Document::new(160, 60);
         doc.layers[0].material = Some(Material::new(Settings::new(Kind::Watercolor)));
@@ -1423,6 +1500,56 @@ mod tests {
     }
 
     #[test]
+    fn relief_moves_and_flips_with_the_selected_paint_only() {
+        let mut doc = Document::new(200, 80);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let relief = |doc: &Document| {
+            doc.layers[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .relief
+                .clone()
+                .unwrap()
+        };
+        let before = relief(&doc);
+        // Select the left part of the stroke and move it down 30 px.
+        doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 60,
+            bottom: 80,
+        });
+        crate::move_preview::apply(&mut doc, [0, 30], None).unwrap();
+        let after = relief(&doc);
+        assert!(
+            after.at(40, 60) > 60,
+            "the selected paint's height moved down"
+        );
+        assert_eq!(after.at(40, 30), 0, "and left its old place");
+        assert_eq!(after.at(120, 30), before.at(120, 30), "the rest stayed");
+        // Flipping a selection turns the relief inside it only.
+        let moved = relief(&doc);
+        doc.selection = Some(crate::selection::Selection {
+            left: 100,
+            top: 0,
+            right: 200,
+            bottom: 80,
+        });
+        doc.transform_active(crate::transform::Transform::FlipHorizontal)
+            .unwrap();
+        let flipped = relief(&doc);
+        assert_eq!(flipped.at(150, 30), moved.at(149, 30));
+        assert_eq!(
+            flipped.at(40, 60),
+            moved.at(40, 60),
+            "outside the selection unchanged"
+        );
+        doc.validate().unwrap();
+    }
+
+    #[test]
     fn reliefs_survive_saving_and_canvas_changes() {
         let mut doc = Document::new(160, 60);
         doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
@@ -1464,6 +1591,47 @@ mod tests {
 
 #[cfg(test)]
 mod look {
+    use super::*;
+
+    #[test]
+    #[ignore = "prints drying timings for review"]
+    fn drying_cost() {
+        // 2000 x 1000 px wet at once, in 40 px stripes of two colors: a
+        // seam every 40 px is far more mixing than real washes have.
+        for kind in [None, Some(Kind::Watercolor)] {
+            let (w, h) = (2000, 1000);
+            let mut doc = Document::new(w, h);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for y in 0..h {
+                    for x in 0..w {
+                        let c = if x / 40 % 2 == 0 {
+                            [20, 40, 200]
+                        } else {
+                            [250, 220, 20]
+                        };
+                        writer
+                            .rgba_mut(y * w + x)
+                            .copy_from_slice(&[c[0], c[1], c[2], 200]);
+                    }
+                }
+            }
+            let id = doc.layers[0].id;
+            let row = vec![1.0; w];
+            for y in 0..h {
+                doc.wet.add_row(id, y, 0, &row);
+            }
+            let start = std::time::Instant::now();
+            for _ in 0..10 {
+                crate::wet::dry_step(&mut doc);
+            }
+            eprintln!(
+                "{kind:?}: {:.1} ms per step",
+                start.elapsed().as_secs_f64() * 100.0
+            );
+        }
+    }
     #[test]
     #[ignore = "writes a picture for a person to look at"]
     fn knife_picture() {

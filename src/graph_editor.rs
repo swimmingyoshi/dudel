@@ -1299,7 +1299,7 @@ impl Dudel {
                 } else {
                     note(
                         ui,
-                        "Set a pen input to see what every node computes, or draw on the test                          pad to see the real values.",
+                        "Set a pen input to see what every node computes, or draw on the test pad to see the real values.",
                     );
                 }
                 ui.add_enabled_ui(!live, |ui| {
@@ -1335,10 +1335,11 @@ impl Dudel {
             });
     }
 
-    /// Each main-graph node's value for the shown input: (node, port).
+    /// Each node's value at the level shown, for the shown input: (node,
+    /// port).
     fn graph_values(&self) -> std::collections::HashMap<(NodeId, u8), f32> {
         let editor = &self.graph_editor;
-        if !editor.show_values || !editor.path.is_empty() {
+        if !editor.show_values {
             return Default::default();
         }
         let Some(compiled) = self.brush.graph.as_ref().and_then(|g| g.compiled().ok()) else {
@@ -1349,7 +1350,7 @@ impl Dudel {
             .recent_dab()
             .unwrap_or_else(|| editor.probe.sample());
         compiled
-            .trace(&self.brush.graph_inputs(compiled, &sample))
+            .trace(&self.brush.graph_inputs(compiled, &sample), &editor.path)
             .into_iter()
             .map(|(id, port, value)| ((id, port), value))
             .collect()
@@ -2050,7 +2051,7 @@ impl Dudel {
                     egui::vec2((r.width() - 2.0) * fill, 2.0 * zoom),
                 );
                 painter.rect_filled(bar, 0.0, accent);
-                if is_output {
+                if is_output || matches!(node.kind, NodeKind::GroupResult { .. }) {
                     painter.text(
                         header.right_center() - egui::vec2(8.0 * zoom, 0.0),
                         egui::Align2::RIGHT_CENTER,
@@ -2596,6 +2597,55 @@ mod tests {
         let unpacked: Vec<_> = [0.0, 0.02, 0.4, 1.0].map(|p| evaluate(&graph, p)).into();
         assert_eq!(before, unpacked);
         assert_eq!(graph.nodes().len(), 4);
+    }
+
+    #[test]
+    fn values_show_at_every_level_of_a_graph() {
+        let (mut graph, mut layout) = pressure_graph();
+        let picked = ids(&graph, |k| {
+            matches!(k, NodeKind::Constant { .. } | NodeKind::Maximum)
+        });
+        let (nodes, links) = graph.edit();
+        let group = group_nodes(nodes, links, &mut layout, &picked).unwrap();
+        let inputs = crate::brush_graph::Inputs {
+            pressure: 0.6,
+            shaped_pressure: 0.6,
+            speed: None,
+            tilt: None,
+            twist: None,
+            random: None,
+            distance: 0.0,
+            heading: None,
+        };
+        let compiled = graph.compiled().unwrap();
+        let value = |path: &[NodeId], node: NodeId| {
+            compiled
+                .trace(&inputs, path)
+                .into_iter()
+                .find(|(id, port, _)| *id == node && *port == 0)
+                .map(|(_, _, v)| v)
+        };
+        // The main graph: the group gives the larger of pressure and floor.
+        let size = ids(&graph, |k| *k == NodeKind::SizeOutput)[0];
+        assert_eq!(value(&[], group), Some(0.6));
+        assert_eq!(value(&[], size), Some(0.6));
+        // Inside the group: what comes in, each node, and what goes out.
+        let NodeKind::Group(inner) = &graph.nodes().iter().find(|n| n.id == group).unwrap().kind
+        else {
+            panic!("a group node");
+        };
+        let find =
+            |pick: fn(&NodeKind) -> bool| inner.nodes.iter().find(|n| pick(&n.kind)).unwrap().id;
+        let input = find(|k| matches!(k, NodeKind::GroupInput { .. }));
+        let constant = find(|k| matches!(k, NodeKind::Constant { .. }));
+        let maximum = find(|k| *k == NodeKind::Maximum);
+        let result = find(|k| matches!(k, NodeKind::GroupResult { .. }));
+        assert_eq!(value(&[group], input), Some(0.6));
+        assert!(value(&[group], constant).is_some_and(|v| v < 0.6));
+        assert_eq!(value(&[group], maximum), Some(0.6));
+        assert_eq!(value(&[group], result), Some(0.6));
+        // The levels do not mix.
+        assert_eq!(value(&[], maximum), None);
     }
 
     #[test]

@@ -252,6 +252,12 @@ impl Editing {
     pub(crate) fn source(&self) -> &Document {
         &self.before
     }
+    /// Tests: the session began just now, so the next press is the second
+    /// of a double-click however long the test machine took to get there.
+    #[cfg(test)]
+    pub(crate) fn opened_now(&mut self) {
+        self.opened = std::time::Instant::now();
+    }
     /// Whether a canvas point is on the text.
     fn contains(&self, at: [f64; 2], margin: f64) -> bool {
         self.extent

@@ -282,7 +282,8 @@ On watercolor and thick paint layers, colors that meet mix like paint
 rather than light: yellow dropped into wet blue turns green, red into blue
 makes purple, white makes tints and a little black darkens strongly. This
 happens wherever paint mixes: wet-on-wet, wet paint landing on wet paint,
-smudging and blending. On other layers mixing stays as it was.
+wet paint running together as it dries, smudging and blending. On other
+layers mixing stays as it was.
 
 Clear water re-wets: a Wet brush's **Pigment** setting (beside **Water**)
 says how much paint it carries, and at 0% it is clear water (the **Water
@@ -293,7 +294,12 @@ its color, scraping where it starts and piling paint where it stops; a
 **Blur** brush smooths the relief.
 
 The relief of thick paint is saved with the project and turns, flips, moves
-and transforms with the layer's pixels when the whole layer changes. PSD
+and transforms with the paint, whether the whole layer or only a selection
+moves.
+
+When a brush setting only shows on one kind of layer (a Wet brush's water,
+a brush's Thickness), the brush settings say so beside it and offer to
+make the selected layer that kind; Undo changes it back. PSD
 export writes the light as a clipped layer. Older Dudel refuses projects
 with material layers rather than opening them without.
 
@@ -459,7 +465,8 @@ Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
   title. **Try inputs** (below the node settings) sets the pen input they
   are shown for: pressure, speed, tilt, direction, distance along the
   stroke and random. While you draw on the test pad, the values follow your
-  latest dab. Hovering a node, input or output says what it does.
+  latest dab. Inside a group, its nodes show theirs too, with what comes in
+  and goes out. Hovering a node, input or output says what it does.
 - Drag nodes to arrange them, drag empty space to pan, and use the wheel to
   zoom; **Fit** shows every node. Ctrl- or Shift-click adds a node to the
   selection, and Shift-dragging empty space selects a box of them; dragging

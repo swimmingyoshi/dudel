@@ -136,6 +136,12 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
         .map_or((0.0, 0.0), |m| {
             (0.3 * m.settings.edges, 0.3 * m.settings.blooms)
         });
+    let pigment = doc.layers[index].material.as_ref().is_some_and(|m| {
+        matches!(
+            m.kind(),
+            crate::material::Kind::Watercolor | crate::material::Kind::Paint
+        )
+    });
     let tiles = doc.wet.tiles.clone();
     let keys: Vec<(u32, u32)> = tiles.keys().copied().collect();
     let pixels = &doc.layers[index].pixels;
@@ -187,6 +193,9 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                 let w = tile[(y - top) * TILE + (x - left)];
                 let here = around(x, y);
                 let mut moved = [0.0f32; 4];
+                // Paint arriving from each neighbor, for mixing as pigment.
+                let mut arrivals = [[0.0f32; 4]; 8];
+                let mut arrived = 0;
                 let mut water_flow = 0.0;
                 for (dx, dy, weight) in [
                     (-1i64, 0i64, along_x),
@@ -207,6 +216,8 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                         for c in 0..4 {
                             moved[c] += rate * (there[c] - here[c]);
                         }
+                        arrivals[arrived] = there.map(|v| v * rate);
+                        arrived += 1;
                         // Carried by the flow: out to a drier wet neighbor,
                         // in from a wetter one. Each pair computes the same
                         // amount from both sides, so paint is conserved.
@@ -220,6 +231,10 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                             for c in 0..4 {
                                 moved[c] += sign * flow * from[c];
                             }
+                            if gap < 0.0 {
+                                arrivals[arrived] = there.map(|v| v * flow);
+                                arrived += 1;
+                            }
                         }
                     }
                     water_flow += 0.04 * weight * (wn - w);
@@ -232,6 +247,34 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                         pixel[c] = ((here[c] + moved[c]) * scale).round().clamp(0.0, 255.0) as u8;
                     }
                     pixel[3] = alpha.round() as u8;
+                    // Different paint running in mixes as pigment does: what
+                    // stays here, then each neighbor's paint in turn.
+                    let straight = |v: &[f32; 4]| {
+                        let a = v[3] / 255.0;
+                        [0, 1, 2].map(|c| (v[c] / a).round().clamp(0.0, 255.0) as u8)
+                    };
+                    let own = (pigment && here[3] >= 0.5).then(|| straight(&here));
+                    if let Some(own) = own
+                        && arrivals[..arrived].iter().any(|a| {
+                            a[3] >= 0.05 && {
+                                let theirs = straight(a);
+                                (0..3).any(|c| theirs[c].abs_diff(own[c]) > 4)
+                            }
+                        })
+                    {
+                        let incoming: f32 = arrivals[..arrived].iter().map(|a| a[3]).sum();
+                        let mut held = (alpha - incoming).max(0.0);
+                        let mut color = own;
+                        for arrival in &arrivals[..arrived] {
+                            if arrival[3] < 0.05 {
+                                continue;
+                            }
+                            held += arrival[3];
+                            color =
+                                crate::pigment::mix(color, straight(arrival), arrival[3] / held);
+                        }
+                        pixel[..3].copy_from_slice(&color);
+                    }
                 } else {
                     // Clear: keep the hidden color.
                     let p = &bytes[((y - bt) * bw + (x - bl)) * 4..][..4];

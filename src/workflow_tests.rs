@@ -4846,6 +4846,9 @@ fn a_double_click_opens_text_on_another_layer() {
     let mut w = text_on_another_layer();
     w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
     assert_eq!(w.app.doc.layers.len(), 3, "the first click starts new text");
+    // A double-click is two presses within 0.4 s of the clock; a busy test
+    // machine can take longer than that between frames.
+    w.app.text_edit.as_mut().unwrap().opened_now();
     w.press_text_tool([60.0, 60.0], [60.0, 60.0]);
     assert_eq!(w.app.doc.layers.len(), 2, "the second gives it up");
     assert!(!w.app.text_edit.as_ref().unwrap().created());
@@ -5477,4 +5480,30 @@ fn dropping_a_wire_on_empty_canvas_searches_for_a_node_to_connect() {
     // The values of the nodes are on show for the Try inputs pen input.
     ui.text("Try inputs");
     ui.text("0.40");
+}
+
+#[test]
+fn a_wet_brush_offers_to_make_the_layer_watercolor() {
+    let mut ui = Workspace::sized([1366.0, 900.0]);
+    ui.app.select_tool(crate::tools::Tool::Brush);
+    ui.app.brush.blend = crate::brush::Blend::Wet;
+    ui.app.brush_studio = true;
+    ui.app.brush_studio_section = crate::brush_studio::Section::SizeOpacity;
+    ui.app.studio_pad_hidden = true;
+    ui.settle();
+    ui.click(ui.text("Make this layer watercolor"));
+    ui.finish_geometry();
+    let layer = &ui.app.doc.layers[ui.app.doc.active];
+    assert_eq!(
+        layer.material.as_ref().map(|m| m.kind()),
+        Some(crate::material::Kind::Watercolor)
+    );
+    // Once it is, the offer goes away.
+    ui.settle();
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || ui.text("Make this layer watercolor")
+        ))
+        .is_err()
+    );
 }

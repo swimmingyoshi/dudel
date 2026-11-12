@@ -841,9 +841,45 @@ impl Dudel {
             percent_marked(ui, "Pigment", &mut self.brush.pigment, 0.0, saved);
             hint(
                 ui,
-                "How much paint the brush carries. At 0% it is clear water: it wets dried paint                  so it runs again, and lifts a little of it.",
+                "How much paint the brush carries. At 0% it is clear water: it wets dried paint so it runs again, and lifts a little of it.",
+            );
+            self.material_suggestion(
+                ui,
+                crate::material::Kind::Watercolor,
+                "On a Watercolor layer, wet paint dries with darker edges and mixes like paint.",
             );
         }
+    }
+
+    /// When the selected layer is not of the material `kind` a setting needs
+    /// to show, say so and offer to change it.
+    fn material_suggestion(&mut self, ui: &mut egui::Ui, kind: crate::material::Kind, why: &str) {
+        let Some(layer) = self.input_layer().and_then(|i| self.doc.layers.get(i)) else {
+            return;
+        };
+        let current = layer.material.as_ref().map(|m| m.settings);
+        if !Self::takes_material(layer) || current.is_some_and(|s| s.kind == kind) {
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(why).small().weak());
+            if ui
+                .small_button(format!("Make this layer {}", kind.name().to_lowercase()))
+                .on_hover_text("Changes the selected layer's material; Undo changes it back")
+                .clicked()
+            {
+                // Keep the layer's other material settings.
+                let settings = crate::material::Settings {
+                    kind,
+                    ..current.unwrap_or(crate::material::Settings::new(kind))
+                };
+                self.dispatch_document_edit(
+                    crate::document_edits::Edit::Material(Some(settings)),
+                    "Material changed",
+                    "The layer already has this material",
+                );
+            }
+        });
     }
 
     fn brush_quick_controls_ui(&mut self, ui: &mut egui::Ui) {
@@ -1109,11 +1145,18 @@ impl Dudel {
                     "Paint settles into the paper's valleys, like granulating watercolor. Needs a paper on the canvas.",
                 );
                 let saved = self.saved_value(|b| b.thickness);
-                percent_marked(ui, "Thickness", &mut self.brush.thickness, 0.5, saved);
+                percent_marked(ui, "Thickness", &mut self.brush.thickness, 0.0, saved);
                 hint(
                     ui,
                     "How thick the paint stands on a Thick paint layer (Layer › Layer material…), with bristle streaks along the stroke.",
                 );
+                if self.brush.thickness > 0.0 {
+                    self.material_suggestion(
+                        ui,
+                        crate::material::Kind::Paint,
+                        "Thickness shows on Thick paint layers.",
+                    );
+                }
             }
             Section::Tags => {
                 labeled(ui, "Name", |ui| {

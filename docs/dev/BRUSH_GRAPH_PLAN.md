@@ -555,8 +555,10 @@ computes, so a graph was learned by painting with it. Now:
   `Compiled::trace` runs the same operations as painting and returns those
   values; painting never calls it, so the per-dab cost is unchanged. The
   editor draws each value at its output dot and as a bar under the node's
-  title. Inside a group nothing is shown yet: inlined nodes are not traced
-  back to their group-level ids.
+  title. Inlining records, for every level, which flat node stands behind
+  each node output (a group input shows what feeds it from outside, a group
+  result what is wired into it), so values show inside groups too;
+  `trace` takes the path of open groups.
 - **Try inputs.** The values are shown for a pen input set with sliders
   (pressure, speed, tilt, direction, distance along the stroke, random), or,
   for three seconds after each dab, for the latest dab drawn on the test pad
