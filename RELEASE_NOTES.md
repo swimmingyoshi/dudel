@@ -4,7 +4,13 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.4.0 (in testing)
+
+Painting essentials: gradients, filters, smudge and blur brushes, a
+node-based brush graph with its own Studio tab, and a canvas that behaves
+like a material, with paper, wet paint, and watercolor, dry media and thick
+paint layers whose colors mix like paint. Projects from 0.3.0 open unchanged;
+projects that use material layers need 0.4.0.
 
 - **Gradients:** the Fill tool has a Gradient mode (tap **G** again). Drag
   across the canvas for a linear, radial, angle, reflected or diamond gradient
