@@ -2536,6 +2536,24 @@ pub fn default_brushes() -> Vec<Brush> {
             ..Brush::default()
         },
         Brush {
+            name: "Water brush".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "watercolor, water, wet, lift, rewet".into(),
+            size: 44.0,
+            opacity: 0.9,
+            flow: 0.25,
+            hardness: 0.5,
+            spacing: 0.06,
+            pressure_size: false,
+            pressure_opacity: true,
+            softness_profile: crate::brush::SoftnessProfile::Eased,
+            blend: crate::brush::Blend::Wet,
+            wetness: 0.9,
+            pigment: 0.0,
+            paper_response: 0.0,
+            ..Brush::default()
+        },
+        Brush {
             name: "Soft pastel".into(),
             group: Some(BrushGroup::Brush),
             tags: "pastel, chalk, dry media, texture".into(),

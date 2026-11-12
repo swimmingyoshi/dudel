@@ -215,6 +215,10 @@ pub struct Brush {
     /// the thickest.
     #[serde(default = "half")]
     pub thickness: f32,
+    /// How much paint a Wet brush carries with its water: 1 full, 0 clear
+    /// water that wets what is there and lifts a little of it.
+    #[serde(default = "linear_pressure")]
+    pub pigment: f32,
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
@@ -378,6 +382,7 @@ impl Default for Brush {
             granulation: 0.0,
             paper_response: 1.0,
             thickness: 0.5,
+            pigment: 1.0,
             blend: Blend::Paint,
         }
     }
@@ -638,6 +643,7 @@ impl Brush {
             (self.wetness, 0.0, 1.0),
             (self.granulation, 0.0, 1.0),
             (self.thickness, 0.0, 1.0),
+            (self.pigment, 0.0, 1.0),
         ] {
             if !value.is_finite() || value < min || value > max {
                 return Err("Brush setting outside supported range".into());

@@ -71,6 +71,15 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   lit by a light you place; a brush's new **Thickness** setting says how
   thick). New **Impasto**, **Palette knife** and **Soft pastel** presets.
   Projects with material layers are refused by older Dudel.
+- **Paint that mixes like paint:** on watercolor and thick paint layers,
+  wet-on-wet, smudging and blending mix colors as pigments (a small
+  spectral model with Kubelka–Munk mixing): blue and yellow make green, red
+  and blue purple, white tints.
+- **Clear water and the palette knife:** a Wet brush's new **Pigment**
+  setting at 0% is clear water (**Water brush** preset) that re-wets dried
+  paint so it runs again and lifts a little of it; on thick paint, Smudge
+  carries the paint's height with its color like a palette knife, and Blur
+  smooths it.
 - **Paper on the canvas:** the canvas's paper now shows on the canvas, its
   grain lined up with what strokes catch; view only (**View > Paper
   texture**).

@@ -278,6 +278,20 @@ changes the selected layer's. The dialog previews a stroke on the material.
   eraser flattens what it removes. The **Impasto** and **Palette knife**
   presets are made for it, and **Soft pastel** for dry media.
 
+On watercolor and thick paint layers, colors that meet mix like paint
+rather than light: yellow dropped into wet blue turns green, red into blue
+makes purple, white makes tints and a little black darkens strongly. This
+happens wherever paint mixes: wet-on-wet, wet paint landing on wet paint,
+smudging and blending. On other layers mixing stays as it was.
+
+Clear water re-wets: a Wet brush's **Pigment** setting (beside **Water**)
+says how much paint it carries, and at 0% it is clear water (the **Water
+brush** preset) that makes dried paint wet again, so it runs, blooms and
+dries once more, and lifts a little of it. On thick paint, a **Smudge**
+brush works like a palette knife: it carries the paint's height along with
+its color, scraping where it starts and piling paint where it stops; a
+**Blur** brush smooths the relief.
+
 The relief of thick paint is saved with the project and turns, flips, moves
 and transforms with the layer's pixels when the whole layer changes. PSD
 export writes the light as a clipped layer. Older Dudel refuses projects

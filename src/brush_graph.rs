@@ -2223,6 +2223,8 @@ mod tests {
         use crate::dynamics::{Curve, Dynamics, Effector, Input, MinimumMode};
         let curve = |points: Vec<[f32; 2]>| Curve { points };
         let mut brushes = crate::workspace::default_brushes();
+        // Clear water paints nothing on a blank layer.
+        brushes.retain(|b| b.pigment > 0.0);
         // Dynamics on every setting, both minimum modes, every input, and a
         // custom pressure curve.
         let mut dynamic = crate::brush::Brush {

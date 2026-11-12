@@ -2,6 +2,26 @@ use crate::brush::Brush;
 use serde::{Deserialize, Serialize};
 
 /// Shared by live dabs and rebuilding a finalized prefix under a tapered tail.
+/// The share of what is there a clear-water dab lifts at full strength.
+const WATER_LIFT: f32 = 0.06;
+
+/// Lay paint over paint that is still wet, mixing the two as pigments.
+fn paint_pigment(pixel: &mut [u8], a: f32, color: [u8; 3], alpha_locked: bool) {
+    if a <= 0.0 {
+        return;
+    }
+    let old_a = f32::from(pixel[3]) / 255.0;
+    let new_a = if alpha_locked {
+        old_a
+    } else {
+        a + old_a * (1.0 - a)
+    };
+    let share = if alpha_locked { a } else { a / new_a };
+    let mixed = crate::pigment::mix([pixel[0], pixel[1], pixel[2]], color, share);
+    pixel[..3].copy_from_slice(&mixed);
+    pixel[3] = (new_a * 255.0).round() as u8;
+}
+
 pub(crate) fn paint_pixel(
     pixels: &mut [u8],
     a: f32,
@@ -1941,6 +1961,11 @@ impl Document {
         }
         // The eraser end still erases with a smudge or blur brush.
         let blending = !brush.blend.is_paint() && !erase;
+        // Watercolor and thick paint mix as pigments where paint meets paint.
+        let pigment = matches!(
+            kind,
+            Some(crate::material::Kind::Watercolor | crate::material::Kind::Paint)
+        );
         let wet = brush.blend == crate::brush::Blend::Wet && !erase;
         // Paper tooth holds back paint laid on artwork, and granulating
         // paint settles in its valleys; erasing, smudging and mask painting
@@ -2057,10 +2082,12 @@ impl Document {
         };
         // Thick paint: the dab builds the relief where it paints (once per
         // dab; a prefix pass repeats dabs already painted), and erasing
-        // flattens it. Smudge and blur leave the relief alone.
+        // flattens it. Smudge carries the relief along with the paint, like
+        // a palette knife, and blur smooths it.
+        let smearing = !erase && brush.blend.moves_paint();
         if kind == Some(crate::material::Kind::Paint)
             && !prefix_pass
-            && (erase || (!brush.blend.moves_paint() && brush.thickness > 0.0))
+            && (erase || smearing || brush.thickness > 0.0)
             && let Some(material) = layer.material.as_mut()
         {
             let (width, height) = (self.width, self.height);
@@ -2070,6 +2097,33 @@ impl Document {
             let (hs, hc) = raster
                 .heading
                 .map_or((sin, cos), |h| h.to_radians().sin_cos());
+            // The relief under and around the dab before it moves.
+            let reach = match brush.blend {
+                crate::brush::Blend::Smudge => {
+                    raster.smear[0].abs().max(raster.smear[1].abs()).ceil() as i32 + 2
+                }
+                _ => 3,
+            };
+            let area = [
+                (left - reach).max(0),
+                (top - reach).max(0),
+                (right + reach).min(width as i32 - 1),
+                (bottom + reach).min(height as i32 - 1),
+            ];
+            let area_width = (area[2] - area[0] + 1) as usize;
+            let before: Vec<f32> = if smearing {
+                (area[1]..=area[3])
+                    .flat_map(|y| (area[0]..=area[2]).map(move |x| (x, y)))
+                    .map(|(x, y)| f32::from(relief.at(x as usize, y as usize)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let held = |x: i32, y: i32| {
+                let x = x.clamp(area[0], area[2]);
+                let y = y.clamp(area[1], area[3]);
+                before[(y - area[1]) as usize * area_width + (x - area[0]) as usize]
+            };
             let mut writer = relief.writer();
             for py in top..=bottom {
                 for px in left..=right {
@@ -2080,10 +2134,39 @@ impl Document {
                     let (ux, uy) = (px as usize, py as usize);
                     if erase {
                         crate::material::wear(&mut writer, ux, uy, share);
+                    } else if smearing {
+                        let source = if brush.blend == crate::brush::Blend::Smudge {
+                            // Where this pixel's paint was one dab ago.
+                            let fx = px as f32 - raster.smear[0];
+                            let fy = py as f32 - raster.smear[1];
+                            let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                            let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                            let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
+                            let lower =
+                                held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
+                            upper + (lower - upper) * ty
+                        } else {
+                            let mut sum = 0.0;
+                            for dy in -3..=3 {
+                                for dx in -3..=3 {
+                                    sum += held(px + dx, py + dy);
+                                }
+                            }
+                            sum / 49.0
+                        };
+                        let old = held(px, py);
+                        let new = old + (source - old) * share.min(1.0);
+                        writer.set(ux, uy, new.round().clamp(0.0, 255.0) as u8);
                     } else {
-                        let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
-                        let across = -dx * hs + dy * hc;
-                        let height = brush.thickness * crate::material::bristle(across, radius);
+                        // Until the stroke has a direction (its first dab),
+                        // there are no streaks to follow.
+                        let streak = if raster.heading.is_some() {
+                            let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
+                            crate::material::bristle(-dx * hs + dy * hc, radius)
+                        } else {
+                            0.75
+                        };
+                        let height = brush.thickness * streak;
                         crate::material::build(&mut writer, ux, uy, height, share);
                     }
                 }
@@ -2146,14 +2229,25 @@ impl Document {
                                     source,
                                     (damp * strength).min(1.0) * 0.7,
                                     alpha_locked,
+                                    pigment,
                                 );
                             }
-                            paint_pixel(pixel, a, color, false, alpha_locked);
+                            // Clear water lifts a little of what is there.
+                            let load = brush.pigment;
+                            if load < 1.0 && !alpha_locked {
+                                let lift = strength.min(1.0) * (1.0 - load) * WATER_LIFT;
+                                pixel[3] = (f32::from(pixel[3]) * (1.0 - lift)).round() as u8;
+                            }
+                            if pigment && damp > 0.0 && pixel[3] > 0 {
+                                paint_pigment(pixel, a * load, color, alpha_locked);
+                            } else {
+                                paint_pixel(pixel, a * load, color, false, alpha_locked);
+                            }
                             if watering {
                                 water[column] = strength.min(1.0) * brush.wetness;
                             }
                         } else {
-                            crate::blend_brush::mix(pixel, source, a, alpha_locked);
+                            crate::blend_brush::mix(pixel, source, a, alpha_locked, pigment);
                         }
                     });
                 }

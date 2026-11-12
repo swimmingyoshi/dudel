@@ -220,20 +220,25 @@ pub(crate) fn dry_paper(paper: Option<crate::paper::Paper>, tooth: f32) -> crate
 }
 
 /// Bristle streaks: how much paint a bristle at `across` pixels from the
-/// middle of the tip carries, 0.55 to 1. Bristles keep their place across
+/// middle of the tip carries, 0.5 to 1. Bristles keep their place across
 /// the tip as it moves, so streaks run along the stroke.
 pub(crate) fn bristle(across: f32, radius: f32) -> f32 {
     let spacing = (radius * 0.16).clamp(1.2, 6.0);
-    let t = across / spacing;
-    let (i, f) = (t.floor(), t - t.floor());
-    let hash = |n: f32| {
-        let n = (n as i64).wrapping_mul(0x2545_F491) as u64;
+    let hash = |n: f32, seed: i64| {
+        let n = (n as i64).wrapping_add(seed).wrapping_mul(0x2545_F491) as u64;
         let n = (n ^ (n >> 15)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         ((n >> 40) & 0xFFFF) as f32 / 65535.0
     };
-    let s = f * f * (3.0 - 2.0 * f);
-    let n = hash(i) * (1.0 - s) + hash(i + 1.0) * s;
-    0.55 + 0.45 * n
+    // Smooth value noise across the tip: wide clumps of bristles, and
+    // single hairs within them, so the ridges are uneven like a real brush.
+    let noise = |t: f32, seed: i64| {
+        let (i, f) = (t.floor(), t - t.floor());
+        let s = f * f * (3.0 - 2.0 * f);
+        hash(i, seed) * (1.0 - s) + hash(i + 1.0, seed) * s
+    };
+    let clumps = noise(across / (spacing * 2.6), 7_919);
+    let hairs = noise(across / spacing, 0);
+    0.5 + 0.5 * (0.55 * clumps + 0.45 * hairs)
 }
 
 /// Thick paint left by one dab at a pixel: the relief there moves toward
@@ -788,6 +793,29 @@ impl Dudel {
             stroke(&mut doc, &wash, color, [90.0, y], [620.0, y + 20.0], 16.0);
             crate::wet::settle(&mut doc);
         }
+        // Yellow into wet blue: the pigments make green.
+        let mixing = crate::brush::Brush {
+            size: 60.0,
+            flow: 0.18,
+            ..wash.clone()
+        };
+        stroke(
+            &mut doc,
+            &mixing,
+            [24, 50, 190],
+            [110.0, 395.0],
+            [600.0, 395.0],
+            0.0,
+        );
+        stroke(
+            &mut doc,
+            &mixing,
+            [250, 215, 30],
+            [110.0, 425.0],
+            [600.0, 395.0],
+            0.0,
+        );
+        crate::wet::settle(&mut doc);
         // Dry media.
         doc.add_layer();
         doc.layers[2].name = "Dry media 1".into();
@@ -837,6 +865,24 @@ impl Dudel {
                 30.0,
             );
         }
+        // A knife dragged down through the paint carries it and its height.
+        let knife = crate::brush::Brush {
+            size: 50.0,
+            hardness: 0.9,
+            opacity: 0.9,
+            spacing: 0.04,
+            pressure_size: false,
+            blend: crate::brush::Blend::Smudge,
+            ..Default::default()
+        };
+        stroke(
+            &mut doc,
+            &knife,
+            [0, 0, 0],
+            [1180.0, 150.0],
+            [1180.0, 760.0],
+            0.0,
+        );
         doc.active = 3;
         self.doc = doc;
         self.changed();
@@ -1252,6 +1298,130 @@ mod tests {
         );
     }
 
+    fn wet(color_flow: f32, pigment: f32) -> crate::brush::Brush {
+        crate::brush::Brush {
+            size: 30.0,
+            hardness: 0.9,
+            flow: color_flow,
+            spacing: 0.1,
+            pressure_size: false,
+            blend: crate::brush::Blend::Wet,
+            wetness: 1.0,
+            pigment,
+            paper_response: 0.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wet_blue_and_yellow_make_green_on_watercolor_and_gray_on_plain() {
+        let mixed = |kind: Option<Kind>| {
+            let mut doc = Document::new(160, 60);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            paint(&mut doc, &wet(0.5, 1.0), [20, 40, 200], 30.0, false);
+            // Into the wet blue, before it dries.
+            paint(&mut doc, &wet(0.12, 1.0), [250, 220, 20], 30.0, false);
+            doc.layers[0].pixels.rgba(30 * 160 + 80)
+        };
+        let green = |[r, g, b, _]: [u8; 4]| {
+            let [r, g, b] = [r, g, b].map(i32::from);
+            g > r + 30 && g > b + 30
+        };
+        let watercolor = mixed(Some(Kind::Watercolor));
+        assert!(green(watercolor), "green on watercolor: {watercolor:?}");
+        let plain = mixed(None);
+        assert!(!green(plain), "plain mixes in RGB: {plain:?}");
+    }
+
+    #[test]
+    fn clear_water_rewets_dried_paint_and_lifts_some() {
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Watercolor)));
+        paint(&mut doc, &wet(0.4, 1.0), [30, 60, 160], 30.0, false);
+        crate::wet::settle(&mut doc);
+        assert!(doc.wet.is_empty());
+        let dried = doc.layers[0].pixels.rgba(30 * 160 + 80);
+        // Water across the dried wash: wet again, a little lighter, color kept.
+        paint(&mut doc, &wet(0.4, 0.0), [255, 0, 0], 30.0, false);
+        assert!(doc.wet.at(80, 30) > 0.3, "the paint is wet again");
+        let wetted = doc.layers[0].pixels.rgba(30 * 160 + 80);
+        assert!(
+            wetted[3] < dried[3],
+            "water lifts paint: {dried:?} -> {wetted:?}"
+        );
+        assert!(wetted[0] < 120, "clear water adds no color: {wetted:?}");
+        // And the paint runs again as it dries.
+        let before = doc.layers[0].pixels.region(160, [0, 0, 160, 60]);
+        crate::wet::settle(&mut doc);
+        assert_ne!(doc.layers[0].pixels.region(160, [0, 0, 160, 60]), before);
+    }
+
+    #[test]
+    fn smudging_thick_paint_carries_its_relief() {
+        let mut doc = Document::new(160, 100);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let relief = |doc: &Document, y: usize| {
+            let r = doc.layers[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .relief
+                .clone()
+                .unwrap();
+            (60..100).map(|x| u32::from(r.at(x, y))).sum::<u32>()
+        };
+        assert_eq!(relief(&doc, 50), 0);
+        // A knife dragged down across the stroke pulls the paint's height along.
+        let knife = crate::brush::Brush {
+            size: 30.0,
+            hardness: 0.9,
+            opacity: 0.9,
+            spacing: 0.05,
+            pressure_size: false,
+            blend: crate::brush::Blend::Smudge,
+            ..Default::default()
+        };
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: knife.clone(),
+            color: [0, 0, 0],
+            secondary: [0, 0, 0],
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        };
+        let mut path = crate::stroke::Stroke::default();
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        for i in 0..=20 {
+            let sample = crate::stroke::Sample {
+                x: 80.0,
+                y: 20.0 + i as f32 * 2.0,
+                pressure: 1.0,
+                pressure_known: true,
+                ..Default::default()
+            };
+            let dabs = if i == 20 {
+                path.finish(sample, &knife)
+            } else {
+                path.sample(sample, &knife)
+            };
+            for dab in dabs {
+                buffer.paint(&mut doc, dab, &settings);
+            }
+        }
+        buffer.finish_tail(&mut doc, &settings);
+        assert!(
+            relief(&doc, 50) > 200,
+            "relief dragged below: {}",
+            relief(&doc, 50)
+        );
+        assert!(
+            doc.layers[0].pixels.rgba(50 * 160 + 80)[3] > 0,
+            "and the paint came with it"
+        );
+    }
+
     #[test]
     fn reliefs_survive_saving_and_canvas_changes() {
         let mut doc = Document::new(160, 60);
@@ -1289,5 +1459,20 @@ mod tests {
         assert_eq!(r.dimensions(), [60, 160]);
         assert_eq!(r.at(60 - 1 - 30, 80), relief(&doc).at(80, 30));
         turned.validate().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod look {
+    #[test]
+    #[ignore = "writes a picture for a person to look at"]
+    fn knife_picture() {
+        let mut app = crate::Dudel::default();
+        app.material_capture_fixture();
+        let doc = &app.doc;
+        let expanded = crate::layer_effects::expand(doc, false, &|| false).unwrap();
+        let rgba = expanded.composite_display_region([700, 100, 1400, 900], false);
+        let path = std::env::var("DUDEL_LOOK").unwrap();
+        image::save_buffer(path, &rgba, 700, 800, image::ExtendedColorType::Rgba8).unwrap();
     }
 }

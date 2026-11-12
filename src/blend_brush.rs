@@ -256,13 +256,31 @@ impl Scratch {
 }
 
 /// Move `pixel` toward premultiplied `source` by `amount`. Lock transparency
-/// keeps the pixel's alpha and changes only its color.
-pub(crate) fn mix(pixel: &mut [u8], source: [f32; 4], amount: f32, alpha_locked: bool) {
+/// keeps the pixel's alpha and changes only its color. With `pigment`, the
+/// colors mix as paint does (`pigment::mix`).
+pub(crate) fn mix(
+    pixel: &mut [u8],
+    source: [f32; 4],
+    amount: f32,
+    alpha_locked: bool,
+    pigment: bool,
+) {
     let amount = amount.clamp(0.0, 1.0);
     let current = premultiply([pixel[0], pixel[1], pixel[2], pixel[3]]);
     let mut out = [0.0; 4];
     for c in 0..4 {
         out[c] = current[c] + (source[c] - current[c]) * amount;
+    }
+    if pigment && current[3] > 0.0 && source[3] > 0.0 && out[3] > 0.0 {
+        // The share of the result that comes from the source, as paint.
+        let share = (source[3] * amount / out[3]).clamp(0.0, 1.0);
+        let byte = |v: f32| (v * 255.0).round().clamp(0.0, 255.0) as u8;
+        let from = [pixel[0], pixel[1], pixel[2]];
+        let to = [0, 1, 2].map(|c| byte(source[c] / source[3]));
+        let mixed = crate::pigment::mix(from, to, share);
+        for c in 0..3 {
+            out[c] = f32::from(mixed[c]) / 255.0 * out[3];
+        }
     }
     let alpha = if alpha_locked {
         f32::from(pixel[3]) / 255.0
@@ -291,15 +309,15 @@ mod tests {
     fn mixing_is_premultiplied_and_respects_lock_transparency() {
         // Half way from opaque red to clear stays red, at half alpha.
         let mut pixel = [255, 0, 0, 255];
-        mix(&mut pixel, [0.0; 4], 0.5, false);
+        mix(&mut pixel, [0.0; 4], 0.5, false, false);
         assert_eq!(pixel, [255, 0, 0, 128]);
         // Locked: alpha kept, color moves toward the opaque source.
         let mut pixel = [255, 0, 0, 255];
-        mix(&mut pixel, [0.0, 0.0, 1.0, 1.0], 0.5, true);
+        mix(&mut pixel, [0.0, 0.0, 1.0, 1.0], 0.5, true, false);
         assert_eq!(pixel, [128, 0, 128, 255]);
         // Fully clearing keeps the hidden color.
         let mut pixel = [10, 20, 30, 255];
-        mix(&mut pixel, [0.0; 4], 1.0, false);
+        mix(&mut pixel, [0.0; 4], 1.0, false, false);
         assert_eq!(pixel, [10, 20, 30, 0]);
     }
 

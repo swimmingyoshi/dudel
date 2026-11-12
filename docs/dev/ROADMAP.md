@@ -73,7 +73,8 @@ The canvas as a surface that paint reacts to, in stages:
        water spreads and evaporates by the paper's absorbency, fibers carry
        paint along their direction; drying is one undo step and uses at most
        about a quarter of frame time. Rewetting dried paint is not done yet,
-       and timelapse replays do not include drying.
+       and timelapse replays do not include drying (rewetting came in
+       stage 5).
 4. [x] Material-aware layers (`src/material.rs`): a layer's material is
        Watercolor (drying water carries pigment down its gradient between
        wet pixels, conserving it: rims darken and fresh water pushes paint
@@ -85,8 +86,17 @@ The canvas as a surface that paint reacts to, in stages:
        relief tiles that changed). The relief follows whole-layer moves,
        transforms, flips, canvas rotation and resizing. The paper shows on
        the canvas display (`src/paper_view.rs`).
-5. [ ] Advanced materials: palette knife moving relief and paint together,
-       rewetting, pigment mixing.
+5. [x] Advanced materials: pigment mixing (`src/pigment.rs`: colors as
+       16-band reflectance spectra from seven overlapping primaries, mixed
+       by Kubelka–Munk with luminance-weighted concentrations and a residual
+       that keeps single colors exact; a per-thread table of recent mixes)
+       for wet-on-wet, paint landing on wet paint, smudge and blur on
+       watercolor and thick paint layers. Clear water: a Wet brush's
+       Pigment setting; water re-wets dried paint and lifts a little.
+       Palette knife: Smudge on thick paint carries the relief with the
+       paint, Blur smooths it. Not yet: pigment mixing in the drying
+       simulation itself (it still exchanges paint linearly), and paint
+       thickness changing how colors mix.
 
 ## Later
 

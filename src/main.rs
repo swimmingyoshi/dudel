@@ -139,6 +139,7 @@ mod paper_view;
 mod parallel;
 mod pending_layers;
 mod performance;
+mod pigment;
 mod pixels;
 mod plugins;
 mod preference_recovery;

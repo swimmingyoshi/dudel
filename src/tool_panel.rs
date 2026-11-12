@@ -832,11 +832,17 @@ impl Dudel {
         });
     }
 
-    /// Water for Wet brushes.
+    /// Water and pigment for Wet brushes.
     fn brush_water_ui(&mut self, ui: &mut egui::Ui) {
         if self.brush.blend == crate::brush::Blend::Wet {
             let saved = self.saved_value(|b| b.wetness);
             percent_marked(ui, "Water", &mut self.brush.wetness, 0.0, saved);
+            let saved = self.saved_value(|b| b.pigment);
+            percent_marked(ui, "Pigment", &mut self.brush.pigment, 0.0, saved);
+            hint(
+                ui,
+                "How much paint the brush carries. At 0% it is clear water: it wets dried paint                  so it runs again, and lifts a little of it.",
+            );
         }
     }
 
