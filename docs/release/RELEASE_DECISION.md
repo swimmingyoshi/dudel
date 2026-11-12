@@ -1,8 +1,51 @@
-# Windows 0.3 release decision — 2026-11-10
+# Windows 0.4 release decision — 2026-11-12
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.4.0 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-12 to proceed with 0.4.0. The
+earlier decisions that follow remain the record for the evidence carried over.
+
+**Application source:** commit `b50fc39`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`D18964FD...069242B5` and DLL `DE919FF4...1CF7BA34`, and release packaging refuses
+different bytes.
+
+**What changed since 0.3.0** (see [release notes](../../RELEASE_NOTES.md)):
+gradients; Gaussian blur, sharpen and noise filters and direct adjustments;
+named workspaces; smudge, blur and wet brushes; brush graphs with groups,
+formulas, sharing and an editor that shows what each node computes; Brush
+Studio as a tab with a test pad; a canvas paper that shows on the canvas; and
+material layers (watercolor, dry media, thick paint) whose colors mix as
+pigments. Projects from 0.3.0 open unchanged. Projects with material layers
+are written with a relief trailer and the styled container header, which
+0.3.0 and earlier refuse rather than opening without the material.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full` on `b50fc39`: default and all-feature
+  test runs (1,402 and 1,411 tests, 23 ignored), the DLL tests, formatting,
+  both Clippy configurations, both release builds, the 42 Python tests and
+  the public-tree check.
+- Candidate `dudel-0.4.0-candidate-20261112-091329-688`: static runtime (no
+  Visual C++ imports), no private paths or terms, and 0 public-tree problems
+  in the package and its source ZIP.
+- The packaged executable started and captured its welcome window.
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.4.0` tag is made; the tag is the record that they did.
+
+**Not run on this build:** the private CSP corpus comparison (import code is
+unchanged since 0.2.0), the resource and two-hour studies, a launch of the
+Linux build, and an owner pen pass over the new brushes, materials and graph
+editor. The new painting code (materials, pigment mixing, wet paint, brush
+graphs) is covered by automated tests and screenshots only: it has not been
+used with a pen. Outside testers and the owner's pen are the next check.
+
+**Known limits** are listed under "Known limits" in the release notes.
+
+# Windows 0.3 release decision — 2026-11-10
 
 **Release preparation for 0.3.0 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-10 to make a pre-release. The 0.2.0

@@ -4,7 +4,7 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## 0.4.0 (in testing)
+## 0.4.0 (2026-11-12)
 
 Painting essentials: gradients, filters, smudge and blur brushes, a
 node-based brush graph with its own Studio tab, and a canvas that behaves
@@ -246,8 +246,12 @@ The first public pre-release.
 - Canvases are up to 16,384 pixels per side and 100 megapixels in total.
   Documents hold up to 1,000 raster layers, 2,000 layer and folder entries and
   ten folder levels, with 2 GiB of stored pixels including masks.
-- Newer projects need a matching Dudel: text layers need 0.2.0, and older
-  versions refuse such files instead of dropping what they can't read.
+- Newer projects need a matching Dudel: text layers need 0.2.0 and material
+  layers 0.4.0, and older versions refuse such files instead of dropping what
+  they can't read.
+- Paint-like color mixing happens on watercolor and thick paint layers only,
+  and is an approximation of real pigments. Timelapse replays do not include
+  the drying of wet paint.
 - CSP and PSD import cover the subsets in [format support](docs/FORMAT_SUPPORT.md).
   Unsupported content opens from the file's saved preview or composite and is
   listed in **Import details**.

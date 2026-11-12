@@ -1,20 +1,20 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-11-10",
+  "decision_date": "2026-11-12",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 pre-release for outside testers, with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at commit f6e5b5a; later commits change documents only, and the v0.3.0 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "0.3.0: welcome window, problem reports and a closing message after an internal error, Help menu links, Color and Navigator tabs, a tidier layer toolbar with the mask row only for masked layers, one dialog style, palette color extraction and color ideas, contrast fixes, and docs reorganized under docs/. Evidence: local Verify Full, hosted Windows and Linux CI on the same application code, both packaging gates and a packaged startup. See RELEASE_DECISION.md. Previous accepted 0.2.0 binaries: dudel.exe 86734496...37164C3A, dudel_thumbnails.dll CA9E3C10...E4204EC8.",
+  "application_source": "this repository's source at commit b50fc39; later commits change documents only, and the v0.4.0 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.4.0: gradients, Gaussian blur, sharpen and noise filters, direct adjustments, named workspaces, smudge, blur and wet brushes, brush graphs with groups, formulas, sharing and an editor that shows node values, Brush Studio as a tab with a test pad, canvas paper shown on the canvas, and material layers (watercolor, dry media, thick paint with a saved relief) whose colors mix as pigments. Projects with material layers use the styled container and a relief trailer that older versions refuse. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.3.0 binaries: dudel.exe 6E92CBFC...CE234D4B, dudel_thumbnails.dll C21A954B...31CFA0CD.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "6E92CBFC7E02F53E1F65A1119A408A531E43D9DFB413DDC484AB1568CE234D4B"
+      "sha256": "D18964FD93CAC3DD89371EA20794F7BDD0F147B565916A0DE84D9DFF069242B5"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "C21A954B3EF9D43D15E77BEB4A7D860746F73CDABDCC35B3829F887D31CFA0CD"
+      "sha256": "DE919FF4614914B96DB70AA9715542668C7B261A75E958D0A07165DC1CF7BA34"
     }
   ]
 }
