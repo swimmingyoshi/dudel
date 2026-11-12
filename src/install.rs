@@ -623,7 +623,7 @@ Your projects, brushes and settings are kept.",
 
         #[test]
         fn an_installation_is_recorded_for_the_current_user_only() {
-            let folder = Path::new(r"C:\Users\artist\AppData\Local\Programs\Dudel");
+            let folder = Path::new(r"D:\Programs\Dudel");
             let entries = entries(folder, "1.2.3", 4096, true);
             let find = |key: &str, name: Option<&str>| {
                 entries
@@ -634,8 +634,7 @@ Your projects, brushes and settings are kept.",
             assert_eq!(
                 find("Uninstall\\Dudel", Some("UninstallString")),
                 Some(&Value::Text(
-                    r#""C:\Users\artist\AppData\Local\Programs\Dudel\dudel.exe" --uninstall"#
-                        .into()
+                    r#""D:\Programs\Dudel\dudel.exe" --uninstall"#.into()
                 ))
             );
             assert_eq!(
@@ -644,9 +643,7 @@ Your projects, brushes and settings are kept.",
             );
             assert_eq!(
                 find(r"Dudel.Project\shell\open\command", None),
-                Some(&Value::Text(
-                    r#""C:\Users\artist\AppData\Local\Programs\Dudel\dudel.exe" "%1""#.into()
-                ))
+                Some(&Value::Text(r#""D:\Programs\Dudel\dudel.exe" "%1""#.into()))
             );
             assert_eq!(
                 find(".dudel", None),
