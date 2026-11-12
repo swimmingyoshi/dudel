@@ -1166,14 +1166,29 @@ impl Dudel {
             });
             return;
         }
+        // The dialog judges a preview on the canvas, so it neither dims the
+        // canvas nor covers the middle of it: it sits at the canvas's top
+        // right corner when there is room, centered otherwise.
+        let canvas = self.canvas_area;
+        let corner = (canvas.is_positive() && canvas.width() >= 640.0 && canvas.height() >= 360.0)
+            .then(|| canvas.right_top() + egui::vec2(-12.0, 12.0));
         let Some(preview) = self.adjustment.as_mut() else {
             return;
         };
         let mut apply = false;
         let mut cancel = false;
         let id = egui::Id::new("raster adjustment");
+        let area = egui::Modal::default_area(id).fade_in(false);
+        let area = match corner {
+            Some(corner) => area.anchor(
+                egui::Align2::RIGHT_TOP,
+                corner - ctx.content_rect().right_top(),
+            ),
+            None => area,
+        };
         let response = egui::Modal::new(id)
-            .area(egui::Modal::default_area(id).fade_in(false))
+            .area(area)
+            .backdrop_color(egui::Color32::TRANSPARENT)
             .show(ctx, |ui| {
             ui.set_width(360.0);
             cancel |= crate::dialogs::dialog_title(ui, preview.settings.kind().name());
@@ -1251,9 +1266,12 @@ impl Dudel {
             });
             if reset { preview.settings = preview.settings.kind().defaults(); preview.error = None; }
         });
+        // With no visible backdrop a click on the canvas is not a request to
+        // close: only Esc, Cancel and the close button cancel.
+        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if apply {
             self.apply_adjustment();
-        } else if cancel || response.should_close() {
+        } else if cancel || (response.should_close() && escape) {
             self.cancel_adjustment();
         }
     }

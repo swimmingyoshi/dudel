@@ -254,7 +254,9 @@ dries the canvas. **Granulation** (Brush settings > Texture) makes paint
 settle into the paper's valleys, on canvases with a paper.
 
 **Filters** change the selected layer's pixels directly, inside the selection,
-with a live preview and one undo step: **Filter > Brightness / contrast**, **Hue
+with a live preview and one undo step. Their dialog sits at the canvas's top
+right and leaves the canvas undimmed, so you judge the preview as it will look;
+**Esc** or **Cancel** closes it without changes. The filters are **Filter > Brightness / contrast**, **Hue
 / saturation** and **Levels**; **Gaussian blur** (blurs spread into clear areas
 unless Lock transparency is on); **Sharpen**, an unsharp mask with amount and
 radius; and **Add noise**, in color or monochrome grain. **Filter > More

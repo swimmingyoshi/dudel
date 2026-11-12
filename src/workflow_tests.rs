@@ -5368,3 +5368,22 @@ fn canvas_paper_is_chosen_in_a_dialog_and_undone_like_any_edit() {
     ui.finish_geometry();
     assert!(ui.app.doc.paper.is_none());
 }
+
+#[test]
+fn filter_dialogs_leave_the_canvas_visible_and_ignore_stray_clicks() {
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.settle();
+    ui.app
+        .start_adjustment(crate::adjustments::Kind::GaussianBlur);
+    ui.settle();
+    let title = ui.text("Gaussian blur");
+    // The dialog sits at the canvas's top right, off the middle of the art.
+    assert!(title.x > ui.app.canvas_area.center().x, "{title:?}");
+    // A click on the canvas leaves it open; Esc cancels.
+    let canvas = ui.app.canvas_area.left_bottom() + egui::vec2(40.0, -40.0);
+    ui.click(canvas);
+    assert!(ui.app.adjustment.is_some());
+    ui.key(egui::Key::Escape, egui::Modifiers::NONE);
+    ui.settle();
+    assert!(ui.app.adjustment.is_none());
+}
