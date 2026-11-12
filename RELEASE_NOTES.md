@@ -4,6 +4,32 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+- **Install on this PC:** the welcome window and the Help menu offer to install
+  the portable copy for your Windows account: Dudel copies itself to your
+  programs folder, adds Start menu and desktop shortcuts, opens `.dudel`
+  projects when you double-click them, turns on their File Explorer previews
+  and appears under **Windows Settings > Apps**, which removes it again. No
+  administrator rights are needed, each extra is a checkbox, and the portable
+  ZIP keeps working exactly as before.
+- **Updates from inside Dudel:** **Help > Check for updates** asks GitHub for a
+  newer release and shows what is new. On Windows, **Download and install**
+  fetches it, checks it against its published checksum and replaces the copy
+  you are running (installed or portable), then offers to restart, asking
+  about unsaved work first. If anything fails, the files are left as they
+  were. Dudel still never connects to the internet by itself: this check runs
+  only when you ask for it. On Linux the check links to the download.
+- **Open projects from File Explorer:** `dudel.exe` opens the project files it
+  is started with, each in its own tab.
+
+Known limits: 0.4.0 and earlier cannot update themselves, so this version is
+installed by downloading its ZIP once. Dudel has no icon of its own yet, so
+shortcuts and `.dudel` files show the generic program icon. Builds are still
+unsigned, and an update is trusted because it comes from the project's
+GitHub releases over a secure connection and matches the checksum published
+there.
+
 ## 0.4.0 (2026-11-12)
 
 Painting essentials: gradients, filters, smudge and blur brushes, a

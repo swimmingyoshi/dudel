@@ -151,6 +151,14 @@ try {
     # License expressions identify review work; they do not replace license texts/notices.
     @($metadata.packages | Sort-Object name, version | Select-Object name, version, license, source) |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $stage 'DEPENDENCIES.json') -Encoding utf8
+    # Every file of the package, itself included. Installing and updating
+    # (src/install.rs, src/update.rs) touch these files and no others, and an
+    # update is refused unless its list matches its contents exactly.
+    $listed = @(Get-ChildItem -LiteralPath $stage -File -Recurse | ForEach-Object {
+        $_.FullName.Substring($stage.Length + 1).Replace([IO.Path]::DirectorySeparatorChar, [char]'/')
+    } | Where-Object { $_ -notmatch '(^|/)__pycache__/' -and $_ -notmatch '(^|/)VENDOR\.log$' }) + 'FILES.json'
+    [ordered]@{ files = @($listed | Sort-Object -Unique) } | ConvertTo-Json -Depth 3 -Compress |
+        Set-Content -LiteralPath (Join-Path $stage 'FILES.json') -Encoding ascii
     $zip = "$stage.zip"
     if (Test-Path -LiteralPath $zip) { throw "Archive already exists: $zip" }
     Invoke-Native python @((Join-Path $PSScriptRoot 'zip_directory.py'), $stage, $zip)

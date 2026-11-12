@@ -870,13 +870,23 @@ impl Dudel {
             let updates = ui
                 .add(egui::Button::new("Check for updates…"))
                 .on_hover_text(format!(
-                    "Opens the releases page in your browser. You have version {}.                      Dudel never connects to the internet by itself.",
+                    "Asks github.com whether a newer Dudel exists and offers to install it. You have version {}. Dudel connects to the internet only when you ask it to here.",
                     env!("CARGO_PKG_VERSION")
                 ));
             if updates.clicked() {
                 ui.close();
-                ui.ctx()
-                    .open_url(egui::OpenUrl::new_tab(crate::welcome::RELEASES));
+                self.check_for_updates(ui.ctx());
+            }
+            if self.setup.can_install
+                && ui
+                    .add(egui::Button::new("Install on this PC…"))
+                    .on_hover_text(
+                        "Adds this portable Dudel to the Start menu and opens .dudel projects with it",
+                    )
+                    .clicked()
+            {
+                ui.close();
+                self.setup.install_open = true;
             }
             ui.separator();
             if menu_item(ui, "About Dudel", "", true) {
@@ -2146,6 +2156,7 @@ impl Dudel {
         self.shortcuts_ui(ctx);
         self.about_ui(ctx);
         self.welcome_ui(ctx);
+        self.setup_ui(ctx);
         self.extension_manager_ui(ctx);
         self.import_report_ui(ctx);
         self.extension_panels_ui(ctx);

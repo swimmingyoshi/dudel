@@ -12,11 +12,19 @@ Dudel is a drawing app made for pen tablets. Thanks for trying it.
 3. The welcome window offers a new canvas and lists the keys worth learning
    first. The [quick start](docs/QUICK_START.md) covers drawing, layers,
    saving, recovery and export.
+4. Optional: **Install on this PC** in the welcome window (or the Help menu)
+   copies Dudel to your programs folder, adds Start menu and desktop shortcuts
+   and opens `.dudel` projects with it. No administrator rights are needed, and
+   this folder can be deleted afterwards. Skip it to keep Dudel portable.
+
+**Help > Check for updates** looks for a newer release and can install it over
+this copy. Dudel connects to the internet only when you ask for that check.
 
 Your artwork is saved in `Documents\Dudel`; settings and recovery snapshots stay
-in `%LOCALAPPDATA%\Dudel`. To remove Dudel, first choose **View > Settings >
-File Explorer previews > Remove .dudel previews** if you turned previews on, then
-delete this folder. Your projects stay where they are.
+in `%LOCALAPPDATA%\Dudel`. To remove an installed Dudel, use **Windows Settings >
+Apps**. To remove a portable copy, first choose **View > Settings > File Explorer
+previews > Remove .dudel previews** if you turned previews on, then delete this
+folder. Your projects stay where they are.
 
 ## Good to know
 

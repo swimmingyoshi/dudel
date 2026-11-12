@@ -18,7 +18,7 @@ pub enum Action {
     CloseTab,
 }
 #[derive(Debug, PartialEq)]
-enum UnsavedChoice {
+pub(crate) enum UnsavedChoice {
     Save,
     Discard,
     Cancel,
@@ -112,7 +112,7 @@ impl Dudel {
             self.answer_unsaved(choice);
         }
     }
-    fn answer_unsaved(&mut self, choice: UnsavedChoice) {
+    pub(crate) fn answer_unsaved(&mut self, choice: UnsavedChoice) {
         if let Some(action) = self.unsaved_action.take() {
             self.resolve_unsaved(action, choice);
         }

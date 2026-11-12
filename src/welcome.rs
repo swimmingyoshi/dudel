@@ -138,6 +138,19 @@ impl Dudel {
                     if ui.link("All shortcuts").clicked() {
                         command = Some(Action::Shortcuts);
                     }
+                    if self.setup.can_install {
+                        ui.label("·");
+                        if ui
+                            .link("Install on this PC")
+                            .on_hover_text(
+                                "Adds this portable Dudel to the Start menu and opens .dudel projects with it",
+                            )
+                            .clicked()
+                        {
+                            self.setup.install_open = true;
+                            close = true;
+                        }
+                    }
                 });
                 ui.checkbox(&mut self.show_welcome, "Show this window when Dudel starts");
             });

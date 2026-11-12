@@ -119,7 +119,17 @@ fn saved_preview_includes_native_layer_effects() {
 #[cfg(windows)]
 pub(crate) fn set_explorer_thumbnails(enable: bool) -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dll = exe.with_file_name("dudel_thumbnails.dll");
+    register_thumbnails(&exe.with_file_name("dudel_thumbnails.dll"), enable)?;
+    Ok(if enable {
+        "File Explorer now shows previews of .dudel projects saved from now on".into()
+    } else {
+        "File Explorer previews for .dudel projects removed".into()
+    })
+}
+
+/// Registers or removes the thumbnail library at `dll` for the current user.
+#[cfg(windows)]
+pub(crate) fn register_thumbnails(dll: &std::path::Path, enable: bool) -> Result<(), String> {
     if !dll.is_file() {
         return Err(format!("{} is missing", dll.display()));
     }
@@ -130,15 +140,11 @@ pub(crate) fn set_explorer_thumbnails(enable: bool) -> Result<String, String> {
     if !enable {
         command.arg("/u");
     }
-    let status = command.arg(&dll).status().map_err(|e| e.to_string())?;
+    let status = command.arg(dll).status().map_err(|e| e.to_string())?;
     if !status.success() {
         return Err(format!("regsvr32 failed ({status})"));
     }
-    Ok(if enable {
-        "File Explorer now shows previews of .dudel projects saved from now on".into()
-    } else {
-        "File Explorer previews for .dudel projects removed".into()
-    })
+    Ok(())
 }
 
 #[cfg(test)]

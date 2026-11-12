@@ -99,11 +99,28 @@ The canvas as a surface that paint reacts to, in stages:
        wet neighbor mixes as pigment where its color differs. Not yet: paint
        thickness changing how colors mix.
 
+## Installing and updating
+
+- [x] **Install on this PC** from the portable copy: per-user programs folder,
+      Start menu and desktop shortcuts, `.dudel` file type, File Explorer
+      previews, an entry under Windows Settings > Apps that removes it. No
+      separate installer and no administrator rights; the ZIP stays portable.
+- [x] **Help > Check for updates**: only when asked. Reads the public release
+      list, downloads the Windows package, checks its checksum and replaces
+      the running copy file by file, undoing everything if a file cannot be
+      placed. Details in [DISTRIBUTION.md](../DISTRIBUTION.md#installing-and-updating).
+- [x] `dudel.exe PROJECT...` opens projects, as File Explorer starts it.
+- [ ] An application icon (needs artwork): shortcuts and `.dudel` files show
+      the generic program icon until then.
+- [ ] Signed update records, so an update is trusted through the project's
+      own key and not only through GitHub and its checksum.
+- [ ] In-place updates on Linux (the check links to the download today).
+
 ## Later
 
 These wait for tester feedback or for a reason to do them:
 
-- Code signing and an optional installer with file associations.
+- Code signing.
 - Color management for print work.
 - Editable animation ([proposal](ANIMATION_PLAN.md)).
 - Plugin manager: version ordering and updates; a stable panel widget list.

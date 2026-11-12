@@ -78,6 +78,49 @@ and binary/source notice parity. It also reports whether the notices are byte-id
 to an earlier reviewed candidate, so subcomponent reviews only need repeating for
 changed files.
 
+## Installing and updating
+
+Releases stay portable ZIPs. Two features inside Dudel build on them
+(`src/install.rs`, `src/update.rs`, `src/setup_ui.rs`):
+
+- **Install on this PC** (Windows) copies the running package to
+  `%LOCALAPPDATA%\Programs\Dudel` and registers it for the current user only:
+  Start menu and optional desktop shortcut, the `.dudel` file type, the
+  thumbnail library, and an entry under Windows Settings > Apps whose
+  uninstall command is `dudel.exe --uninstall`. Everything is under
+  `HKEY_CURRENT_USER`; nothing needs administrator rights. Uninstalling removes
+  the package's files and those registrations, and leaves projects, settings
+  and any file that was not part of the package.
+- **Help > Check for updates** runs only when the artist asks. It reads
+  `api.github.com/repos/OWNER/REPO/releases`, takes the highest `vX.Y.Z` tag
+  that is published (pre-releases count, drafts do not) and, on Windows,
+  downloads that release's package. `dudel --check-update` prints the same
+  answer for scripts and support.
+
+`Package.ps1` writes `FILES.json`, the list of every file in the package.
+Installing and updating touch exactly the listed files, so a copy extracted
+into a folder with other files is still safe to install from or update.
+
+The updater depends on how a release is published, so keep these fixed:
+
+- The tag is `vX.Y.Z` and the package asset is `dudel-X.Y.Z-windows-x64.zip`
+  with `dudel-X.Y.Z-windows-x64.zip.sha256` beside it, both attached to that
+  GitHub release.
+- The ZIP holds one top folder; inside it are `dudel.exe`, `BUILD.json` with
+  the same version, and a `FILES.json` that matches the ZIP's contents exactly.
+
+An update is installed only if the download has the size GitHub lists, its
+SHA-256 equals both GitHub's digest and the `.sha256` file, its `BUILD.json`
+names the release's version, and its file list matches its files. New files
+are unpacked into a folder inside Dudel's own, then moved into place one by
+one; replaced files (the running program included) are moved aside, and all
+of it is undone if any file cannot be placed. Leftovers are cleared at the
+next start.
+
+The checksum guards against a damaged or swapped download, not against
+someone publishing a release from the project's GitHub account: packages are
+not signed yet.
+
 ## Linux packages
 
 `python scripts/package_linux.py` makes `dudel-VERSION-linux-x64.tar.gz`, its matching

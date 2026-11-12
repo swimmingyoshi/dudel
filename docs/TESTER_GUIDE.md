@@ -10,8 +10,9 @@ You don't need to be technical, and "this felt wrong" is useful feedback.
 
 - **Protect your art.** This is a pre-release. Use it for test drawings, and open
   *copies* of any files you care about.
-- **Privacy.** Dudel has no telemetry and no update check, and it doesn't send
-  anything anywhere. Nothing is shared unless you post it yourself.
+- **Privacy.** Dudel has no telemetry and never connects to the internet by
+  itself. The one connection it can make is the update check you start from
+  **Help > Check for updates**. Nothing is shared unless you post it yourself.
 - **Windows warning.** Downloads aren't code-signed yet, so Windows may say
   "Windows protected your PC". Choose **More info > Run anyway**.
 
@@ -20,8 +21,11 @@ You don't need to be technical, and "this felt wrong" is useful feedback.
 Download from the [Releases page](https://github.com/swimmingyoshi/dudel/releases).
 
 **Windows:** get `dudel-<version>-windows-x64.zip`, extract the **whole** ZIP and
-run `dudel.exe`. There is no installer. To remove it, delete the folder; your
-projects stay in `Documents\Dudel`.
+run `dudel.exe`. That is all it needs. If you want it in the Start menu and
+want `.dudel` files to open with it, choose **Install on this PC** in the
+welcome window; **Windows Settings > Apps** removes it again. To remove a
+portable copy, delete the folder. Your projects stay in `Documents\Dudel`
+either way.
 
 **Linux (experimental):** get `dudel-<version>-linux-x64.tar.gz`, extract it and
 run `./dudel`. Pen pressure needs a Wayland session.

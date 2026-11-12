@@ -79,6 +79,7 @@ mod indexed_mask;
 mod indexed_thumbnail;
 mod indexed_tile;
 mod input;
+mod install;
 mod jobs;
 mod lasso_paint;
 mod layer_effects;
@@ -171,6 +172,8 @@ mod selection_mask;
 mod selection_ui;
 mod settings_store;
 mod settings_ui;
+mod setup_ui;
+mod sha256;
 mod shortcut_editor;
 mod shortcuts;
 mod snapshot_memory;
@@ -196,6 +199,7 @@ mod tools;
 #[cfg(windows)]
 mod touch_keyboard;
 mod transform;
+mod update;
 mod vector_layer;
 mod vector_pick;
 mod view;
@@ -562,6 +566,8 @@ struct Dudel {
     welcome_open: bool,
     /// Open the welcome window when Dudel starts (a preference).
     show_welcome: bool,
+    /// The Updates and Install windows.
+    setup: setup_ui::Setup,
 }
 
 impl Default for Dudel {
@@ -829,6 +835,7 @@ impl Default for Dudel {
             tip_cursor: Default::default(),
             welcome_open: false,
             show_welcome: true,
+            setup: Default::default(),
         }
     }
 }
@@ -1407,9 +1414,14 @@ fn main() -> eframe::Result {
     // A plain launch is an artist's session: keep a report of any panic and,
     // if one closes the window, say so instead of vanishing. Command-line
     // and diagnostic modes report on stderr as before.
-    if std::env::args_os().len() > 1 {
+    // Projects to open (from File Explorer) are still a plain launch.
+    let plain = std::env::args_os()
+        .nth(1)
+        .is_none_or(|first| !first.to_string_lossy().starts_with("--"));
+    if !plain {
         return run();
     }
+    install::startup();
     crash_report::install();
     match std::panic::catch_unwind(run) {
         Ok(result) => result,
@@ -1421,8 +1433,66 @@ fn main() -> eframe::Result {
 }
 
 fn run() -> eframe::Result {
+    // `dudel PROJECT...`, as File Explorer starts it for a .dudel file.
+    let open_files: Vec<PathBuf> = std::env::args_os()
+        .skip(1)
+        .take_while(|argument| !argument.to_string_lossy().starts_with("--"))
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .collect();
     let mut args = std::env::args().skip(1);
-    let mode = args.next();
+    let mode = args.next().filter(|mode| mode.starts_with("--"));
+    #[cfg(windows)]
+    if mode.as_deref() == Some("--uninstall") {
+        // Windows runs this from Settings > Apps for the installed copy.
+        let quiet = args.next().as_deref() == Some("--quiet");
+        if let Err(error) = install::uninstall_command(quiet) {
+            eprintln!("Remove Dudel: {error}");
+            if !quiet {
+                rfd::MessageDialog::new()
+                    .set_title("Remove Dudel")
+                    .set_description(&error)
+                    .set_level(rfd::MessageLevel::Error)
+                    .show();
+            }
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    #[cfg(windows)]
+    if mode.as_deref() == Some("--install") {
+        // What Install on this PC does, for scripts: every extra is on
+        // unless its --no- switch is given.
+        let switches: Vec<String> = args.collect();
+        let off = |switch: &str| switches.iter().any(|given| given == switch);
+        let options = install::Options {
+            desktop: !off("--no-desktop"),
+            open_projects: !off("--no-file-type"),
+            thumbnails: !off("--no-previews"),
+        };
+        match install::install(options) {
+            Ok(program) => println!("Installed {}", program.display()),
+            Err(error) => {
+                eprintln!("Install: {error}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+    if mode.as_deref() == Some("--check-update") {
+        // What Help > Check for updates would find, for scripts and support.
+        match update::check() {
+            Ok(Some(release)) => {
+                println!("Dudel {} is available: {}", release.version, release.page)
+            }
+            Ok(None) => println!("Dudel {} is the newest version", env!("CARGO_PKG_VERSION")),
+            Err(error) => {
+                eprintln!("Update check: {error}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
     if mode.as_deref() == Some("--check-plugin") {
         let path = args.next().map(PathBuf::from);
         let result = match path {
@@ -1955,6 +2025,8 @@ fn run() -> eframe::Result {
     let capture_settings = mode.as_deref() == Some("--capture-settings");
     let capture_shortcuts = mode.as_deref() == Some("--capture-shortcuts");
     let capture_welcome = mode.as_deref() == Some("--capture-welcome");
+    let capture_updates = mode.as_deref() == Some("--capture-updates");
+    let capture_install = mode.as_deref() == Some("--capture-install") || capture_updates;
     let capture_gradient = mode.as_deref() == Some("--capture-gradient");
     let capture_filter = mode.as_deref() == Some("--capture-filter");
     let capture_smudge = mode.as_deref() == Some("--capture-smudge");
@@ -2032,6 +2104,7 @@ fn run() -> eframe::Result {
         || capture_settings
         || capture_shortcuts
         || capture_welcome
+        || capture_install
         || capture_gradient
         || capture_filter
         || capture_smudge
@@ -2150,6 +2223,7 @@ fn run() -> eframe::Result {
     };
     let creator = |display: display_settings::DisplaySettings| -> eframe::AppCreator<'static> {
         let capture = capture.clone();
+        let open_files = open_files.clone();
         let settings_handle = settings_session.as_ref().map(|s| s.handle.clone());
         let settings_issue = settings_session.as_ref().and_then(|s| s.issue.clone());
         Box::new(move |cc| {
@@ -2758,6 +2832,9 @@ fn run() -> eframe::Result {
                 if capture_material {
                     app.material_capture_fixture();
                 }
+                if capture_install {
+                    app.setup_capture_fixture(capture_updates);
+                }
                 if capture_welcome {
                     app.welcome_open = true;
                     app.recent = ["Portrait study.dudel", "Comic page 12.dudel"]
@@ -2876,6 +2953,11 @@ fn run() -> eframe::Result {
                 app.display_active = display_settings::active_description(cc);
                 // Recovery asks first; the welcome window can wait for Help.
                 app.welcome_open = app.show_welcome && !app.recovery_window;
+                if !open_files.is_empty() {
+                    app.pending_opens = open_files;
+                    app.welcome_open = false;
+                }
+                app.setup.can_install = cfg!(windows) && !install::running_installed();
                 app.experimental_indexed_storage = experimental_indexed_storage;
                 #[cfg(any(windows, target_os = "linux"))]
                 app.input.attach(cc);
@@ -2926,6 +3008,7 @@ fn run() -> eframe::Result {
             result = Err(startup_error(error));
         }
     }
+    setup_ui::relaunch_if_requested();
     result
 }
 

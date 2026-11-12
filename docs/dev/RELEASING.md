@@ -30,5 +30,8 @@ hosted CI once on the final candidate.
 7. **Publish.** Create a draft GitHub release from the tag, upload both ZIPs
    and their `.sha256` files, download them again to compare hashes, and
    publish the draft. Refer to releases by id in scripts: tags can move.
+   Keep the asset names exactly as `Package.ps1` wrote them: **Help > Check
+   for updates** in earlier versions finds the package by its name (see
+   [DISTRIBUTION.md](../DISTRIBUTION.md#installing-and-updating)).
 8. **Linux (optional).** On a machine with `cargo-zigbuild`, run
    `python scripts/package_linux.py` and upload the tarball to the same release.

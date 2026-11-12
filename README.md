@@ -71,7 +71,8 @@ display or tablet.
 
 ## Download and install
 
-Dudel is **portable**: there is no installer.
+Dudel runs straight from its folder, and can install itself if you want it in
+the Start menu.
 
 1. Download `dudel-<version>-windows-x64.zip` from the
    [Releases page](https://github.com/swimmingyoshi/dudel/releases).
@@ -80,11 +81,24 @@ Dudel is **portable**: there is no installer.
    from inside the ZIP only runs a temporary copy.
 3. Run `dudel.exe`. Builds are not code-signed yet, so Windows SmartScreen may say
    "Windows protected your PC": choose **More info > Run anyway**.
+4. Optional: choose **Install on this PC** in the welcome window or the Help
+   menu. Dudel copies itself to your programs folder, adds Start menu and
+   desktop shortcuts, opens `.dudel` projects when you double-click them and
+   shows their previews in File Explorer. It needs no administrator rights.
+   Skip this step to keep Dudel portable.
+
+**Updating:** **Help > Check for updates** asks GitHub whether a newer release
+exists. On Windows it then downloads the release, checks it against its
+published checksum and replaces the copy you are running, installed or
+portable; on Linux it links to the download. Dudel connects to the internet
+only when you ask for this check. Versions up to 0.4.0 are updated by
+downloading the new ZIP.
 
 The Visual C++ runtime is built in; nothing else needs installing. Keep
 `dudel_thumbnails.dll` beside `dudel.exe` for optional `.dudel` thumbnails in File
 Explorer. Artwork goes to `Documents\Dudel`; settings and recovery snapshots stay
-in `%LOCALAPPDATA%\Dudel`. To uninstall, delete the folder; your projects stay.
+in `%LOCALAPPDATA%\Dudel`. To remove a portable copy, delete its folder; remove
+an installed copy from **Windows Settings > Apps**. Your projects stay.
 
 Each release also publishes a matching **source ZIP** with vendored dependencies
 and build instructions.

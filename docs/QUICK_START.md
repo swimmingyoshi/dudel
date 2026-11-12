@@ -11,6 +11,14 @@ when Dudel starts* to skip it; **Help > Welcome screen** brings it back. The
 The Windows x64 build links the C runtime into the application; a separate Visual
 C++ redistributable is not required.
 
+Dudel runs from its folder as it is. To have it in the Start menu and open
+`.dudel` projects with a double-click, choose **Install on this PC** in the
+welcome window or the **Help** menu; it needs no administrator rights, and
+**Windows Settings > Apps** removes it again. **Help > Check for updates** looks
+for a newer version and can install it over the copy you are running. That
+check is the only time Dudel connects to the internet, and it happens only
+when you ask.
+
 ## Find actions and keep track of your target
 
 In current development builds, **Edit > Find a command** (`Ctrl+K` or
