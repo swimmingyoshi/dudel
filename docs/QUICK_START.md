@@ -253,6 +253,36 @@ wet, and Flow how fast paint builds. One layer is wet at a time, and undo
 dries the canvas. **Granulation** (Brush settings > Texture) makes paint
 settle into the paper's valleys, on canvases with a paper.
 
+The paper shows on the canvas: its grain shades the canvas and shows through
+paint, the way paper does, fading out as you zoom far out. Only the view
+shows it; exports, thumbnails and color picks do not. **View > Paper
+texture** turns it off.
+
+**Material layers:** a layer can know what kind of paint it holds. **Layer >
+New material layer** (also in the Layers panel's menus) makes one, and **Layer
+> Layer material…** (or the **Material** button under the layer's blend mode)
+changes the selected layer's. The dialog previews a stroke on the material.
+
+- **Watercolor:** as a wet wash dries, water flows toward its drying edges
+  and carries pigment there, so washes dry with darker rims (**Edge
+  darkening**); fresh water dropped into a drying wash pushes paint aside
+  into blooms (**Blooms**). Paint with a Wet brush.
+- **Dry media:** every brush catches on the paper's tooth like pastel or
+  charcoal, light pressure on the peaks and firm pressure into the valleys
+  (**Tooth**). Without a paper on the canvas the layer brings a fine tooth of
+  its own. Dry media layers hold no water.
+- **Thick paint:** brushes leave paint that stands up from the canvas, with
+  bristle streaks along each stroke, lit by a light you place (**Light
+  from**, **Depth**, **Shine**; change them at any time). Each brush's
+  **Thickness** (Brush settings > Texture) says how thick it paints; the
+  eraser flattens what it removes. The **Impasto** and **Palette knife**
+  presets are made for it, and **Soft pastel** for dry media.
+
+The relief of thick paint is saved with the project and turns, flips, moves
+and transforms with the layer's pixels when the whole layer changes. PSD
+export writes the light as a clipped layer. Older Dudel refuses projects
+with material layers rather than opening them without.
+
 **Filters** change the selected layer's pixels directly, inside the selection,
 with a live preview and one undo step. Their dialog sits at the canvas's top
 right and leaves the canvas undimmed, so you judge the preview as it will look;
@@ -406,7 +436,16 @@ Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
   Opacity draws a dashed line, and Speed into Scatter sprays faster strokes.
 - Drag from a node's right dot to another node's left dot to wire them; drag a
   wire's end off an input to move or remove it. A wire that would make a loop
-  is refused.
+  is refused. Let a new wire go over empty canvas and a node search opens
+  there: type part of a name (or of what it does), press Enter or click one,
+  and the node arrives already wired. **Add node** has the same search at
+  the top.
+- Every node shows what it computes: its value at its output dot and as a
+  bar under its title, and output nodes show theirs at the right of the
+  title. **Try inputs** (below the node settings) sets the pen input they
+  are shown for: pressure, speed, tilt, direction, distance along the
+  stroke and random. While you draw on the test pad, the values follow your
+  latest dab. Hovering a node, input or output says what it does.
 - Drag nodes to arrange them, drag empty space to pan, and use the wheel to
   zoom; **Fit** shows every node. Ctrl- or Shift-click adds a node to the
   selection, and Shift-dragging empty space selects a box of them; dragging

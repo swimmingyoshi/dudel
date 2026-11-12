@@ -362,14 +362,16 @@ fn reframe(
     let right = (width as i64 - offset[0]).clamp(left as i64, source.width as i64) as usize;
     let bottom = (height as i64 - offset[1]).clamp(top as i64, source.height as i64) as usize;
     for (out, layer) in doc.layers.iter_mut().zip(&source.layers) {
+        let from = |[x, y]: [usize; 2]| {
+            let sx = (x as i64).checked_sub(offset[0])?;
+            let sy = (y as i64).checked_sub(offset[1])?;
+            (sx >= 0 && sy >= 0 && sx < source.width as i64 && sy < source.height as i64)
+                .then_some([sx as usize, sy as usize])
+        };
         if let Some(mask) = &mut out.mask {
-            mask.coverage = mask.coverage.remap(width, height, 255, cancel, |[x, y]| {
-                let sx = (x as i64).checked_sub(offset[0])?;
-                let sy = (y as i64).checked_sub(offset[1])?;
-                (sx >= 0 && sy >= 0 && sx < source.width as i64 && sy < source.height as i64)
-                    .then_some([sx as usize, sy as usize])
-            })?;
+            mask.coverage = mask.coverage.remap(width, height, 255, cancel, from)?;
         }
+        crate::material::follow(out, |relief| relief.remap(width, height, 0, cancel, from))?;
         if layer.folder {
             continue;
         }

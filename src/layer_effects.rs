@@ -1706,10 +1706,15 @@ fn expand_with(
             layer.clone()
         };
         owner.effects.clear();
+        // Thick paint's light is drawn just over its paint, under effects
+        // inside the layer; the expanded owner is plain paint.
+        let light = crate::material::light_layer(layer, [doc.width, doc.height]);
+        owner.material = None;
         // Fill fades the layer's own pixels, not its effects.
         owner.opacity *= owner.fill;
         owner.fill = 1.0;
         out.layers.push(owner);
+        out.layers.extend(light);
         out.layers.extend(inside.into_iter().map(at_depth));
         if !above.is_empty() {
             pending.extend(above.into_iter().map(at_depth));

@@ -1050,6 +1050,29 @@ fn apply_pixels(
         })
     })?;
     let mask_changed = !crate::layer_mask::same_snapshot(&layer_mask, &layer.mask);
+    // Thick paint's relief follows a whole-layer transform; outside the
+    // moved paint the canvas is flat.
+    let relief = match layer.material.as_ref().and_then(|m| m.relief.as_ref()) {
+        Some(relief) if doc.selection.is_none() && doc.selection_mask.is_none() => Some(
+            crate::layer_mask::Mask::generate(doc.width, doc.height, 0, cancel, |x, y| {
+                let [sx, sy] = inverse.source(x, y);
+                Ok(
+                    if sx.is_finite()
+                        && sy.is_finite()
+                        && sx >= 0.0
+                        && sy >= 0.0
+                        && (sx as usize) < doc.width
+                        && (sy as usize) < doc.height
+                    {
+                        relief.at(sx as usize, sy as usize)
+                    } else {
+                        0
+                    },
+                )
+            })?,
+        ),
+        _ => None,
+    };
     if let Some(memory) = memory {
         // Source coverage is borrowed or described by four rectangle coordinates.
         memory.source_coverage_bytes = 0;
@@ -1079,6 +1102,11 @@ fn apply_pixels(
     });
     if changed {
         doc.layers[doc.active].pixels = output;
+        if let Some(relief) = relief
+            && let Some(material) = &mut doc.layers[doc.active].material
+        {
+            material.relief = Some(relief);
+        }
     }
     if mask_changed {
         doc.layers[doc.active].mask = layer_mask;

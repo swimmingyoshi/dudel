@@ -1457,6 +1457,14 @@ impl Dudel {
     }
     fn upload_canvas(&mut self, ctx: &egui::Context) {
         self.prepare_reference_layers(ctx);
+        let paper_view = self.view(self.canvas_area);
+        self.paper_view.prepare(
+            ctx,
+            self.doc.paper,
+            [self.doc.width, self.doc.height],
+            self.canvas_area,
+            paper_view,
+        );
         let options = self.texture_options();
         self.texture
             .set_viewport(self.canvas_area, self.view(self.canvas_area));

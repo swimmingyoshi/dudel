@@ -606,6 +606,7 @@ impl Dudel {
                         }
                     }
                 });
+                self.new_material_menu(ui);
             });
             self.command_menu_item(ui, crate::commands::Action::NewVector);
             self.command_menu_item(ui, crate::commands::Action::NewText);
@@ -627,6 +628,7 @@ impl Dudel {
                 self.rasterize_layer();
             }
             self.command_menu_item(ui, crate::commands::Action::Effects);
+            self.command_menu_item(ui, crate::commands::Action::Material);
             ui.menu_button("Layer mask", |ui| self.mask_menu_items(ui));
             self.command_menu_item(ui, crate::commands::Action::Group);
             self.command_menu_item(ui, crate::commands::Action::Ungroup);
@@ -764,6 +766,13 @@ impl Dudel {
                 self.timelapse.open = true;
                 ui.close();
             }
+            ui.add_enabled(
+                self.doc.paper.is_some(),
+                egui::Checkbox::new(&mut self.paper_view.show, "Paper texture"),
+            )
+            .on_hover_text(
+                "Show the canvas's paper (Canvas › Paper…) on the canvas. Only the view shows it;                  exports do not.",
+            );
             ui.separator();
             ui.menu_button(
                 if self.preview.open {
@@ -2497,6 +2506,46 @@ pub fn default_brushes() -> Vec<Brush> {
             spacing: 0.06,
             pressure_opacity: true,
             softness_profile: crate::brush::SoftnessProfile::Eased,
+            ..Brush::default()
+        },
+        // For material layers (Layer › New material layer).
+        Brush {
+            name: "Impasto".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "paint, oil, thick, impasto, bristle, thick paint".into(),
+            size: 48.0,
+            hardness: 0.9,
+            spacing: 0.04,
+            aspect: 0.75,
+            angle_source: crate::brush::AngleSource::Direction,
+            thickness: 0.85,
+            ..Brush::default()
+        },
+        Brush {
+            name: "Palette knife".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "paint, oil, knife, thick, impasto, thick paint".into(),
+            size: 64.0,
+            hardness: 1.0,
+            spacing: 0.03,
+            tip: crate::brush::Tip::Square,
+            aspect: 0.22,
+            angle_source: crate::brush::AngleSource::Direction,
+            pressure_size: false,
+            thickness: 1.0,
+            ..Brush::default()
+        },
+        Brush {
+            name: "Soft pastel".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "pastel, chalk, dry media, texture".into(),
+            size: 30.0,
+            hardness: 0.55,
+            flow: 0.55,
+            spacing: 0.05,
+            pressure_size: false,
+            pressure_opacity: true,
+            paper_response: 1.0,
             ..Brush::default()
         },
     ]

@@ -54,6 +54,19 @@ impl Dudel {
                     }
                 }
             });
+            ui.menu_button("New material layer", |ui| {
+                for kind in crate::material::Kind::ALL {
+                    if ui
+                        .button(kind.name())
+                        .on_hover_text(kind.describe())
+                        .clicked()
+                        && at_row(self)
+                    {
+                        self.new_material_layer(kind);
+                        ui.close();
+                    }
+                }
+            });
         });
         ui.separator();
         if item(

@@ -197,6 +197,11 @@ impl Registry {
                 mask.coverage
                     .visit_allocations(|id, bytes| self.add_pixels(id, bytes));
             }
+            if let Some(relief) = layer.material.as_ref().and_then(|m| m.relief.as_ref())
+                && !self.counted(relief.storage_allocation())
+            {
+                relief.visit_allocations(|id, bytes| self.add_pixels(id, bytes));
+            }
             if !self.counted(layer.pixels.storage_allocation()) {
                 layer
                     .pixels

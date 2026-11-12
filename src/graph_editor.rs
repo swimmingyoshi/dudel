@@ -37,6 +37,8 @@ enum Drag {
     Wire {
         from: NodeId,
         from_port: u8,
+        /// Picked up off an input rather than drawn from an output.
+        moved: bool,
     },
     Pan,
     /// A selection box from this screen point.
@@ -79,6 +81,75 @@ pub(crate) struct GraphEditor {
     /// The egui pass in which the pointer was last over the canvas; the
     /// editor's keys apply on the next pass.
     hovered_pass: Option<u64>,
+    /// Pen input to show the nodes' values for, when the test pad is idle.
+    probe: Probe,
+    /// Draw each node's value on it.
+    show_values: bool,
+    /// Text typed into an Add node search.
+    search: String,
+    /// A wire let go over empty canvas, waiting for a node to connect to.
+    dropped: Option<Dropped>,
+}
+
+/// A wire let go over empty canvas; a node search opens there.
+#[derive(Clone, Copy)]
+struct Dropped {
+    from: NodeId,
+    from_port: u8,
+    /// Where the new node goes, in graph space, and where the search opens.
+    at: [f32; 2],
+    screen: egui::Pos2,
+    /// The search field still needs the keyboard.
+    focus: bool,
+}
+
+/// Pen input chosen in "Try inputs".
+#[derive(Clone, Copy)]
+struct Probe {
+    pressure: f32,
+    speed: f32,
+    /// Degrees from upright.
+    tilt: f32,
+    /// Stroke direction, degrees.
+    direction: f32,
+    /// Pixels along the stroke.
+    distance: f32,
+    random: f32,
+}
+impl Default for Probe {
+    fn default() -> Self {
+        Self {
+            pressure: 0.6,
+            speed: 0.3,
+            tilt: 20.0,
+            direction: 0.0,
+            distance: 120.0,
+            random: 0.5,
+        }
+    }
+}
+impl Probe {
+    fn sample(&self) -> crate::stroke::Sample {
+        crate::stroke::Sample {
+            pressure: self.pressure,
+            pressure_known: true,
+            speed: Some(self.speed),
+            tilt: Some([self.tilt, 0.0]),
+            random: Some(self.random),
+            distance: f64::from(self.distance),
+            heading: Some(self.direction),
+            ..Default::default()
+        }
+    }
+}
+
+/// A node value for showing: two decimals, or a dash when missing.
+fn shown_value(value: f32) -> String {
+    if value.is_nan() {
+        "–".into()
+    } else {
+        format!("{value:.2}")
+    }
 }
 
 impl Default for GraphEditor {
@@ -98,6 +169,10 @@ impl Default for GraphEditor {
             path: Vec::new(),
             formula: None,
             hovered_pass: None,
+            probe: Probe::default(),
+            show_values: true,
+            search: String::new(),
+            dropped: None,
         }
     }
 }
@@ -984,13 +1059,22 @@ impl Dudel {
             "Brush graph made from the current settings; the brush paints the same".into();
     }
     fn add_graph_node(&mut self, kind: NodeKind, at: [f32; 2]) {
+        self.add_graph_node_from(kind, at, None);
+    }
+    /// Add a node, wired from `from`'s output into its first input when
+    /// given; one undo step either way.
+    fn add_graph_node_from(&mut self, kind: NodeKind, at: [f32; 2], from: Option<(NodeId, u8)>) {
         if self.brush.graph.is_none() {
             self.brush.graph = Some(BrushGraph::new(vec![], vec![]));
         }
         let inside = !self.graph_editor.path.is_empty();
-        if let Some(id) =
-            self.graph_try(|nodes, _, layout| level_add(nodes, layout, kind, at, inside))
-        {
+        if let Some(id) = self.graph_try(|nodes, links, layout| {
+            let id = level_add(nodes, layout, kind, at, inside)?;
+            if let Some(from) = from {
+                level_connect(links, from, id, 0);
+            }
+            Ok(id)
+        }) {
             self.graph_editor.selected = vec![id];
         }
     }
@@ -1059,7 +1143,9 @@ impl Dudel {
     pub(crate) fn graph_editor_keys(&mut self, ctx: &egui::Context) -> bool {
         use egui::{Key, Modifiers};
         let pass = ctx.cumulative_pass_nr();
-        if self.brush.graph.is_none()
+        // Typing in a field (a node search, a formula) never edits the graph.
+        if ctx.wants_keyboard_input()
+            || self.brush.graph.is_none()
             || !self.brush_studio
             || self
                 .graph_editor
@@ -1180,6 +1266,7 @@ impl Dudel {
                             ui.set_max_width(228.0);
                             ui.spacing_mut().slider_width = 150.0;
                             self.graph_node_settings(ui);
+                            self.graph_probe_ui(ui);
                         });
                 });
             });
@@ -1187,7 +1274,85 @@ impl Dudel {
             self.graph_canvas(ui, egui::vec2(ui.available_width(), height));
             ui.add_space(4.0);
             self.graph_node_settings(ui);
+            self.graph_probe_ui(ui);
         }
+    }
+
+    /// "Try inputs": the pen input the nodes' values are shown for. While
+    /// the test pad is being drawn on, its latest dab is shown instead.
+    fn graph_probe_ui(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        let live = self.scratchpad.recent_dab().is_some();
+        if live {
+            // Return to the sliders when drawing stops.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(500));
+        }
+        egui::CollapsingHeader::new("Try inputs")
+            .id_salt("graph try inputs")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.checkbox(&mut self.graph_editor.show_values, "Show values on nodes")
+                    .on_hover_text("Each node shows what it computes for this input");
+                if live {
+                    note(ui, "Showing the latest dab on the test pad.");
+                } else {
+                    note(
+                        ui,
+                        "Set a pen input to see what every node computes, or draw on the test                          pad to see the real values.",
+                    );
+                }
+                ui.add_enabled_ui(!live, |ui| {
+                    let probe = &mut self.graph_editor.probe;
+                    labeled(ui, "Pressure", egui::Slider::new(&mut probe.pressure, 0.0..=1.0));
+                    labeled(ui, "Speed", egui::Slider::new(&mut probe.speed, 0.0..=1.0));
+                    labeled(
+                        ui,
+                        "Tilt",
+                        egui::Slider::new(&mut probe.tilt, 0.0..=90.0)
+                            .suffix("°")
+                            .integer(),
+                    );
+                    labeled(
+                        ui,
+                        "Direction",
+                        egui::Slider::new(&mut probe.direction, -180.0..=180.0)
+                            .suffix("°")
+                            .integer(),
+                    );
+                    labeled(
+                        ui,
+                        "Distance along the stroke",
+                        egui::Slider::new(&mut probe.distance, 0.0..=2000.0)
+                            .suffix(" px")
+                            .integer(),
+                    );
+                    labeled(ui, "Random", egui::Slider::new(&mut probe.random, 0.0..=1.0));
+                    if ui.small_button("Reset").clicked() {
+                        *probe = Probe::default();
+                    }
+                });
+            });
+    }
+
+    /// Each main-graph node's value for the shown input: (node, port).
+    fn graph_values(&self) -> std::collections::HashMap<(NodeId, u8), f32> {
+        let editor = &self.graph_editor;
+        if !editor.show_values || !editor.path.is_empty() {
+            return Default::default();
+        }
+        let Some(compiled) = self.brush.graph.as_ref().and_then(|g| g.compiled().ok()) else {
+            return Default::default();
+        };
+        let sample = self
+            .scratchpad
+            .recent_dab()
+            .unwrap_or_else(|| editor.probe.sample());
+        compiled
+            .trace(&self.brush.graph_inputs(compiled, &sample))
+            .into_iter()
+            .map(|(id, port, value)| ((id, port), value))
+            .collect()
     }
 
     /// Where the canvas is: the main graph, or a group inside it.
@@ -1248,17 +1413,121 @@ impl Dudel {
         }
         self.graph_canvas_input(ui, &response);
         self.paint_graph(ui, rect, &response);
+        self.graph_hover_help(&response);
         self.graph_context_menu(&response);
+        self.dropped_wire_ui(ui.ctx());
+    }
+
+    /// What the node, input or output under the pointer does.
+    fn graph_hover_help(&self, response: &egui::Response) {
+        let editor = &self.graph_editor;
+        if editor.drag.is_some() || editor.dropped.is_some() {
+            return;
+        }
+        let (Some(pointer), Some(level)) = (response.hover_pos(), level(&self.brush, &editor.path))
+        else {
+            return;
+        };
+        let node = |id: NodeId| level.nodes.iter().find(|n| n.id == id);
+        let help = match editor.hit(&level, pointer) {
+            Hit::Node(id) => node(id).map(|n| n.kind.description().to_owned()),
+            Hit::Input(id, port) => node(id).map(|n| {
+                let name = n
+                    .kind
+                    .port_names()
+                    .get(usize::from(port))
+                    .copied()
+                    .unwrap_or("Input");
+                if level.wired(id, port) {
+                    format!("{name} · drag to move this wire, or off to remove it")
+                } else {
+                    format!("{name} · drag a wire here from an output")
+                }
+            }),
+            Hit::Output(..) => Some(
+                "Drag to an input to connect, or onto empty canvas to add a node there".to_owned(),
+            ),
+            Hit::Empty => None,
+        };
+        if let Some(help) = help {
+            response.clone().on_hover_text_at_pointer(help);
+        }
+    }
+
+    /// After a wire is let go over empty canvas: a node search there. The
+    /// node chosen is added where the wire ended, wired from its source.
+    fn dropped_wire_ui(&mut self, ctx: &egui::Context) {
+        let Some(mut dropped) = self.graph_editor.dropped else {
+            return;
+        };
+        let inside = !self.graph_editor.path.is_empty();
+        let nodes = level(&self.brush, &self.graph_editor.path).map(|l| l.nodes);
+        let mut chosen = None;
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let area = egui::Area::new(egui::Id::new("graph wire search"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(dropped.screen)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width(200.0);
+                    ui.weak("Connect to a new node");
+                    let search = ui.add(
+                        egui::TextEdit::singleline(&mut self.graph_editor.search)
+                            .hint_text("Search nodes")
+                            .desired_width(f32::INFINITY),
+                    );
+                    if std::mem::take(&mut dropped.focus) {
+                        search.request_focus();
+                    }
+                    let enter =
+                        search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let found = matching_kinds(&self.graph_editor.search, nodes, inside, true);
+                    egui::ScrollArea::vertical()
+                        .max_height(240.0)
+                        .show(ui, |ui| {
+                            chosen = node_list_ui(ui, &found, enter);
+                        });
+                });
+            });
+        // A press elsewhere dismisses the search.
+        if ctx.input(|i| i.pointer.any_pressed())
+            && ctx
+                .pointer_interact_pos()
+                .is_some_and(|p| !area.response.rect.contains(p))
+        {
+            close = true;
+        }
+        if let Some(kind) = chosen {
+            self.graph_editor.dropped = None;
+            self.graph_editor.search.clear();
+            self.add_graph_node_from(kind, dropped.at, Some((dropped.from, dropped.from_port)));
+        } else if close {
+            self.graph_editor.dropped = None;
+            self.graph_editor.search.clear();
+        } else {
+            self.graph_editor.dropped = Some(dropped);
+        }
     }
 
     /// The node list, with the groups found in the brush library.
     fn add_node_menu(&mut self, ui: &mut egui::Ui, at: [f32; 2]) {
         let inside = !self.graph_editor.path.is_empty();
-        let chosen = node_catalog_ui(
-            ui,
-            level(&self.brush, &self.graph_editor.path).map(|l| l.nodes),
-            inside,
+        let nodes = level(&self.brush, &self.graph_editor.path).map(|l| l.nodes);
+        let search = ui.add(
+            egui::TextEdit::singleline(&mut self.graph_editor.search)
+                .hint_text("Search nodes")
+                .desired_width(180.0),
         );
+        let enter = search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let chosen = if self.graph_editor.search.trim().is_empty() {
+            node_catalog_ui(ui, nodes, inside)
+        } else {
+            let found = matching_kinds(&self.graph_editor.search, nodes, inside, false);
+            node_list_ui(ui, &found, enter)
+        };
+        if chosen.is_some() {
+            self.graph_editor.search.clear();
+        }
         let mut brushes: Vec<&Brush> = vec![&self.brush];
         brushes.extend(self.brushes.iter());
         let groups = library_groups(&brushes);
@@ -1429,13 +1698,18 @@ impl Dudel {
                 Hit::Output(node, from_port) => Drag::Wire {
                     from: node,
                     from_port,
+                    moved: false,
                 },
                 Hit::Input(node, port) => {
                     // Pick up an existing wire to move it elsewhere.
                     match self.graph_edit(true, |_, links, _| {
                         level_disconnect(links, node, port).ok_or_else(String::new)
                     }) {
-                        Ok((from, from_port)) => Drag::Wire { from, from_port },
+                        Ok((from, from_port)) => Drag::Wire {
+                            from,
+                            from_port,
+                            moved: true,
+                        },
                         Err(_) => Drag::Pan,
                     }
                 }
@@ -1492,16 +1766,33 @@ impl Dudel {
                 .interact_pointer_pos()
                 .or(ui.input(|i| i.pointer.latest_pos()));
             match self.graph_editor.drag.take() {
-                Some(Drag::Wire { from, from_port }) => {
-                    if let Some(pointer) = pointer
-                        && let Hit::Input(to, port) = hit_at(self, pointer)
-                    {
+                Some(Drag::Wire {
+                    from,
+                    from_port,
+                    moved,
+                }) => match pointer.map(|p| (p, hit_at(self, p))) {
+                    Some((_, Hit::Input(to, port))) => {
                         let _ = self.graph_try(|_, links, _| {
                             level_connect(links, (from, from_port), to, port);
                             Ok(())
                         });
                     }
-                }
+                    // A new wire over empty canvas: offer a node to connect
+                    // to. A wire moved off an input is just removed.
+                    Some((pointer, Hit::Empty))
+                        if !moved && self.graph_editor.canvas.contains(pointer) =>
+                    {
+                        self.graph_editor.search.clear();
+                        self.graph_editor.dropped = Some(Dropped {
+                            from,
+                            from_port,
+                            at: self.graph_editor.to_graph(pointer),
+                            screen: pointer,
+                            focus: true,
+                        });
+                    }
+                    _ => {}
+                },
                 Some(Drag::Select { from }) => {
                     if let (Some(pointer), Some(level)) = (pointer, level(&self.brush, &path)) {
                         let area = egui::Rect::from_two_pos(from, pointer);
@@ -1640,7 +1931,9 @@ impl Dudel {
             }
         }
         match &editor.drag {
-            Some(Drag::Wire { from, from_port }) => {
+            Some(Drag::Wire {
+                from, from_port, ..
+            }) => {
                 if let (Some(a), Some(b)) = (
                     editor.output_at(&level, *from, *from_port),
                     response.interact_pointer_pos(),
@@ -1668,6 +1961,8 @@ impl Dudel {
         }
         let font = egui::FontId::proportional(12.0 * zoom);
         let small = egui::FontId::proportional(11.0 * zoom);
+        let values = self.graph_values();
+        let accent = visuals.selection.stroke.color;
         for node in level.nodes {
             let r = editor.node_rect(&level, node);
             let selected = editor.selected.contains(&node.id);
@@ -1741,10 +2036,43 @@ impl Dudel {
                     );
                 }
             }
+            // What the node computes for the shown input: a bar under the
+            // title, and the number at each output (or, for a brush
+            // output, at the title's right).
+            if let Some(value) = values.get(&(node.id, 0)).copied() {
+                let fill = if value.is_nan() {
+                    0.0
+                } else {
+                    value.clamp(0.0, 1.0)
+                };
+                let bar = egui::Rect::from_min_size(
+                    header.left_bottom() + egui::vec2(1.0, -2.0 * zoom),
+                    egui::vec2((r.width() - 2.0) * fill, 2.0 * zoom),
+                );
+                painter.rect_filled(bar, 0.0, accent);
+                if is_output {
+                    painter.text(
+                        header.right_center() - egui::vec2(8.0 * zoom, 0.0),
+                        egui::Align2::RIGHT_CENTER,
+                        shown_value(value),
+                        small.clone(),
+                        visuals.strong_text_color(),
+                    );
+                }
+            }
             let names = node.kind.output_names();
             for index in 0..node.kind.outputs() {
                 if let Some(p) = editor.output_at(&level, node.id, index) {
                     painter.circle(p, PORT * zoom, visuals.text_color(), egui::Stroke::NONE);
+                    if let Some(value) = values.get(&(node.id, index)) {
+                        painter.text(
+                            p + egui::vec2(7.0 * zoom, -7.0 * zoom),
+                            egui::Align2::LEFT_BOTTOM,
+                            shown_value(*value),
+                            small.clone(),
+                            accent,
+                        );
+                    }
                     if let Some(name) = names.get(usize::from(index)) {
                         painter.text(
                             p - egui::vec2(10.0 * zoom, 0.0),
@@ -2085,6 +2413,55 @@ fn setting_label(kind: &NodeKind) -> Option<String> {
 
 /// The grouped list of nodes. Outputs the main graph already has are
 /// disabled; inside a group, brush outputs are not offered.
+/// Nodes whose name or description contains every word of `query`. With
+/// `wired`, only nodes that take an input. Outputs the level already has,
+/// and brush outputs inside a group, are left out.
+fn matching_kinds(
+    query: &str,
+    nodes: Option<&[Node]>,
+    inside_group: bool,
+    wired: bool,
+) -> Vec<NodeKind> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    NodeKind::catalog()
+        .into_iter()
+        .filter(|(group, _)| !(inside_group && *group == "Outputs"))
+        .flat_map(|(_, kinds)| kinds)
+        .filter(|kind| !wired || kind.inputs() > 0)
+        .filter(|kind| {
+            !kind.output().is_some_and(|output| {
+                nodes.is_some_and(|n| n.iter().any(|n| n.kind.output() == Some(output)))
+            })
+        })
+        .filter(|kind| {
+            let text = format!("{} {}", kind.name(), kind.description()).to_lowercase();
+            words.iter().all(|word| text.contains(word.as_str()))
+        })
+        .collect()
+}
+
+/// A flat list of node kinds; Enter (`pick_first`) takes the first.
+fn node_list_ui(ui: &mut egui::Ui, kinds: &[NodeKind], pick_first: bool) -> Option<NodeKind> {
+    if kinds.is_empty() {
+        ui.weak("No node matches");
+        return None;
+    }
+    if pick_first {
+        return kinds.first().cloned();
+    }
+    let mut chosen = None;
+    for kind in kinds {
+        if ui
+            .button(kind.name())
+            .on_hover_text(kind.description())
+            .clicked()
+        {
+            chosen = Some(kind.clone());
+        }
+    }
+    chosen
+}
+
 fn node_catalog_ui(
     ui: &mut egui::Ui,
     nodes: Option<&[Node]>,

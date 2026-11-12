@@ -54,6 +54,9 @@ pub(crate) struct DabRaster {
     /// Brush graph color for this dab, and the stroke's secondary color.
     pub(crate) color_shift: Option<crate::brush_graph::ColorShift>,
     pub(crate) secondary: Option<[u8; 3]>,
+    /// Stroke direction in degrees, once the stroke has moved: thick paint
+    /// streaks run along it.
+    pub(crate) heading: Option<f32>,
 }
 impl DabRaster {
     pub fn new(
@@ -106,6 +109,7 @@ impl DabRaster {
             smear: [0.0; 2],
             color_shift: factors.color,
             secondary: None,
+            heading: sample.heading,
         }
     }
 }
@@ -181,6 +185,10 @@ pub struct Layer {
     /// drawn once (`text_layer`), and other pixel edits are refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) text: Option<crate::text_layer::TextLayer>,
+    /// What kind of paint the layer holds (`material`): watercolor, dry
+    /// media or thick paint; None is a plain layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<Box<crate::material::Material>>,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -262,6 +270,7 @@ impl Default for Layer {
             adjustment: None,
             vector: None,
             text: None,
+            material: None,
             pixels: Default::default(),
             display_reference: None,
         }
@@ -666,7 +675,12 @@ impl Document {
             .layers
             .iter()
             .map(|l| {
-                l.pixels.payload_bound() + l.mask.as_ref().map_or(0, |m| m.coverage.payload_bytes())
+                l.pixels.payload_bound()
+                    + l.mask.as_ref().map_or(0, |m| m.coverage.payload_bytes())
+                    + l.material
+                        .as_ref()
+                        .and_then(|m| m.relief.as_ref())
+                        .map_or(0, |r| r.payload_bytes())
             })
             .sum::<usize>()
             > budget
@@ -683,6 +697,11 @@ impl Document {
             .any(|m| m.coverage.dimensions() != [self.width, self.height])
         {
             return Err("Layer mask geometry differs from document".into());
+        }
+        for layer in &self.layers {
+            if let Some(material) = &layer.material {
+                crate::material::validate(material, [self.width, self.height], layer.folder)?;
+            }
         }
         if self.layers.iter().any(|layer| {
             layer.pixels.len()
@@ -716,7 +735,9 @@ impl Document {
     /// Whether compositing goes through `layer_effects::expand`: some layer
     /// draws effects or has fill opacity.
     pub(crate) fn needs_expansion(&self) -> bool {
-        self.layers.iter().any(|l| l.has_effects() || l.fill != 1.0)
+        self.layers.iter().any(|l| {
+            l.has_effects() || l.fill != 1.0 || l.material.as_ref().is_some_and(|m| m.lit())
+        })
     }
     pub fn validate_metadata(&self) -> Result<(), String> {
         validate_dpi(self.dpi)?;
@@ -765,6 +786,11 @@ impl Document {
                     return Err("Only raster layers can be text layers".into());
                 }
                 text.validate()?;
+            }
+            if let Some(material) = &layer.material
+                && (!crate::Dudel::takes_material(layer) || material.settings.validate().is_err())
+            {
+                return Err("Invalid layer material".into());
             }
             if layer.name.len() > 4096
                 || (layer.folder && layer.csp_byte_opacity)
@@ -1844,6 +1870,24 @@ impl Document {
         {
             return;
         }
+        // Materials change how paint lands on raster pixels (`material`).
+        let material = layer
+            .material
+            .as_ref()
+            .map(|m| m.settings)
+            .filter(|_| target.is_raster());
+        let kind = material.map(|m| m.kind);
+        // Dry media always feels a tooth: the canvas's paper, or its own.
+        let dry_tooth = material
+            .filter(|m| m.kind == crate::material::Kind::Dry)
+            .map(|m| m.tooth);
+        let paper = match dry_tooth {
+            Some(tooth) => Some(crate::material::dry_paper(paper, tooth)),
+            None => paper,
+        };
+        let paper_response = dry_tooth.map_or(brush.paper_response, |tooth| {
+            brush.paper_response.max(tooth.sqrt())
+        });
         // A bounded pure-coverage row separates analytic evaluation from the
         // dependent accumulation stores. Keep all other brush cases on the
         // existing general pixel path, including selection and tiny-tip AA.
@@ -1855,6 +1899,7 @@ impl Document {
             && self.selection.is_none()
             && self.selection_mask.is_none()
             && paper.is_none()
+            && kind != Some(crate::material::Kind::Paint)
             && raster.right >= raster.left
             && raster.right - raster.left < 512
             && buffer.as_ref().is_some_and(|b| b.is_prefix_pass())
@@ -1986,12 +2031,12 @@ impl Document {
                     );
             }
             if let Some(paper) = &paper {
-                if brush.paper_response > 0.0 {
+                if paper_response > 0.0 {
                     a *= paper.hold(
                         px as usize,
                         py as usize,
                         a / brush.opacity.max(f32::MIN_POSITIVE),
-                        brush.paper_response,
+                        paper_response,
                     );
                 }
                 if brush.granulation > 0.0 {
@@ -2010,6 +2055,40 @@ impl Document {
             }
             Some((a * selected, brush.opacity * selected))
         };
+        // Thick paint: the dab builds the relief where it paints (once per
+        // dab; a prefix pass repeats dabs already painted), and erasing
+        // flattens it. Smudge and blur leave the relief alone.
+        if kind == Some(crate::material::Kind::Paint)
+            && !prefix_pass
+            && (erase || (!brush.blend.moves_paint() && brush.thickness > 0.0))
+            && let Some(material) = layer.material.as_mut()
+        {
+            let (width, height) = (self.width, self.height);
+            let relief = material.relief.get_or_insert_with(|| {
+                crate::layer_mask::Mask::new(width, height, 0).expect("relief of a valid canvas")
+            });
+            let (hs, hc) = raster
+                .heading
+                .map_or((sin, cos), |h| h.to_radians().sin_cos());
+            let mut writer = relief.writer();
+            for py in top..=bottom {
+                for px in left..=right {
+                    let Some((a, ceiling)) = coverage_at(px, py) else {
+                        continue;
+                    };
+                    let share = a / ceiling.max(f32::MIN_POSITIVE);
+                    let (ux, uy) = (px as usize, py as usize);
+                    if erase {
+                        crate::material::wear(&mut writer, ux, uy, share);
+                    } else {
+                        let (dx, dy) = (px as f32 + 0.5 - x, py as f32 + 0.5 - y);
+                        let across = -dx * hs + dy * hc;
+                        let height = brush.thickness * crate::material::bristle(across, radius);
+                        crate::material::build(&mut writer, ux, uy, height, share);
+                    }
+                }
+            }
+        }
         if blending && !prefix_pass {
             let width = self.width;
             let mut scratch = buffer
@@ -2029,7 +2108,8 @@ impl Document {
                 );
             }
             let layer_id = layer.id;
-            let watering = wet && target.is_raster();
+            // Dry media stays dry.
+            let watering = wet && target.is_raster() && kind != Some(crate::material::Kind::Dry);
             let span = (right - left + 1) as usize;
             // Water already here, and water this dab leaves, per row.
             let (mut was_wet, mut water) = if wet {
@@ -2394,6 +2474,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || !crate::vector_layer::same(&a.vector, &b.vector)
             || a.text != b.text
             || !crate::layer_mask::same_snapshot(&a.mask, &b.mask)
+            || !crate::material::same(&a.material, &b.material)
         {
             return None;
         }

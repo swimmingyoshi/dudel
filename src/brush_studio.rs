@@ -390,7 +390,7 @@ impl Dudel {
                             );
                         }
                     });
-                self.brush_studio_settings(ui, true);
+                self.brush_studio_settings(ui, true, pad.is_some());
             } else {
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
@@ -412,7 +412,7 @@ impl Dudel {
                     ui.separator();
                     ui.vertical(|ui| {
                         ui.set_width(ui.available_width());
-                        self.brush_studio_settings(ui, false);
+                        self.brush_studio_settings(ui, false, pad.is_some());
                     });
                 });
             }
@@ -482,9 +482,21 @@ impl Dudel {
             });
         }
     }
-    fn brush_studio_settings(&mut self, ui: &mut egui::Ui, compact: bool) {
-        // The graph editor needs the room more than a large preview.
-        let small = compact || self.brush_studio_section == Section::Graph;
+    fn brush_studio_settings(&mut self, ui: &mut egui::Ui, compact: bool, pad: bool) {
+        let graph = self.brush_studio_section == Section::Graph;
+        // The graph editor needs the room more than a preview stroke; with
+        // the test pad in view, it shows the brush better anyway.
+        if graph && pad {
+            egui::ScrollArea::vertical()
+                .id_salt("brush studio settings")
+                .max_height(ui.available_height().max(1.0))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    self.brush_section_ui(ui, self.brush_studio_section);
+                });
+            return;
+        }
+        let small = compact || graph;
         let preview_height = (ui.available_height() * if small { 0.2 } else { 0.3 })
             .clamp(32.0, if small { 72.0 } else { 150.0 });
         self.brush_studio_preview.show(

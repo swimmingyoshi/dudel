@@ -1102,6 +1102,12 @@ impl Dudel {
                     ui,
                     "Paint settles into the paper's valleys, like granulating watercolor. Needs a paper on the canvas.",
                 );
+                let saved = self.saved_value(|b| b.thickness);
+                percent_marked(ui, "Thickness", &mut self.brush.thickness, 0.5, saved);
+                hint(
+                    ui,
+                    "How thick the paint stands on a Thick paint layer (Layer › Layer material…), with bristle streaks along the stroke.",
+                );
             }
             Section::Tags => {
                 labeled(ui, "Name", |ui| {

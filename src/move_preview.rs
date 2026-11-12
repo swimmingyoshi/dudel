@@ -12,6 +12,8 @@ pub(crate) struct Candidate {
     selection: Option<Selection>,
     mask: Option<Mask>,
     layer_mask: Option<crate::layer_mask::LayerMask>,
+    /// The layer's material, its thick paint relief moved with the pixels.
+    material: Option<Box<crate::material::Material>>,
     offset: [i64; 2],
     net_changed: bool,
     affine: Option<Affine>,
@@ -22,6 +24,7 @@ impl Candidate {
             let mut result = source.clone();
             result.layers[result.active].pixels = self.pixels.clone();
             result.layers[result.active].mask = self.layer_mask.clone();
+            result.layers[result.active].material = self.material.clone();
             result.selection = self.selection;
             result.selection_mask = self.mask.clone();
             result.validate()?;
@@ -100,6 +103,7 @@ fn compute_request(
         pixels: transformed.layers[transformed.active].pixels.clone(),
         selection: transformed.selection,
         layer_mask: transformed.layers[transformed.active].mask.clone(),
+        material: transformed.layers[transformed.active].material.clone(),
         mask: transformed.selection_mask,
         offset,
         net_changed,
@@ -165,6 +169,23 @@ fn compute(
             })
         })?
     };
+    let mut material = layer.material.clone();
+    if offset != [0, 0]
+        && source.selection.is_none()
+        && source.selection_mask.is_none()
+        && let Some(material) = &mut material
+        && let Some(relief) = &material.relief
+    {
+        material.relief =
+            Some(
+                relief.remap(source.width, source.height, 0, Some(cancel), |[x, y]| {
+                    let sx = (x as i64).checked_sub(offset[0])?;
+                    let sy = (y as i64).checked_sub(offset[1])?;
+                    (sx >= 0 && sy >= 0 && sx < source.width as i64 && sy < source.height as i64)
+                        .then_some([sx as usize, sy as usize])
+                })?,
+            );
+    }
     let differs = |doc: &Document| {
         Ok::<_, String>(
             pixels != doc.layers[doc.active].pixels
@@ -185,6 +206,7 @@ fn compute(
         selection,
         mask,
         layer_mask,
+        material,
         offset,
         changed,
         net_changed,
@@ -202,6 +224,7 @@ pub(crate) fn apply(
     if candidate.changed {
         doc.layers[doc.active].pixels = candidate.pixels;
         doc.layers[doc.active].mask = candidate.layer_mask;
+        doc.layers[doc.active].material = candidate.material;
         doc.selection = candidate.selection;
         doc.selection_mask = candidate.mask;
     }
@@ -414,6 +437,7 @@ impl Engine {
         if candidate.changed {
             doc.layers[doc.active].pixels = candidate.pixels;
             doc.layers[doc.active].mask = candidate.layer_mask;
+            doc.layers[doc.active].material = candidate.material;
             doc.selection = candidate.selection;
             doc.selection_mask = candidate.mask;
             self.expected = doc.clone();

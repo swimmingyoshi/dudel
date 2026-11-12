@@ -587,6 +587,14 @@ impl Dudel {
             self.effects_window_open = true;
             ui.close();
         }
+        if ui
+            .add_enabled(target_ready, egui::Button::new("Layer material…"))
+            .on_hover_text("Watercolor, dry media or thick paint")
+            .clicked()
+        {
+            self.open_material_dialog();
+            ui.close();
+        }
         ui.add_enabled_ui(self.doc.has_room(1, 1), |ui| {
             ui.menu_button("New adjustment layer", |ui| {
                 for settings in crate::adjustment::presets() {
@@ -597,6 +605,7 @@ impl Dudel {
                     }
                 }
             });
+            self.new_material_menu(ui);
         });
         ui.separator();
         if ui
@@ -963,6 +972,28 @@ impl Dudel {
                 self.finish_opacity_edit();
             }
         });
+        // The material of a raster layer, one click from its settings.
+        let material = self
+            .input_layer()
+            .and_then(|i| self.doc.layers.get(i))
+            .filter(|layer| Self::takes_material(layer))
+            .map(|layer| layer.material.as_ref().map(|m| m.kind()));
+        if let Some(kind) = material {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Material").small().weak());
+                let label = kind.map_or("Plain", |k| k.name());
+                if ui
+                    .small_button(label)
+                    .on_hover_text(
+                        "What kind of paint this layer holds: plain, watercolor, dry media or \
+                         thick paint · click to change",
+                    )
+                    .clicked()
+                {
+                    self.open_material_dialog();
+                }
+            });
+        }
     }
 
     /// Where a dragged entry would land when released over row `index`.
@@ -1337,6 +1368,9 @@ impl Dudel {
         }
         if layer.text.is_some() {
             summary = format!("Text · {summary}");
+        }
+        if let Some(material) = &layer.material {
+            summary = format!("{} · {summary}", material.kind().name());
         }
         if layer.folder {
             let items = self.doc.layers[self.doc.block(index)]

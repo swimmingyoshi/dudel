@@ -569,7 +569,10 @@ impl Stroke {
             let track = graph.is_some_and(|g| g.needs_heading());
             // Rotation is measured on the unscattered path. Its random draw
             // only happens with jitter on, so other brushes paint as before.
-            if legacy_rotation || track {
+            // The heading is always tracked (thick paint streaks follow it);
+            // only these brushes turn with it.
+            let _ = track;
+            {
                 if let Some(from) = self.heading_from {
                     let (dx, dy) = (dab.x - from[0], dab.y - from[1]);
                     if dx.hypot(dy) > 0.01 {
@@ -579,7 +582,7 @@ impl Stroke {
                 }
                 self.heading_from = Some([dab.x, dab.y]);
             }
-            if track && self.heading_known {
+            if self.heading_known {
                 dab.heading = Some(self.heading);
             }
             if legacy_rotation {

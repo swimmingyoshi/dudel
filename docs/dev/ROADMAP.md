@@ -72,9 +72,21 @@ The canvas as a surface that paint reacts to, in stages:
        stroke: wet tiles exchange paint with wet neighbors (conserving it),
        water spreads and evaporates by the paper's absorbency, fibers carry
        paint along their direction; drying is one undo step and uses at most
-       about a quarter of frame time. Not yet: edge darkening, blooms and
-       rewetting dried paint; timelapse replays do not include drying.
-4. [ ] Material-aware layers (watercolor, dry media, paint thickness).
+       about a quarter of frame time. Rewetting dried paint is not done yet,
+       and timelapse replays do not include drying.
+4. [x] Material-aware layers (`src/material.rs`): a layer's material is
+       Watercolor (drying water carries pigment down its gradient between
+       wet pixels, conserving it: rims darken and fresh water pushes paint
+       into blooms), Dry media (the paper's tooth, deepened, applies to every
+       brush; no water) or Thick paint (a one-byte relief channel saved in
+       the project's `RELF` trailer, built by each dab with bristle streaks
+       along the stroke heading, lowered by the eraser; a light layer
+       clipped to the paint is drawn at composite time and redrawn only on
+       relief tiles that changed). The relief follows whole-layer moves,
+       transforms, flips, canvas rotation and resizing. The paper shows on
+       the canvas display (`src/paper_view.rs`).
+5. [ ] Advanced materials: palette knife moving relief and paint together,
+       rewetting, pigment mixing.
 
 ## Later
 

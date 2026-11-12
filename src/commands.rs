@@ -33,6 +33,7 @@ pub(crate) enum Action {
     Duplicate,
     Group,
     Effects,
+    Material,
     SelectAll,
     Deselect,
     InvertSelection,
@@ -202,6 +203,13 @@ pub(crate) const COMMANDS: &[Command] = &[
         "",
         "style shadow glow outline satin",
         Action::Effects
+    ),
+    command!(
+        "layer.material",
+        "Layer material…",
+        "",
+        "watercolor dry media pastel charcoal thick paint impasto oil relief light",
+        Action::Material
     ),
     command!(
         "selection.all",
@@ -549,7 +557,7 @@ impl Dudel {
             Action::NewFolder | Action::Group if !self.doc.has_room(0, 1) => {
                 Some("Layer limit reached")
             }
-            Action::Effects | Action::Duplicate | Action::Group
+            Action::Effects | Action::Material | Action::Duplicate | Action::Group
                 if self.input_target().is_none() =>
             {
                 Some("Select a layer first")
@@ -618,6 +626,7 @@ impl Dudel {
             Action::Duplicate => self.duplicate_layer(),
             Action::Group => self.group_into_folder(),
             Action::Effects => self.effects_window_open = true,
+            Action::Material => self.open_material_dialog(),
             Action::SelectAll => self.select_all(),
             Action::Deselect => self.set_selection(None),
             Action::InvertSelection => self.invert_selection(),

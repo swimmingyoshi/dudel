@@ -652,6 +652,13 @@ impl Dudel {
         } else {
             self.texture.tile_shapes(area, view)
         });
+        // The paper's grain, over the artwork as it shows through paint.
+        if !overview && !self.mask_view_shown {
+            shapes.extend(
+                self.paper_view
+                    .shapes([self.doc.width, self.doc.height], area, view),
+            );
+        }
         shapes.extend(self.reference_layers.shapes(view, true));
         shapes.extend(self.reference_margin_shapes(view));
         shapes

@@ -211,6 +211,10 @@ pub struct Brush {
     /// How much the brush feels the canvas's paper: 0 ignores it, 1 fully.
     #[serde(default = "linear_pressure")]
     pub paper_response: f32,
+    /// How thick the paint stands on a Thick paint layer: 0 lies flat, 1
+    /// the thickest.
+    #[serde(default = "half")]
+    pub thickness: f32,
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
@@ -373,6 +377,7 @@ impl Default for Brush {
             wetness: 0.5,
             granulation: 0.0,
             paper_response: 1.0,
+            thickness: 0.5,
             blend: Blend::Paint,
         }
     }
@@ -398,7 +403,15 @@ impl Brush {
         sample: &crate::stroke::Sample,
     ) -> Option<crate::brush_graph::Values> {
         let compiled = self.graph.as_ref()?.compiled().ok()?;
-        Some(compiled.evaluate(&crate::brush_graph::Inputs {
+        Some(compiled.evaluate(&self.graph_inputs(compiled, sample)))
+    }
+    /// What the graph reads for one dab.
+    pub fn graph_inputs(
+        &self,
+        compiled: &crate::brush_graph::Compiled,
+        sample: &crate::stroke::Sample,
+    ) -> crate::brush_graph::Inputs {
+        crate::brush_graph::Inputs {
             pressure: sample.pressure,
             shaped_pressure: if compiled.needs_shaped_pressure() {
                 self.response(sample.pressure)
@@ -411,7 +424,7 @@ impl Brush {
             random: sample.random,
             distance: sample.distance,
             heading: sample.heading,
-        }))
+        }
     }
     /// Size, opacity, flow and spacing factors for one dab, running the
     /// brush graph once. Each matches its single-factor method exactly.
@@ -624,6 +637,7 @@ impl Brush {
             (self.paper_response, 0.0, 1.0),
             (self.wetness, 0.0, 1.0),
             (self.granulation, 0.0, 1.0),
+            (self.thickness, 0.0, 1.0),
         ] {
             if !value.is_finite() || value < min || value > max {
                 return Err("Brush setting outside supported range".into());

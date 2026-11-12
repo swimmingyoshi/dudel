@@ -1647,6 +1647,7 @@ impl Workspace {
             self.app.brush_studio_ui(ctx);
             self.app.brush_share_ui(ctx);
             self.app.paper_dialog(ctx);
+            self.app.material_dialog(ctx);
             self.app.effects_window(ctx);
             self.app.adjustment_window(ctx);
             self.app.unsaved_dialog(ctx);
@@ -5386,4 +5387,94 @@ fn filter_dialogs_leave_the_canvas_visible_and_ignore_stray_clicks() {
     ui.key(egui::Key::Escape, egui::Modifiers::NONE);
     ui.settle();
     assert!(ui.app.adjustment.is_none());
+}
+
+#[test]
+fn material_layers_are_made_from_the_layer_menu_and_changed_in_a_dialog() {
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.settle();
+    let kind = |ui: &Workspace| {
+        ui.app.doc.layers[ui.app.doc.active]
+            .material
+            .as_ref()
+            .map(|m| m.kind())
+    };
+    ui.click(ui.text("Layer"));
+    ui.click(ui.text("New material layer"));
+    ui.click(ui.text("Thick paint"));
+    ui.finish_geometry();
+    assert_eq!(kind(&ui), Some(crate::material::Kind::Paint));
+    assert_eq!(ui.app.doc.layers[ui.app.doc.active].name, "Thick paint 1");
+    // The layers panel names the material and opens its dialog.
+    ui.text("Thick paint · Normal · 100%");
+    let panel = egui::Rect::from_min_max(egui::pos2(980.0, 0.0), egui::pos2(1280.0, 800.0));
+    let button = ui.text_in("Thick paint", panel);
+    ui.click(button);
+    ui.text("Layer material");
+    ui.text("Light from");
+    ui.click(ui.text("Watercolor"));
+    ui.text("Edge darkening");
+    ui.click(ui.text("Apply"));
+    ui.finish_geometry();
+    assert_eq!(kind(&ui), Some(crate::material::Kind::Watercolor));
+    assert_eq!(ui.app.status, "Material changed");
+    // Undo brings thick paint back, and then the plain layer is gone.
+    ui.key(egui::Key::Z, egui::Modifiers::CTRL);
+    ui.finish_geometry();
+    assert_eq!(kind(&ui), Some(crate::material::Kind::Paint));
+    ui.key(egui::Key::Z, egui::Modifiers::CTRL);
+    ui.finish_geometry();
+    assert_eq!(ui.app.doc.layers.len(), 1);
+}
+
+#[test]
+fn dropping_a_wire_on_empty_canvas_searches_for_a_node_to_connect() {
+    use crate::brush_graph::NodeKind;
+    let mut ui = Workspace::sized([1366.0, 900.0]);
+    ui.app.brush_studio = true;
+    ui.app.brush_studio_section = crate::brush_studio::Section::Graph;
+    ui.app.studio_pad_hidden = true;
+    ui.settle();
+    ui.click(ui.text("Make graph from current settings"));
+    ui.settle();
+    let find = |ui: &Workspace, kind: fn(&NodeKind) -> bool| {
+        let graph = ui.app.brush.graph.as_ref().unwrap();
+        graph.nodes().iter().find(|n| kind(&n.kind)).map(|n| n.id)
+    };
+    let count = |ui: &Workspace| ui.app.brush.graph.as_ref().unwrap().nodes().len();
+    let pressure = find(&ui, |k| matches!(k, NodeKind::Pressure { .. })).unwrap();
+    let from = ui
+        .app
+        .graph_editor
+        .port_pos(&ui.app.brush, pressure, None)
+        .unwrap();
+    let canvas = ui.app.graph_editor.canvas_rect();
+    let empty = canvas.left_bottom() + egui::vec2(40.0, -24.0);
+    ui.mouse_drag(from, empty);
+    ui.text("Connect to a new node");
+    let nodes = count(&ui);
+    // Typing goes to the search, never to the graph's keys.
+    ui.frame(vec![egui::Event::Text("invertx".into())]);
+    ui.text("No node matches");
+    ui.key(egui::Key::Backspace, egui::Modifiers::NONE);
+    assert_eq!(
+        count(&ui),
+        nodes,
+        "Backspace edited the search, not the graph"
+    );
+    ui.key(egui::Key::Enter, egui::Modifiers::NONE);
+    ui.settle();
+    let invert = find(&ui, |k| *k == NodeKind::Invert).expect("Invert added");
+    let graph = ui.app.brush.graph.as_ref().unwrap();
+    assert!(
+        graph
+            .links()
+            .iter()
+            .any(|l| l.from == pressure && l.to == invert && l.port == 0),
+        "the new node is wired from where the wire started"
+    );
+    assert_eq!(ui.app.graph_editor_selected(), Some(invert));
+    // The values of the nodes are on show for the Try inputs pen input.
+    ui.text("Try inputs");
+    ui.text("0.40");
 }

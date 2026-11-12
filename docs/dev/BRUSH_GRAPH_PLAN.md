@@ -543,3 +543,29 @@ extension code runs per dab.
   app's shortcut handling, before any document shortcut can see them; a
   workflow test checks that Delete and Ctrl+Z change the graph and leave the
   document and its history untouched.
+
+## 21. Seeing what a graph does
+
+2026-11-11. The editor could build any graph but could not show what one
+computes, so a graph was learned by painting with it. Now:
+
+- **Values on the nodes.** Compiling records, for every main-graph node
+  output (a group's outputs included, and for brush outputs the value wired
+  into them), the register that holds it (`Compiled::probes`).
+  `Compiled::trace` runs the same operations as painting and returns those
+  values; painting never calls it, so the per-dab cost is unchanged. The
+  editor draws each value at its output dot and as a bar under the node's
+  title. Inside a group nothing is shown yet: inlined nodes are not traced
+  back to their group-level ids.
+- **Try inputs.** The values are shown for a pen input set with sliders
+  (pressure, speed, tilt, direction, distance along the stroke, random), or,
+  for three seconds after each dab, for the latest dab drawn on the test pad
+  (`Scratchpad::recent_dab`).
+- **Search and drop-to-add.** **Add node** starts with a search over node
+  names and descriptions; Enter takes the first match. Letting a wire drawn
+  from an output go over empty canvas opens the same search there, and the
+  node chosen is added and wired into its first input as one undo step. A
+  wire picked up off an input and let go is still just removed.
+- **Hover help** names what a node, input or output does and how to wire it.
+- While any text field has the keyboard, the editor's keys stay out of the
+  way, so Backspace in a search or formula never deletes nodes.

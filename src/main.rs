@@ -127,6 +127,7 @@ mod editing_feedback;
 mod layer_batch;
 mod layer_menu;
 mod layer_navigation;
+mod material;
 mod native_session;
 mod navigator;
 mod new_canvas;
@@ -134,6 +135,7 @@ mod paint_target;
 mod palette;
 mod palette_assist;
 mod paper;
+mod paper_view;
 mod parallel;
 mod pending_layers;
 mod performance;
@@ -415,6 +417,8 @@ struct Dudel {
     drying: wet::Drying,
     /// The open Canvas > Paper dialog.
     paper_form: Option<paper::PaperForm>,
+    material_form: Option<material::MaterialForm>,
+    paper_view: paper_view::PaperView,
     brush_export: Option<brush_share::ExportForm>,
     brush_import: Option<brush_share::PendingImport>,
     brush_author: String,
@@ -709,6 +713,8 @@ impl Default for Dudel {
             studio_pad_hidden: false,
             drying: Default::default(),
             paper_form: None,
+            material_form: None,
+            paper_view: Default::default(),
             brush_export: None,
             brush_import: None,
             brush_author: String::new(),
@@ -1355,6 +1361,7 @@ impl eframe::App for Dudel {
         self.brush_studio_ui(ctx);
         self.brush_share_ui(ctx);
         self.paper_dialog(ctx);
+        self.material_dialog(ctx);
         let recovery_capture = preference_recovery::CaptureStorage;
         self.preference_recovery_ui(
             ctx,
@@ -1951,6 +1958,7 @@ fn run() -> eframe::Result {
     let capture_color_brush = mode.as_deref() == Some("--capture-color-brush");
     let capture_brush_group = mode.as_deref() == Some("--capture-brush-group");
     let capture_paper = mode.as_deref() == Some("--capture-paper");
+    let capture_material = mode.as_deref() == Some("--capture-material");
     let capture_shortcut_conflict = mode.as_deref() == Some("--capture-shortcut-conflict");
     let capture_command_search = mode.as_deref() == Some("--capture-command-search");
     let capture_workflow = mode.as_deref() == Some("--capture-workflow");
@@ -2027,6 +2035,7 @@ fn run() -> eframe::Result {
         || capture_color_brush
         || capture_brush_group
         || capture_paper
+        || capture_material
         || capture_shortcut_conflict
         || capture_command_search
         || capture_workflow
@@ -2740,6 +2749,9 @@ fn run() -> eframe::Result {
                 if capture_paper {
                     app.doc.paper = Some(paper::Paper::presets()[1].1);
                     app.open_paper_dialog();
+                }
+                if capture_material {
+                    app.material_capture_fixture();
                 }
                 if capture_welcome {
                     app.welcome_open = true;

@@ -126,6 +126,16 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
         _ => (1.0, 1.0),
     };
     let alpha_locked = doc.layers[index].alpha_locked;
+    // On a watercolor layer, water flowing toward drier parts of a wash
+    // carries pigment with it: rims darken as a wash dries, and a sudden
+    // rush of fresh water (a large difference) pushes paint into blooms.
+    let (carry, push) = doc.layers[index]
+        .material
+        .as_ref()
+        .filter(|m| m.kind() == crate::material::Kind::Watercolor)
+        .map_or((0.0, 0.0), |m| {
+            (0.3 * m.settings.edges, 0.3 * m.settings.blooms)
+        });
     let tiles = doc.wet.tiles.clone();
     let keys: Vec<(u32, u32)> = tiles.keys().copied().collect();
     let pixels = &doc.layers[index].pixels;
@@ -196,6 +206,20 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                         let there = around(nx as usize, ny as usize);
                         for c in 0..4 {
                             moved[c] += rate * (there[c] - here[c]);
+                        }
+                        // Carried by the flow: out to a drier wet neighbor,
+                        // in from a wetter one. Each pair computes the same
+                        // amount from both sides, so paint is conserved.
+                        let gap = w - wn;
+                        // Capped so a pixel never sends out more than half
+                        // its paint in one step.
+                        let flow = (weight * gap.abs() * (carry + push * gap.abs())).min(0.12);
+                        if flow > 0.0 {
+                            let from = if gap > 0.0 { &here } else { &there };
+                            let sign = if gap > 0.0 { -1.0 } else { 1.0 };
+                            for c in 0..4 {
+                                moved[c] += sign * flow * from[c];
+                            }
                         }
                     }
                     water_flow += 0.04 * weight * (wn - w);

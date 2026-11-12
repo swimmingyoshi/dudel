@@ -30,11 +30,9 @@ pub(crate) fn magic(doc: &Document) -> &'static [u8] {
         TEXT_MAGIC
     } else if doc.layers.iter().any(|l| l.vector.is_some()) {
         VECTOR_MAGIC
-    } else if doc
-        .layers
-        .iter()
-        .any(|l| !l.effects.is_empty() || l.adjustment.is_some() || l.fill != 1.0)
-    {
+    } else if doc.layers.iter().any(|l| {
+        !l.effects.is_empty() || l.adjustment.is_some() || l.fill != 1.0 || l.material.is_some()
+    }) {
         STYLE_MAGIC
     } else if doc.version == 2 {
         MASK_MAGIC
@@ -101,6 +99,14 @@ fn encode_with(
             }
         })?;
     }
+    check()?;
+    crate::material::encode_trailer(doc, &mut gzip, cancel).map_err(|error| {
+        if error == "Fill canceled" {
+            crate::storage::SAVE_CANCELED.into()
+        } else {
+            error
+        }
+    })?;
     if let Some(mask) = &doc.selection_mask {
         gzip.write_all(MASK_TRAILER).map_err(|e| e.to_string())?;
         for chunk in mask.bytes().chunks(64 * 1024) {
@@ -216,6 +222,15 @@ fn decode_inner(
         payload_used += mask.coverage.payload_bytes();
     }
     let mut tag = next_trailer(&mut gzip)?;
+    // Thick paint reliefs come first when present.
+    if tag.as_ref() == Some(crate::material::TRAILER) {
+        crate::material::decode_trailer(
+            &mut doc,
+            &mut gzip,
+            crate::document::MAX_MASKED_PAYLOAD.saturating_sub(payload_used),
+        )?;
+        tag = next_trailer(&mut gzip)?;
+    }
     if let Some(found) = tag {
         if &found != MASK_TRAILER {
             if &found == crate::reference_layers::TRAILER

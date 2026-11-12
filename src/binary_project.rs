@@ -55,6 +55,9 @@ struct LayerMetadata<'a> {
     vector: Option<&'a crate::vector_layer::VectorLayer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<&'a crate::text_layer::TextLayer>,
+    /// Material settings; a thick paint relief follows in the trailer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    material: Option<&'a crate::material::Settings>,
     pixels: [u8; 0],
 }
 #[derive(Serialize)]
@@ -101,6 +104,7 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
                 adjustment: layer.adjustment.as_ref(),
                 vector: layer.vector.as_ref(),
                 text: layer.text.as_ref(),
+                material: layer.material.as_ref().map(|m| &m.settings),
                 pixels: [],
             })
             .collect(),

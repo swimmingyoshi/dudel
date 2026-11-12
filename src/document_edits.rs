@@ -72,6 +72,13 @@ pub enum Edit {
     Gradient(Box<crate::gradient_tool::Settings>),
     /// The canvas's paper surface; None is smooth.
     Paper(Option<crate::paper::Paper>),
+    /// The active layer's material; None makes it a plain layer.
+    Material(Option<crate::material::Settings>),
+    /// A new raster layer holding a material, above the target.
+    NewMaterial {
+        id: crate::document::LayerId,
+        settings: crate::material::Settings,
+    },
     FeatherSelection(u8),
     InvertSelection,
     Property {
@@ -311,6 +318,9 @@ impl Edit {
             }
             Self::Gradient(settings) => settings.validate(),
             Self::Paper(Some(paper)) => paper.validate(),
+            Self::Material(Some(settings)) | Self::NewMaterial { settings, .. } => {
+                settings.validate()
+            }
             Self::DuplicateTarget { copies, .. }
                 if copies.is_empty() || copies.len() > crate::document::MAX_ENTRIES =>
             {
@@ -527,6 +537,48 @@ impl Edit {
                 doc.paper = *paper;
                 outcome.changed = doc.paper != source.paper;
                 outcome.redraw = false;
+            }
+            Self::Material(settings) => {
+                let index = doc.active;
+                let layer = &mut doc.layers[index];
+                if !crate::Dudel::takes_material(layer) {
+                    return Err("Materials belong to raster layers".into());
+                }
+                let before = layer.material.as_ref().map(|m| m.settings);
+                if before != *settings {
+                    layer.material = settings.map(|settings| {
+                        let mut material = layer
+                            .material
+                            .take()
+                            .unwrap_or_else(|| crate::material::Material::new(settings));
+                        material.settings = settings;
+                        // Only thick paint stands up; other kinds flatten it.
+                        if settings.kind != crate::material::Kind::Paint {
+                            material.relief = None;
+                        }
+                        material
+                    });
+                }
+                outcome.changed = before != *settings;
+            }
+            Self::NewMaterial { id, settings } => {
+                if doc.layers.iter().any(|layer| layer.id == *id) {
+                    return Err("Layer identity is already present".into());
+                }
+                let count = doc
+                    .layers
+                    .iter()
+                    .filter(|l| {
+                        l.material
+                            .as_ref()
+                            .is_some_and(|m| m.kind() == settings.kind)
+                    })
+                    .count();
+                doc.insert_layer_above()?;
+                let layer = &mut doc.layers[doc.active];
+                layer.id = *id;
+                layer.name = format!("{} {}", settings.kind.name(), count + 1);
+                layer.material = Some(crate::material::Material::new(*settings));
             }
             Self::InvertSelection => {
                 let mask = current_selection(&doc, cancel)?.inverted(cancel)?;

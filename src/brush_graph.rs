@@ -1060,6 +1060,10 @@ pub struct Compiled {
     rotation_degrees: f32,
     /// The graph reads the stroke's direction.
     heading: bool,
+    /// Where each main-graph node's value lives: (node, output port,
+    /// register). For an output node, the value wired into it. Editors show
+    /// these; painting never reads them.
+    probes: Vec<(NodeId, u8, u8)>,
 }
 
 /// Per-dab values the graph reads.
@@ -1162,7 +1166,20 @@ impl Compiled {
             self.run::<{ MAX_NODES + 1 }>(inputs)
         }
     }
+    /// Every main-graph node's value for one dab, for editors: (node,
+    /// output port, value); NaN where a value is missing.
+    pub fn trace(&self, inputs: &Inputs) -> Vec<(NodeId, u8, f32)> {
+        let r = self.registers::<{ MAX_NODES + 1 }>(inputs);
+        self.probes
+            .iter()
+            .map(|&(id, port, register)| (id, port, r[usize::from(register)]))
+            .collect()
+    }
     fn run<const REGISTERS: usize>(&self, inputs: &Inputs) -> Values {
+        let r = self.registers::<REGISTERS>(inputs);
+        self.values(&r)
+    }
+    fn registers<const REGISTERS: usize>(&self, inputs: &Inputs) -> [f32; REGISTERS] {
         let mut r = [f32::NAN; REGISTERS];
         // Missing operands are left out of combinations.
         let or = |v: f32, neutral: f32| if v.is_nan() { neutral } else { v };
@@ -1220,6 +1237,9 @@ impl Compiled {
                 }
             };
         }
+        r
+    }
+    fn values(&self, r: &[f32]) -> Values {
         // A driven output whose value is missing for this dab stays at full.
         let value = |output: Option<u8>| {
             output.map(|i| {
@@ -1288,7 +1308,18 @@ fn compile(graph: &BrushGraph) -> Result<Compiled, String> {
             "Brush graphs hold at most {MAX_NODES} nodes, counting those inside groups"
         ));
     }
-    lower(&flat.nodes, &flat.links)
+    let (mut compiled, registers) = lower(&flat.nodes, &flat.links)?;
+    let registers: std::collections::HashMap<NodeId, u8> = registers.into_iter().collect();
+    compiled.probes = flat
+        .top
+        .iter()
+        .filter_map(|&((id, port), flat_id)| {
+            registers
+                .get(&flat_id)
+                .map(|register| (id, port, *register))
+        })
+        .collect();
+    Ok(compiled)
 }
 
 /// Check one level of a graph: the top (`group` is None), or the inside of
@@ -1366,6 +1397,8 @@ struct Inlined {
     nodes: Vec<Node>,
     links: Vec<Link>,
     next: u32,
+    /// Main-graph nodes' output ports and the flat nodes behind them.
+    top: Vec<((NodeId, u8), NodeId)>,
 }
 
 /// One level being opened up.
@@ -1522,14 +1555,30 @@ fn inline(
             level.open(node.id, group, out)?;
         }
     }
+    if depth == 0 {
+        for node in nodes {
+            match &node.kind {
+                NodeKind::Group(_) => {
+                    for (port, flat) in level.opened[&node.id].iter().enumerate() {
+                        if let Some(flat) = flat {
+                            out.top.push(((node.id, port as u8), *flat));
+                        }
+                    }
+                }
+                NodeKind::GroupInput { .. } | NodeKind::GroupResult { .. } => {}
+                _ => out.top.push(((node.id, 0), level.fresh[&node.id])),
+            }
+        }
+    }
     if out.links.len() > MAX_LINKS * 2 {
         return Err("The brush graph has too many links".into());
     }
     Ok(results)
 }
 
-/// Lower a flat, checked graph to operations.
-fn lower(nodes: &[Node], links: &[Link]) -> Result<Compiled, String> {
+/// Lower a flat, checked graph to operations; also returns the register
+/// holding each node's value (an output node's: the value wired into it).
+fn lower(nodes: &[Node], links: &[Link]) -> Result<(Compiled, Vec<(NodeId, u8)>), String> {
     let index_of = |id: NodeId| nodes.iter().position(|n| n.id == id);
     // Each input port's source, by node index.
     let mut sources: Vec<[Option<usize>; 4]> = vec![[None; 4]; nodes.len()];
@@ -1565,6 +1614,7 @@ fn lower(nodes: &[Node], links: &[Link]) -> Result<Compiled, String> {
     let mut hue_degrees = 0.0;
     let mut rotation_degrees = 0.0;
     let mut heading = false;
+    let mut values = Vec::with_capacity(count);
     for &index in &order {
         let port = |p: usize| sources[index][p].map_or(MISSING, |s| register[s]);
         let op = match &nodes[index].kind {
@@ -1619,21 +1669,27 @@ fn lower(nodes: &[Node], links: &[Link]) -> Result<Compiled, String> {
                 }
                 if let Some(source) = sources[index][0] {
                     outputs[output as usize] = Some(register[source]);
+                    values.push((nodes[index].id, register[source]));
                 }
                 continue;
             }
         };
         ops.push(op);
         register[index] = ops.len() as u8;
+        values.push((nodes[index].id, register[index]));
     }
-    Ok(Compiled {
-        ops,
-        outputs,
-        shaped_pressure,
-        hue_degrees,
-        rotation_degrees,
-        heading,
-    })
+    Ok((
+        Compiled {
+            ops,
+            outputs,
+            shaped_pressure,
+            hue_degrees,
+            rotation_degrees,
+            heading,
+            probes: Vec::new(),
+        },
+        values,
+    ))
 }
 
 #[cfg(test)]

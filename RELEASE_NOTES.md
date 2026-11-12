@@ -64,6 +64,22 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
 - **Test pad in view:** Brush Studio keeps a true-size test pad below its
   settings, with Undo, color stripes for trying smudge and blur, and a choice
   of paper.
+- **Material layers:** **Layer > New material layer** and **Layer > Layer
+  material…** make a layer Watercolor (washes dry with darker rims, fresh
+  water pushes drying paint into blooms), Dry media (every brush catches on
+  the paper's tooth) or Thick paint (paint stands up with bristle streaks,
+  lit by a light you place; a brush's new **Thickness** setting says how
+  thick). New **Impasto**, **Palette knife** and **Soft pastel** presets.
+  Projects with material layers are refused by older Dudel.
+- **Paper on the canvas:** the canvas's paper now shows on the canvas, its
+  grain lined up with what strokes catch; view only (**View > Paper
+  texture**).
+- **Brush graph editor:** every node shows its value for a pen input you set
+  in **Try inputs**, or for your latest dab on the test pad; letting a new
+  wire go over empty canvas opens a node search that adds the node already
+  wired; **Add node** has a search; hovering a node, input or output explains
+  it. In the Brush graph section the preview strip gives its room to the
+  graph while the test pad is shown.
 
 ## 0.3.0 (2026-11-10)
 

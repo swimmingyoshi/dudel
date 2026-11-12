@@ -261,6 +261,19 @@ impl Document {
         crate::fill::check_cancel(cancel)?;
         if changed {
             self.layers[self.active].pixels = pixels;
+            // Thick paint turns with its paint.
+            if whole {
+                let (width, height) = (self.width, self.height);
+                crate::material::follow(&mut self.layers[self.active], |relief| {
+                    relief.remap(width, height, 0, cancel, |[x, y]| {
+                        Some(match transform {
+                            Transform::FlipHorizontal => [width - 1 - x, y],
+                            Transform::FlipVertical => [x, height - 1 - y],
+                            Transform::RotateHalfTurn => [width - 1 - x, height - 1 - y],
+                        })
+                    })
+                })?;
+            }
         }
         if mask_changed {
             self.layers[self.active].mask = linked_mask;
@@ -291,6 +304,11 @@ impl Document {
                             Some([y, old_height - 1 - x])
                         })?;
             }
+            crate::material::follow(layer, |relief| {
+                relief.remap(old_height, old_width, 0, cancel, |[x, y]| {
+                    Some([y, old_height - 1 - x])
+                })
+            })?;
             if layer.folder {
                 continue;
             }

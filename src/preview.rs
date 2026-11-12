@@ -51,6 +51,8 @@ pub struct Scratchpad {
     /// The egui pass whose pen input was already handled, so a pad shown in
     /// two places never paints a packet twice.
     handled_pass: Option<u64>,
+    /// The latest dab painted and when, for the graph editor's live values.
+    latest: Option<(std::time::Instant, Sample)>,
 }
 
 impl Default for Scratchpad {
@@ -66,6 +68,7 @@ impl Default for Scratchpad {
             undo: Vec::new(),
             paper: Paper::White,
             handled_pass: None,
+            latest: None,
         }
     }
 }
@@ -83,7 +86,17 @@ impl Scratchpad {
         self.buffer = Default::default();
         self.settings = None;
     }
+    /// The latest dab painted on the pad, if it was within the last few
+    /// seconds.
+    pub fn recent_dab(&self) -> Option<Sample> {
+        self.latest
+            .filter(|(at, _)| at.elapsed() < std::time::Duration::from_secs(3))
+            .map(|(_, dab)| dab)
+    }
     fn paint(&mut self, dabs: Vec<Sample>, settings: &crate::stroke_buffer::Settings) {
+        if let Some(dab) = dabs.last() {
+            self.latest = Some((std::time::Instant::now(), *dab));
+        }
         if !dabs.is_empty() {
             for dab in dabs {
                 self.buffer.paint(&mut self.document, dab, settings);

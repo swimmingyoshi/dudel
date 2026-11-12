@@ -246,6 +246,36 @@ impl Mask {
                 ]
             })
     }
+    /// Rectangles of the painted tiles.
+    pub(crate) fn painted_tiles(&self) -> Vec<[usize; 4]> {
+        (0..self.0.tiles.len())
+            .filter(|&index| self.0.tiles[index].is_some())
+            .map(|index| self.0.rect(index))
+            .collect()
+    }
+    /// Rectangles of the tiles that differ in storage from `other` (same
+    /// dimensions): edits copy a tile before changing it, so shared tiles
+    /// are equal.
+    pub(crate) fn changed_tiles(&self, other: &Self) -> Vec<[usize; 4]> {
+        if self.shares(other) {
+            return Vec::new();
+        }
+        if self.dimensions() != other.dimensions() || self.0.default != other.0.default {
+            return (0..self.0.tiles.len()).map(|i| self.0.rect(i)).collect();
+        }
+        self.0
+            .tiles
+            .iter()
+            .zip(&other.0.tiles)
+            .enumerate()
+            .filter(|(_, (a, b))| match (a, b) {
+                (None, None) => false,
+                (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+                _ => true,
+            })
+            .map(|(index, _)| self.0.rect(index))
+            .collect()
+    }
     pub(crate) fn payload_bytes(&self) -> usize {
         self.0.tiles.iter().flatten().map(|tile| tile.len()).sum()
     }
