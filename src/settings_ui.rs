@@ -137,6 +137,10 @@ impl Dudel {
             .collapsible(false)
             .default_width(480.0)
             .default_height(460.0)
+            // Opens in the middle like the other dialogs, and stays where
+            // the artist drags it.
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
             .vscroll(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {

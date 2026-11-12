@@ -2080,6 +2080,44 @@ impl Document {
             }
             Some((a * selected, brush.opacity * selected))
         };
+        // Smudge, blur, wet and thick paint dabs go pixel by pixel on this
+        // thread, and thick paint asks for each pixel's coverage twice (the
+        // relief, then the paint). For a large dab the coverage, the costly
+        // part, is worked out once here, in bands across cores.
+        let (span, rows) = ((right - left + 1) as usize, (bottom - top + 1) as usize);
+        let blending_now = !brush.blend.is_paint() && !erase && !prefix_pass;
+        let thick = kind == Some(crate::material::Kind::Paint) && !prefix_pass;
+        let grid: Option<Vec<(f32, f32)>> =
+            ((blending_now || thick) && crate::dab_bands::worthwhile(span, rows)).then(|| {
+                const BAND: usize = 32;
+                crate::parallel::run(rows.div_ceil(BAND), |band| {
+                    let first = band * BAND;
+                    let count = BAND.min(rows - first);
+                    let mut values = vec![(0.0, 0.0); count * span];
+                    for row in 0..count {
+                        for column in 0..span {
+                            if let Some(value) =
+                                coverage_at(left + column as i32, top + (first + row) as i32)
+                            {
+                                values[row * span + column] = value;
+                            }
+                        }
+                    }
+                    values
+                })
+                .into_iter()
+                .flat_map(|band| band.expect("Dab coverage worker panicked"))
+                .collect()
+            });
+        let coverage_at = |px: i32, py: i32| -> Option<(f32, f32)> {
+            match &grid {
+                Some(grid) => {
+                    let value = grid[(py - top) as usize * span + (px - left) as usize];
+                    (value.0 > 0.0).then_some(value)
+                }
+                None => coverage_at(px, py),
+            }
+        };
         // Thick paint: the dab builds, wears or carries the relief where it
         // paints (once per dab; a prefix pass repeats dabs already painted).
         if kind == Some(crate::material::Kind::Paint)
@@ -2131,6 +2169,71 @@ impl Document {
             } else {
                 (Vec::new(), Vec::new())
             };
+            // A large dab on a layer's tiles blends in row bands across
+            // cores, with the arithmetic of the loop below.
+            if grid.is_some()
+                && target.is_raster()
+                && layer.pixels.is_tiled()
+                && let Some(buffer) = buffer.as_deref_mut()
+            {
+                let mut damp = Vec::new();
+                if watering {
+                    damp = vec![0.0f32; span * rows];
+                    for (row, values) in damp.chunks_exact_mut(span).enumerate() {
+                        self.wet
+                            .read_row(layer_id, top as usize + row, left as usize, values);
+                    }
+                }
+                let (left, top) = (left as usize, top as usize);
+                let load = brush.pigment;
+                let left_water = crate::dab_bands::apply(
+                    &mut layer.pixels,
+                    buffer,
+                    active,
+                    [left, top, right as usize + 1, bottom as usize + 1],
+                    |px, py| coverage_at(px as i32, py as i32),
+                    watering,
+                    |px, py, a, ceiling, entry, pixel| {
+                        if entry.1 < 0.0 {
+                            *entry = ((&*pixel).try_into().unwrap(), 0.0);
+                        }
+                        let source = scratch.source(brush.blend, raster.smear, px, py);
+                        if !wet {
+                            crate::blend_brush::mix(pixel, source, a, alpha_locked, pigment);
+                            return 0.0;
+                        }
+                        let strength = a / ceiling.max(f32::MIN_POSITIVE);
+                        let damp = damp
+                            .get((py - top) * span + (px - left))
+                            .copied()
+                            .unwrap_or(0.0);
+                        if damp > 0.0 {
+                            crate::blend_brush::mix(
+                                pixel,
+                                source,
+                                (damp * strength).min(1.0) * 0.7,
+                                alpha_locked,
+                                pigment,
+                            );
+                        }
+                        if load < 1.0 && !alpha_locked {
+                            let lift = strength.min(1.0) * (1.0 - load) * WATER_LIFT;
+                            pixel[3] = (f32::from(pixel[3]) * (1.0 - lift)).round() as u8;
+                        }
+                        if pigment && damp > 0.0 && pixel[3] > 0 {
+                            paint_pigment(pixel, a * load, color, alpha_locked);
+                        } else {
+                            paint_pixel(pixel, a * load, color, false, alpha_locked);
+                        }
+                        strength.min(1.0) * brush.wetness
+                    },
+                );
+                for (row, water) in left_water.chunks_exact(span).enumerate() {
+                    self.wet.add_row(layer_id, top + row, left, water);
+                }
+                buffer.blend_scratch = scratch;
+                return;
+            }
             let mut writer = target.writer(layer, width);
             for py in top..=bottom {
                 if watering {

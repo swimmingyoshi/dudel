@@ -20,8 +20,30 @@ const DRY: f32 = 0.01;
 
 /// Wet tiles by tile column and row, each 32 x 32 water values.
 type Tiles = HashMap<(u32, u32), Box<[f32]>>;
-/// One tile's drying result: its new pixels, its water, and whether any is left.
-type TileStep = (Vec<[u8; 4]>, Box<[f32]>, bool);
+/// One tile's drying result: its new pixels, its water, whether any water
+/// is left, and whether any pixel changed.
+type TileStep = (Vec<[u8; 4]>, Box<[f32]>, bool, bool);
+
+/// Everything one drying step reads, copied cheaply (pixels and water are
+/// shared until written), so the step can be worked out on another thread.
+pub(crate) struct Inputs {
+    width: usize,
+    height: usize,
+    pixels: crate::pixels::Pixels,
+    tiles: Arc<Tiles>,
+    evaporation: f32,
+    mobility: f32,
+    along: (f32, f32),
+    alpha_locked: bool,
+    flow: (f32, f32),
+    pigment: bool,
+}
+
+/// One drying step worked out from `Inputs`, not yet written.
+pub(crate) struct Plan {
+    keys: Vec<(u32, u32)>,
+    results: Vec<TileStep>,
+}
 
 /// Water per pixel (0 to 1) on one layer, in sparse tiles. Cloning shares
 /// the tiles until one copy changes.
@@ -97,6 +119,14 @@ impl Field {
 /// One drying step: paint spreads between wet neighbors, water spreads a
 /// little and evaporates. Returns the changed area, or None once dry.
 pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
+    let inputs = inputs(doc)?;
+    let plan = plan(inputs);
+    commit(doc, plan)
+}
+
+/// What the next drying step needs, or None when nothing is wet (water on
+/// a layer that cannot take it dries at once).
+pub(crate) fn inputs(doc: &mut Document) -> Option<Inputs> {
     if doc.wet.is_empty() {
         return None;
     }
@@ -142,9 +172,36 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
             crate::material::Kind::Watercolor | crate::material::Kind::Paint
         )
     });
-    let tiles = doc.wet.tiles.clone();
+    Some(Inputs {
+        width,
+        height,
+        pixels: doc.layers[index].pixels.clone(),
+        tiles: doc.wet.tiles.clone(),
+        evaporation,
+        mobility,
+        along: (along_x, along_y),
+        alpha_locked,
+        flow: (carry, push),
+        pigment,
+    })
+}
+
+/// Work out one drying step. Nothing is written; `inputs` is released
+/// before returning, so writing the result copies no tile needlessly.
+pub(crate) fn plan(inputs: Inputs) -> Plan {
+    let Inputs {
+        width,
+        height,
+        ref pixels,
+        ref tiles,
+        evaporation,
+        mobility,
+        along: (along_x, along_y),
+        alpha_locked,
+        flow: (carry, push),
+        pigment,
+    } = inputs;
     let keys: Vec<(u32, u32)> = tiles.keys().copied().collect();
-    let pixels = &doc.layers[index].pixels;
     // Every tile is computed from the state before the step, then written.
     let step = |key: (u32, u32)| -> TileStep {
         let (left, top) = (key.0 as usize * TILE, key.1 as usize * TILE);
@@ -188,6 +245,7 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
         let mut out = Vec::with_capacity((right - left) * (bottom - top));
         let mut water = vec![0.0f32; TILE * TILE].into_boxed_slice();
         let mut wet = false;
+        let mut changed = false;
         for y in top..bottom {
             for x in left..right {
                 let w = tile[(y - top) * TILE + (x - left)];
@@ -283,6 +341,7 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                 if alpha_locked {
                     pixel[3] = bytes[((y - bt) * bw + (x - bl)) * 4 + 3];
                 }
+                changed |= pixel[..] != bytes[((y - bt) * bw + (x - bl)) * 4..][..4];
                 out.push(pixel);
                 let w = (w + water_flow - evaporation).max(0.0);
                 let w = if w < DRY { 0.0 } else { w.min(1.0) };
@@ -290,7 +349,7 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
                 water[(y - top) * TILE + (x - left)] = w;
             }
         }
-        (out, water, wet)
+        (out, water, wet, changed)
     };
     // Large wet areas use the worker pool; small ones are not worth the handoff.
     let results: Vec<TileStep> = if keys.len() >= 24 {
@@ -301,27 +360,28 @@ pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
     } else {
         keys.iter().map(|key| step(*key)).collect()
     };
-    // Water spreading into dry neighbors of a tile's edge starts new tiles.
+    Plan { keys, results }
+}
+
+/// Write a planned step. The plan must come from this document as it is
+/// now: nothing may have changed since its inputs were taken.
+pub(crate) fn commit(doc: &mut Document, plan: Plan) -> Option<[usize; 4]> {
+    let Plan { keys, results } = plan;
+    let (width, height) = (doc.width, doc.height);
+    let layer = doc.wet.layer;
+    let Some(index) = doc.layers.iter().position(|l| Some(l.id) == layer) else {
+        doc.wet.clear();
+        return None;
+    };
     let mut next: HashMap<(u32, u32), Box<[f32]>> = HashMap::with_capacity(keys.len());
     let mut damage: Option<[usize; 4]> = None;
     {
         let mut writer = doc.layers[index].pixels.writer();
-        for (key, (out, water, wet)) in keys.iter().zip(results) {
+        for (key, (out, water, wet, changed)) in keys.iter().zip(results) {
             let (left, top) = (key.0 as usize * TILE, key.1 as usize * TILE);
             let (right, bottom) = ((left + TILE).min(width), (top + TILE).min(height));
-            let mut i = 0;
-            let mut changed = false;
-            for y in top..bottom {
-                for x in left..right {
-                    let target = writer.rgba_mut(y * width + x);
-                    if target != out[i] {
-                        target.copy_from_slice(&out[i]);
-                        changed = true;
-                    }
-                    i += 1;
-                }
-            }
             if changed {
+                writer.write_region(width, [left, top, right, bottom], out.as_flattened());
                 crate::render_region::include(&mut damage, [left, top, right, bottom]);
             }
             if wet {
@@ -357,8 +417,9 @@ pub(crate) struct Drying {
     revision: Option<u64>,
     /// Undo or redo happened: what was wet is no longer there.
     pub(crate) reset: bool,
-    /// Seconds one step took lately, to keep drying to a share of each frame.
-    cost: f32,
+    /// The step being worked out on a background worker, and the document
+    /// revision it was started from.
+    job: Option<(u64, crate::background::Handle<Plan>)>,
 }
 
 impl Dudel {
@@ -386,43 +447,46 @@ impl Dudel {
         if busy {
             // Water waits; it does not dry behind the artist's back.
             self.drying.owed = 0.0;
+            self.drying.job = None;
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
             return;
         }
         if std::mem::take(&mut self.drying.reset) {
             self.doc.wet.clear();
             self.drying.revision = None;
+            self.drying.job = None;
             return;
+        }
+        // A step is worked out on a background worker from a snapshot and
+        // written here only if the document is still as it was, so a large
+        // wash never holds up a frame for longer than the write.
+        let mut damage = None;
+        let mut committed = false;
+        match self.drying.job.take() {
+            Some((revision, job)) if job.is_finished() => {
+                if revision == self.revision
+                    && let Ok(plan) = job.join()
+                {
+                    if self.drying.revision != Some(self.revision) {
+                        // A new drying step in the undo history; an earlier
+                        // one ended when something else changed the document.
+                        self.history.begin_gesture_checkpoint(&self.doc);
+                    }
+                    committed = true;
+                    match commit(&mut self.doc, plan) {
+                        Some([_, _, 0, 0]) | None => {}
+                        Some(rect) => damage = Some(rect),
+                    }
+                } else {
+                    // Planned for a document that has changed since.
+                    self.drying.owed += 1.0;
+                }
+            }
+            job => self.drying.job = job,
         }
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
-        // Drying may use about a quarter of the time: a huge wet wash dries
-        // more slowly instead of making painting stutter.
-        let rate = RATE.min(0.25 / self.drying.cost.max(1e-4));
-        self.drying.owed = (self.drying.owed + dt * rate).min(4.0);
-        let steps = self.drying.owed.floor() as usize;
+        self.drying.owed = (self.drying.owed + dt * RATE).min(4.0);
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
-        if steps == 0 {
-            return;
-        }
-        self.drying.owed -= steps as f32;
-        if self.drying.revision != Some(self.revision) {
-            // A new drying step in the undo history; an earlier one ended
-            // when something else changed the document.
-            self.history.begin_gesture_checkpoint(&self.doc);
-        }
-        let mut damage = None;
-        let started = std::time::Instant::now();
-        let mut done = 0;
-        for _ in 0..steps {
-            done += 1;
-            match dry_step(&mut self.doc) {
-                Some([_, _, 0, 0]) => {}
-                Some(rect) => crate::render_region::include(&mut damage, rect),
-                None => break,
-            }
-        }
-        let cost = started.elapsed().as_secs_f32() / done as f32;
-        self.drying.cost = self.drying.cost * 0.7 + cost * 0.3;
         if let Some(rect) = damage {
             self.dirty = true;
             self.dirty_region.include(rect);
@@ -430,10 +494,26 @@ impl Dudel {
             self.revision = self.revision.wrapping_add(1);
             self.content_revision = self.content_revision.wrapping_add(1);
         }
-        self.drying.revision = Some(self.revision);
+        if committed {
+            self.drying.revision = Some(self.revision);
+        }
         if self.doc.wet.is_empty() {
             self.history.settle(&self.doc);
             self.drying.revision = None;
+            return;
+        }
+        if self.drying.job.is_none()
+            && self.drying.owed >= 1.0
+            && let Some(inputs) = inputs(&mut self.doc)
+        {
+            self.drying.owed -= 1.0;
+            let ctx = ctx.clone();
+            let job = crate::background::spawn(move || {
+                let plan = plan(inputs);
+                ctx.request_repaint();
+                plan
+            });
+            self.drying.job = Some((self.revision, job));
         }
     }
 }
@@ -557,6 +637,20 @@ mod tests {
         assert!(doc.wet.is_empty());
     }
 
+    /// One frame of drying, waiting for the step it started as the next
+    /// frame would find it.
+    fn tick(app: &mut Dudel, ctx: &egui::Context) {
+        app.dry_tick(ctx);
+        while app
+            .drying
+            .job
+            .as_ref()
+            .is_some_and(|(_, job)| !job.is_finished())
+        {
+            std::thread::yield_now();
+        }
+    }
+
     #[test]
     fn drying_in_the_app_is_one_undo_step_and_undo_stops_it() {
         let ctx = egui::Context::default();
@@ -569,7 +663,7 @@ mod tests {
         let painted = app.doc.layers[0].pixels.clone();
         let mut ticks = 0;
         while !app.doc.wet.is_empty() {
-            app.dry_tick(&ctx);
+            tick(&mut app, &ctx);
             ticks += 1;
             assert!(ticks < 5000, "drying ends");
         }
@@ -585,7 +679,7 @@ mod tests {
         // Redo brings the dried result back; nothing is wet any more.
         app.redo();
         assert!(app.doc.layers[0].pixels != painted);
-        app.dry_tick(&ctx);
+        tick(&mut app, &ctx);
         assert!(app.doc.wet.is_empty());
         // Undo in the middle of drying stops it.
         let mut app = Dudel {
@@ -594,11 +688,11 @@ mod tests {
         };
         stroke(&mut app.doc, &wash(), [200, 30, 30], 34.0);
         for _ in 0..10 {
-            app.dry_tick(&ctx);
+            tick(&mut app, &ctx);
         }
         assert!(!app.doc.wet.is_empty());
         app.undo();
-        app.dry_tick(&ctx);
+        tick(&mut app, &ctx);
         assert!(app.doc.wet.is_empty());
     }
 

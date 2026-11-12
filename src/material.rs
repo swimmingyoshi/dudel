@@ -1808,16 +1808,160 @@ mod look {
             for y in 0..h {
                 doc.wet.add_row(id, y, 0, &row);
             }
-            let start = std::time::Instant::now();
+            // Planning runs on a background worker in the app; only the
+            // write holds up a frame.
+            let (mut planning, mut writing) = (0.0, 0.0);
             for _ in 0..10 {
-                crate::wet::dry_step(&mut doc);
+                let start = std::time::Instant::now();
+                let plan = crate::wet::plan(crate::wet::inputs(&mut doc).unwrap());
+                planning += start.elapsed().as_secs_f64() * 100.0;
+                let start = std::time::Instant::now();
+                crate::wet::commit(&mut doc, plan);
+                writing += start.elapsed().as_secs_f64() * 100.0;
             }
+            eprintln!("{kind:?}: {planning:.1} ms to plan a step, {writing:.1} ms to write it");
+        }
+    }
+    /// What one dab of a large brush costs on each kind of surface.
+    #[test]
+    #[ignore = "prints painting timings for review"]
+    fn painting_cost() {
+        use crate::brush::{Blend, Brush};
+        let base = Brush {
+            size: 200.0,
+            hardness: 0.5,
+            spacing: 0.1,
+            pressure_size: false,
+            ..Default::default()
+        };
+        let cases: [(&str, Option<Kind>, bool, Brush); 8] = [
+            ("plain layer", None, false, base.clone()),
+            ("paper", None, true, base.clone()),
+            (
+                "wet brush",
+                None,
+                true,
+                Brush {
+                    blend: Blend::Wet,
+                    wetness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            (
+                "watercolor layer, wet brush",
+                Some(Kind::Watercolor),
+                true,
+                Brush {
+                    blend: Blend::Wet,
+                    wetness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            ("dry media layer", Some(Kind::Dry), true, base.clone()),
+            (
+                "thick paint layer",
+                Some(Kind::Paint),
+                true,
+                Brush {
+                    thickness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            (
+                "thick paint, smudge",
+                Some(Kind::Paint),
+                true,
+                Brush {
+                    blend: Blend::Smudge,
+                    ..base.clone()
+                },
+            ),
+            (
+                "plain layer, smudge",
+                None,
+                false,
+                Brush {
+                    blend: Blend::Smudge,
+                    ..base.clone()
+                },
+            ),
+        ];
+        for (name, kind, paper, brush) in cases {
+            let (w, h) = (3000, 2000);
+            let mut doc = Document::new(w, h);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            if paper {
+                doc.paper = Some(crate::paper::Paper::presets()[1].1);
+            }
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for index in 0..w * h {
+                    let c = if index / 97 % 2 == 0 {
+                        [20, 40, 200]
+                    } else {
+                        [250, 220, 20]
+                    };
+                    writer
+                        .rgba_mut(index)
+                        .copy_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+            }
+            let settings = crate::stroke_buffer::Settings {
+                target: crate::paint_target::Target::Raster,
+                brush: brush.clone(),
+                color: [200, 40, 30],
+                secondary: [200, 40, 30],
+                erase: false,
+                layer: doc.active,
+                symmetry: Default::default(),
+            };
+            let mut path = crate::stroke::Stroke::default();
+            let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+            let mut count = 0;
+            let start = std::time::Instant::now();
+            for i in 0..=250 {
+                let sample = crate::stroke::Sample {
+                    x: 200.0 + i as f32 * 10.0,
+                    y: 600.0 + (i as f32 * 0.05).sin() * 300.0,
+                    pressure: 1.0,
+                    pressure_known: true,
+                    ..Default::default()
+                };
+                let dabs = if i == 250 {
+                    path.finish(sample, &brush)
+                } else {
+                    path.sample(sample, &brush)
+                };
+                for dab in dabs {
+                    count += 1;
+                    buffer.paint(&mut doc, dab, &settings);
+                }
+            }
+            buffer.finish_tail(&mut doc, &settings);
+            let paint = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            let expanded = crate::layer_effects::expand(&doc, false, &|| false);
+            let expand = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            let mut steps = 0;
+            while !doc.wet.is_empty() && steps < 400 {
+                crate::wet::dry_step(&mut doc);
+                steps += 1;
+            }
+            let dry = start.elapsed().as_secs_f64() * 1000.0;
             eprintln!(
-                "{kind:?}: {:.1} ms per step",
-                start.elapsed().as_secs_f64() * 100.0
+                "{name}: {count} dabs, {:.2} ms per dab; expand for display {expand:.0} ms ({}); drying {steps} steps, {:.1} ms each",
+                paint / f64::from(count.max(1)),
+                if expanded.is_ok() {
+                    "done"
+                } else {
+                    "not needed"
+                },
+                dry / f64::from(steps.max(1)),
             );
         }
     }
+
     #[test]
     #[ignore = "writes a picture for a person to look at"]
     fn knife_picture() {

@@ -19,7 +19,7 @@ pub(crate) struct Scratch {
     /// Left, top, right, bottom (exclusive) in canvas pixels.
     rect: [usize; 4],
     values: Vec<[f32; 4]>,
-    /// One row or column of sums while blurring.
+    /// A copy of the row, then of the whole area, while blurring.
     line: Vec<[f32; 4]>,
 }
 
@@ -176,6 +176,11 @@ pub(crate) fn capture(
 
 /// Separable box blur of the scratch, averaging only pixels inside it so
 /// canvas edges do not darken.
+///
+/// A wet or blur dab blurs its whole area twice, which was most of such a
+/// dab's cost. Rows are blurred in bands across cores; columns are blurred
+/// a whole row at a time, so memory is read in order. Every pixel gets the
+/// same sums in the same order as blurring line by line.
 fn box_blur(scratch: &mut Scratch, r: usize) {
     let w = scratch.rect[2] - scratch.rect[0];
     let h = scratch.rect[3] - scratch.rect[1];
@@ -183,25 +188,25 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
         return;
     }
     let Scratch { values, line, .. } = scratch;
-    let mut pass = |count: usize, lines: usize, at: &dyn Fn(usize, usize) -> usize| {
-        for l in 0..lines {
+    // Along each row.
+    let blur_rows = |rows: &mut [[f32; 4]], line: &mut Vec<[f32; 4]>| {
+        for row in rows.chunks_exact_mut(w) {
             line.clear();
-            line.extend((0..count).map(|i| values[at(l, i)]));
+            line.extend_from_slice(row);
             let mut sum = [0.0f32; 4];
-            for v in line.iter().take(r.min(count - 1) + 1) {
+            for v in line.iter().take(r.min(w - 1) + 1) {
                 for c in 0..4 {
                     sum[c] += v[c];
                 }
             }
-            for i in 0..count {
-                // Window [i - r, i + r] clipped to the line.
-                let (low, high) = (i.saturating_sub(r), (i + r).min(count - 1));
+            for i in 0..w {
+                // Window [i - r, i + r] clipped to the row.
+                let (low, high) = (i.saturating_sub(r), (i + r).min(w - 1));
                 let n = (high - low + 1) as f32;
-                let out = &mut values[at(l, i)];
                 for c in 0..4 {
-                    out[c] = sum[c] / n;
+                    row[i][c] = sum[c] / n;
                 }
-                if i + r + 1 < count {
+                if i + r + 1 < w {
                     let v = line[i + r + 1];
                     for c in 0..4 {
                         sum[c] += v[c];
@@ -216,8 +221,49 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
             }
         }
     };
-    pass(w, h, &|row, i| row * w + i);
-    pass(h, w, &|column, i| i * w + column);
+    const BAND: usize = 32;
+    if w * h >= 1 << 14 && h > BAND {
+        let bands: Vec<_> = values
+            .chunks_mut(w * BAND)
+            .map(std::sync::Mutex::new)
+            .collect();
+        for result in crate::parallel::run(bands.len(), |i| {
+            blur_rows(&mut bands[i].lock().unwrap(), &mut Vec::with_capacity(w));
+        }) {
+            result.expect("Blur worker panicked");
+        }
+    } else {
+        blur_rows(values, line);
+    }
+    // Down each column: one running sum per column, moved a row at a time.
+    line.clear();
+    line.extend_from_slice(values);
+    let mut sums = vec![[0.0f32; 4]; w];
+    let add = |sums: &mut [[f32; 4]], row: &[[f32; 4]], sign: f32| {
+        for (sum, v) in sums.iter_mut().zip(row) {
+            for c in 0..4 {
+                sum[c] += sign * v[c];
+            }
+        }
+    };
+    for i in 0..=r.min(h - 1) {
+        add(&mut sums, &line[i * w..][..w], 1.0);
+    }
+    for i in 0..h {
+        let (low, high) = (i.saturating_sub(r), (i + r).min(h - 1));
+        let n = (high - low + 1) as f32;
+        for (out, sum) in values[i * w..][..w].iter_mut().zip(&sums) {
+            for c in 0..4 {
+                out[c] = sum[c] / n;
+            }
+        }
+        if i + r + 1 < h {
+            add(&mut sums, &line[(i + r + 1) * w..][..w], 1.0);
+        }
+        if i >= r {
+            add(&mut sums, &line[(i - r) * w..][..w], -1.0);
+        }
+    }
 }
 
 impl Scratch {
@@ -304,6 +350,64 @@ pub(crate) fn mix(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The blur as first written: every row, then every column, one line
+    /// at a time.
+    fn blur_line_by_line(values: &mut [[f32; 4]], w: usize, h: usize, r: usize) {
+        let mut pass = |count: usize, lines: usize, at: &dyn Fn(usize, usize) -> usize| {
+            for l in 0..lines {
+                let line: Vec<[f32; 4]> = (0..count).map(|i| values[at(l, i)]).collect();
+                let mut sum = [0.0f32; 4];
+                for v in line.iter().take(r.min(count - 1) + 1) {
+                    for c in 0..4 {
+                        sum[c] += v[c];
+                    }
+                }
+                for i in 0..count {
+                    let (low, high) = (i.saturating_sub(r), (i + r).min(count - 1));
+                    let n = (high - low + 1) as f32;
+                    for c in 0..4 {
+                        values[at(l, i)][c] = sum[c] / n;
+                    }
+                    if i + r + 1 < count {
+                        for c in 0..4 {
+                            sum[c] += line[i + r + 1][c];
+                        }
+                    }
+                    if i >= r {
+                        for c in 0..4 {
+                            sum[c] -= line[i - r][c];
+                        }
+                    }
+                }
+            }
+        };
+        pass(w, h, &|row, i| row * w + i);
+        pass(h, w, &|column, i| i * w + column);
+    }
+
+    #[test]
+    fn the_banded_blur_equals_blurring_line_by_line_bit_for_bit() {
+        // Small (one thread), large (bands across cores), and a radius
+        // wider than the area.
+        for (w, h, r) in [(7, 5, 2), (300, 210, 24), (190, 97, 9), (3, 200, 40)] {
+            let values: Vec<[f32; 4]> = (0..w * h)
+                .map(|i| {
+                    let n = (i as u32).wrapping_mul(2_654_435_761);
+                    [0, 8, 16, 24].map(|shift| ((n >> shift) & 0xFF) as f32 / 255.0)
+                })
+                .collect();
+            let mut expected = values.clone();
+            blur_line_by_line(&mut expected, w, h, r);
+            let mut scratch = Scratch {
+                rect: [10, 20, 10 + w, 20 + h],
+                values,
+                line: Vec::new(),
+            };
+            box_blur(&mut scratch, r);
+            assert!(scratch.values == expected, "{w} x {h}, radius {r}");
+        }
+    }
 
     #[test]
     fn mixing_is_premultiplied_and_respects_lock_transparency() {

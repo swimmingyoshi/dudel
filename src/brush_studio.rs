@@ -400,6 +400,11 @@ impl Dudel {
                             .max_height(height)
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
+                                // Rows close together so the whole list fits
+                                // beside the test pad on a small window, and
+                                // a bar that stays visible when it does not.
+                                ui.spacing_mut().item_spacing.y = 2.0;
+                                ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
                                 for section in sections.clone() {
                                     ui.selectable_value(
                                         &mut self.brush_studio_section,

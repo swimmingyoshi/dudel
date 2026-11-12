@@ -22,6 +22,14 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   only when you ask for it. On Linux the check links to the download.
 - **Open projects from File Explorer:** `dudel.exe` opens the project files it
   is started with, each in its own tab.
+- **Faster wet paint, smudge and blur:** large wet, smudge, blur and palette
+  knife dabs now use every processor core, as plain paint already did. With a
+  200 px brush a wet dab takes about a quarter of the time it did and a
+  palette knife dab about a third. The result is the same, pixel for pixel.
+- **Drying no longer stalls the window:** a drying wash is worked out in the
+  background, so panning and zooming stay smooth while a large wash dries.
+- **Small fixes:** Brush Studio's section list fits beside the test pad on a
+  small window, and Settings opens in the middle of the window.
 
 Known limits: 0.4.0 and earlier cannot update themselves, so this version is
 installed by downloading its ZIP once. Dudel has no icon of its own yet, so
