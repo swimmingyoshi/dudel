@@ -33,6 +33,11 @@ const PEN_HZ: f64 = 200.0;
 /// at this zoom (about half).
 const SPEED: f64 = 1800.0;
 const FRAME: Duration = Duration::from_micros(16_667);
+/// What a frame costs after its CPU work when frames follow one another at
+/// once: the gap between a frame's CPU time and the time to the next frame
+/// in the trace of 2026-11-13 from a real pen (2.1 ms on each of three
+/// strokes).
+const PRESENT: Duration = Duration::from_micros(2_100);
 
 struct Case {
     name: &'static str,
@@ -53,8 +58,7 @@ struct Case {
     /// Canvas pixels the pen covers per second.
     speed: f64,
     /// Frames wait for a 60 Hz display, as with Low latency off. Otherwise
-    /// they follow one another at once, as with it on (the default); a real
-    /// frame then also pays for the GPU, which is not measured here.
+    /// they follow one another after `PRESENT`, as with it on (the default).
     display_paced: bool,
 }
 
@@ -83,6 +87,16 @@ fn chisel(name: &'static str) -> Case {
         blend: Some(Blend::Wet),
         wetness: Some(0.5),
         ..case(name, Some("Chisel marker"), Some(300.0))
+    }
+}
+
+/// The Chisel marker cases the way the trace from a real pen ran them.
+fn traced(name: &'static str) -> Case {
+    Case {
+        paper: false,
+        display_paced: false,
+        speed: 4000.0,
+        ..chisel(name)
     }
 }
 
@@ -168,6 +182,17 @@ fn cases() -> Vec<Case> {
         Case {
             display_paced: false,
             ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, frames back to back")
+        },
+        // The trace of 2026-11-13 from a real pen: no paper, Low latency on,
+        // the pen at 2,900 to 5,000 px/s, and plain paint.
+        Case {
+            blend: None,
+            ..traced("Chisel marker 300 px, paint, as traced (4,000 px/s)")
+        },
+        traced("Chisel marker 300 px, wet 50%, as traced (4,000 px/s)"),
+        Case {
+            speed: 2900.0,
+            ..traced("Chisel marker 300 px, wet 50%, as traced (2,900 px/s)")
         },
     ]
 }
@@ -333,6 +358,8 @@ fn frame(
         let elapsed = began.elapsed();
         let refreshes = elapsed.as_nanos() / FRAME.as_nanos() + 1;
         std::thread::sleep(FRAME * refreshes as u32 - elapsed);
+    } else {
+        std::thread::sleep(PRESENT);
     }
     row
 }

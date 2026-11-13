@@ -5,9 +5,10 @@ path, paint, close Dudel, then:
 
     python scripts/stroke_trace_summary.py TRACE.jsonl
 
-The file has one JSON line per frame of every stroke (src/stage_timer.rs).
-This prints, per stroke: how long frames took, how far painting fell behind
-the pen, and where the time went.
+The file has one JSON line per frame of every stroke, after a line saying
+what the stroke was painted with (src/stage_timer.rs). This prints, per
+stroke: the brush and canvas, how long frames took, how far painting fell
+behind the pen, and where the time went.
 """
 
 import json
@@ -38,11 +39,23 @@ def report(index, frames):
     if dabs == 0:
         return
     seconds = (frames[-1]["t_ms"] - frames[0]["t_ms"]) / 1000
+    setup = frames[0].get("setup")
     intervals = [f["interval_ms"] for f in frames[1:]]
     cpu = [f["frame_ms"] for f in frames]
     queued = [f["queued"] for f in frames]
     lift = next((i for i, f in enumerate(frames) if not f["stroking"]), len(frames) - 1)
     print(f"\n== stroke {index}: {seconds:.1f} s, {len(frames)} frames, {dabs} dabs")
+    if setup:
+        print(
+            "   {tool}: {brush}, mode {mode}, {size_px:.0f} px (aspect {aspect:.2f}, spacing {spacing:.0%}),"
+            " water {water:.0%}; canvas {canvas[0]} x {canvas[1]}, {paper}, {layer} layer, zoom {zoom:.0%}".format(
+                **{**setup, "paper": "paper" if setup["paper"] else "no paper"}
+            )
+        )
+    pen = [f for f in frames if f["stroking"]]
+    if len(pen) > 1:
+        pen_seconds = (pen[-1]["t_ms"] - pen[0]["t_ms"]) / 1000
+        print(f"   pen down {pen_seconds:.1f} s: {dabs / max(pen_seconds, 1e-9):.0f} dabs a second asked")
     print(
         "   frame to frame: p50 {:.1f} / p95 {:.1f} / max {:.1f} ms ({:.0f} frames a second)".format(
             percentile(intervals, 50),
@@ -93,8 +106,18 @@ def report(index, frames):
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
+    frames, setup = [], None
     with open(sys.argv[1], encoding="utf-8") as file:
-        frames = [json.loads(line) for line in file if line.strip()]
+        for line in file:
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            if "stroke" in entry:
+                setup = entry["stroke"]
+                continue
+            if setup:
+                entry["setup"], setup = setup, None
+            frames.append(entry)
     if not frames:
         sys.exit("The trace has no stroke frames.")
     for index, group in enumerate(strokes(frames), 1):

@@ -3,8 +3,8 @@
 //! Off unless a trace is asked for: `--profile-stroke REPORT.json` runs
 //! scripted strokes without a window (`stroke_profile`), and the environment
 //! variable `DUDEL_TRACE_STROKE=FILE` makes a normal session write one line
-//! per frame of every stroke to FILE. While off, a timed section costs one
-//! atomic load.
+//! per frame of every stroke to FILE, after a line saying what the stroke
+//! was painted with. While off, a timed section costs one atomic load.
 //!
 //! Stages are timed on the thread that asks for the work, so a stage that
 //! fans out across cores counts its wall time once. `Pump` contains every
@@ -156,6 +156,67 @@ impl crate::Dudel {
     }
 }
 
+/// What a traced stroke was painted with and on: the line before its first
+/// frame. Without it a trace cannot tell a wet brush from a plain one that
+/// was meant to be wet.
+#[derive(serde::Serialize)]
+struct Setup<'a> {
+    tool: &'static str,
+    brush: &'a str,
+    mode: &'static str,
+    size_px: f32,
+    aspect: f32,
+    angle: f32,
+    spacing: f32,
+    hardness: f32,
+    opacity: f32,
+    flow: f32,
+    water: f32,
+    pigment: f32,
+    granulation: f32,
+    paper_response: f32,
+    pressure_size: bool,
+    pressure_opacity: bool,
+    canvas: [usize; 2],
+    paper: bool,
+    /// The active layer's material, or "Plain".
+    layer: &'static str,
+    zoom: f32,
+}
+
+impl crate::Dudel {
+    fn stroke_setup(&self) -> Setup<'_> {
+        let brush = &self.brush;
+        Setup {
+            tool: self.tool.name(),
+            brush: &brush.name,
+            mode: brush.blend.name(),
+            size_px: brush.size,
+            aspect: brush.aspect,
+            angle: brush.angle,
+            spacing: brush.spacing,
+            hardness: brush.hardness,
+            opacity: brush.opacity,
+            flow: brush.flow,
+            water: brush.wetness,
+            pigment: brush.pigment,
+            granulation: brush.granulation,
+            paper_response: brush.paper_response,
+            pressure_size: brush.pressure_size,
+            pressure_opacity: brush.pressure_opacity,
+            canvas: [self.doc.width, self.doc.height],
+            paper: self.doc.paper.is_some(),
+            layer: self
+                .doc
+                .layers
+                .get(self.doc.active)
+                .and_then(|layer| layer.material.as_ref())
+                .map_or("Plain", |material| material.settings.kind.name()),
+            zoom: self.zoom,
+        }
+    }
+}
+
 /// The trace file of a normal session (`DUDEL_TRACE_STROKE`).
 struct Live {
     writer: std::io::BufWriter<std::fs::File>,
@@ -192,7 +253,8 @@ fn start_live(path: &std::path::Path) -> std::io::Result<()> {
 
 impl crate::Dudel {
     /// End of a frame in a traced session: one JSON line per frame that
-    /// painted or still has dabs waiting.
+    /// painted or still has dabs waiting, and before a stroke's first frame
+    /// a line with its `Setup` under "stroke".
     pub(crate) fn trace_live_frame(&self, frame_start: Instant) {
         if !ON.load(Relaxed) {
             return;
@@ -210,6 +272,12 @@ impl crate::Dudel {
             self.performance.frame_ms,
         );
         if frame.stroking || frame.dabs > 0 || frame.queued > 0 {
+            if !live.active {
+                let setup = serde_json::json!({ "stroke": self.stroke_setup() });
+                if serde_json::to_writer(&mut live.writer, &setup).is_ok() {
+                    let _ = live.writer.write_all(b"\n");
+                }
+            }
             if serde_json::to_writer(&mut live.writer, &frame).is_ok() {
                 let _ = live.writer.write_all(b"\n");
             }
@@ -234,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn a_traced_session_writes_a_line_per_stroke_frame_and_none_when_idle() {
+    fn a_traced_session_writes_the_setup_then_a_line_per_stroke_frame_and_none_when_idle() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("trace.jsonl");
         start_live(&path).unwrap();
@@ -254,8 +322,13 @@ mod tests {
         *LIVE.lock().unwrap() = None;
         let text = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), 1, "{text}");
-        let frame: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(lines.len(), 2, "{text}");
+        let setup: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(setup["stroke"]["mode"], "Paint");
+        assert_eq!(setup["stroke"]["canvas"][0], app.doc.width);
+        assert_eq!(setup["stroke"]["size_px"], f64::from(app.brush.size));
+        assert_eq!(setup["stroke"]["layer"], "Plain");
+        let frame: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
         assert_eq!(frame["dabs"], 3);
         assert_eq!(frame["stroking"], true);
         assert_eq!(frame["frame_ms"], 4.5);

@@ -215,11 +215,50 @@ that difference is from the tight box and the 2% floor.
   at every value: the spinning threads take time from the one doing the
   work in between.
 
+### The owner's trace (2026-11-13, build 9191d9c)
+
+Three strokes with the Chisel marker at about 300 px on a 2048 px canvas,
+no paper, Low latency on. **The dabs were plain paint, not wet** (only the
+`paint` stage ran), so this trace does not test the wet brush.
+
+| Stroke | Pen down | Dabs a second | ms per dab | Furthest behind | At pen lift | Frame to frame p50 / p95 |
+|---|---|---|---|---|---|---|
+| 1 | 1.7 s | 648 | 0.49 | 0 dabs | 0 | 6.1 / 11.0 ms |
+| 2 | 1.2 s | 849 | 0.47 | 40 dabs | 2 | 7.0 / 14.4 ms |
+| 3 | 1.1 s | 1,100 | 0.49 | 22 dabs | 0 | 7.4 / 23.8 ms |
+
+What it does show:
+
+- **The pen is much faster than the script assumed**: 2,900 to 5,000
+  canvas px/s against 1,800.
+- **Frames follow one another at once** (135 to 165 a second), as Low
+  latency intends. A frame costs 2.1 ms more than its CPU work, and the
+  rest of the interface 1.0 ms. The profile's back-to-back cases now add
+  that 2.1 ms.
+- Plain paint keeps up at that speed, with the longer painting turn
+  stepping in near the end of the fastest stroke (11 frames over 20 ms).
+
+The same strokes scripted with the brush set to Wet, as traced otherwise
+(`--profile-stroke REPORT.json "as traced"`):
+
+| Case | ms per dab | Dabs a second | Behind at pen lift | Finished after lift |
+|---|---|---|---|---|
+| Plain paint, 4,000 px/s | 0.52 | 889 | 0 dabs | 0.02 s |
+| Wet 50%, 2,900 px/s | 1.83 | 483 | 71 dabs (430 px) | 0.20 s |
+| Wet 50%, 4,000 px/s | 1.82 | 667 | 292 dabs (1,750 px) | 0.68 s |
+
+So at the owner's speed a wet stroke with this tip still trails, by a
+fraction of a second where it was many seconds. Far behind the pen painting
+already has about 83% of the time; the rest has to come from cheaper dabs
+(blur 0.63 ms, blend 0.42 ms, coverage 0.32 ms, copy 0.23 ms of 1.82 ms).
+
+The trace now starts every stroke with a line naming the tool, brush, mode,
+size, water, canvas, paper and layer, so the next one says which it was.
+
 ### What is left
 
-- [ ] **Confirm on the owner's pen**, with Low latency on and off. A
-      `DUDEL_TRACE_STROKE` run shows the real pen speed and what a real
-      frame costs beyond the CPU work measured here.
+- [ ] **A trace of a stroke in Wet mode from the owner's pen**, to see
+      whether the remaining fraction of a second is felt.
 - [ ] **Is 30 to 45 frames a second while far behind acceptable?** If the
       pen cursor feels worse than the shorter queue feels better, lower the
       20 ms or raise the 16 dabs.
