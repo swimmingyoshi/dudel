@@ -48,6 +48,9 @@ pub struct Stroke {
     heading: f32,
     /// The stroke has moved, so `heading` means something.
     heading_known: bool,
+    /// Dabs of a tip that turns with the stroke, waiting for the stroke to
+    /// have a direction (`heading_reach`).
+    held: Vec<Sample>,
     /// View zoom of the latest sample; sizes the rope in screen pixels.
     zoom: f32,
     /// Optional native-output allowance for extension-generated strokes.
@@ -163,6 +166,7 @@ impl Stroke {
         self.heading_from = None;
         self.heading = 0.0;
         self.heading_known = false;
+        self.held.clear();
         self.zoom = 1.0;
     }
     fn spacing(brush: &Brush, sample: &Sample) -> f32 {
@@ -402,6 +406,7 @@ impl Stroke {
                 dabs.extend(self.scatter(vec![sample], brush));
             }
         }
+        dabs.extend(self.release_held(brush));
         dabs
     }
 
@@ -538,8 +543,71 @@ impl Stroke {
         (0, self.trail.front().map_or(1.0, |s| s.pressure))
     }
 
-    fn scatter(&mut self, mut dabs: Vec<Sample>, brush: &Brush) -> Vec<Sample> {
-        for dab in &mut dabs {
+    /// How far a stroke goes before a tip that turns with it starts painting:
+    /// its first dabs wait until then and are drawn at the direction it went,
+    /// instead of flat. `None` for tips that do not turn with the stroke.
+    fn heading_reach(brush: &Brush) -> Option<f32> {
+        let graph = brush.graph.as_ref().and_then(|g| g.compiled().ok());
+        let turns = match graph.filter(|g| g.drives(crate::brush_graph::Output::Rotation)) {
+            Some(graph) => graph.needs_heading(),
+            None => brush.angle_source == crate::brush::AngleSource::Direction,
+        };
+        turns.then(|| (brush.size * 0.2).clamp(2.0, 24.0))
+    }
+
+    fn scatter(&mut self, dabs: Vec<Sample>, brush: &Brush) -> Vec<Sample> {
+        let reach = Self::heading_reach(brush);
+        let mut out = Vec::with_capacity(dabs.len());
+        for dab in dabs {
+            // Rotation is measured on the unscattered path. The heading is
+            // always tracked (thick paint streaks follow it).
+            if let Some(reach) = reach.filter(|_| !self.heading_known) {
+                let from = *self.heading_from.get_or_insert([dab.x, dab.y]);
+                let (dx, dy) = (dab.x - from[0], dab.y - from[1]);
+                if dx.hypot(dy) < reach {
+                    self.held.push(dab);
+                    continue;
+                }
+                self.heading = dy.atan2(dx).to_degrees();
+                self.heading_known = true;
+                self.heading_from = Some([dab.x, dab.y]);
+                for held in std::mem::take(&mut self.held) {
+                    out.push(self.place(held, brush));
+                }
+            } else {
+                if let Some(from) = self.heading_from {
+                    let (dx, dy) = (dab.x - from[0], dab.y - from[1]);
+                    if dx.hypot(dy) > 0.01 {
+                        self.heading = dy.atan2(dx).to_degrees();
+                        self.heading_known = true;
+                    }
+                }
+                self.heading_from = Some([dab.x, dab.y]);
+            }
+            out.push(self.place(dab, brush));
+        }
+        out
+    }
+
+    /// Dabs still waiting for a direction when the stroke ends (a tap, or a
+    /// stroke shorter than `heading_reach`): drawn the way the pen moved, or
+    /// flat if it did not.
+    fn release_held(&mut self, brush: &Brush) -> Vec<Sample> {
+        let held = std::mem::take(&mut self.held);
+        if let (Some(first), Some(last)) = (held.first(), held.last()) {
+            let (dx, dy) = (last.x - first.x, last.y - first.y);
+            if dx.hypot(dy) > 0.01 {
+                self.heading = dy.atan2(dx).to_degrees();
+                self.heading_known = true;
+            }
+        }
+        held.into_iter().map(|dab| self.place(dab, brush)).collect()
+    }
+
+    /// Rotation, randomness and scatter for one dab, in stroke order.
+    fn place(&mut self, mut dab: Sample, brush: &Brush) -> Sample {
+        {
+            let dab = &mut dab;
             let mut hash = self
                 .dab_index
                 .wrapping_add(brush.scatter_seed)
@@ -565,22 +633,8 @@ impl Stroke {
             let legacy_rotation = !graph_rotation
                 && (brush.angle_source != crate::brush::AngleSource::Fixed
                     || brush.angle_jitter > 0.0);
-            let track = graph.is_some_and(|g| g.needs_heading());
-            // Rotation is measured on the unscattered path. Its random draw
-            // only happens with jitter on, so other brushes paint as before.
-            // The heading is always tracked (thick paint streaks follow it);
-            // only these brushes turn with it.
-            let _ = track;
-            {
-                if let Some(from) = self.heading_from {
-                    let (dx, dy) = (dab.x - from[0], dab.y - from[1]);
-                    if dx.hypot(dy) > 0.01 {
-                        self.heading = dy.atan2(dx).to_degrees();
-                        self.heading_known = true;
-                    }
-                }
-                self.heading_from = Some([dab.x, dab.y]);
-            }
+            // The rotation's random draw only happens with jitter on, so
+            // other brushes paint as before.
             if self.heading_known {
                 dab.heading = Some(self.heading);
             }
@@ -613,18 +667,18 @@ impl Stroke {
                         dab.x += angle.cos() * radius;
                         dab.y += angle.sin() * radius;
                     }
-                    continue;
+                    return *dab;
                 }
             }
             if brush.scatter == 0.0 {
-                continue;
+                return *dab;
             }
             let angle = value * std::f32::consts::TAU;
             let radius = random().sqrt() * brush.scatter * brush.size * brush.size_factor(dab);
             dab.x += angle.cos() * radius;
             dab.y += angle.sin() * radius;
         }
-        dabs
+        dab
     }
 
     fn sample_path(&mut self, mut sample: Sample, brush: &Brush) -> Vec<Sample> {
@@ -1233,6 +1287,72 @@ mod tests {
         assert!(dabs.iter().all(|s| s.time.is_none()));
     }
     #[test]
+    fn a_tip_that_turns_with_the_stroke_never_starts_flat_and_a_tap_still_paints() {
+        let knife = Brush {
+            size: 300.0,
+            spacing: 0.03,
+            aspect: 0.22,
+            tip: crate::brush::Tip::Square,
+            angle_source: crate::brush::AngleSource::Direction,
+            pressure_size: false,
+            ..Brush::default()
+        };
+        // Down and to the right at 45 degrees, in small pen steps.
+        let mut stroke = Stroke::default();
+        let mut dabs = Vec::new();
+        for step in 0..40 {
+            let at = step as f32 * 1.5;
+            dabs.extend(stroke.sample(
+                Sample {
+                    x: 100.0 + at,
+                    y: 100.0 + at,
+                    pressure: 1.0,
+                    ..Default::default()
+                },
+                &knife,
+            ));
+        }
+        dabs.extend(stroke.finish(
+            Sample {
+                x: 160.0,
+                y: 160.0,
+                pressure: 1.0,
+                ..Default::default()
+            },
+            &knife,
+        ));
+        assert!(dabs.len() > 10);
+        for dab in &dabs {
+            assert!(
+                (dab.rotation.unwrap() - 45.0).abs() < 0.5,
+                "{:?}",
+                dab.rotation
+            );
+        }
+        // A tap: the same dabs as a brush that does not turn.
+        let tap = |brush: &Brush| {
+            let mut stroke = Stroke::default();
+            let pen = Sample {
+                x: 50.0,
+                y: 50.0,
+                pressure: 1.0,
+                ..Default::default()
+            };
+            let mut dabs = stroke.sample(pen, brush);
+            dabs.extend(stroke.finish(pen, brush));
+            dabs
+        };
+        let fixed = Brush {
+            angle_source: crate::brush::AngleSource::Fixed,
+            ..knife.clone()
+        };
+        let (turning, still) = (tap(&knife), tap(&fixed));
+        assert_eq!(turning.len(), still.len());
+        assert!(!turning.is_empty());
+        assert_eq!(turning[0].rotation, Some(0.0));
+    }
+
+    #[test]
     fn tip_rotation_follows_direction_tilt_and_jitter() {
         let draw = |brush: &Brush, tilt: Option<[f32; 2]>| {
             let mut stroke = Stroke::default();
@@ -1263,9 +1383,9 @@ mod tests {
         };
         let dabs = draw(&direction, None);
         assert!(dabs.len() > 3);
+        // Every dab, the first too: it waits until the stroke has a direction.
         assert!(
-            dabs[1..]
-                .iter()
+            dabs.iter()
                 .all(|d| (d.rotation.unwrap() - 90.0).abs() < 0.01)
         );
         // Pen tilt wins over the direction when the tablet reports it.
