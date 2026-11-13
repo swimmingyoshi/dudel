@@ -1924,6 +1924,7 @@ impl Document {
             && raster.right - raster.left < 512
             && buffer.as_ref().is_some_and(|b| b.is_prefix_pass())
         {
+            let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Prefix);
             let buffer = buffer.unwrap();
             let mut delivery = [0.0f32; 512];
             let width = (raster.right - raster.left + 1) as usize;
@@ -2089,6 +2090,7 @@ impl Document {
         let thick = kind == Some(crate::material::Kind::Paint) && !prefix_pass;
         let grid: Option<Vec<(f32, f32)>> =
             ((blending_now || thick) && crate::dab_bands::worthwhile(span, rows)).then(|| {
+                let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Coverage);
                 const BAND: usize = 32;
                 crate::parallel::run(rows.div_ceil(BAND), |band| {
                     let first = band * BAND;
@@ -2124,6 +2126,7 @@ impl Document {
             && !prefix_pass
             && let Some(material) = layer.material.as_mut()
         {
+            let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Relief);
             crate::material::touch_relief(
                 material,
                 [self.width, self.height],
@@ -2178,6 +2181,7 @@ impl Document {
             {
                 let mut damp = Vec::new();
                 if watering {
+                    let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::WaterRead);
                     damp = vec![0.0f32; span * rows];
                     for (row, values) in damp.chunks_exact_mut(span).enumerate() {
                         self.wet
@@ -2186,6 +2190,7 @@ impl Document {
                 }
                 let (left, top) = (left as usize, top as usize);
                 let load = brush.pigment;
+                let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Blend);
                 let left_water = crate::dab_bands::apply(
                     &mut layer.pixels,
                     buffer,
@@ -2228,15 +2233,19 @@ impl Document {
                         strength.min(1.0) * brush.wetness
                     },
                 );
+                drop(timed);
+                let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::WaterWrite);
                 for (row, water) in left_water.chunks_exact(span).enumerate() {
                     self.wet.add_row(layer_id, top + row, left, water);
                 }
                 buffer.blend_scratch = scratch;
                 return;
             }
+            let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Serial);
             let mut writer = target.writer(layer, width);
             for py in top..=bottom {
                 if watering {
+                    let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::SerialWater);
                     self.wet
                         .read_row(layer_id, py as usize, left as usize, &mut was_wet);
                     water.fill(0.0);
@@ -2286,6 +2295,7 @@ impl Document {
                     });
                 }
                 if watering {
+                    let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::SerialWater);
                     self.wet
                         .add_row(layer_id, py as usize, left as usize, &water);
                 }
@@ -2295,6 +2305,11 @@ impl Document {
             }
             return;
         }
+        let _timed = crate::stage_timer::scope(if prefix_pass {
+            crate::stage_timer::Stage::Prefix
+        } else {
+            crate::stage_timer::Stage::Paint
+        });
         // Large dabs on raster tiles blend in row bands across cores.
         if !prefix_pass
             && !tracking

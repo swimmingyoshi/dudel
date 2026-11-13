@@ -56,6 +56,7 @@ impl Copies {
             if !prefix {
                 result.painted.region.include(bounds);
             }
+            let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Raster);
             let mut raster = Box::new(DabRaster::new(
                 Sample {
                     x,
@@ -67,6 +68,7 @@ impl Copies {
                 doc.width,
                 doc.height,
             ));
+            drop(timed);
             raster.smear = self.moves.get(self.at).copied().unwrap_or_default();
             raster.secondary = Some(settings.secondary);
             let row = raster.top;

@@ -940,6 +940,7 @@ impl Dudel {
     }
 
     pub(crate) fn pump_render_queue(&mut self, ctx: &crate::egui::Context) {
+        let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Pump);
         let started = Instant::now();
         let had_work = self.render_queue.needs_work();
         self.render_queue.set_profiling(self.performance.open);

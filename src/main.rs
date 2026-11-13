@@ -177,9 +177,11 @@ mod sha256;
 mod shortcut_editor;
 mod shortcuts;
 mod snapshot_memory;
+mod stage_timer;
 mod storage;
 mod stroke;
 mod stroke_buffer;
+mod stroke_profile;
 mod svg_export;
 mod symmetry;
 mod tabs;
@@ -1407,6 +1409,7 @@ impl eframe::App for Dudel {
         self.close_viewport_if_ready(ctx);
         self.performance.frame_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
         self.performance.frames.record(self.performance.frame_ms);
+        self.trace_live_frame(frame_start);
     }
 }
 
@@ -1423,6 +1426,7 @@ fn main() -> eframe::Result {
     }
     install::startup();
     crash_report::install();
+    stage_timer::start_live_from_env();
     match std::panic::catch_unwind(run) {
         Ok(result) => result,
         Err(_) => {
@@ -1896,6 +1900,18 @@ fn run() -> eframe::Result {
         }
         if let Err(error) = render_queue::benchmark(&path) {
             eprintln!("Render queue: {error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    if mode.as_deref() == Some("--profile-stroke") {
+        let Some(report) = args.next().map(PathBuf::from) else {
+            eprintln!("Usage: --profile-stroke REPORT.json [CASE NAME FILTER]");
+            std::process::exit(1);
+        };
+        let filter = args.next();
+        if let Err(error) = stroke_profile::run(&report, filter.as_deref()) {
+            eprintln!("Stroke profile: {error}");
             std::process::exit(1);
         }
         return Ok(());

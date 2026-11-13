@@ -13,51 +13,122 @@ find; delete what turns out not to matter, with a line saying why.
 With a paper set on the canvas, a wet brush is "kind of ok", but on long
 strokes with pen pressure the line starts to fall behind the pen.
 
-Not yet investigated. What is known and what is only suspected:
+Measured the same day with the tools below. No engine code was changed. The
+cause is narrowed down but not confirmed on the owner's own strokes: the next
+step is a trace from a real pen session.
 
-- Known: a 200 px wet dab costs 3.7 ms (7.3 ms on a watercolor layer) against
-  0.8 ms for plain paint, measured by `material::look::painting_cost`. A fast
-  stroke with tight spacing can ask for more dabs per frame than that allows.
-- Known: that test paints at full pressure with a fixed size. It does not
-  cover pressure changing the size, which is the reported case.
-- Suspected, in the order to check:
-  1. Each wet dab copies and blurs the area under it (`blend_brush::capture`).
-     The copy reads one pixel at a time through a closure, on one thread.
-  2. The lag grows with stroke length, which points at something that grows
-     with the stroke: the stroke buffer, the water field (`wet::Field`, a hash
-     map of 32 px tiles read and written row by row per dab), or the display
-     refresh of an ever larger dirty area.
-  3. Paper adds `paper.hold` and `paper.pool` to every covered pixel.
-  4. Drying is paused while a stroke is down, so it should not be the cause;
-     confirm that the background drying step is really idle during a stroke.
+### The tools
 
-### The measurement to run first
+- **`dudel --profile-stroke REPORT.json [CASE NAME FILTER]`** paints scripted
+  strokes through the real canvas frame (pen packets, painting queue, display
+  compositing) without a window, in real time, and prints a summary per case.
+  Every frame is in the report. Code: `src/stroke_profile.rs`. It does not
+  measure the GPU, the pen driver or the side panels.
+- **`DUDEL_TRACE_STROKE=FILE`** makes a normal session write one line per
+  frame of every stroke to FILE. Summarize it with
+  `python scripts/stroke_trace_summary.py FILE`. In PowerShell:
 
-Do this before changing any code, so the fix aims at the real cost.
+  ```powershell
+  $env:DUDEL_TRACE_STROKE = "$env:TEMP\dudel-stroke.jsonl"
+  targetelease\dudel.exe
+  ```
 
-- [ ] **Stage timers behind a switch.** Add named timers around the stages
-      of one frame of a stroke and write them to a log when Dudel is started
-      with a flag (for example `--trace-stroke FILE`), off otherwise:
-      input samples to dabs (`stroke.rs`), per dab: coverage, capture and
-      blur, blending, relief, water read and write; then stroke buffer
-      upkeep, display refresh (composite and texture upload), and the whole
-      frame. One line per frame: frame time, dabs painted, dabs still queued,
-      and milliseconds per stage.
-- [ ] **A repeatable stroke.** Record the slow stroke once with the existing
-      `--replay-input` support (or script one: 4000 px long, pressure rising
-      and falling, 150 to 300 px wet brush, Cold-pressed paper, on a plain
-      and on a watercolor layer) so before and after are the same input.
-- [ ] **Read the log for two things:** which stage takes the most time per
-      dab, and which stage's time grows as the stroke gets longer. The second
-      answers "why long strokes".
-- [ ] Check the queue: if "dabs still queued" climbs during the stroke, the
-      engine is behind the pen; if it stays at zero and the frame time is
-      high, the display is.
+- Both use the stage timers in `src/stage_timer.rs`. They cost one atomic
+  load per timed section while off. To time something new, add a `Stage` and
+  a `stage_timer::scope(...)` around it.
 
-Existing tools that help: **View > Settings > Performance monitor** (frame
-times in the app), `--benchmark` and its JSON report, the native session and
-frame logs (`native_session.rs`, `native_frame_log.rs`), and the
-`allocation-profile` feature.
+### What the scripted run shows
+
+3000 x 2000 canvas at about half zoom, Cold-pressed paper, a 7,300 px stroke
+in three overlapping sweeps at 1,800 px a second, pressure rising and falling,
+200 pen reports a second, frames at 60 a second, 12 threads. Report:
+`benchmarks/stroke-profile/baseline-20261112.json` (local, not in git).
+
+| Case | ms per dab | Dabs asked per second | Frame p50 / p95 ms | Furthest behind the pen |
+|---|---|---|---|---|
+| Plain brush 60 px, paper | 0.11 | 446 | 1.5 / 3.2 | 0 px |
+| Watercolor wash 60 px (as built in) | 0.79 | 375 | 5.9 / 8.3 | 4 px |
+| The same without paper | 0.57 | 375 | 4.8 / 7.3 | 0 px |
+| Watercolor round 18 px (as built in) | 0.04 | 2745 | 2.2 / 3.3 | 0 px |
+| Water brush 44 px (as built in) | 0.28 | 681 | 4.0 / 5.9 | 0 px |
+| Watercolor wash 150 px | 2.64 | 150 | 8.6 / 13.1 | 24 px |
+| Watercolor wash 150 px, size by pressure | 0.94 | 335 | 6.5 / 12.5 | 24 px |
+| Watercolor wash 300 px | 8.07 | 75 | 12.2 / 19.4 | 192 px |
+| The same without paper | 6.79 | 75 | 10.0 / 16.9 | 48 px |
+| Watercolor wash 300 px, size by pressure | 2.74 | 168 | 9.5 / 14.9 | 72 px |
+| Watercolor wash 60 px, watercolor layer | 0.94 | 375 | 7.1 / 10.4 | 52 px |
+| Watercolor wash 150 px over a wet wash | 2.88 | 150 | 9.1 / 15.1 | 48 px |
+
+1. **Nothing in the painter gets slower as the stroke gets longer.** Time
+   per dab is the same in the first, middle and last third of every stroke.
+   Water reads and writes are 2 to 6% of a dab and do not grow, so the water
+   field is not the cause. Display compositing per frame grows over the
+   stroke, up to about double, but stays near 1 to 2 ms.
+2. **The lag is a queue.** Painting gets 2 ms of each frame, or 8 ms once
+   three dabs are waiting (`pump_render_queue`); a dab that takes longer
+   still runs whole, one per frame. When the pen asks for more dabs a second
+   than that pays for, the rest wait, and the backlog keeps growing for as
+   long as the stroke goes on. That reads as "lags on long strokes".
+3. **Cost grows with the square of the brush size**: 0.79 ms at 60 px,
+   2.64 ms at 150 px, 8.07 ms at 300 px. The built-in sizes keep up here; at
+   300 px the painter is at its limit (27 of 250 frames over 17 ms, 8 dabs
+   behind). The same brush on a canvas twice as large, zoomed out to look the
+   same, costs four times as much at the same pen speed.
+4. **Pressure:** with size by pressure the dabs are closer together (twice
+   as many in these strokes) and the full-pressure stretches cost the
+   full-size price, so the backlog builds while pressing hard.
+5. **Where a 300 px wet dab's 8.1 ms goes:** coverage 2.6 ms, half of it
+   paper (1.3 ms without paper); blur 2.0 ms; blending 1.7 ms; the copy
+   under the dab 1.3 ms; water 0.45 ms.
+6. **Dabs under about 90 px are painted pixel by pixel on one thread**
+   (`dab_bands::worthwhile`). A 60 px wet dab costs 0.79 ms, seven times a
+   plain dab of the same size; 0.23 ms of it is paper.
+7. A watercolor layer adds about 20% (pigment mixing); painting over a wash
+   that is still wet adds about 10%.
+8. Drying is idle while a stroke is down (`dry_tick` drops its job when the
+   canvas is busy). Confirmed in the code.
+
+Also found: the paper surface shown under the canvas is made on the UI
+thread, six tiles a frame (`paper_view::prepare`). The first 11 frames after
+a paper canvas opened each took about 20 ms longer than the frames after
+them. It is not stroke lag, but it would stutter the same way whenever new
+tiles come into view.
+
+### What is not known yet
+
+The scripted run leaves out the GPU, the pen driver and the side panels, and
+it guesses the brush size, canvas size and pen speed. In a real session each
+frame is longer, so painting gets fewer turns a second and falls behind
+sooner.
+
+- [x] Stage timers behind a switch.
+- [x] A repeatable stroke (scripted; `--replay-input` was not needed).
+- [x] Which stage costs most, and which grows with the stroke (none does).
+- [ ] **A trace of the owner's own slow stroke** (`DUDEL_TRACE_STROKE`),
+      with the brush, its size and the canvas size noted. If "frame to
+      frame" is well above "CPU per frame", the display or GPU is holding
+      frames back; if "rest of the interface" is large, the side panels are.
+
+### Fixes, in the order they should pay off (none started)
+
+- [ ] **Paper height once per pixel.** `Paper::hold` and `Paper::pool` each
+      work out `height`, which takes the sine and cosine of the paper
+      direction and two noise lookups, for every pixel of every dab.
+      Overlapping dabs repeat the same pixels about twelve times. Work it out
+      once per pixel per dab first (same result, bit for bit), then consider
+      keeping heights per tile.
+- [ ] **Let painting use the frame's spare time.** The 8 ms limit leaves
+      half of a 60 Hz frame unused while dabs wait. Raise it while trailing,
+      or move painting off the frame.
+- [ ] **The copy under the dab** (`blend_brush::capture`) reads pixel by
+      pixel through a closure on one thread: read rows from the layer's
+      tiles, in bands.
+- [ ] **Blur less.** Each dab blurs its whole area twice although nearly
+      all of it was blurred for the previous dab.
+- [ ] **Small wet dabs:** make the pixel-by-pixel path cheaper (coverage a
+      row at a time, writes a tile span at a time) or paint several small
+      dabs across cores.
+- [ ] **Paper view tiles on a background worker.**
 
 ## 2. Performance still on the table
 
@@ -74,7 +145,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 | Thick paint | 4.9 ms | 3.5 ms |
 | Drying step, 2-megapixel wash, time on the UI thread | 57 to 107 ms | 6 to 7 ms |
 
-- [ ] **Wet brush lag** (section 1).
+- [ ] **Wet brush lag** (section 1, which has the measured costs per stage
+      and the fixes in order).
 - [ ] **Planning a drying step** takes 34 to 100 ms on a 2-megapixel wash. It
       runs in the background now, so the window stays smooth, but the wash
       dries slowly. `wet::plan` allocates five buffers per 32 px tile.

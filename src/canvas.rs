@@ -1458,6 +1458,7 @@ impl Dudel {
     fn upload_canvas(&mut self, ctx: &egui::Context) {
         self.prepare_reference_layers(ctx);
         let paper_view = self.view(self.canvas_area);
+        let timed = crate::stage_timer::scope(crate::stage_timer::Stage::PaperView);
         self.paper_view.prepare(
             ctx,
             self.doc.paper,
@@ -1465,6 +1466,7 @@ impl Dudel {
             self.canvas_area,
             paper_view,
         );
+        drop(timed);
         let options = self.texture_options();
         self.texture
             .set_viewport(self.canvas_area, self.view(self.canvas_area));
@@ -1494,6 +1496,7 @@ impl Dudel {
             let repaint = ctx.clone();
             let wake: crate::layer_effects::Wake =
                 std::sync::Arc::new(move || repaint.request_repaint());
+            let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Expand);
             let (doc, used, waiting) = crate::layer_effects::expand_for_display(base, &wake);
             drawings = used;
             self.effects_waiting = waiting;
@@ -1515,6 +1518,7 @@ impl Dudel {
             self.effects_shown = drawings;
         }
         let full = self.dirty || redrawn || switched;
+        let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Display);
         self.texture.update_damage(
             ctx,
             expanded.as_ref().unwrap_or(base),

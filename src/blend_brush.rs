@@ -160,12 +160,15 @@ pub(crate) fn capture(
     ];
     scratch.rect = rect;
     scratch.values.clear();
+    let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Capture);
     for y in rect[1]..rect[3] {
         for x in rect[0]..rect[2] {
             scratch.values.push(premultiply(read(x, y)));
         }
     }
+    drop(timed);
     if matches!(blend, Blend::Blur | Blend::Wet) {
+        let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Blur);
         let r = blur_radius(radius);
         // Two box passes approximate a smooth (tent) blur.
         for _ in 0..2 {
