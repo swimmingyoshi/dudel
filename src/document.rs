@@ -3022,6 +3022,34 @@ impl History {
     pub fn has_pending_stroke(&self) -> bool {
         self.pending_redo.is_some()
     }
+    /// Open the newest action again, so that what changes next joins it:
+    /// paint drying after a wet stroke then undoes and redoes with that
+    /// stroke. Only for an action that painted `layer` (the wet one), when
+    /// nothing waits to be redone; false otherwise.
+    pub(crate) fn reopen_last(&mut self, doc: &Document, layer: usize) -> bool {
+        if !self.redo.is_empty() || self.pending_redo.as_ref().is_some_and(|r| !r.is_empty()) {
+            return false;
+        }
+        if !matches!(
+            self.undo.last(),
+            Some(Entry::Patch(patch)) if patch.layer == layer && !patch.regions.is_empty()
+        ) {
+            return false;
+        }
+        let mut entry = self.undo.pop().unwrap();
+        if let Err(error) = entry.prepare() {
+            self.undo.push(entry);
+            self.error = Some(error);
+            return false;
+        }
+        // The document from before the action, as an open snapshot that
+        // settles again once what joins it is done.
+        let mut before = doc.clone();
+        entry.apply(&mut before);
+        self.undo.push(Entry::Full(before));
+        self.bytes = self.measure(doc);
+        true
+    }
     pub fn checkpoint(&mut self, doc: &Document) {
         self.settle(doc);
         self.redo.clear();

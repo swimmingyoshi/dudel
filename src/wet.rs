@@ -63,6 +63,10 @@ impl Field {
         }
         self.layer = None;
     }
+    /// The layer that is wet, if any.
+    pub fn layer(&self) -> Option<LayerId> {
+        self.layer.filter(|_| !self.tiles.is_empty())
+    }
     #[cfg(test)]
     pub fn at(&self, x: usize, y: usize) -> f32 {
         self.tiles
@@ -424,7 +428,9 @@ pub(crate) struct Drying {
 
 impl Dudel {
     /// Let wet paint spread and dry while nothing else is working on the
-    /// document. The drying after a stroke is one undo step of its own.
+    /// document. Drying joins the undo step of the stroke that left the
+    /// paint wet, so one undo takes back both; it is a step of its own only
+    /// when something else was done after that stroke.
     pub(crate) fn dry_tick(&mut self, ctx: &egui::Context) {
         if self.doc.wet.is_empty() {
             self.drying.revision = None;
@@ -468,9 +474,16 @@ impl Dudel {
                     && let Ok(plan) = job.join()
                 {
                     if self.drying.revision != Some(self.revision) {
-                        // A new drying step in the undo history; an earlier
-                        // one ended when something else changed the document.
-                        self.history.begin_gesture_checkpoint(&self.doc);
+                        // The document changed since drying last wrote: the
+                        // drying from here joins the last stroke if that is
+                        // what made this layer wet, else it starts a step.
+                        let wet =
+                            self.doc.wet.layer().and_then(|id| {
+                                self.doc.layers.iter().position(|layer| layer.id == id)
+                            });
+                        if !wet.is_some_and(|layer| self.history.reopen_last(&self.doc, layer)) {
+                            self.history.begin_gesture_checkpoint(&self.doc);
+                        }
                     }
                     committed = true;
                     match commit(&mut self.doc, plan) {
@@ -651,6 +664,60 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_wet_stroke_and_its_drying_undo_together() {
+        // The owner's report of 2026-11-13: wet strokes needed two undos,
+        // one for the drying and one for the stroke.
+        let ctx = egui::Context::default();
+        let mut app = Dudel {
+            doc: Document::new(160, 80),
+            ..Default::default()
+        };
+        let blank = app.doc.layers[0].pixels.clone();
+        app.history.begin_stroke_checkpoint(&app.doc);
+        stroke(&mut app.doc, &wash(), [200, 30, 30], 34.0);
+        app.history.settle(&app.doc);
+        app.revision = app.revision.wrapping_add(1);
+        let painted = app.doc.layers[0].pixels.clone();
+        let mut ticks = 0;
+        while !app.doc.wet.is_empty() {
+            tick(&mut app, &ctx);
+            ticks += 1;
+            assert!(ticks < 5000, "drying ends");
+        }
+        let dried = app.doc.layers[0].pixels.clone();
+        assert!(dried != painted, "paint spread while drying");
+        // One undo takes back the stroke with its drying.
+        app.undo();
+        assert!(app.doc.layers[0].pixels == blank);
+        assert!(!app.history.can_undo());
+        // Redo brings back the stroke as it dried.
+        app.redo();
+        assert!(app.doc.layers[0].pixels == dried);
+        tick(&mut app, &ctx);
+        assert!(app.doc.wet.is_empty());
+        // Undo halfway through drying also takes back the whole stroke.
+        let mut app = Dudel {
+            doc: Document::new(160, 80),
+            ..Default::default()
+        };
+        app.history.begin_stroke_checkpoint(&app.doc);
+        stroke(&mut app.doc, &wash(), [200, 30, 30], 34.0);
+        app.history.settle(&app.doc);
+        app.revision = app.revision.wrapping_add(1);
+        for _ in 0..10 {
+            tick(&mut app, &ctx);
+        }
+        assert!(!app.doc.wet.is_empty());
+        app.undo();
+        assert!(app.doc.layers[0].pixels == blank);
+        assert!(!app.history.can_undo());
+        tick(&mut app, &ctx);
+        assert!(app.doc.wet.is_empty());
+    }
+
+    /// Paint that is wet without a stroke in the history (or after some
+    /// other action) dries as a step of its own.
     #[test]
     fn drying_in_the_app_is_one_undo_step_and_undo_stops_it() {
         let ctx = egui::Context::default();
