@@ -364,6 +364,99 @@ noise itself.
       side times 1.41 as painted, so the display refreshes more than a
       narrow dab touched.
 
+### Big brushes on the owner's layers (2026-11-13, TEST-PAINTLAYERS-3)
+
+The owner's next report: watercolor layers and wet brushes are fine for
+most brushes, but the wet Chisel marker (50% water, 76% pigment, 300 px)
+is still the slow one, and the palette knife on thick paint feels laggy
+and starts each stroke flat before turning. Their document: 2048 px, no
+paper, a plain, a Watercolor and a Thick paint layer. Profile cases for
+it: `--profile-stroke REPORT.json "thick paint layer"` and `"pigment 76"`.
+
+What it showed, at the owner's pen speed with frames back to back (before
+the changes below):
+
+| Case | Painting per dab | Relief per dab | Behind at pen lift |
+|---|---|---|---|
+| Chisel 300 px, wet 50%, pigment 76%, plain layer | 1.43 ms | none | 7 dabs |
+| same, Watercolor layer | 1.48 ms | none | 6 dabs |
+| same, Thick paint layer | 2.75 ms | 1.23 ms | 357 dabs (1.2 s) |
+| Palette knife 300 px, Thick paint layer | 1.33 ms | 0.81 ms | 1,569 dabs (2.6 s) |
+
+So the Thick paint layer is the slow one, and the knife also lays far too
+many dabs. Auto-drying is not involved: it waits while a stroke is painted.
+
+- [x] **Relief in bands across cores** (`material::touch_relief`). The
+      relief under a dab is copied out a tile row at a time
+      (`Mask::read_region`), worked out in 32-row bands across cores and
+      written back a tile at a time (`Writer::write_region`); the bristle
+      noise keeps its hashes in a table per dab and the blur's 7 x 7 mean
+      is summed a row at a time (whole numbers, so exact). The old code is
+      kept in the tests as `touch_relief_by_pixel`, and the new one gives
+      the same bytes in every case tested; the profile's canvases are
+      identical. Side by side on a 300 px dab: building 16.1 ms to 1.6 ms,
+      a knife-shaped smudge 1.7 ms to 0.9 ms (`material::relief_timing`).
+- [x] **Tips that turn with the stroke are spaced along it**
+      (`Brush::dab_spacing`, `reach_along_stroke`). The knife's blade lies
+      along the stroke, but spacing was a share of its narrow side: a
+      300 px knife laid a dab every 2 px. Spacing is now a share of how far
+      the tip reaches along its direction of travel (9 px for that knife),
+      through the existing floor, so each dab delivers more and flow builds
+      up as before. Built-in brushes it touches: Palette knife (4.5x fewer
+      dabs), Flat bristle (2.5x), Dry gouache (1.4x), Impasto (1.3x). The
+      300 px knife: 0 dabs behind at lift (was 1,528 to 2,414), frames 6
+      to 8 ms (were 22). Look: straight and gently curved stretches match;
+      at the profile's sharp 90 degree corners the turning blade fans out
+      in fewer, more visible steps. The other three brushes differ by more
+      than 2 levels on at most 2% of their pixels. Owner on the pen,
+      2026-11-13: "everything works much better now". Node brushes that
+      keep the tip at one angle to the stroke (Direction into Rotation over
+      180 degrees) are spaced the same way: `Compiled::turn_with_stroke`
+      tries the graph once over headings, pressures, speeds, tilts and
+      random values and finds that angle.
+- [x] **No more flat start** (`Stroke::scatter`, `heading_reach`). A tip
+      that turns with the stroke used angle 0 until a second dab gave the
+      stroke a direction, so every stroke began with a flat bar. Its first
+      dabs now wait until the stroke has gone a fifth of the brush size
+      (2 to 24 px) and are then drawn at that direction; a tap still paints,
+      flat if the pen did not move.
+- [x] **Black vanished in pigment mixing** (`pigment::compute`). Mixes are
+      weighted by luminance to the power 0.35, and pure black's is zero, so
+      wet black over wet paint on Watercolor and Thick paint layers left the
+      color under it almost unchanged. The model now takes anything darker
+      than byte 10 as byte 10: 10% black over yellow gives a dark olive
+      instead of yellow; colors without a channel near 0 mix exactly as
+      before, pure primaries shift by at most 15 levels.
+- [x] **A flicker in tile-shaped areas while drawing** (owner's recording:
+      300 px Soft pastel, Wet, on a 2048 px canvas at 32%). On canvases of
+      2048 x 2048 and up, tiles are kept reduced when zoomed out. A brush
+      over 128 x 128 px of damage a frame takes the sliced display path,
+      which recomposited each touched tile *quick* first (one pixel per
+      shown texel) and exact after. On a grainy brush the two sample the
+      paint differently, so the tiles around the brush flipped between
+      them every frame, and settled once the stroke ended. Tiles that a
+      bounded stroke changes, already shown at their level, are now
+      composited exactly at once (`Tile::exact`); quick tiles stay for new
+      tiles, new resolutions and whole-canvas changes such as hiding a
+      layer. Test: `a_large_stroke_zoomed_out_never_shows_quick_tiles`
+      (fails without the change). Cost: an exact composite of a whole tile
+      instead of a sixteenth of one, on the display worker.
+- [x] **Two undos for one wet stroke.** Drying after a stroke was an undo
+      step of its own, so the first undo took back only the drying. Now the
+      first drying after a stroke reopens that stroke's undo step
+      (`History::reopen_last`), when the stroke painted the layer that is
+      wet and nothing waits to be redone: one undo takes back the stroke
+      and its drying, redo brings it back dried. Drying is still a step of
+      its own when something else was done after the stroke. Test:
+      `wet::a_wet_stroke_and_its_drying_undo_together`.
+- [ ] **The wet Chisel at 300 px** still costs 1.4 ms a dab on plain and
+      Watercolor layers, mostly blend (0.5 ms), coverage (0.35 ms) and the
+      copy (0.25 ms); see "If it comes back".
+- Direction (owner, 2026-11-13): make the CPU painter fast first, and keep
+  GPU acceleration possible as an option for those who have a GPU. Keep
+  per-pixel work in plain functions over buffers, so a GPU path could be
+  checked against them.
+
 ## 2. Performance still on the table
 
 Measured with a 200 px brush on a 3000 x 2000 canvas, release build
@@ -384,10 +477,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 - [ ] **Planning a drying step** takes 34 to 100 ms on a 2-megapixel wash. It
       runs in the background now, so the window stays smooth, but the wash
       dries slowly. `wet::plan` allocates five buffers per 32 px tile.
-- [ ] **Thick paint relief** is a `layer_mask::Mask` written one pixel at a
-      time (`material::touch_relief`). A store that hands out row bands, as
-      `Pixels::band_tiles` does, would bring the palette knife near plain
-      smudge.
+- [x] **Thick paint relief** now works in row bands across cores and
+      reads and writes a tile at a time (section 1, big brushes).
 - [ ] **Pigment mixing** is the remaining cost on watercolor and thick paint
       layers (`pigment::mix`: 16 bands per mix, behind a 4096-slot cache).
 - [ ] **`blend_brush::capture`** now copies in row bands across cores but

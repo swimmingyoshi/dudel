@@ -55,6 +55,7 @@ struct Case {
     /// when `None`).
     blend: Option<Blend>,
     wetness: Option<f32>,
+    pigment: Option<f32>,
     /// Canvas pixels the pen covers per second.
     speed: f64,
     /// Frames wait for a 60 Hz display, as with Low latency off. Otherwise
@@ -74,6 +75,7 @@ const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32
         canvas: CANVAS,
         blend: None,
         wetness: None,
+        pigment: None,
         speed: SPEED,
         display_paced: true,
     }
@@ -97,6 +99,30 @@ fn traced(name: &'static str) -> Case {
         display_paced: false,
         speed: 4000.0,
         ..chisel(name)
+    }
+}
+
+/// The owner's test document of 2026-11-13 (TEST-PAINTLAYERS-3): a 2048 px
+/// canvas, no paper, a plain, a Watercolor and a Thick paint layer, the
+/// Chisel marker wet 50% with pigment 76%, at the traced pen speed.
+fn owners_chisel(name: &'static str, layer: Option<Kind>) -> Case {
+    Case {
+        layer,
+        pigment: Some(0.76),
+        speed: 2900.0,
+        ..traced(name)
+    }
+}
+
+/// The palette knife on that document's Thick paint layer.
+fn knife(name: &'static str, size: Option<f32>) -> Case {
+    Case {
+        canvas: [2048, 2048],
+        layer: Some(Kind::Paint),
+        paper: false,
+        display_paced: false,
+        speed: 2900.0,
+        ..case(name, Some("Palette knife"), size)
     }
 }
 
@@ -193,6 +219,33 @@ fn cases() -> Vec<Case> {
         Case {
             speed: 2900.0,
             ..traced("Chisel marker 300 px, wet 50%, as traced (2,900 px/s)")
+        },
+        owners_chisel(
+            "Chisel marker 300 px, wet 50%, pigment 76%, plain layer",
+            None,
+        ),
+        owners_chisel(
+            "Chisel marker 300 px, wet 50%, pigment 76%, watercolor layer",
+            Some(Kind::Watercolor),
+        ),
+        owners_chisel(
+            "Chisel marker 300 px, wet 50%, pigment 76%, thick paint layer",
+            Some(Kind::Paint),
+        ),
+        knife("Palette knife 64 px (as built in), thick paint layer", None),
+        knife("Palette knife 300 px, thick paint layer", Some(300.0)),
+        // The other built-in tips that turn with the stroke.
+        Case {
+            preset: Some("Flat bristle"),
+            ..knife("Flat bristle 40 px (as built in), thick paint layer", None)
+        },
+        Case {
+            preset: Some("Dry gouache"),
+            ..knife("Dry gouache 38 px (as built in), thick paint layer", None)
+        },
+        Case {
+            preset: Some("Impasto"),
+            ..knife("Impasto 48 px (as built in), thick paint layer", None)
         },
     ]
 }
@@ -474,6 +527,9 @@ fn run_case(case: &Case, images: Option<&std::path::Path>) -> Result<Summary, St
     }
     if let Some(wetness) = case.wetness {
         brush.wetness = wetness;
+    }
+    if let Some(pigment) = case.pigment {
+        brush.pigment = pigment;
     }
     app.doc.layers[0].material = case.layer.map(|kind| Material::new(Settings::new(kind)));
     if case.paper {
