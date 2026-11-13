@@ -6,11 +6,14 @@ use std::time::{Duration, Instant};
 
 /// Queued dabs at which painting takes a larger share of each frame.
 const PAINT_CATCH_UP_DABS: usize = 3;
-/// Queued dabs at which painting takes most of each frame: the line is
-/// visibly behind the pen and falling further back, and showing it sooner
-/// matters more than showing it often. Frames then come 30 to 45 times a
-/// second until the queue is short again.
-const PAINT_FAR_BEHIND_DABS: usize = 16;
+/// Queued dabs at which painting takes a longer turn still, and at which
+/// it takes most of each frame: the line is visibly behind the pen and
+/// falling further back, and showing it sooner matters more than showing it
+/// often. Frames then come about 60, and 30 to 45, times a second until the
+/// queue is short again. A pen that felt heavy at 40 frames a second with
+/// 16 dabs waiting (2026-11-13) is why the long turn starts this late.
+const PAINT_BEHIND_DABS: usize = 16;
+const PAINT_FAR_BEHIND_DABS: usize = 64;
 
 pub struct EditFeedback {
     pub changed: &'static str,
@@ -959,6 +962,8 @@ impl Dudel {
         let trailing = self.render_queue.queued_dabs(PAINT_FAR_BEHIND_DABS);
         let budget = if trailing >= PAINT_FAR_BEHIND_DABS {
             20
+        } else if trailing >= PAINT_BEHIND_DABS {
+            12
         } else if trailing >= PAINT_CATCH_UP_DABS {
             8
         } else {

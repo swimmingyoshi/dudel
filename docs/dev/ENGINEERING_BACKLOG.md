@@ -271,12 +271,42 @@ One stroke, traced as Brush: Chisel marker, mode Wet, 300 px, water 50%,
   more than 20 ms after the one before (about 40 frames a second there,
   70 to 120 elsewhere).
 
+**Owner's verdict: it still felt laggy and heavy.** Read with the trace,
+"heavy" is the frame rate dropping to about 40 a second while the line
+trailed, as much as the trail itself.
+
+### Second round (2026-11-13, after the owner's wet stroke)
+
+- [x] **Wide blurs on a coarser grid** (`blend_brush::coarse`): a blur of
+      16 px or more is worked out on averages of 4 x 4 pixels (2 x 2 from
+      8 px) and read back between them. Cells sit on the canvas's own grid,
+      so they do not shift from dab to dab, and the two box passes are
+      chosen to blur exactly as wide as before (`pass_radii`). Against the
+      blur of every pixel it is within 0.15 levels on a smooth ramp, 1.2
+      at a hard edge and 3.5 on 10 px black and white stripes (tested).
+      Finished canvases differ from the previous build by at most 3 levels.
+      The blur went from 0.63 ms to 0.09 ms of the owner's dab.
+- [x] **A gentler step before the long painting turn**: 12 ms from 16
+      dabs behind, 20 ms only from 64. The 40-frames-a-second stretches in
+      the owner's trace started at 16.
+
+| Case | ms per dab, owner's trace build | now | Behind at pen lift, then | now | Frames over 17 ms, then | now |
+|---|---|---|---|---|---|---|
+| Wet 50%, as traced, 2,900 px/s | 1.83 | 1.35 | 71 dabs | 7 dabs | 71 of 90 | 0 of 162 |
+| Wet 50%, as traced, 4,000 px/s | 1.82 | 1.40 | 292 dabs | 137 dabs | 75 of 85 | 48 of 80 |
+| Wet 50%, 1,800 px/s, display paced | 2.01 | 1.48 | 11 dabs | 0 dabs | 41 of 143 | 0 of 181 |
+| Watercolor wash 300 px | 4.56 | 3.53 | 1 dab | 0 dabs | 1 | 1 |
+
+At the speed of the owner's fast stretches (about 2,800 px/s) the wet
+Chisel marker now keeps up at full frame rate in the scripted run. At
+4,000 px/s it still trails and drops frames.
+
 ### What is left
 
-- [ ] **The owner's verdict on that stroke**: is a trail of up to 260 px
-      for a quarter second felt, and is 40 frames a second in fast
-      stretches acceptable? If the trail is felt, cheaper dabs are next
-      (the blur is the largest stage).
+- [ ] **The owner's verdict on the second round.**
+- [ ] If it still trails at the owner's fastest strokes: **coverage and
+      blend** are now most of a wet dab (0.53 and 0.45 ms of 1.48 ms; the
+      paper is 0.22 ms of the coverage), then the copy (0.21 ms).
 - [ ] **Is 30 to 45 frames a second while far behind acceptable?** If the
       pen cursor feels worse than the shorter queue feels better, lower the
       20 ms or raise the 16 dabs.

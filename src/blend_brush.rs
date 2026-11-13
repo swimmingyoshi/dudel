@@ -18,6 +18,15 @@ use crate::brush::Blend;
 pub(crate) struct Scratch {
     /// Left, top, right, bottom (exclusive) in canvas pixels.
     rect: [usize; 4],
+    /// Canvas pixels per side of one value: 1, or more when a wide blur is
+    /// worked out on a coarser grid (`coarse`).
+    cell: usize,
+    /// The cells that hold `rect`: left, top, right, bottom (exclusive), in
+    /// cells. Cells sit on the canvas's own grid (cell `c` covers pixels
+    /// `c * cell..`), so they do not shift as the dab moves; the ones on
+    /// the border may reach past `rect`.
+    grid: [usize; 4],
+    /// One value per cell of `grid`, row by row.
     values: Vec<[f32; 4]>,
     /// The area blurred along its rows, on the way to blurring its columns.
     line: Vec<[f32; 4]>,
@@ -26,6 +35,32 @@ pub(crate) struct Scratch {
 impl Scratch {
     pub(crate) fn capacity_bytes(&self) -> usize {
         (self.values.capacity() + self.line.capacity()) * std::mem::size_of::<[f32; 4]>()
+    }
+    /// Take `rect` in cells of `cell` pixels a side.
+    fn lay_out(&mut self, rect: [usize; 4], cell: usize) {
+        self.rect = rect;
+        self.cell = cell;
+        self.grid = [
+            rect[0] / cell,
+            rect[1] / cell,
+            rect[2].div_ceil(cell),
+            rect[3].div_ceil(cell),
+        ];
+    }
+}
+
+/// Pixels per side of a cell for a blur of radius `r`.
+///
+/// A blur this wide leaves nothing finer than a few pixels, so it is worked
+/// out on averages of 2 x 2 or 4 x 4 pixels and read back between them: a
+/// sixteenth of the work at 4. It was the largest part of a large wet dab.
+/// The radius in cells stays at 4 or more, and narrow blurs keep every
+/// pixel.
+fn coarse(r: usize) -> usize {
+    match r {
+        16.. => 4,
+        8..16 => 2,
+        _ => 1,
     }
 }
 
@@ -144,7 +179,7 @@ fn large(w: usize, h: usize) -> bool {
 
 /// Copy the area a dab can read: its bounds, widened by how far it reaches.
 /// Blur then softens the copy. A large area is copied in row bands across
-/// cores.
+/// cores. For a wide blur the copy is of cell averages (`coarse`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn capture(
     scratch: &mut Scratch,
@@ -167,42 +202,92 @@ pub(crate) fn capture(
         clamp(bounds[2] + 1 + reach, width),
         clamp(bounds[3] + 1 + reach, height),
     ];
-    scratch.rect = rect;
-    let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
+    let blurs = matches!(blend, Blend::Blur | Blend::Wet);
+    let r = blur_radius(radius);
+    let cell = if blurs { coarse(r) } else { 1 };
+    scratch.lay_out(rect, cell);
+    let grid = scratch.grid;
+    let (w, h) = (grid[2] - grid[0], grid[3] - grid[1]);
     let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Capture);
     // Every value is written below, so what a previous dab left need not
     // be cleared first.
     scratch.values.resize(w * h, [0.0; 4]);
+    // Rows of cells from row `first` on.
     let copy = |rows: &mut [[f32; 4]], first: usize| {
-        for (y, row) in rows.chunks_exact_mut(w).enumerate() {
-            for (x, value) in row.iter_mut().enumerate() {
-                *value = premultiply(read(rect[0] + x, first + y));
+        for (row, values) in rows.chunks_exact_mut(w).enumerate() {
+            let y = (first + row) * cell;
+            for (column, value) in values.iter_mut().enumerate() {
+                let x = (grid[0] + column) * cell;
+                if cell == 1 {
+                    *value = premultiply(read(x, y));
+                    continue;
+                }
+                // The average of the cell's pixels inside the copy.
+                let (xs, ys) = (
+                    x.max(rect[0])..(x + cell).min(rect[2]),
+                    y.max(rect[1])..(y + cell).min(rect[3]),
+                );
+                let count = (xs.len() * ys.len()) as f32;
+                let mut sum = [0.0f32; 4];
+                for y in ys {
+                    for x in xs.clone() {
+                        let pixel = premultiply(read(x, y));
+                        for c in 0..4 {
+                            sum[c] += pixel[c];
+                        }
+                    }
+                }
+                *value = sum.map(|v| v / count);
             }
         }
     };
-    if large(w, h) {
+    // Bands of the same height in pixels whatever the cell.
+    let band = (BAND / cell).max(1);
+    if large(rect[2] - rect[0], rect[3] - rect[1]) {
         let bands: Vec<_> = scratch
             .values
-            .chunks_mut(w * BAND)
+            .chunks_mut(w * band)
             .map(std::sync::Mutex::new)
             .collect();
         for result in crate::parallel::run(bands.len(), |i| {
-            copy(&mut bands[i].lock().unwrap(), rect[1] + i * BAND);
+            copy(&mut bands[i].lock().unwrap(), grid[1] + i * band);
         }) {
             result.expect("Capture worker panicked");
         }
     } else if w > 0 {
-        copy(&mut scratch.values, rect[1]);
+        copy(&mut scratch.values, grid[1]);
     }
     drop(timed);
-    if matches!(blend, Blend::Blur | Blend::Wet) {
+    if blurs {
         let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Blur);
-        let r = blur_radius(radius);
         // Two box passes approximate a smooth (tent) blur.
-        for _ in 0..2 {
+        for r in pass_radii(r, cell) {
             box_blur(scratch, r);
         }
     }
+}
+
+/// The radii of the two box passes, in cells, for a blur of `r` pixels.
+///
+/// A window of 2r + 1 pixels is seldom a whole number of cells, so the two
+/// passes may differ by one: the pair is the one whose blur is as wide as
+/// two passes of `r` pixels, counting what averaging into cells and
+/// reading between them already soften (a quarter cell squared).
+fn pass_radii(r: usize, cell: usize) -> [usize; 2] {
+    if cell == 1 {
+        return [r; 2];
+    }
+    let window = (2 * r + 1) as f32 / cell as f32;
+    let wanted = 2.0 * window * window - 3.0;
+    let low = ((window - 1.0) / 2.0).floor() as usize;
+    let width = |r: usize| ((2 * r + 1) * (2 * r + 1)) as f32;
+    [[low, low], [low + 1, low], [low + 1, low + 1]]
+        .into_iter()
+        .min_by(|a, b| {
+            let off = |pair: &[usize; 2]| (width(pair[0]) + width(pair[1]) - wanted).abs();
+            off(a).total_cmp(&off(b))
+        })
+        .unwrap()
 }
 
 /// Separable box blur of the scratch, averaging only pixels inside it so
@@ -214,8 +299,8 @@ pub(crate) fn capture(
 /// time so memory is read in order; nothing is copied in between. Every
 /// pixel gets the same sums in the same order as blurring line by line.
 fn box_blur(scratch: &mut Scratch, r: usize) {
-    let w = scratch.rect[2] - scratch.rect[0];
-    let h = scratch.rect[3] - scratch.rect[1];
+    let grid = scratch.grid;
+    let (w, h) = (grid[2] - grid[0], grid[3] - grid[1]);
     if w == 0 || h == 0 {
         return;
     }
@@ -337,10 +422,36 @@ impl Scratch {
         let w = self.rect[2] - self.rect[0];
         self.values[(y - self.rect[1]) * w + (x - self.rect[0])]
     }
+    /// The value at pixel (`x`, `y`) of a coarse copy, read between the
+    /// four cells around it. A cell's value belongs to its center.
+    fn between_cells(&self, x: usize, y: usize) -> [f32; 4] {
+        let grid = self.grid;
+        let (w, h) = (grid[2] - grid[0], grid[3] - grid[1]);
+        // 2 and 4 have exact reciprocals.
+        let per_pixel = 1.0 / self.cell as f32;
+        let fx = ((x as f32 + 0.5) * per_pixel - 0.5 - grid[0] as f32).clamp(0.0, (w - 1) as f32);
+        let fy = ((y as f32 + 0.5) * per_pixel - 0.5 - grid[1] as f32).clamp(0.0, (h - 1) as f32);
+        let (x0, y0) = (fx as usize, fy as usize);
+        let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let value = |x: usize, y: usize| self.values[y * w + x];
+        let (a, b, c, d) = (value(x0, y0), value(x1, y0), value(x0, y1), value(x1, y1));
+        let mut out = [0.0; 4];
+        for i in 0..4 {
+            let top = a[i] + (b[i] - a[i]) * tx;
+            let bottom = c[i] + (d[i] - c[i]) * tx;
+            out[i] = top + (bottom - top) * ty;
+        }
+        out
+    }
     /// What pixel (`x`, `y`) moves toward.
     pub(crate) fn source(&self, blend: Blend, smear: [f32; 2], x: usize, y: usize) -> [f32; 4] {
         if blend != Blend::Smudge {
-            return self.at(x, y);
+            return if self.cell > 1 {
+                self.between_cells(x, y)
+            } else {
+                self.at(x, y)
+            };
         }
         // Bilinear read where this pixel was one dab ago, held inside the copy.
         let fx = (x as f32 - smear[0]).clamp(self.rect[0] as f32, (self.rect[2] - 1) as f32);
@@ -466,13 +577,94 @@ mod tests {
             let mut expected = values.clone();
             blur_line_by_line(&mut expected, w, h, r);
             let mut scratch = Scratch {
-                rect: [10, 20, 10 + w, 20 + h],
                 values,
-                line: Vec::new(),
+                ..Scratch::default()
             };
+            scratch.lay_out([10, 20, 10 + w, 20 + h], 1);
             box_blur(&mut scratch, r);
             assert!(scratch.values == expected, "{w} x {h}, radius {r}");
         }
+    }
+
+    /// A wide blur worked out on cells of 4 x 4 pixels, against the same
+    /// blur of every pixel: how far apart the two are, at most, over the
+    /// pixels a 300 px dab reads.
+    fn coarse_blur_error(read: impl Fn(usize, usize) -> [u8; 4] + Sync) -> f32 {
+        let (size, bounds, radius) = ([640, 600], [150i32, 141, 451, 442], 150.0);
+        let mut coarse_copy = Scratch::default();
+        capture(
+            &mut coarse_copy,
+            &read,
+            size,
+            bounds,
+            Blend::Wet,
+            [0.0; 2],
+            radius,
+        );
+        assert_eq!(coarse_copy.cell, 4);
+        let rect = coarse_copy.rect;
+        let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
+        let mut exact = Scratch {
+            values: (0..w * h)
+                .map(|i| premultiply(read(rect[0] + i % w, rect[1] + i / w)))
+                .collect(),
+            ..Scratch::default()
+        };
+        exact.lay_out(rect, 1);
+        for _ in 0..2 {
+            box_blur(&mut exact, blur_radius(radius));
+        }
+        assert_eq!(pass_radii(blur_radius(radius), 4), [6, 5]);
+        let mut worst = 0.0f32;
+        for y in bounds[1] as usize..=bounds[3] as usize {
+            for x in bounds[0] as usize..=bounds[2] as usize {
+                let a = coarse_copy.source(Blend::Wet, [0.0; 2], x, y);
+                let b = exact.source(Blend::Wet, [0.0; 2], x, y);
+                for c in 0..4 {
+                    worst = worst.max((a[c] - b[c]).abs());
+                }
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn a_wide_blur_on_cells_stays_close_to_the_blur_of_every_pixel() {
+        let level = 1.0 / 255.0;
+        // One flat color: the same, but for rounding.
+        let flat = coarse_blur_error(|_, _| [200, 40, 30, 255]);
+        // A smooth ramp.
+        let ramp =
+            coarse_blur_error(|x, y| [(x * 255 / 640) as u8, (y * 255 / 600) as u8, 90, 255]);
+        // Paint ending at a hard, slanted edge, transparent beyond.
+        let edge = coarse_blur_error(|x, y| {
+            if x + y / 3 < 420 {
+                [20, 60, 200, 255]
+            } else {
+                [0; 4]
+            }
+        });
+        // Stripes 10 px wide, black and white: the harshest paint there is
+        // to blur. The wet mix moves a pixel at most 70% of the way to this
+        // value, and the dab then paints over it.
+        let stripes = coarse_blur_error(|x, _| {
+            if x / 10 % 2 == 0 {
+                [255, 255, 255, 255]
+            } else {
+                [0, 0, 0, 255]
+            }
+        });
+        eprintln!(
+            "coarse blur error in levels: flat {:.4}, ramp {:.3}, edge {:.3}, stripes {:.3}",
+            flat * 255.0,
+            ramp * 255.0,
+            edge * 255.0,
+            stripes * 255.0
+        );
+        assert!(flat < 1e-5, "{flat}");
+        assert!(ramp < level, "{ramp}");
+        assert!(edge < 4.0 * level, "{edge}");
+        assert!(stripes < 8.0 * level, "{stripes}");
     }
 
     #[test]
