@@ -2152,35 +2152,20 @@ impl Document {
         let (span, rows) = ((right - left + 1) as usize, (bottom - top + 1) as usize);
         let blending_now = !brush.blend.is_paint() && !erase && !prefix_pass;
         let thick = kind == Some(crate::material::Kind::Paint) && !prefix_pass;
-        let grid: Option<Vec<(f32, f32)>> =
+        let area = [
+            left as usize,
+            top as usize,
+            right as usize + 1,
+            bottom as usize + 1,
+        ];
+        let drawn =
             ((blending_now || thick) && crate::dab_bands::worthwhile(span, rows)).then(|| {
                 let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Coverage);
-                const BAND: usize = 32;
-                crate::parallel::run(rows.div_ceil(BAND), |band| {
-                    let first = band * BAND;
-                    let count = BAND.min(rows - first);
-                    let mut values = vec![(0.0, 0.0); count * span];
-                    for row in 0..count {
-                        for column in 0..span {
-                            if let Some(value) =
-                                coverage_at(left + column as i32, top + (first + row) as i32)
-                            {
-                                values[row * span + column] = value;
-                            }
-                        }
-                    }
-                    values
-                })
-                .into_iter()
-                .flat_map(|band| band.expect("Dab coverage worker panicked"))
-                .collect()
+                crate::dab_bands::Drawn::new(area, |px, py| coverage_at(px as i32, py as i32))
             });
         let coverage_at = |px: i32, py: i32| -> Option<(f32, f32)> {
-            match &grid {
-                Some(grid) => {
-                    let value = grid[(py - top) as usize * span + (px - left) as usize];
-                    (value.0 > 0.0).then_some(value)
-                }
+            match &drawn {
+                Some(drawn) => drawn.at(px as usize, py as usize),
                 None => coverage_at(px, py),
             }
         };
@@ -2238,7 +2223,7 @@ impl Document {
             };
             // A large dab on a layer's tiles blends in row bands across
             // cores, with the arithmetic of the loop below.
-            if grid.is_some()
+            if let Some(drawn) = &drawn
                 && target.is_raster()
                 && layer.pixels.is_tiled()
                 && let Some(buffer) = buffer.as_deref_mut()
@@ -2259,8 +2244,7 @@ impl Document {
                     &mut layer.pixels,
                     buffer,
                     active,
-                    [left, top, right as usize + 1, bottom as usize + 1],
-                    |px, py| coverage_at(px as i32, py as i32),
+                    drawn,
                     watering,
                     |px, py, a, ceiling, entry, pixel| {
                         if entry.1 < 0.0 {
@@ -2299,7 +2283,8 @@ impl Document {
                 );
                 drop(timed);
                 let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::WaterWrite);
-                for (row, water) in left_water.chunks_exact(span).enumerate() {
+                let rows = left_water.iter().flat_map(|band| band.chunks_exact(span));
+                for (row, water) in rows.enumerate() {
                     self.wet.add_row(layer_id, top + row, left, water);
                 }
                 buffer.blend_scratch = scratch;
@@ -2385,17 +2370,21 @@ impl Document {
                 (bottom - top + 1) as usize,
             )
         {
+            let made;
+            let drawn = match &drawn {
+                Some(drawn) => drawn,
+                None => {
+                    made = crate::dab_bands::Drawn::new(area, |px, py| {
+                        coverage_at(px as i32, py as i32)
+                    });
+                    &made
+                }
+            };
             crate::dab_bands::paint(
                 &mut layer.pixels,
                 buffer,
                 active,
-                [
-                    left as usize,
-                    top as usize,
-                    right as usize + 1,
-                    bottom as usize + 1,
-                ],
-                |px, py| coverage_at(px as i32, py as i32),
+                drawn,
                 color,
                 erase,
                 alpha_locked,

@@ -17,16 +17,68 @@ pub(crate) fn worthwhile(width: usize, height: usize) -> bool {
     height > BAND && width * height >= 1 << 13
 }
 
-/// Paint `rect` (left, top, right, bottom; exclusive) of a dab into tiled
-/// `pixels` through `buffer`. `coverage(x, y)` is the dab's alpha and
-/// coverage ceiling there, or `None` where it paints nothing.
-#[allow(clippy::too_many_arguments)]
+/// A dab's coverage over its area, worked out once in bands across cores
+/// and kept band by band, the way `apply` paints. Everything that needs the
+/// dab's coverage afterwards reads it here.
+pub(crate) struct Drawn {
+    /// Left, top, right, bottom (exclusive).
+    rect: [usize; 4],
+    bands: Vec<Coverage>,
+}
+
+impl Drawn {
+    /// `coverage(x, y)` is the dab's alpha and coverage ceiling there, or
+    /// `None` where it paints nothing.
+    pub(crate) fn new(
+        rect: [usize; 4],
+        coverage: impl Fn(usize, usize) -> Option<(f32, f32)> + Sync,
+    ) -> Self {
+        let [left, top, right, bottom] = rect;
+        let bands = top / BAND..bottom.div_ceil(BAND);
+        let blocks = left / BAND..right.div_ceil(BAND);
+        let width = right - left;
+        let bands = crate::parallel::run(bands.len(), |i| {
+            let rows = band_rows(rect, bands.start + i);
+            let mut values = vec![(0.0, 0.0); rows.len() * width];
+            let mut touched = vec![false; blocks.len()];
+            for (row, y) in rows.enumerate() {
+                for x in left..right {
+                    if let Some(value) = coverage(x, y).filter(|value| value.0 > 0.0) {
+                        values[row * width + x - left] = value;
+                        touched[x / BAND - blocks.start] = true;
+                    }
+                }
+            }
+            (values, touched)
+        })
+        .into_iter()
+        .map(|result| result.expect("Dab coverage worker panicked"))
+        .collect();
+        Self { rect, bands }
+    }
+
+    /// The dab's alpha and coverage ceiling at a pixel of its area, or
+    /// `None` where it paints nothing.
+    pub(crate) fn at(&self, x: usize, y: usize) -> Option<(f32, f32)> {
+        let [left, top, right, _] = self.rect;
+        let band = y / BAND - top / BAND;
+        let first = (y / BAND * BAND).max(top);
+        let value = self.bands[band].0[(y - first) * (right - left) + x - left];
+        (value.0 > 0.0).then_some(value)
+    }
+}
+
+/// The rows of `rect` in band `band` (rows `band * BAND..` of the canvas).
+fn band_rows(rect: [usize; 4], band: usize) -> std::ops::Range<usize> {
+    (band * BAND).max(rect[1])..((band + 1) * BAND).min(rect[3])
+}
+
+/// Paint a dab into tiled `pixels` through `buffer`.
 pub(crate) fn paint(
     pixels: &mut Pixels,
     buffer: &mut StrokeBuffer,
     layer: usize,
-    rect: [usize; 4],
-    coverage: impl Fn(usize, usize) -> Option<(f32, f32)> + Sync,
+    drawn: &Drawn,
     color: [u8; 3],
     erase: bool,
     alpha_locked: bool,
@@ -35,8 +87,7 @@ pub(crate) fn paint(
         pixels,
         buffer,
         layer,
-        rect,
-        coverage,
+        drawn,
         false,
         |_, _, a, ceiling, entry, pixel| {
             let a = crate::stroke_buffer::accumulate(entry, pixel, a, ceiling);
@@ -47,52 +98,35 @@ pub(crate) fn paint(
 }
 
 /// Run `change(x, y, alpha, ceiling, stroke state, pixel)` for every pixel
-/// of `rect` the dab covers, in bands across cores. With `collect`, what
-/// each call returns comes back as one value per pixel of `rect`, row by
-/// row (zero where the dab paints nothing); otherwise the result is empty.
+/// the dab covers, in bands across cores. With `collect`, what each call
+/// returns comes back band by band from the top, one value per pixel of the
+/// dab's area, row by row (zero where the dab paints nothing); otherwise
+/// the bands come back empty.
 pub(crate) fn apply(
     pixels: &mut Pixels,
     buffer: &mut StrokeBuffer,
     layer: usize,
-    rect: [usize; 4],
-    coverage: impl Fn(usize, usize) -> Option<(f32, f32)> + Sync,
+    drawn: &Drawn,
     collect: bool,
     change: impl Fn(usize, usize, f32, f32, &mut crate::stroke_buffer::PixelState, &mut [u8]) -> f32
     + Sync,
-) -> Vec<f32> {
+) -> Vec<Vec<f32>> {
+    let rect = drawn.rect;
     let [left, top, right, bottom] = rect;
     let side = crate::pixels::SIDE;
     let bands = top / BAND..bottom.div_ceil(BAND);
     let blocks = left / BAND..right.div_ceil(BAND);
     let tiles = left / side..right.div_ceil(side);
     let width = right - left;
-    let rows = |band: usize| (band * BAND).max(top)..((band + 1) * BAND).min(bottom);
-    // Coverage first, so blocks and tiles are only made where paint lands.
-    let drawn: Vec<Coverage> = crate::parallel::run(bands.len(), |i| {
-        let rows = rows(bands.start + i);
-        let mut values = vec![(0.0, 0.0); rows.len() * width];
-        let mut touched = vec![false; blocks.len()];
-        for (row, y) in rows.enumerate() {
-            for x in left..right {
-                if let Some(value) = coverage(x, y) {
-                    values[row * width + x - left] = value;
-                    touched[x / BAND - blocks.start] = true;
-                }
-            }
-        }
-        (values, touched)
-    })
-    .into_iter()
-    .map(|result| result.expect("Dab coverage worker panicked"))
-    .collect();
-    for (i, (_, touched)) in drawn.iter().enumerate() {
+    // Blocks and tiles are only made where paint lands.
+    for (i, (_, touched)) in drawn.bands.iter().enumerate() {
         for (column, _) in touched.iter().enumerate().filter(|(_, t)| **t) {
             buffer.touch_block(layer, blocks.start + column, bands.start + i);
         }
     }
     let per_tile = side / BAND;
     let tile_rows = pixels.band_tiles(BAND, bands.clone(), tiles.clone(), |band, tile| {
-        drawn[band - bands.start]
+        drawn.bands[band - bands.start]
             .1
             .iter()
             .enumerate()
@@ -102,14 +136,14 @@ pub(crate) fn apply(
     let work: Vec<_> = tile_rows
         .into_iter()
         .zip(block_rows)
-        .zip(drawn)
         .map(std::sync::Mutex::new)
         .collect();
-    let results = crate::parallel::run(work.len(), |i| {
+    crate::parallel::run(work.len(), |i| {
         let mut band = work[i].lock().unwrap();
-        let ((tile_row, block_row), (values, _)) = &mut *band;
+        let (tile_row, block_row) = &mut *band;
+        let values = &drawn.bands[i].0;
         let mut returned = vec![0.0; if collect { values.len() } else { 0 }];
-        for (row, y) in rows(bands.start + i).enumerate() {
+        for (row, y) in band_rows(rect, bands.start + i).enumerate() {
             for x in left..right {
                 let (a, ceiling) = values[row * width + x - left];
                 if a <= 0.0 {
@@ -129,11 +163,10 @@ pub(crate) fn apply(
             }
         }
         returned
-    });
-    results
-        .into_iter()
-        .flat_map(|result| result.expect("Dab paint worker panicked"))
-        .collect()
+    })
+    .into_iter()
+    .map(|result| result.expect("Dab paint worker panicked"))
+    .collect()
 }
 
 #[cfg(test)]

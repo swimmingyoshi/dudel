@@ -6,6 +6,11 @@ use std::time::{Duration, Instant};
 
 /// Queued dabs at which painting takes a larger share of each frame.
 const PAINT_CATCH_UP_DABS: usize = 3;
+/// Queued dabs at which painting takes most of each frame: the line is
+/// visibly behind the pen and falling further back, and showing it sooner
+/// matters more than showing it often. Frames then come 30 to 45 times a
+/// second until the queue is short again.
+const PAINT_FAR_BEHIND_DABS: usize = 16;
 
 pub struct EditFeedback {
     pub changed: &'static str,
@@ -948,9 +953,13 @@ impl Dudel {
             self.performance.note_drawing();
         }
         // Painting gets 2 ms a frame, more while it trails the pen (large
-        // brushes), so strokes catch up instead of drawing in slowly.
-        let trailing = self.render_queue.queued_dabs(PAINT_CATCH_UP_DABS);
-        let budget = if trailing >= PAINT_CATCH_UP_DABS {
+        // brushes), so strokes catch up instead of drawing in slowly. The
+        // rest of a frame costs the same however long painting had, so far
+        // behind the pen a longer turn gets more painted per second.
+        let trailing = self.render_queue.queued_dabs(PAINT_FAR_BEHIND_DABS);
+        let budget = if trailing >= PAINT_FAR_BEHIND_DABS {
+            20
+        } else if trailing >= PAINT_CATCH_UP_DABS {
             8
         } else {
             2

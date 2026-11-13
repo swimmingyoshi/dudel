@@ -3,8 +3,9 @@
 //!
 //! Each case paints one scripted stroke through the app's own canvas frame
 //! (pen packets, the painting queue, display compositing) without a window,
-//! in real time: packets arrive on a 200 Hz pen clock and frames run at
-//! 60 Hz, or as fast as they can when they take longer. The report has every
+//! in real time: packets arrive on a 200 Hz pen clock and frames are shown
+//! on a 60 Hz display, a frame that takes longer waiting for the refresh
+//! after (one case runs its frames back to back). The report has every
 //! frame (`stage_timer::Frame`) and a summary per case. With a folder as
 //! IMAGES, each case's finished canvas is saved there as a PNG, to compare
 //! the look before and after a change to the painter.
@@ -51,6 +52,10 @@ struct Case {
     wetness: Option<f32>,
     /// Canvas pixels the pen covers per second.
     speed: f64,
+    /// Frames wait for a 60 Hz display, as with Low latency off. Otherwise
+    /// they follow one another at once, as with it on (the default); a real
+    /// frame then also pays for the GPU, which is not measured here.
+    display_paced: bool,
 }
 
 const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32>) -> Case {
@@ -66,6 +71,7 @@ const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32
         blend: None,
         wetness: None,
         speed: SPEED,
+        display_paced: true,
     }
 }
 
@@ -158,6 +164,10 @@ fn cases() -> Vec<Case> {
         Case {
             speed: 600.0,
             ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, unhurried pen")
+        },
+        Case {
+            display_paced: false,
+            ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, frames back to back")
         },
     ]
 }
@@ -288,6 +298,7 @@ fn frame(
     began: Instant,
     previous: &mut Instant,
     packets: &[Packet],
+    display_paced: bool,
 ) -> Row {
     let start = Instant::now();
     app.performance.begin_frame();
@@ -316,9 +327,12 @@ fn frame(
         packets: packets.len(),
         upload_bytes,
     };
-    // The display's turn: a frame that finished early waits for the next one.
-    if let Some(wait) = FRAME.checked_sub(start.elapsed()) {
-        std::thread::sleep(wait);
+    // The display's turn: the frame is shown at the next refresh, which a
+    // frame longer than one refresh misses.
+    if display_paced {
+        let elapsed = began.elapsed();
+        let refreshes = elapsed.as_nanos() / FRAME.as_nanos() + 1;
+        std::thread::sleep(FRAME * refreshes as u32 - elapsed);
     }
     row
 }
@@ -329,6 +343,7 @@ fn stroke(
     app: &mut Dudel,
     ctx: &egui::Context,
     points: &[(f64, [f32; 2], f32)],
+    display_paced: bool,
 ) -> Result<(Vec<Row>, usize), String> {
     let view = app.view(app.canvas_area);
     let began = Instant::now();
@@ -360,7 +375,14 @@ fn stroke(
         if next == points.len() && lift.is_none() {
             lift = Some(rows.len());
         }
-        rows.push(frame(app, ctx, began, &mut previous, &packets));
+        rows.push(frame(
+            app,
+            ctx,
+            began,
+            &mut previous,
+            &packets,
+            display_paced,
+        ));
         let last = rows.last().unwrap();
         if let Some(lift) = lift
             && !last.frame.stroking
@@ -444,7 +466,7 @@ fn run_case(case: &Case, images: Option<&std::path::Path>) -> Result<Summary, St
     // surface arrives a few tiles a frame. Wait until nothing more uploads.
     let mut quiet = 0;
     for _ in 0..600 {
-        let row = frame(&mut app, &ctx, began, &mut previous, &[]);
+        let row = frame(&mut app, &ctx, began, &mut previous, &[], true);
         quiet = if row.upload_bytes == 0 { quiet + 1 } else { 0 };
         if quiet == 4 {
             break;
@@ -456,9 +478,10 @@ fn run_case(case: &Case, images: Option<&std::path::Path>) -> Result<Summary, St
             &mut app,
             &ctx,
             &path(case.canvas, brush.size, -brush.size * 0.5, case.speed),
+            case.display_paced,
         )?;
         for _ in 0..12 {
-            frame(&mut app, &ctx, began, &mut previous, &[]);
+            frame(&mut app, &ctx, began, &mut previous, &[], true);
         }
     }
     let points = path(case.canvas, brush.size, 0.0, case.speed);
@@ -468,7 +491,7 @@ fn run_case(case: &Case, images: Option<&std::path::Path>) -> Result<Summary, St
         .sum();
     let pen_seconds = points.last().unwrap().0;
     stage_timer::take();
-    let (rows, lift) = stroke(&mut app, &ctx, &points)?;
+    let (rows, lift) = stroke(&mut app, &ctx, &points, case.display_paced)?;
     if let Some(folder) = images {
         save_image(&app, folder, case.name)?;
     }

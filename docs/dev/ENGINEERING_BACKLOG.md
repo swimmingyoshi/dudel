@@ -14,9 +14,9 @@ With a paper set on the canvas, a wet brush is "kind of ok", but on long
 strokes with pen pressure the line starts to fall behind the pen.
 
 Measured the same day with the tools below, reproduced with the owner's own
-brush the day after, and partly fixed on 2026-11-13 (see "Fixes applied").
-An unhurried stroke with that brush now keeps up; a fast one still falls
-behind, by less than half as much.
+brush, and fixed in the scripted run on 2026-11-13 (see "Fixes applied"):
+the fast stroke that ended 853 dabs behind the pen now ends 11 behind. Still
+to confirm on the owner's own pen.
 
 ### The tools
 
@@ -145,15 +145,25 @@ above is far enough over the limit that these cannot change the conclusion.
 
 ### Fixes applied (2026-11-13)
 
-Same scripted strokes as above, same PC. "Before" is 1baebd8.
+Same scripted strokes as above, same PC. "Before" is 1baebd8. The profile
+now shows frames on a 60 Hz display the way a blocking display does (a
+frame that takes longer waits for the refresh after), which is a little
+stricter than when "before" was measured.
 
 | Case | ms per dab, before | now | Behind at pen lift, before | now | Finished after lift, before | now |
 |---|---|---|---|---|---|---|
-| Chisel marker 300 px, wet 50%, pen at 1,800 px/s | 5.82 | 3.38 | 853 dabs | 364 dabs | 8.1 s | 2.3 s |
-| The same, pen at 600 px/s | not run | 3.20 | not run | 0 dabs | not run | 0.05 s |
-| The same with size by pressure | 1.86 | 1.17 | 1,837 dabs | 646 dabs | 6.2 s | 1.6 s |
-| Watercolor wash 300 px | 8.07 | 6.28 | 2 dabs | 1 dab | 0.12 s | 0.10 s |
-| Watercolor wash 150 px | 2.64 | 2.39 | 0 dabs | 0 dabs | 0.03 s | 0.05 s |
+| Chisel marker 300 px, wet 50%, pen at 1,800 px/s | 5.82 | 2.01 | 853 dabs | 11 dabs | 8.1 s | 0.10 s |
+| The same, frames back to back (Low latency on) | not run | 2.30 | not run | 0 dabs | not run | 0.01 s |
+| The same, pen at 600 px/s | not run | 2.07 | not run | 0 dabs | not run | 0.05 s |
+| The same with size by pressure | 1.86 | 0.88 | 1,837 dabs | 0 dabs | 6.2 s | 0.07 s |
+| The same on a watercolor layer | 6.08 | 2.24 | 833 dabs | 43 dabs | 7.6 s | 0.23 s |
+| Watercolor wash 300 px | 8.07 | 4.56 | 2 dabs | 1 dab | 0.12 s | 0.10 s |
+| Watercolor wash 150 px | 2.64 | 1.81 | 0 dabs | 0 dabs | 0.03 s | 0.03 s |
+
+During the stroke the fast cases are at most 11 to 49 dabs behind (66 to
+294 px) and recover; before, the queue only grew.
+
+Cheaper dabs (76b96b9 and the commit after it):
 
 - [x] **A tight box for narrow and turned tips** (`document::tip_extent`):
       the turned ellipse's real reach instead of the square around its long
@@ -161,60 +171,74 @@ Same scripted strokes as above, same PC. "Before" is 1baebd8.
       wet dab's blur sees a smaller area and differs by at most 4 levels.
 - [x] **The copy under the dab across cores** (`blend_brush::capture`), in
       row bands. Same pixels.
-- [x] **The blur's column pass across cores**, in strips of columns. Each
-      column keeps its sums in the same order, so the result is the same bit
-      for bit (the existing line-by-line test covers it).
+- [x] **The blur across cores without copies**: rows are blurred into a
+      second buffer, columns back from it in strips of columns. Each row
+      and column keeps its sums in the same order, so the result is the
+      same bit for bit (the line-by-line test covers it).
+- [x] **Coverage worked out once** (`dab_bands::Drawn`). It was made in
+      bands, flattened on one thread, then copied band by band a second
+      time before blending. Run serially the coverage stage took only two
+      to four times as long as across twelve threads: the fan-out and the
+      flattening cost more than the arithmetic saved.
 - [x] **A spacing floor for wet and blur dabs**: 2% of the tip's long side
       (`brush::SOFT_DAB_SPACING`), with each held dab delivering more
       (`DabRaster::held`, applied after the paper so the tooth still
       shows). The owner's brush goes from a dab every 4.5 px to every 6 px.
       No built-in brush is affected.
 
+More painting per second:
+
+- [x] **Far behind the pen, painting takes most of the frame**
+      (`render_controller`, `PAINT_FAR_BEHIND_DABS`): 20 ms instead of 8 ms
+      once 16 dabs wait. The rest of a frame costs the same however long
+      painting had. The price: frames come 30 to 45 times a second while
+      the queue is that long (41 of 143 frames in the fast case above).
+
 Round wet brushes and plain paint come out pixel-identical to before in the
 scripted cases. The wet Chisel marker differs by 0.13 levels on average
-(at most 29, on 0.04% of the canvas) and looks the same at 200%.
+(at most 29, on 0.04% of the canvas) and looks the same at 200%; all of
+that difference is from the tight box and the 2% floor.
 
 **What was tried and dropped, so nobody repeats it:**
 
-- **A wider floor.** At 4% of the long side (12 px) the fast stroke keeps
-  up, but the stroke's edge is plainly ribbed, one rib per dab, and at 3%
-  faintly. Comparison images: `benchmarks/stroke-profile/look-comparison.png`
-  (local only).
+- **A wider floor.** At 4% of the long side (12 px) the stroke's edge is
+  plainly ribbed, one rib per dab, and at 3% faintly. Comparison images:
+  `benchmarks/stroke-profile/look-comparison.png` (local only).
 - **Sweeping each held dab's coverage back to the previous dab**, as if the
   tip were dragged. The ribs stayed. They do not come from the outline:
   each wet dab mixes the paint under it toward a blurred copy and then
   lays paint on top, so what a pixel ends up with depends on its last few
   dabs, and with few dabs that depends on where the pixel sits between
   them. Only many small steps average this out.
+- **Keeping the worker threads spinning longer between stages**
+  (`parallel::LINGER` at 200 to 2,000 microseconds instead of 50). Slower
+  at every value: the spinning threads take time from the one doing the
+  work in between.
 
-### What is left for the fast stroke
+### What is left
 
-The owner's brush at 1,800 px/s still asks for 300 dabs a second at 3.4 ms:
-about one second of painting per second of stroke, against the 8 ms of each
-frame painting may use (about half a second per second).
-
-- [ ] **Let painting use more of the time.** Either paint off the interface
-      thread, so a frame's wait for the display is not lost, or let the
-      budget follow what the rest of the frame really costs. This is the
-      one that closes the gap without changing the look.
-- [ ] **Coverage and blending** are now the larger half of a wet dab
-      (0.96 ms and 0.78 ms of 3.4 ms; 2.3 ms and 1.6 ms of 6.3 ms for the
-      round 300 px wash). Coverage works out every pixel of the box and
-      then the blend asks again for the covered ones.
+- [ ] **Confirm on the owner's pen**, with Low latency on and off. A
+      `DUDEL_TRACE_STROKE` run shows the real pen speed and what a real
+      frame costs beyond the CPU work measured here.
+- [ ] **Is 30 to 45 frames a second while far behind acceptable?** If the
+      pen cursor feels worse than the shorter queue feels better, lower the
+      20 ms or raise the 16 dabs.
+- [ ] **Paint off the interface thread**, so painting does not compete with
+      showing frames at all. Larger change; only if the above is not
+      enough.
 - [ ] **Paper height once per pixel.** `Paper::hold` and `Paper::pool` each
       work out `height`, which takes the sine and cosine of the paper
       direction and two noise lookups, for every pixel of every dab. Work
       it out once per pixel per dab first (same result, bit for bit), then
-      consider keeping heights per tile. Matters for granulating brushes
-      (half of the wash's coverage time), not for the Chisel marker.
+      consider keeping heights per tile. Two thirds of the round 300 px
+      wash's coverage time is the paper (1.66 ms with, 0.54 ms without).
 - [ ] **Blur less.** Each dab still blurs its whole area twice although
       nearly all of it was blurred for the previous dab. Any shortcut here
       changes the result and needs the same look comparison.
-- [ ] **Owner's choice: a wider floor as a brush setting.** If a ribbed
-      edge is acceptable for a given brush, 4% cures the lag outright.
 - [ ] **Small wet dabs:** make the pixel-by-pixel path cheaper (coverage a
       row at a time, writes a tile span at a time) or paint several small
-      dabs across cores.
+      dabs across cores. Now the largest stage of every wet brush under
+      about 90 px.
 - [ ] **Paper view tiles on a background worker.**
 - [ ] `render_region::dab_bounds` still reports the square around the long
       side times 1.41 as painted, so the display refreshes more than a
@@ -235,8 +259,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 | Thick paint | 4.9 ms | 3.5 ms |
 | Drying step, 2-megapixel wash, time on the UI thread | 57 to 107 ms | 6 to 7 ms |
 
-- [ ] **Wet brush lag** (section 1: what was fixed on 2026-11-13, the
-      measured costs per stage and what is left).
+- [ ] **Wet brush lag** (section 1: fixed in the scripted run on
+      2026-11-13; to confirm on the owner's pen).
 - [ ] **Planning a drying step** takes 34 to 100 ms on a 2-megapixel wash. It
       runs in the background now, so the window stays smooth, but the wash
       dries slowly. `wet::plan` allocates five buffers per 32 px tile.

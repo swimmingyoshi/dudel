@@ -19,7 +19,7 @@ pub(crate) struct Scratch {
     /// Left, top, right, bottom (exclusive) in canvas pixels.
     rect: [usize; 4],
     values: Vec<[f32; 4]>,
-    /// A copy of the row, then of the whole area, while blurring.
+    /// The area blurred along its rows, on the way to blurring its columns.
     line: Vec<[f32; 4]>,
 }
 
@@ -170,7 +170,8 @@ pub(crate) fn capture(
     scratch.rect = rect;
     let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
     let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Capture);
-    scratch.values.clear();
+    // Every value is written below, so what a previous dab left need not
+    // be cleared first.
     scratch.values.resize(w * h, [0.0; 4]);
     let copy = |rows: &mut [[f32; 4]], first: usize| {
         for (y, row) in rows.chunks_exact_mut(w).enumerate() {
@@ -208,10 +209,10 @@ pub(crate) fn capture(
 /// canvas edges do not darken.
 ///
 /// A wet or blur dab blurs its whole area twice, which was most of such a
-/// dab's cost. Rows are blurred in bands across cores, then columns in
-/// strips across cores, each strip a row at a time so memory is read in
-/// order. Every pixel gets the same sums in the same order as blurring line
-/// by line.
+/// dab's cost. Rows are blurred in bands across cores into a second buffer,
+/// then columns back from it in strips across cores, each strip a row at a
+/// time so memory is read in order; nothing is copied in between. Every
+/// pixel gets the same sums in the same order as blurring line by line.
 fn box_blur(scratch: &mut Scratch, r: usize) {
     let w = scratch.rect[2] - scratch.rect[0];
     let h = scratch.rect[3] - scratch.rect[1];
@@ -219,13 +220,13 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
         return;
     }
     let Scratch { values, line, .. } = scratch;
-    // Along each row.
-    let blur_rows = |rows: &mut [[f32; 4]], line: &mut Vec<[f32; 4]>| {
-        for row in rows.chunks_exact_mut(w) {
-            line.clear();
-            line.extend_from_slice(row);
+    // Along each row, from `values` into `line`. Every value of `line` is
+    // written, so what a previous dab left need not be cleared first.
+    line.resize(values.len(), [0.0; 4]);
+    let blur_rows = |from: &[[f32; 4]], to: &mut [[f32; 4]]| {
+        for (from, to) in from.chunks_exact(w).zip(to.chunks_exact_mut(w)) {
             let mut sum = [0.0f32; 4];
-            for v in line.iter().take(r.min(w - 1) + 1) {
+            for v in from.iter().take(r.min(w - 1) + 1) {
                 for c in 0..4 {
                     sum[c] += v[c];
                 }
@@ -235,16 +236,16 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
                 let (low, high) = (i.saturating_sub(r), (i + r).min(w - 1));
                 let n = (high - low + 1) as f32;
                 for c in 0..4 {
-                    row[i][c] = sum[c] / n;
+                    to[i][c] = sum[c] / n;
                 }
                 if i + r + 1 < w {
-                    let v = line[i + r + 1];
+                    let v = from[i + r + 1];
                     for c in 0..4 {
                         sum[c] += v[c];
                     }
                 }
                 if i >= r {
-                    let v = line[i - r];
+                    let v = from[i - r];
                     for c in 0..4 {
                         sum[c] -= v[c];
                     }
@@ -253,23 +254,23 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
         }
     };
     if large(w, h) {
-        let bands: Vec<_> = values
+        let bands: Vec<_> = line
             .chunks_mut(w * BAND)
             .map(std::sync::Mutex::new)
             .collect();
+        let values: &[[f32; 4]] = values;
         for result in crate::parallel::run(bands.len(), |i| {
-            blur_rows(&mut bands[i].lock().unwrap(), &mut Vec::with_capacity(w));
+            let mut band = bands[i].lock().unwrap();
+            blur_rows(&values[i * w * BAND..][..band.len()], &mut band);
         }) {
             result.expect("Blur worker panicked");
         }
     } else {
         blur_rows(values, line);
     }
-    // Down each column: one running sum per column, moved a row at a time.
-    // A column's sums do not depend on its neighbors, so strips of columns
-    // go to different cores.
-    line.clear();
-    line.extend_from_slice(values);
+    // Down each column, from `line` back into `values`: one running sum per
+    // column, moved a row at a time. A column's sums do not depend on its
+    // neighbors, so strips of columns go to different cores.
     let line: &[[f32; 4]] = line;
     let add = |sums: &mut [[f32; 4]], row: &[[f32; 4]], sign: f32| {
         for (sum, v) in sums.iter_mut().zip(row) {
