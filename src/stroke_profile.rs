@@ -11,7 +11,7 @@
 //! counted instead.
 use crate::{
     Dudel,
-    brush::Brush,
+    brush::{Blend, Brush},
     egui::{self, pos2, vec2},
     input::Packet,
     material::{Kind, Material, Settings},
@@ -20,6 +20,7 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
+/// The canvas of every case that does not name its own.
 const CANVAS: [usize; 2] = [3000, 2000];
 const WINDOW: [f32; 2] = [1600.0, 1000.0];
 /// Pen reports per second.
@@ -39,6 +40,11 @@ struct Case {
     paper: bool,
     /// Paint a wash first and leave it wet under the measured stroke.
     over_wet: bool,
+    canvas: [usize; 2],
+    /// What the dabs do, and the water of a wet brush (the preset's own
+    /// when `None`).
+    blend: Option<Blend>,
+    wetness: Option<f32>,
 }
 
 const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32>) -> Case {
@@ -50,6 +56,20 @@ const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32
         layer: None,
         paper: true,
         over_wet: false,
+        canvas: CANVAS,
+        blend: None,
+        wetness: None,
+    }
+}
+
+/// The owner's report of 2026-11-12: the Chisel marker made wet, at 300 px
+/// on a 2048 px canvas. Its narrow tip puts dabs 4.5 px apart.
+fn chisel(name: &'static str) -> Case {
+    Case {
+        canvas: [2048, 2048],
+        blend: Some(Blend::Wet),
+        wetness: Some(0.5),
+        ..case(name, Some("Chisel marker"), Some(300.0))
     }
 }
 
@@ -111,15 +131,33 @@ fn cases() -> Vec<Case> {
             over_wet: true,
             ..case("Watercolor wash 150 px, over a wet wash", wash, Some(150.0))
         },
+        Case {
+            blend: None,
+            ..chisel("Chisel marker 300 px, paint, 2048 canvas")
+        },
+        chisel("Chisel marker 300 px, wet 50%, 2048 canvas"),
+        Case {
+            paper: false,
+            ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, no paper")
+        },
+        Case {
+            pressure_size: Some(true),
+            ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, size by pressure")
+        },
+        Case {
+            layer: Some(Kind::Watercolor),
+            ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, watercolor layer")
+        },
     ]
 }
 
 /// Pen positions on the canvas with pressure: three sweeps across, each a
 /// little below the last so they overlap, pressure rising and falling.
-fn path(size: f32, offset: f32) -> Vec<(f64, [f32; 2], f32)> {
-    let (left, right) = (300.0f32, 2700.0f32);
+fn path(canvas: [usize; 2], size: f32, offset: f32) -> Vec<(f64, [f32; 2], f32)> {
+    let (width, height) = (canvas[0] as f32, canvas[1] as f32);
+    let (left, right) = (width * 0.1, width * 0.9);
     let step = (size * 0.6).max(12.0);
-    let top = 700.0 + offset;
+    let top = height * 0.35 + offset;
     let mut corners = Vec::new();
     for sweep in 0..3 {
         let y = top + sweep as f32 * step;
@@ -182,7 +220,9 @@ struct Third {
 #[derive(serde::Serialize)]
 struct Summary {
     name: &'static str,
+    canvas: [usize; 2],
     brush: String,
+    blend: String,
     size_px: f32,
     spacing_px: f32,
     pressure_size: bool,
@@ -332,7 +372,7 @@ fn percentile(sorted: &[f64], p: usize) -> f64 {
 
 fn run_case(case: &Case) -> Result<Summary, String> {
     let mut app = Dudel {
-        doc: crate::document::Document::new(CANVAS[0], CANVAS[1]),
+        doc: crate::document::Document::new(case.canvas[0], case.canvas[1]),
         ..Default::default()
     };
     let mut brush = match case.preset {
@@ -349,6 +389,12 @@ fn run_case(case: &Case) -> Result<Summary, String> {
     }
     if let Some(pressure_size) = case.pressure_size {
         brush.pressure_size = pressure_size;
+    }
+    if let Some(blend) = case.blend {
+        brush.blend = blend;
+    }
+    if let Some(wetness) = case.wetness {
+        brush.wetness = wetness;
     }
     app.doc.layers[0].material = case.layer.map(|kind| Material::new(Settings::new(kind)));
     if case.paper {
@@ -376,12 +422,16 @@ fn run_case(case: &Case) -> Result<Summary, String> {
     }
     if case.over_wet {
         // A wash under the measured stroke, still wet when it starts.
-        stroke(&mut app, &ctx, &path(brush.size, -brush.size * 0.5))?;
+        stroke(
+            &mut app,
+            &ctx,
+            &path(case.canvas, brush.size, -brush.size * 0.5),
+        )?;
         for _ in 0..12 {
             frame(&mut app, &ctx, began, &mut previous, &[]);
         }
     }
-    let points = path(brush.size, 0.0);
+    let points = path(case.canvas, brush.size, 0.0);
     let stroke_px: f32 = points
         .windows(2)
         .map(|pair| (pair[1].1[0] - pair[0].1[0]).hypot(pair[1].1[1] - pair[0].1[1]))
@@ -407,7 +457,8 @@ fn run_case(case: &Case) -> Result<Summary, String> {
     let of = |name: &str| stage_ms.get(name).copied().unwrap_or(0.0);
     let other_ms = total_ms - of("pump") - of("paper_view") - of("expand") - of("display");
     let queued_max = rows.iter().map(|r| r.frame.queued).max().unwrap_or(0);
-    let spacing_px = brush.spacing * brush.size;
+    // At full pressure; a narrow tip spaces its dabs by its short side.
+    let spacing_px = brush.spacing * brush.size * brush.aspect;
     let thirds = rows
         .chunks(rows.len().div_ceil(3).max(1))
         .map(|part| {
@@ -430,11 +481,13 @@ fn run_case(case: &Case) -> Result<Summary, String> {
         .collect();
     Ok(Summary {
         name: case.name,
+        canvas: case.canvas,
         brush: if brush.name.is_empty() {
             "default round".into()
         } else {
             brush.name.clone()
         },
+        blend: format!("{:?}", brush.blend),
         size_px: brush.size,
         spacing_px,
         pressure_size: brush.pressure_size,
@@ -536,8 +589,7 @@ pub(crate) fn run(path: &std::path::Path, filter: Option<&str>) -> Result<(), St
         return Err("No case matches the filter".into());
     }
     let report = serde_json::json!({
-        "version": 1,
-        "canvas": CANVAS,
+        "version": 2,
         "window": WINDOW,
         "pen_hz": PEN_HZ,
         "pen_speed_px_per_second": SPEED,

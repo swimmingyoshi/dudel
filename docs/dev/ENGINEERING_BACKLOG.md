@@ -94,23 +94,69 @@ a paper canvas opened each took about 20 ms longer than the frames after
 them. It is not stroke lag, but it would stutter the same way whenever new
 tiles come into view.
 
+### The owner's case, reproduced (2026-11-12)
+
+The owner's setup: **Chisel marker switched to Wet, water 50%, 300 px, on a
+2048 px canvas.** Run it with
+`dudel --profile-stroke REPORT.json chisel` (2048 x 2048, Cold-pressed paper,
+a 5,270 px stroke in 2.9 s).
+
+| Case | ms per dab | Dabs asked per second | Behind at pen lift | Finished after lift |
+|---|---|---|---|---|
+| Chisel marker 300 px, plain paint | 0.89 | 399 | 0 | 0.03 s |
+| Chisel marker 300 px, wet 50% | 5.82 | 399 | 836 of 1,172 dabs (3,760 px) | 7.2 s |
+| The same without paper | 5.86 | 399 | 828 dabs | 7.2 s |
+| The same on a watercolor layer | 6.08 | 399 | 832 dabs | 7.4 s |
+| The same with size by pressure | 1.86 | 890 | 1,630 of 2,613 dabs | 5.7 s |
+
+- **The dabs are 4.5 px apart.** Spacing is a share of the tip's short side
+  (`stroke::spacing`: size x aspect x spacing = 300 x 0.3 x 0.05). The pen
+  asks for 400 wet dabs a second, at 5.8 ms each: 2.3 s of painting for
+  every second of stroke. Painting gets at most 8 ms of a frame, so the
+  line falls further behind for as long as the pen moves. This is the lag.
+- **Every dab works on the full 300 px square.** `DabRaster::new` makes the
+  box from the long radius whatever the aspect and angle. The tip covers
+  under a quarter of it (a 300 x 90 px ellipse), yet the copy and the blur
+  cost what they cost a round 300 px dab: blur 1.90 ms, coverage 1.34 ms,
+  capture 1.16 ms, blend 0.98 ms, water 0.30 ms.
+- **Each dab blurs 24 px around itself** (`blend_brush::blur_radius`) and
+  the next dab is 4.5 px on, so consecutive dabs blur nearly the same area.
+- Paper does not matter here (the marker has no granulation), nor does the
+  layer kind. Cost per dab is again flat from the first third to the last.
+- As plain paint the same brush keeps up: 0.89 ms a dab.
+
 ### What is not known yet
 
 The scripted run leaves out the GPU, the pen driver and the side panels, and
-it guesses the brush size, canvas size and pen speed. In a real session each
-frame is longer, so painting gets fewer turns a second and falls behind
-sooner.
+it guesses the pen speed. In a real session each frame is longer, so
+painting gets fewer turns a second and falls behind sooner. The owner's case
+above is far enough over the limit that these cannot change the conclusion.
 
 - [x] Stage timers behind a switch.
 - [x] A repeatable stroke (scripted; `--replay-input` was not needed).
 - [x] Which stage costs most, and which grows with the stroke (none does).
-- [ ] **A trace of the owner's own slow stroke** (`DUDEL_TRACE_STROKE`),
-      with the brush, its size and the canvas size noted. If "frame to
-      frame" is well above "CPU per frame", the display or GPU is holding
-      frames back; if "rest of the interface" is large, the side panels are.
+- [x] The owner's brush, size and canvas (2026-11-12), reproduced above.
+- [ ] A trace of the owner's own stroke (`DUDEL_TRACE_STROKE`) is now
+      optional: useful to check a fix on the real pen. If "frame to frame"
+      is well above "CPU per frame", the display or GPU is holding frames
+      back; if "rest of the interface" is large, the side panels are.
 
 ### Fixes, in the order they should pay off (none started)
 
+The owner's case needs about three times less painting per second of stroke
+before it keeps up, so the first three matter most there; a larger budget
+alone cannot close that gap.
+
+- [ ] **Fewer wet dabs from narrow tips.** A wet dab softens 24 px around
+      itself; laying one every 4.5 px repeats nearly the same work. Give
+      wet (and blur) dabs a spacing floor tied to the long side or the blur
+      reach, with flow adjusted so a stroke builds up as before. Changes the
+      look slightly: compare before and after on the brush previews.
+- [ ] **A tight box for narrow and turned tips** in `DabRaster::new`: the
+      ellipse's real extent instead of the long radius. Same pixels for
+      plain paint; a wet dab's blur sees a smaller area, so its result
+      differs minutely. About half the work at 45 degrees, more when the tip
+      is level or upright.
 - [ ] **Paper height once per pixel.** `Paper::hold` and `Paper::pool` each
       work out `height`, which takes the sine and cosine of the paper
       direction and two noise lookups, for every pixel of every dab.
