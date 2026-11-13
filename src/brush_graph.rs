@@ -1060,6 +1060,8 @@ pub struct Compiled {
     rotation_degrees: f32,
     /// The graph reads the stroke's direction.
     heading: bool,
+    /// `turn_with_stroke`, worked out on first use.
+    stroke_turn: OnceLock<Option<f32>>,
     /// Where each node's value lives: (the groups it is inside, outermost
     /// first; node; output port; register). For an output node or a group
     /// result, the value wired into it. Editors show these; painting never
@@ -1162,6 +1164,53 @@ impl Compiled {
     /// Whether the graph reads the stroke's direction.
     pub fn needs_heading(&self) -> bool {
         self.heading
+    }
+    /// When the graph turns the tip with the stroke, keeping one angle to
+    /// it whatever else the pen does (Direction into Rotation over 180
+    /// degrees, as a palette knife does): that angle in degrees. Found by
+    /// trying headings, pressures, speeds, tilts, distances and random
+    /// values once.
+    pub fn turn_with_stroke(&self) -> Option<f32> {
+        *self.stroke_turn.get_or_init(|| {
+            if !self.heading || self.outputs[Output::Rotation as usize].is_none() {
+                return None;
+            }
+            let mut found: Option<f32> = None;
+            for heading in [-170.0f32, -95.0, 0.0, 40.0, 130.0, 180.0] {
+                for pressure in [0.1f32, 0.55, 1.0] {
+                    for speed in [None, Some(0.3), Some(3.0)] {
+                        for tilt in [None, Some([25.0f32, -40.0])] {
+                            for (random, distance) in [(0.05f32, 0.0f64), (0.9, 700.0)] {
+                                let rotation = self
+                                    .evaluate(&Inputs {
+                                        pressure,
+                                        shaped_pressure: pressure,
+                                        speed,
+                                        tilt,
+                                        twist: tilt.map(|_| 120.0),
+                                        random: Some(random),
+                                        distance,
+                                        heading: Some(heading),
+                                    })
+                                    .rotation?;
+                                let angle = (rotation - heading).rem_euclid(360.0);
+                                match found {
+                                    None => found = Some(angle),
+                                    Some(first) => {
+                                        let apart =
+                                            (angle - first + 540.0).rem_euclid(360.0) - 180.0;
+                                        if !apart.is_finite() || apart.abs() > 0.5 {
+                                            return None;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            found
+        })
     }
     /// Whether a wired output node drives `output`.
     pub fn drives(&self, output: Output) -> bool {
@@ -1714,6 +1763,7 @@ fn lower(nodes: &[Node], links: &[Link]) -> Result<(Compiled, Vec<(NodeId, u8)>)
             hue_degrees,
             rotation_degrees,
             heading,
+            stroke_turn: OnceLock::new(),
             probes: Vec::new(),
         },
         values,
@@ -2215,6 +2265,81 @@ mod tests {
         assert!(offsets(scatter(0.0)).iter().all(|o| *o < 1e-4));
         let spread = offsets(scatter(1.0));
         assert!(spread.iter().any(|o| *o > 5.0) && spread.iter().all(|o| *o <= 20.0 + 1e-3));
+    }
+
+    #[test]
+    fn a_node_knife_is_spaced_along_the_stroke_like_the_built_in_one() {
+        use NodeKind::*;
+        let knife = crate::workspace::default_brushes()
+            .into_iter()
+            .find(|b| b.name == "Palette knife")
+            .map(|b| crate::brush::Brush { size: 300.0, ..b })
+            .unwrap();
+        // The same knife turned by nodes instead of the Direction setting.
+        let noded = |graph: BrushGraph| crate::brush::Brush {
+            angle_source: crate::brush::AngleSource::Fixed,
+            graph: Some(graph),
+            ..knife.clone()
+        };
+        let spacing = |brush: &crate::brush::Brush| {
+            brush.dab_spacing(&brush.factors(&crate::stroke::Sample {
+                pressure: 1.0,
+                heading: Some(30.0),
+                ..Default::default()
+            }))
+        };
+        let follows = graph(
+            vec![Direction, RotationOutput { degrees: 180.0 }],
+            &[(1, 2, 0)],
+        );
+        assert!(
+            follows
+                .compiled()
+                .unwrap()
+                .turn_with_stroke()
+                .unwrap()
+                .abs()
+                < 0.5
+        );
+        assert_eq!(spacing(&noded(follows)), spacing(&knife));
+        assert!((spacing(&knife)[1] - 9.0).abs() < 0.01);
+        // Turning by something besides the stroke is not spaced along it.
+        for other in [
+            // Direction with a random wobble added.
+            graph(
+                vec![
+                    Direction,
+                    Random { seed: 3 },
+                    Constant { value: 0.1 },
+                    Multiply,
+                    Add,
+                    RotationOutput { degrees: 180.0 },
+                ],
+                &[(2, 4, 0), (3, 4, 1), (1, 5, 0), (4, 5, 1), (5, 6, 0)],
+            ),
+            graph(
+                vec![TiltDirection, RotationOutput { degrees: 180.0 }],
+                &[(1, 2, 0)],
+            ),
+        ] {
+            assert_eq!(other.compiled().unwrap().turn_with_stroke(), None);
+            let [asked, used] = spacing(&noded(other));
+            assert_eq!(asked, used);
+        }
+        // The same wobble at nothing still turns with the stroke: the probe
+        // judges what the graph does, not which nodes it has.
+        let still = graph(
+            vec![
+                Direction,
+                Random { seed: 3 },
+                Constant { value: 0.0 },
+                Multiply,
+                Add,
+                RotationOutput { degrees: 180.0 },
+            ],
+            &[(2, 4, 0), (3, 4, 1), (1, 5, 0), (4, 5, 1), (5, 6, 0)],
+        );
+        assert!(still.compiled().unwrap().turn_with_stroke().is_some());
     }
 
     #[test]

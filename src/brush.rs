@@ -458,16 +458,46 @@ impl Brush {
     }
     /// Distance from one dab to the next: what the settings ask for, and
     /// what the stroke uses. They differ when a wet or blur brush is held to
-    /// `SOFT_DAB_SPACING`; each dab then delivers more, by their ratio.
+    /// `SOFT_DAB_SPACING`, or a tip that turns with the stroke is spaced
+    /// along the way it travels; each dab then delivers more, by their ratio.
     pub fn dab_spacing(&self, factors: &Factors) -> [f32; 2] {
         let asked =
             (self.size * self.aspect * self.spacing * factors.size * factors.spacing).max(0.5);
-        let floor = if matches!(self.blend, Blend::Wet | Blend::Blur) {
+        let soft = if matches!(self.blend, Blend::Wet | Blend::Blur) {
             self.size * factors.size * SOFT_DAB_SPACING
         } else {
             0.0
         };
-        [asked, asked.max(floor)]
+        // A narrow tip that turns with the stroke travels along its length
+        // (a palette knife drawn edge first): the spacing is a share of how
+        // far it reaches that way, not of its narrow side. A 300 px knife
+        // then lays a dab every 9 px instead of every 2.
+        let along = self.reach_along_stroke().map_or(0.0, |reach| {
+            self.size * reach * self.spacing * factors.size * factors.spacing
+        });
+        [asked, asked.max(soft).max(along)]
+    }
+    /// For a tip that keeps one angle to the stroke's direction: how far it
+    /// reaches along that direction, as a share of its size (1 for a tip
+    /// lying along the stroke, its aspect for one lying across it).
+    /// A brush graph that wires Rotation counts when it keeps the tip at one
+    /// angle to the stroke (`Compiled::turn_with_stroke`).
+    fn reach_along_stroke(&self) -> Option<f32> {
+        if self.aspect >= 1.0 {
+            return None;
+        }
+        let graph = self
+            .graph
+            .as_ref()
+            .and_then(|g| g.compiled().ok())
+            .filter(|g| g.drives(crate::brush_graph::Output::Rotation));
+        let turn = match graph {
+            Some(graph) => graph.turn_with_stroke()?,
+            None if self.angle_source == AngleSource::Direction && self.angle_jitter == 0.0 => 0.0,
+            None => return None,
+        };
+        let (sin, cos) = (self.angle + turn).to_radians().sin_cos();
+        Some((cos * cos + self.aspect * self.aspect * sin * sin).sqrt())
     }
     pub fn size_factor(&self, sample: &crate::stroke::Sample) -> f32 {
         let graph = self.graph_values(sample).and_then(|v| v.size);
@@ -719,17 +749,52 @@ mod tests {
     }
 
     #[test]
-    fn no_built_in_brush_is_held_to_wider_spacing() {
+    fn built_in_brushes_are_held_to_wider_spacing_only_along_the_stroke() {
+        let mut turning = Vec::new();
         for brush in crate::workspace::default_brushes() {
             for pressure in [0.1, 0.5, 1.0] {
                 let sample = crate::stroke::Sample {
                     pressure,
                     ..Default::default()
                 };
-                let [asked, used] = brush.dab_spacing(&brush.factors(&sample));
-                assert_eq!(asked, used, "{} at pressure {pressure}", brush.name);
+                let factors = brush.factors(&sample);
+                let [asked, used] = brush.dab_spacing(&factors);
+                match brush.reach_along_stroke() {
+                    // Spaced on its length along the stroke, not its width.
+                    // (Above the half-pixel least spacing.)
+                    Some(reach) => {
+                        let ratio = reach / brush.aspect;
+                        assert!(
+                            asked <= 0.5 || (used / asked - ratio).abs() < 1e-3,
+                            "{} at pressure {pressure}: {asked} {used}",
+                            brush.name
+                        );
+                        turning.push(brush.name.clone());
+                    }
+                    None => assert_eq!(asked, used, "{} at pressure {pressure}", brush.name),
+                }
             }
         }
+        turning.sort();
+        turning.dedup();
+        assert_eq!(
+            turning,
+            ["Dry gouache", "Flat bristle", "Impasto", "Palette knife"]
+        );
+        // The knife at 300 px lays a dab every 9 px, not every 2.
+        let knife = crate::workspace::default_brushes()
+            .into_iter()
+            .find(|b| b.name == "Palette knife")
+            .map(|b| Brush { size: 300.0, ..b })
+            .unwrap();
+        let [asked, used] = knife.dab_spacing(&knife.factors(&crate::stroke::Sample {
+            pressure: 1.0,
+            ..Default::default()
+        }));
+        assert!(
+            (asked - 1.98).abs() < 0.01 && (used - 9.0).abs() < 0.01,
+            "{asked} {used}"
+        );
     }
     #[test]
     fn asset_hash_cache_invalidates_on_mutation_and_keeps_wire_format() {
