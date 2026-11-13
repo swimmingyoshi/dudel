@@ -134,12 +134,21 @@ fn premultiply(p: [u8; 4]) -> [f32; 4] {
     ]
 }
 
+/// Rows per band when a large copy is made or blurred across cores.
+const BAND: usize = 32;
+
+/// Whether an area is worth splitting across cores.
+fn large(w: usize, h: usize) -> bool {
+    w * h >= 1 << 14 && h > BAND
+}
+
 /// Copy the area a dab can read: its bounds, widened by how far it reaches.
-/// Blur then softens the copy.
+/// Blur then softens the copy. A large area is copied in row bands across
+/// cores.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn capture(
     scratch: &mut Scratch,
-    read: impl Fn(usize, usize) -> [u8; 4],
+    read: impl Fn(usize, usize) -> [u8; 4] + Sync,
     [width, height]: [usize; 2],
     bounds: [i32; 4],
     blend: Blend,
@@ -159,12 +168,30 @@ pub(crate) fn capture(
         clamp(bounds[3] + 1 + reach, height),
     ];
     scratch.rect = rect;
-    scratch.values.clear();
+    let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
     let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Capture);
-    for y in rect[1]..rect[3] {
-        for x in rect[0]..rect[2] {
-            scratch.values.push(premultiply(read(x, y)));
+    scratch.values.clear();
+    scratch.values.resize(w * h, [0.0; 4]);
+    let copy = |rows: &mut [[f32; 4]], first: usize| {
+        for (y, row) in rows.chunks_exact_mut(w).enumerate() {
+            for (x, value) in row.iter_mut().enumerate() {
+                *value = premultiply(read(rect[0] + x, first + y));
+            }
         }
+    };
+    if large(w, h) {
+        let bands: Vec<_> = scratch
+            .values
+            .chunks_mut(w * BAND)
+            .map(std::sync::Mutex::new)
+            .collect();
+        for result in crate::parallel::run(bands.len(), |i| {
+            copy(&mut bands[i].lock().unwrap(), rect[1] + i * BAND);
+        }) {
+            result.expect("Capture worker panicked");
+        }
+    } else if w > 0 {
+        copy(&mut scratch.values, rect[1]);
     }
     drop(timed);
     if matches!(blend, Blend::Blur | Blend::Wet) {
@@ -181,9 +208,10 @@ pub(crate) fn capture(
 /// canvas edges do not darken.
 ///
 /// A wet or blur dab blurs its whole area twice, which was most of such a
-/// dab's cost. Rows are blurred in bands across cores; columns are blurred
-/// a whole row at a time, so memory is read in order. Every pixel gets the
-/// same sums in the same order as blurring line by line.
+/// dab's cost. Rows are blurred in bands across cores, then columns in
+/// strips across cores, each strip a row at a time so memory is read in
+/// order. Every pixel gets the same sums in the same order as blurring line
+/// by line.
 fn box_blur(scratch: &mut Scratch, r: usize) {
     let w = scratch.rect[2] - scratch.rect[0];
     let h = scratch.rect[3] - scratch.rect[1];
@@ -224,8 +252,7 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
             }
         }
     };
-    const BAND: usize = 32;
-    if w * h >= 1 << 14 && h > BAND {
+    if large(w, h) {
         let bands: Vec<_> = values
             .chunks_mut(w * BAND)
             .map(std::sync::Mutex::new)
@@ -239,9 +266,11 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
         blur_rows(values, line);
     }
     // Down each column: one running sum per column, moved a row at a time.
+    // A column's sums do not depend on its neighbors, so strips of columns
+    // go to different cores.
     line.clear();
     line.extend_from_slice(values);
-    let mut sums = vec![[0.0f32; 4]; w];
+    let line: &[[f32; 4]] = line;
     let add = |sums: &mut [[f32; 4]], row: &[[f32; 4]], sign: f32| {
         for (sum, v) in sums.iter_mut().zip(row) {
             for c in 0..4 {
@@ -249,22 +278,55 @@ fn box_blur(scratch: &mut Scratch, r: usize) {
             }
         }
     };
-    for i in 0..=r.min(h - 1) {
-        add(&mut sums, &line[i * w..][..w], 1.0);
-    }
-    for i in 0..h {
-        let (low, high) = (i.saturating_sub(r), (i + r).min(h - 1));
-        let n = (high - low + 1) as f32;
-        for (out, sum) in values[i * w..][..w].iter_mut().zip(&sums) {
-            for c in 0..4 {
-                out[c] = sum[c] / n;
+    // Columns `first..first + rows[0].len()`, with that strip of every row.
+    let blur_columns = |first: usize, rows: &mut [&mut [[f32; 4]]]| {
+        let width = rows[0].len();
+        let source = |i: usize| &line[i * w + first..][..width];
+        let mut sums = vec![[0.0f32; 4]; width];
+        for i in 0..=r.min(h - 1) {
+            add(&mut sums, source(i), 1.0);
+        }
+        for (i, row) in rows.iter_mut().enumerate() {
+            let (low, high) = (i.saturating_sub(r), (i + r).min(h - 1));
+            let n = (high - low + 1) as f32;
+            for (out, sum) in row.iter_mut().zip(&sums) {
+                for c in 0..4 {
+                    out[c] = sum[c] / n;
+                }
+            }
+            if i + r + 1 < h {
+                add(&mut sums, source(i + r + 1), 1.0);
+            }
+            if i >= r {
+                add(&mut sums, source(i - r), -1.0);
             }
         }
-        if i + r + 1 < h {
-            add(&mut sums, &line[(i + r + 1) * w..][..w], 1.0);
+    };
+    let strips = if large(w, h) {
+        (w / 32).clamp(1, 16)
+    } else {
+        1
+    };
+    // Strip `s` starts at column `start(s)`.
+    let start = |s: usize| s * (w / strips) + s.min(w % strips);
+    let mut columns: Vec<Vec<&mut [[f32; 4]]>> =
+        (0..strips).map(|_| Vec::with_capacity(h)).collect();
+    for row in values.chunks_exact_mut(w) {
+        let mut rest = row;
+        for (s, column) in columns.iter_mut().enumerate() {
+            let (strip, after) = rest.split_at_mut(start(s + 1) - start(s));
+            column.push(strip);
+            rest = after;
         }
-        if i >= r {
-            add(&mut sums, &line[(i - r) * w..][..w], -1.0);
+    }
+    if strips == 1 {
+        blur_columns(0, &mut columns[0]);
+    } else {
+        let columns: Vec<_> = columns.into_iter().map(std::sync::Mutex::new).collect();
+        for result in crate::parallel::run(strips, |s| {
+            blur_columns(start(s), &mut columns[s].lock().unwrap());
+        }) {
+            result.expect("Blur worker panicked");
         }
     }
 }

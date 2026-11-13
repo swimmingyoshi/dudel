@@ -1,10 +1,13 @@
-//! `--profile-stroke REPORT.json [FILTER]`: where a long wet stroke's time goes.
+//! `--profile-stroke REPORT.json [FILTER] [IMAGES]`: where a long wet stroke's
+//! time goes.
 //!
 //! Each case paints one scripted stroke through the app's own canvas frame
 //! (pen packets, the painting queue, display compositing) without a window,
 //! in real time: packets arrive on a 200 Hz pen clock and frames run at
 //! 60 Hz, or as fast as they can when they take longer. The report has every
-//! frame (`stage_timer::Frame`) and a summary per case.
+//! frame (`stage_timer::Frame`) and a summary per case. With a folder as
+//! IMAGES, each case's finished canvas is saved there as a PNG, to compare
+//! the look before and after a change to the painter.
 //!
 //! Not measured: the GPU (texture upload and presenting), the pen driver and
 //! the rest of the window's interface. Texture bytes handed to the GPU are
@@ -25,7 +28,8 @@ const CANVAS: [usize; 2] = [3000, 2000];
 const WINDOW: [f32; 2] = [1600.0, 1000.0];
 /// Pen reports per second.
 const PEN_HZ: f64 = 200.0;
-/// Canvas pixels per second: a brisk stroke at this zoom (about half).
+/// Canvas pixels per second unless the case says otherwise: a brisk stroke
+/// at this zoom (about half).
 const SPEED: f64 = 1800.0;
 const FRAME: Duration = Duration::from_micros(16_667);
 
@@ -45,6 +49,8 @@ struct Case {
     /// when `None`).
     blend: Option<Blend>,
     wetness: Option<f32>,
+    /// Canvas pixels the pen covers per second.
+    speed: f64,
 }
 
 const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32>) -> Case {
@@ -59,6 +65,7 @@ const fn case(name: &'static str, preset: Option<&'static str>, size: Option<f32
         canvas: CANVAS,
         blend: None,
         wetness: None,
+        speed: SPEED,
     }
 }
 
@@ -148,12 +155,16 @@ fn cases() -> Vec<Case> {
             layer: Some(Kind::Watercolor),
             ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, watercolor layer")
         },
+        Case {
+            speed: 600.0,
+            ..chisel("Chisel marker 300 px, wet 50%, 2048 canvas, unhurried pen")
+        },
     ]
 }
 
 /// Pen positions on the canvas with pressure: three sweeps across, each a
 /// little below the last so they overlap, pressure rising and falling.
-fn path(canvas: [usize; 2], size: f32, offset: f32) -> Vec<(f64, [f32; 2], f32)> {
+fn path(canvas: [usize; 2], size: f32, offset: f32, speed: f64) -> Vec<(f64, [f32; 2], f32)> {
     let (width, height) = (canvas[0] as f32, canvas[1] as f32);
     let (left, right) = (width * 0.1, width * 0.9);
     let step = (size * 0.6).max(12.0);
@@ -174,7 +185,7 @@ fn path(canvas: [usize; 2], size: f32, offset: f32) -> Vec<(f64, [f32; 2], f32)>
         .map(|pair| (pair[1][0] - pair[0][0]).hypot(pair[1][1] - pair[0][1]))
         .collect();
     let total: f32 = lengths.iter().sum();
-    let count = (f64::from(total) / SPEED * PEN_HZ).ceil() as usize;
+    let count = (f64::from(total) / speed * PEN_HZ).ceil() as usize;
     (0..=count)
         .map(|i| {
             let u = i as f32 / count as f32;
@@ -230,6 +241,7 @@ struct Summary {
     paper: bool,
     over_wet: bool,
     stroke_px: f32,
+    pen_px_per_second: f64,
     pen_seconds: f64,
     dabs: usize,
     /// Dabs the pen asks for per second, and what the painter managed.
@@ -370,7 +382,25 @@ fn percentile(sorted: &[f64], p: usize) -> f64 {
     sorted[(sorted.len() * p).div_ceil(100).max(1) - 1]
 }
 
-fn run_case(case: &Case) -> Result<Summary, String> {
+/// The finished canvas of a case, as `IMAGES/case-name.png`.
+fn save_image(app: &Dudel, folder: &std::path::Path, name: &str) -> Result<(), String> {
+    let slug: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let (width, height) = (app.doc.width as u32, app.doc.height as u32);
+    let rgba = app.doc.composite();
+    crate::storage::atomic_stream(&folder.join(format!("{slug}.png")), |file| {
+        let mut encoder = png::Encoder::new(file, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+        writer.write_image_data(&rgba).map_err(|e| e.to_string())?;
+        writer.finish().map_err(|e| e.to_string())
+    })
+}
+
+fn run_case(case: &Case, images: Option<&std::path::Path>) -> Result<Summary, String> {
     let mut app = Dudel {
         doc: crate::document::Document::new(case.canvas[0], case.canvas[1]),
         ..Default::default()
@@ -425,13 +455,13 @@ fn run_case(case: &Case) -> Result<Summary, String> {
         stroke(
             &mut app,
             &ctx,
-            &path(case.canvas, brush.size, -brush.size * 0.5),
+            &path(case.canvas, brush.size, -brush.size * 0.5, case.speed),
         )?;
         for _ in 0..12 {
             frame(&mut app, &ctx, began, &mut previous, &[]);
         }
     }
-    let points = path(case.canvas, brush.size, 0.0);
+    let points = path(case.canvas, brush.size, 0.0, case.speed);
     let stroke_px: f32 = points
         .windows(2)
         .map(|pair| (pair[1].1[0] - pair[0].1[0]).hypot(pair[1].1[1] - pair[0].1[1]))
@@ -439,6 +469,9 @@ fn run_case(case: &Case) -> Result<Summary, String> {
     let pen_seconds = points.last().unwrap().0;
     stage_timer::take();
     let (rows, lift) = stroke(&mut app, &ctx, &points)?;
+    if let Some(folder) = images {
+        save_image(&app, folder, case.name)?;
+    }
 
     let dabs: usize = rows.iter().map(|r| r.frame.dabs).sum();
     let mut frame_ms: Vec<f64> = rows.iter().map(|r| r.frame.frame_ms).collect();
@@ -457,8 +490,11 @@ fn run_case(case: &Case) -> Result<Summary, String> {
     let of = |name: &str| stage_ms.get(name).copied().unwrap_or(0.0);
     let other_ms = total_ms - of("pump") - of("paper_view") - of("expand") - of("display");
     let queued_max = rows.iter().map(|r| r.frame.queued).max().unwrap_or(0);
-    // At full pressure; a narrow tip spaces its dabs by its short side.
-    let spacing_px = brush.spacing * brush.size * brush.aspect;
+    // At full pressure, as the stroke spaces them.
+    let spacing_px = brush.dab_spacing(&brush.factors(&Sample {
+        pressure: 1.0,
+        ..Default::default()
+    }))[1];
     let thirds = rows
         .chunks(rows.len().div_ceil(3).max(1))
         .map(|part| {
@@ -497,6 +533,7 @@ fn run_case(case: &Case) -> Result<Summary, String> {
         paper: case.paper,
         over_wet: case.over_wet,
         stroke_px,
+        pen_px_per_second: case.speed,
         pen_seconds,
         dabs,
         dabs_asked_per_second: dabs as f64 / pen_seconds,
@@ -571,7 +608,11 @@ fn print(summary: &Summary) {
     }
 }
 
-pub(crate) fn run(path: &std::path::Path, filter: Option<&str>) -> Result<(), String> {
+pub(crate) fn run(
+    path: &std::path::Path,
+    filter: Option<&str>,
+    images: Option<&std::path::Path>,
+) -> Result<(), String> {
     if path.extension().and_then(|e| e.to_str()) != Some("json") {
         return Err("The report must have a .json extension".into());
     }
@@ -581,7 +622,7 @@ pub(crate) fn run(path: &std::path::Path, filter: Option<&str>) -> Result<(), St
         if filter.is_some_and(|f| !case.name.to_lowercase().contains(&f.to_lowercase())) {
             continue;
         }
-        let summary = run_case(&case)?;
+        let summary = run_case(&case, images)?;
         print(&summary);
         summaries.push(summary);
     }

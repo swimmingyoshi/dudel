@@ -401,6 +401,18 @@ pub struct Factors {
     pub color: Option<crate::brush_graph::ColorShift>,
 }
 
+/// The closest wet and blur dabs lie, as a share of the tip's long side.
+///
+/// Spacing is a share of the short side, so a narrow tip asks for very many
+/// dabs: a 300 px tip a third as wide, at 5%, one every 4.5 px. Each wet or
+/// blur dab copies and softens everything under it, and a stroke of them
+/// fell seconds behind the pen.
+///
+/// The floor is kept this low on purpose. Wet dabs build on one another, so
+/// fewer of them show: at 3% of the long side the edge of that stroke is
+/// faintly ribbed, at 4% plainly. At 2% the stroke looks as it did. Round
+/// tips never come near it.
+pub const SOFT_DAB_SPACING: f32 = 0.02;
 impl Brush {
     /// The brush graph's results for this dab, when the brush has a graph.
     pub fn graph_values(
@@ -443,6 +455,19 @@ impl Brush {
             spacing: graph.spacing.unwrap_or_else(|| self.plain_spacing(sample)),
             color: graph.color,
         }
+    }
+    /// Distance from one dab to the next: what the settings ask for, and
+    /// what the stroke uses. They differ when a wet or blur brush is held to
+    /// `SOFT_DAB_SPACING`; each dab then delivers more, by their ratio.
+    pub fn dab_spacing(&self, factors: &Factors) -> [f32; 2] {
+        let asked =
+            (self.size * self.aspect * self.spacing * factors.size * factors.spacing).max(0.5);
+        let floor = if matches!(self.blend, Blend::Wet | Blend::Blur) {
+            self.size * factors.size * SOFT_DAB_SPACING
+        } else {
+            0.0
+        };
+        [asked, asked.max(floor)]
     }
     pub fn size_factor(&self, sample: &crate::stroke::Sample) -> f32 {
         let graph = self.graph_values(sample).and_then(|v| v.size);
@@ -656,6 +681,56 @@ impl Brush {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wet_and_blur_dabs_keep_a_share_of_the_long_side_between_them() {
+        let sample = crate::stroke::Sample {
+            pressure: 1.0,
+            ..Default::default()
+        };
+        let chisel = |blend| Brush {
+            size: 300.0,
+            aspect: 0.3,
+            spacing: 0.05,
+            pressure_size: false,
+            blend,
+            ..Brush::default()
+        };
+        let spacing = |brush: &Brush| brush.dab_spacing(&brush.factors(&sample));
+        for blend in [Blend::Paint, Blend::Smudge] {
+            assert_eq!(spacing(&chisel(blend)), [4.5, 4.5]);
+        }
+        for blend in [Blend::Wet, Blend::Blur] {
+            assert_eq!(spacing(&chisel(blend)), [4.5, 6.0]);
+        }
+        // The floor follows the size of the dab, not of the brush.
+        let light = crate::stroke::Sample {
+            pressure: 0.5,
+            ..Default::default()
+        };
+        let by_pressure = Brush {
+            pressure_size: true,
+            ..chisel(Blend::Wet)
+        };
+        let factors = by_pressure.factors(&light);
+        let [asked, used] = by_pressure.dab_spacing(&factors);
+        assert!(factors.size < 1.0 && asked < used);
+        assert!((used - 300.0 * factors.size * SOFT_DAB_SPACING).abs() < 1e-4);
+    }
+
+    #[test]
+    fn no_built_in_brush_is_held_to_wider_spacing() {
+        for brush in crate::workspace::default_brushes() {
+            for pressure in [0.1, 0.5, 1.0] {
+                let sample = crate::stroke::Sample {
+                    pressure,
+                    ..Default::default()
+                };
+                let [asked, used] = brush.dab_spacing(&brush.factors(&sample));
+                assert_eq!(asked, used, "{} at pressure {pressure}", brush.name);
+            }
+        }
+    }
     #[test]
     fn asset_hash_cache_invalidates_on_mutation_and_keeps_wire_format() {
         let mut alpha: TipAlpha = vec![10, 20, 30].into();

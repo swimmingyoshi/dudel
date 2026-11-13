@@ -61,6 +61,9 @@ pub(crate) struct DabRaster {
     radius: f32,
     opacity: f32,
     interval_ratio: Option<f32>,
+    /// How many dabs this one stands for, when the brush is held to wider
+    /// spacing than it asks for (`Brush::dab_spacing`).
+    held: Option<f32>,
     flow_lookup: Option<crate::brush_edge::FlowLookup>,
     sin: f32,
     cos: f32,
@@ -77,6 +80,48 @@ pub(crate) struct DabRaster {
     /// Stroke direction in degrees, once the stroke has moved: thick paint
     /// streaks run along it.
     pub(crate) heading: Option<f32>,
+}
+/// How far a tip reaches left and right, and up and down, of its center:
+/// the extent of the turned ellipse or rectangle with its soft outer pixel
+/// (`brush_edge::coverage_with_profile` is zero past it). Infinite when it
+/// cannot be worked out, and for tips of a pixel or less, which are sampled
+/// around each pixel.
+fn tip_extent(
+    radius: f32,
+    aspect: f32,
+    square: bool,
+    map: crate::symmetry::Map,
+    sin: f32,
+    cos: f32,
+) -> [f32; 2] {
+    if radius <= 1.0 {
+        return [f32::INFINITY; 2];
+    }
+    // Canvas offsets to tip axes, in pixels: along the long side, across it.
+    let a = [
+        cos * map[0] + sin * map[2],
+        cos * map[1] + sin * map[3],
+        -sin * map[0] + cos * map[2],
+        -sin * map[1] + cos * map[3],
+    ];
+    let det = a[0] * a[3] - a[1] * a[2];
+    if det.abs() <= 1e-6 || det.is_nan() {
+        return [f32::INFINITY; 2];
+    }
+    // Coverage ends half a pixel of the short side past the edge, in tip
+    // units, which is further along the long side.
+    let (long, short) = (radius + 0.5 / aspect, radius * aspect + 0.5);
+    let reach = |along: f32, across: f32| {
+        let (along, across) = (along * long, across * short);
+        let reach = if square {
+            along.abs() + across.abs()
+        } else {
+            along.hypot(across)
+        };
+        // Half a pixel spare for rounding.
+        reach / det.abs() + 0.5
+    };
+    [reach(a[3], a[1]), reach(a[2], a[0])]
 }
 impl DabRaster {
     pub fn new(
@@ -98,34 +143,46 @@ impl DabRaster {
                 .unwrap_or_else(|| (diameter * brush.spacing).max(0.5))
                 / reference
         });
+        // A wet or blur brush held to wider spacing than it asks for lays
+        // fewer dabs; each delivers more, so the stroke builds up as it
+        // would have.
+        let [asked, used] = brush.dab_spacing(&factors);
+        let held = (used > asked && brush.opacity > 0.0).then(|| used / asked);
         let flow_lookup = interval_ratio.and_then(|ratio| {
             (opacity > 0.0 && opacity <= brush.opacity * 0.95)
                 .then(|| crate::brush_edge::FlowLookup::new(opacity / brush.opacity, ratio))
         });
         let angle = brush.angle + sample.rotation.unwrap_or(0.0);
         let (sin, cos) = angle.to_radians().sin_cos();
-        let extent = 0.5
-            + if matches!(
-                brush.tip,
-                crate::brush::Tip::Square | crate::brush::Tip::Image
-            ) {
+        let square = matches!(
+            brush.tip,
+            crate::brush::Tip::Square | crate::brush::Tip::Image
+        );
+        // The square around the long side, and inside it the box the turned
+        // tip really reaches: a narrow tip covers a fraction of the square,
+        // and a wet dab copies and blurs its whole box.
+        let full = 0.5
+            + if square {
                 radius * std::f32::consts::SQRT_2
             } else {
                 radius
             };
+        let [extent_x, extent_y] =
+            tip_extent(radius, brush.aspect, square, map, sin, cos).map(|tight| tight.min(full));
         Self {
             position: [x, y],
             radius,
             opacity,
             interval_ratio,
+            held,
             flow_lookup,
             sin,
             cos,
             map,
-            left: ((x - extent).floor() as i32).max(0),
-            right: ((x + extent).ceil() as i32).min(width as i32 - 1),
-            top: ((y - extent).floor() as i32).max(0),
-            bottom: ((y + extent).ceil() as i32).min(height as i32 - 1),
+            left: ((x - extent_x).floor() as i32).max(0),
+            right: ((x + extent_x).ceil() as i32).min(width as i32 - 1),
+            top: ((y - extent_y).floor() as i32).max(0),
+            bottom: ((y + extent_y).ceil() as i32).min(height as i32 - 1),
             smear: [0.0; 2],
             color_shift: factors.color,
             secondary: None,
@@ -1873,6 +1930,7 @@ impl Document {
         let radius = raster.radius;
         let opacity = raster.opacity;
         let interval_ratio = raster.interval_ratio;
+        let held = raster.held;
         let flow_lookup = &raster.flow_lookup;
         let (sin, cos) = (raster.sin, raster.cos);
         let map = raster.map;
@@ -2069,6 +2127,12 @@ impl Document {
                     a = (a * paper.pool(px as usize, py as usize, brush.granulation))
                         .min(brush.opacity);
                 }
+            }
+            // After the paper, so each of the dabs this one stands for
+            // would have met the same tooth.
+            if let Some(ratio) = held {
+                a = brush.opacity
+                    * crate::brush_edge::compensated_delivery(a / brush.opacity, ratio);
             }
             if a <= 0.0 {
                 return None;
@@ -3949,6 +4013,138 @@ mod tests {
         assert!(narrow.layers[0].pixels[(16 * 32 + 22) * 4 + 3] > 0);
         assert_eq!(vertical.layers[0].pixels[(16 * 32 + 22) * 4 + 3], 0);
         assert!(vertical.layers[0].pixels[(22 * 32 + 16) * 4 + 3] > 0);
+    }
+    #[test]
+    fn a_turned_narrow_tip_paints_the_same_pixels_from_its_tight_box() {
+        use crate::brush::Tip;
+        let maps = [
+            crate::symmetry::IDENTITY,
+            [-1.0, 0.0, 0.0, 1.0],
+            [0.0, -1.0, 1.0, 0.0],
+        ];
+        let sample = crate::stroke::Sample {
+            x: 80.3,
+            y: 77.6,
+            pressure: 1.0,
+            ..Default::default()
+        };
+        let area = |r: &DabRaster| (r.right - r.left + 1) * (r.bottom - r.top + 1);
+        let (mut smaller, mut painted) = (0, 0);
+        for tip in [Tip::Round, Tip::Square] {
+            for aspect in [1.0, 0.3, 0.05] {
+                for angle in [0.0, 30.0, 45.0, 90.0, 137.0] {
+                    for (size, hardness) in [(1.5, 1.0), (3.0, 0.2), (40.0, 1.0), (120.0, 0.2)] {
+                        for map in maps {
+                            let brush = Brush {
+                                size,
+                                aspect,
+                                angle,
+                                tip,
+                                hardness,
+                                pressure_size: false,
+                                ..Brush::default()
+                            };
+                            let tight = DabRaster::new(sample, &brush, map, 160, 160);
+                            // The square around the long side: the box every
+                            // dab had before.
+                            let mut full = DabRaster::new(sample, &brush, map, 160, 160);
+                            let extent = 0.5
+                                + size / 2.0
+                                    * if tip == Tip::Square {
+                                        std::f32::consts::SQRT_2
+                                    } else {
+                                        1.0
+                                    };
+                            full.left = ((sample.x - extent).floor() as i32).max(0);
+                            full.right = ((sample.x + extent).ceil() as i32).min(159);
+                            full.top = ((sample.y - extent).floor() as i32).max(0);
+                            full.bottom = ((sample.y + extent).ceil() as i32).min(159);
+                            assert!(
+                                tight.left >= full.left
+                                    && tight.right <= full.right
+                                    && tight.top >= full.top
+                                    && tight.bottom <= full.bottom
+                            );
+                            smaller += usize::from(area(&tight) < area(&full));
+                            let paint = |raster: &DabRaster| {
+                                let mut doc = Document::new(160, 160);
+                                doc.paint_dab_rows(
+                                    raster,
+                                    &brush,
+                                    [20, 60, 200],
+                                    false,
+                                    None,
+                                    raster.top,
+                                    raster.bottom,
+                                );
+                                doc.layers[0].pixels.as_slice().to_vec()
+                            };
+                            let (a, b) = (paint(&tight), paint(&full));
+                            painted += usize::from(a.iter().any(|v| *v != 0));
+                            assert!(
+                                a == b,
+                                "{tip:?} {size} px, aspect {aspect}, {angle} degrees, {map:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(smaller > 100 && painted > 300, "{smaller} {painted}");
+        // The tip of the lag report: a third as wide as long, at 45 degrees.
+        let chisel = Brush {
+            size: 300.0,
+            aspect: 0.3,
+            angle: 45.0,
+            pressure_size: false,
+            ..Brush::default()
+        };
+        let at = crate::stroke::Sample {
+            x: 400.0,
+            y: 400.0,
+            pressure: 1.0,
+            ..Default::default()
+        };
+        let raster = DabRaster::new(at, &chisel, crate::symmetry::IDENTITY, 800, 800);
+        assert!(area(&raster) * 100 < 302 * 302 * 60, "{}", area(&raster));
+        let level = Brush {
+            angle: 0.0,
+            ..chisel
+        };
+        let raster = DabRaster::new(at, &level, crate::symmetry::IDENTITY, 800, 800);
+        assert!(raster.right - raster.left >= 300 && raster.bottom - raster.top <= 94);
+    }
+    #[test]
+    fn a_wet_dab_held_to_wider_spacing_delivers_more() {
+        let at = crate::stroke::Sample {
+            x: 400.0,
+            y: 400.0,
+            pressure: 1.0,
+            ..Default::default()
+        };
+        let paint = Brush {
+            size: 300.0,
+            aspect: 0.3,
+            spacing: 0.05,
+            pressure_size: false,
+            ..Brush::default()
+        };
+        let wet = Brush {
+            blend: crate::brush::Blend::Wet,
+            ..paint.clone()
+        };
+        let ratio =
+            |brush: &Brush| DabRaster::new(at, brush, crate::symmetry::IDENTITY, 800, 800).held;
+        assert_eq!(ratio(&paint), None);
+        // Asked 4.5 px, held to 6 px.
+        assert!((ratio(&wet).unwrap() - 6.0 / 4.5).abs() < 1e-4);
+        // A round wet brush at its usual spacing is left alone.
+        let round = Brush {
+            aspect: 1.0,
+            spacing: 0.08,
+            ..wet
+        };
+        assert_eq!(ratio(&round), None);
     }
     #[test]
     fn history_accounts_for_both_stacks_and_variable_layer_sizes() {

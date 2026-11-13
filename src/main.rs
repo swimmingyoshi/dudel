@@ -1906,11 +1906,12 @@ fn run() -> eframe::Result {
     }
     if mode.as_deref() == Some("--profile-stroke") {
         let Some(report) = args.next().map(PathBuf::from) else {
-            eprintln!("Usage: --profile-stroke REPORT.json [CASE NAME FILTER]");
+            eprintln!("Usage: --profile-stroke REPORT.json [CASE NAME FILTER] [IMAGE FOLDER]");
             std::process::exit(1);
         };
         let filter = args.next();
-        if let Err(error) = stroke_profile::run(&report, filter.as_deref()) {
+        let images = args.next().map(PathBuf::from);
+        if let Err(error) = stroke_profile::run(&report, filter.as_deref(), images.as_deref()) {
             eprintln!("Stroke profile: {error}");
             std::process::exit(1);
         }

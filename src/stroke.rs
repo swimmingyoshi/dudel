@@ -166,8 +166,7 @@ impl Stroke {
         self.zoom = 1.0;
     }
     fn spacing(brush: &Brush, sample: &Sample) -> f32 {
-        let factors = brush.factors(sample);
-        (brush.size * brush.aspect * brush.spacing * factors.size * factors.spacing).max(0.5)
+        brush.dab_spacing(&brush.factors(sample))[1]
     }
     fn random_value(index: u32, seed: u32) -> f32 {
         let mut hash = index.wrapping_add(seed).wrapping_add(1);

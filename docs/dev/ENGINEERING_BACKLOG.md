@@ -13,9 +13,10 @@ find; delete what turns out not to matter, with a line saying why.
 With a paper set on the canvas, a wet brush is "kind of ok", but on long
 strokes with pen pressure the line starts to fall behind the pen.
 
-Measured the same day with the tools below. No engine code was changed. The
-cause is narrowed down but not confirmed on the owner's own strokes: the next
-step is a trace from a real pen session.
+Measured the same day with the tools below, reproduced with the owner's own
+brush the day after, and partly fixed on 2026-11-13 (see "Fixes applied").
+An unhurried stroke with that brush now keeps up; a fast one still falls
+behind, by less than half as much.
 
 ### The tools
 
@@ -136,45 +137,88 @@ above is far enough over the limit that these cannot change the conclusion.
 - [x] A repeatable stroke (scripted; `--replay-input` was not needed).
 - [x] Which stage costs most, and which grows with the stroke (none does).
 - [x] The owner's brush, size and canvas (2026-11-12), reproduced above.
-- [ ] A trace of the owner's own stroke (`DUDEL_TRACE_STROKE`) is now
-      optional: useful to check a fix on the real pen. If "frame to frame"
+- [ ] A trace of the owner's own stroke (`DUDEL_TRACE_STROKE`) would show
+      how fast the pen really moves, which decides whether the fixes
+      applied are enough. If "frame to frame"
       is well above "CPU per frame", the display or GPU is holding frames
       back; if "rest of the interface" is large, the side panels are.
 
-### Fixes, in the order they should pay off (none started)
+### Fixes applied (2026-11-13)
 
-The owner's case needs about three times less painting per second of stroke
-before it keeps up, so the first three matter most there; a larger budget
-alone cannot close that gap.
+Same scripted strokes as above, same PC. "Before" is 1baebd8.
 
-- [ ] **Fewer wet dabs from narrow tips.** A wet dab softens 24 px around
-      itself; laying one every 4.5 px repeats nearly the same work. Give
-      wet (and blur) dabs a spacing floor tied to the long side or the blur
-      reach, with flow adjusted so a stroke builds up as before. Changes the
-      look slightly: compare before and after on the brush previews.
-- [ ] **A tight box for narrow and turned tips** in `DabRaster::new`: the
-      ellipse's real extent instead of the long radius. Same pixels for
-      plain paint; a wet dab's blur sees a smaller area, so its result
-      differs minutely. About half the work at 45 degrees, more when the tip
-      is level or upright.
+| Case | ms per dab, before | now | Behind at pen lift, before | now | Finished after lift, before | now |
+|---|---|---|---|---|---|---|
+| Chisel marker 300 px, wet 50%, pen at 1,800 px/s | 5.82 | 3.38 | 853 dabs | 364 dabs | 8.1 s | 2.3 s |
+| The same, pen at 600 px/s | not run | 3.20 | not run | 0 dabs | not run | 0.05 s |
+| The same with size by pressure | 1.86 | 1.17 | 1,837 dabs | 646 dabs | 6.2 s | 1.6 s |
+| Watercolor wash 300 px | 8.07 | 6.28 | 2 dabs | 1 dab | 0.12 s | 0.10 s |
+| Watercolor wash 150 px | 2.64 | 2.39 | 0 dabs | 0 dabs | 0.03 s | 0.05 s |
+
+- [x] **A tight box for narrow and turned tips** (`document::tip_extent`):
+      the turned ellipse's real reach instead of the square around its long
+      side. Plain paint is the same bit for bit (tested over 360 tips); a
+      wet dab's blur sees a smaller area and differs by at most 4 levels.
+- [x] **The copy under the dab across cores** (`blend_brush::capture`), in
+      row bands. Same pixels.
+- [x] **The blur's column pass across cores**, in strips of columns. Each
+      column keeps its sums in the same order, so the result is the same bit
+      for bit (the existing line-by-line test covers it).
+- [x] **A spacing floor for wet and blur dabs**: 2% of the tip's long side
+      (`brush::SOFT_DAB_SPACING`), with each held dab delivering more
+      (`DabRaster::held`, applied after the paper so the tooth still
+      shows). The owner's brush goes from a dab every 4.5 px to every 6 px.
+      No built-in brush is affected.
+
+Round wet brushes and plain paint come out pixel-identical to before in the
+scripted cases. The wet Chisel marker differs by 0.13 levels on average
+(at most 29, on 0.04% of the canvas) and looks the same at 200%.
+
+**What was tried and dropped, so nobody repeats it:**
+
+- **A wider floor.** At 4% of the long side (12 px) the fast stroke keeps
+  up, but the stroke's edge is plainly ribbed, one rib per dab, and at 3%
+  faintly. Comparison images: `benchmarks/stroke-profile/look-comparison.png`
+  (local only).
+- **Sweeping each held dab's coverage back to the previous dab**, as if the
+  tip were dragged. The ribs stayed. They do not come from the outline:
+  each wet dab mixes the paint under it toward a blurred copy and then
+  lays paint on top, so what a pixel ends up with depends on its last few
+  dabs, and with few dabs that depends on where the pixel sits between
+  them. Only many small steps average this out.
+
+### What is left for the fast stroke
+
+The owner's brush at 1,800 px/s still asks for 300 dabs a second at 3.4 ms:
+about one second of painting per second of stroke, against the 8 ms of each
+frame painting may use (about half a second per second).
+
+- [ ] **Let painting use more of the time.** Either paint off the interface
+      thread, so a frame's wait for the display is not lost, or let the
+      budget follow what the rest of the frame really costs. This is the
+      one that closes the gap without changing the look.
+- [ ] **Coverage and blending** are now the larger half of a wet dab
+      (0.96 ms and 0.78 ms of 3.4 ms; 2.3 ms and 1.6 ms of 6.3 ms for the
+      round 300 px wash). Coverage works out every pixel of the box and
+      then the blend asks again for the covered ones.
 - [ ] **Paper height once per pixel.** `Paper::hold` and `Paper::pool` each
       work out `height`, which takes the sine and cosine of the paper
-      direction and two noise lookups, for every pixel of every dab.
-      Overlapping dabs repeat the same pixels about twelve times. Work it out
-      once per pixel per dab first (same result, bit for bit), then consider
-      keeping heights per tile.
-- [ ] **Let painting use the frame's spare time.** The 8 ms limit leaves
-      half of a 60 Hz frame unused while dabs wait. Raise it while trailing,
-      or move painting off the frame.
-- [ ] **The copy under the dab** (`blend_brush::capture`) reads pixel by
-      pixel through a closure on one thread: read rows from the layer's
-      tiles, in bands.
-- [ ] **Blur less.** Each dab blurs its whole area twice although nearly
-      all of it was blurred for the previous dab.
+      direction and two noise lookups, for every pixel of every dab. Work
+      it out once per pixel per dab first (same result, bit for bit), then
+      consider keeping heights per tile. Matters for granulating brushes
+      (half of the wash's coverage time), not for the Chisel marker.
+- [ ] **Blur less.** Each dab still blurs its whole area twice although
+      nearly all of it was blurred for the previous dab. Any shortcut here
+      changes the result and needs the same look comparison.
+- [ ] **Owner's choice: a wider floor as a brush setting.** If a ribbed
+      edge is acceptable for a given brush, 4% cures the lag outright.
 - [ ] **Small wet dabs:** make the pixel-by-pixel path cheaper (coverage a
       row at a time, writes a tile span at a time) or paint several small
       dabs across cores.
 - [ ] **Paper view tiles on a background worker.**
+- [ ] `render_region::dab_bounds` still reports the square around the long
+      side times 1.41 as painted, so the display refreshes more than a
+      narrow dab touched.
 
 ## 2. Performance still on the table
 
@@ -191,8 +235,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 | Thick paint | 4.9 ms | 3.5 ms |
 | Drying step, 2-megapixel wash, time on the UI thread | 57 to 107 ms | 6 to 7 ms |
 
-- [ ] **Wet brush lag** (section 1, which has the measured costs per stage
-      and the fixes in order).
+- [ ] **Wet brush lag** (section 1: what was fixed on 2026-11-13, the
+      measured costs per stage and what is left).
 - [ ] **Planning a drying step** takes 34 to 100 ms on a 2-megapixel wash. It
       runs in the background now, so the window stays smooth, but the wash
       dries slowly. `wet::plan` allocates five buffers per 32 px tile.
@@ -202,8 +246,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
       smudge.
 - [ ] **Pigment mixing** is the remaining cost on watercolor and thick paint
       layers (`pigment::mix`: 16 bands per mix, behind a 4096-slot cache).
-- [ ] **`blend_brush::capture`** reads its area pixel by pixel; read rows
-      from the layer's tiles instead.
+- [ ] **`blend_brush::capture`** now copies in row bands across cores but
+      still asks for each pixel; read rows from the layer's tiles instead.
 - [ ] **Affine relief follow** still scans the whole canvas.
 - [ ] **A recorded baseline.** Turn `painting_cost` and `drying_cost` into a
       script that writes a JSON file under `benchmarks/`, so a regression
