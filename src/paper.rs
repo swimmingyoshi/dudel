@@ -91,12 +91,56 @@ impl Paper {
     }
     /// Surface height at a pixel: 0 the deepest valley, 1 a peak.
     pub fn height(&self, x: usize, y: usize) -> f32 {
-        let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
+        self.surface().height(x, y)
+    }
+    /// The paper ready to be asked about many pixels: its direction worked
+    /// out once instead of at every pixel.
+    pub fn surface(&self) -> Surface {
         let (sin, cos) = self.direction.to_radians().sin_cos();
+        Surface {
+            paper: *self,
+            sin,
+            cos,
+        }
+    }
+    /// Granulation: how much more (above 1) or less paint settles at a
+    /// pixel of this `height`, valleys collecting it.
+    pub fn pool_at(&self, height: f32, granulation: f32) -> f32 {
+        (1.0 + granulation * self.roughness.max(0.3) * (0.5 - height) * 3.0).clamp(0.15, 2.0)
+    }
+    /// The share of a dab's paint that lands at a pixel of this `height`.
+    /// `delivery` is how strongly the dab paints there (0 to 1, its alpha
+    /// over the brush's opacity); `response` is the brush's Paper texture
+    /// setting.
+    pub fn hold_at(&self, height: f32, delivery: f32, response: f32) -> f32 {
+        let depth = (1.0 - height) * self.roughness * response;
+        if depth <= 0.0 {
+            return 1.0;
+        }
+        // Paint reaches as deep as the dab pushes it, plus what the paper
+        // draws in; a soft threshold keeps the grain from aliasing.
+        let reach = delivery + self.absorbency * 0.35;
+        ((reach - depth) / 0.2 + 0.5).clamp(0.0, 1.0)
+    }
+}
+
+/// A paper with its direction worked out (`Paper::surface`).
+#[derive(Clone, Copy, Debug)]
+pub struct Surface {
+    pub paper: Paper,
+    sin: f32,
+    cos: f32,
+}
+
+impl Surface {
+    /// How high the paper stands at a pixel: 0 a valley, 1 a peak.
+    pub fn height(&self, x: usize, y: usize) -> f32 {
+        let Self { paper, sin, cos } = *self;
+        let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
         // Along and across the paper's direction, in bumps.
-        let u = (x * cos + y * sin) / self.scale;
-        let v = (-x * sin + y * cos) / self.scale;
-        match self.pattern {
+        let u = (x * cos + y * sin) / paper.scale;
+        let v = (-x * sin + y * cos) / paper.scale;
+        match paper.pattern {
             Pattern::Grain => 0.65 * noise(u, v, 1) + 0.35 * noise(u * 2.3, v * 2.3, 2),
             Pattern::Weave => {
                 // Threads alternate over and under; each bulges mid-crossing.
@@ -118,25 +162,6 @@ impl Paper {
             }
         }
         .clamp(0.0, 1.0)
-    }
-    /// Granulation: how much more (above 1) or less paint settles at a
-    /// pixel, valleys collecting it.
-    pub fn pool(&self, x: usize, y: usize, granulation: f32) -> f32 {
-        (1.0 + granulation * self.roughness.max(0.3) * (0.5 - self.height(x, y)) * 3.0)
-            .clamp(0.15, 2.0)
-    }
-    /// The share of a dab's paint that lands at a pixel. `delivery` is how
-    /// strongly the dab paints there (0 to 1, its alpha over the brush's
-    /// opacity); `response` is the brush's Paper texture setting.
-    pub fn hold(&self, x: usize, y: usize, delivery: f32, response: f32) -> f32 {
-        let depth = (1.0 - self.height(x, y)) * self.roughness * response;
-        if depth <= 0.0 {
-            return 1.0;
-        }
-        // Paint reaches as deep as the dab pushes it, plus what the paper
-        // draws in; a soft threshold keeps the grain from aliasing.
-        let reach = delivery + self.absorbency * 0.35;
-        ((reach - depth) / 0.2 + 0.5).clamp(0.0, 1.0)
     }
 }
 

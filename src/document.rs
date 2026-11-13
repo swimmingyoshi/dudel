@@ -2029,7 +2029,9 @@ impl Document {
         // Paper tooth holds back paint laid on artwork, and granulating
         // paint settles in its valleys; erasing, smudging and mask painting
         // ignore the paper.
-        let paper = paper.filter(|_| target.is_raster() && !erase && !brush.blend.moves_paint());
+        let paper = paper
+            .filter(|_| target.is_raster() && !erase && !brush.blend.moves_paint())
+            .map(|paper| paper.surface());
         // A graph that sets color gives this dab its own color, mixed into
         // the stroke pixel by pixel.
         let tracking = raster.color_shift.is_some() && !erase;
@@ -2114,18 +2116,21 @@ impl Document {
                         |lookup| lookup.evaluate(a / opacity),
                     );
             }
-            if let Some(paper) = &paper {
+            if let Some(surface) = &paper
+                && (paper_response > 0.0 || brush.granulation > 0.0)
+            {
+                // Once per pixel for both.
+                let height = surface.height(px as usize, py as usize);
+                let paper = &surface.paper;
                 if paper_response > 0.0 {
-                    a *= paper.hold(
-                        px as usize,
-                        py as usize,
+                    a *= paper.hold_at(
+                        height,
                         a / brush.opacity.max(f32::MIN_POSITIVE),
                         paper_response,
                     );
                 }
                 if brush.granulation > 0.0 {
-                    a = (a * paper.pool(px as usize, py as usize, brush.granulation))
-                        .min(brush.opacity);
+                    a = (a * paper.pool_at(height, brush.granulation)).min(brush.opacity);
                 }
             }
             // After the paper, so each of the dabs this one stands for

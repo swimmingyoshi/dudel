@@ -315,6 +315,28 @@ no paper), the longest 3.8 s and 1,586 dabs.
   more than 20 ms after the one before, and only one frame had 64 or more
   dabs waiting, so the longest painting turn almost never ran.
 
+### After closing: the paper (2026-11-13)
+
+The owner's first report was with a paper set; the confirming traces had
+none. The next fix on the list, done afterwards:
+
+- [x] **Paper height once per pixel** (`paper::Surface`). The paper's
+      direction is worked out once per dab instead of at every pixel, and
+      the height once per pixel for both the tooth and granulation instead
+      of once for each. Every canvas the profile paints is byte for byte
+      the same.
+
+| Case (with Cold-pressed paper) | Coverage per dab, before | after | ms per dab, before | after |
+|---|---|---|---|---|
+| Watercolor wash 300 px | 1.50 ms | 1.01 ms | 3.52 | 3.08 |
+| Watercolor wash 150 px | 0.72 ms | 0.44 ms | 1.55 | 1.27 |
+| Watercolor wash 60 px | 0.63 ms | 0.53 ms | 0.77 | 0.68 |
+| Chisel marker 300 px, wet 50% | 0.53 ms | 0.50 ms | 1.48 | 1.44 |
+
+The Chisel marker gains little: it has no granulation, so it asked for the
+height once already; what is left of its paper cost (about 0.2 ms) is the
+noise itself.
+
 ### If it comes back
 
 - [ ] At faster strokes (4,000 px/s scripted, 137 dabs behind at lift),
@@ -327,12 +349,9 @@ no paper), the longest 3.8 s and 1,586 dabs.
 - [ ] **Paint off the interface thread**, so painting does not compete with
       showing frames at all. Larger change; only if the above is not
       enough.
-- [ ] **Paper height once per pixel.** `Paper::hold` and `Paper::pool` each
-      work out `height`, which takes the sine and cosine of the paper
-      direction and two noise lookups, for every pixel of every dab. Work
-      it out once per pixel per dab first (same result, bit for bit), then
-      consider keeping heights per tile. Two thirds of the round 300 px
-      wash's coverage time is the paper (1.66 ms with, 0.54 ms without).
+- [x] **Paper height once per pixel** (done after closing, above). Next
+      would be keeping heights per tile, so overlapping dabs stop asking
+      for the same noise.
 - [ ] **Blur less.** Each dab still blurs its whole area twice although
       nearly all of it was blurred for the previous dab. Any shortcut here
       changes the result and needs the same look comparison.
