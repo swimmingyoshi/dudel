@@ -14,6 +14,11 @@ struct Tile {
     /// The texture is a quick one (a pixel per `level` square) still to be
     /// replaced by the exact composite.
     rough: bool,
+    /// The next composite is exact, never quick: a stroke changed part of a
+    /// tile already shown at its level. A quick tile there samples the
+    /// paint differently from the exact one around it, so a grainy brush
+    /// flickered in tile-shaped patches while it painted.
+    exact: bool,
 }
 
 /// Uniform padded tiles sample identically from a single texel at every zoom
@@ -882,6 +887,7 @@ impl CanvasTextures {
                 first: Color32::WHITE,
                 signature: Vec::new(),
                 rough: false,
+                exact: false,
             })
             .collect();
         self.pending = vec![None; self.tiles.len()];
@@ -1042,6 +1048,17 @@ impl CanvasTextures {
             } else {
                 None
             };
+            // Marked even while a job composites the tile: this damage
+            // comes after it, and the next pass must be exact too.
+            if full || resolution_changed || tile.texture.is_none() {
+                // A full redraw, a new tile or a new resolution: quick tiles
+                // show it soonest.
+                tile.exact = false;
+            } else if dirty.is_some_and(|dirty| {
+                dirty_rect(tile.bounds, dirty, doc.width, doc.height).is_some()
+            }) {
+                tile.exact = true;
+            }
             if let Some(rect) = local {
                 self.pending[index] = Some(self.pending[index].map_or(rect, |old| {
                     [
@@ -1133,11 +1150,12 @@ impl CanvasTextures {
                 };
                 // Whole tiles shown reduced are first composited one pixel per
                 // shown texel, so a large change appears quickly.
-                let step = if !refine && use_worker && local == full {
+                let step = if !refine && use_worker && local == full && !self.tiles[index].exact {
                     self.levels[index]
                 } else {
                     1
                 };
+                self.tiles[index].exact = false;
                 let tile = self.tiles[index].bounds;
                 let mut source_rect = tile_source_rect(tile, local, doc);
                 // Join neighbours on the same row needing the same work, left
@@ -1159,12 +1177,17 @@ impl CanvasTextures {
                             })
                         } else if step > 1 {
                             self.pending[neighbour]
-                                .filter(|local| *local == full && self.levels[neighbour] == step)
+                                .filter(|local| {
+                                    *local == full
+                                        && self.levels[neighbour] == step
+                                        && !self.tiles[neighbour].exact
+                                })
                                 .and_then(|_| self.pending[neighbour].take())
                         } else {
                             self.pending[neighbour].take()
                         }
                     {
+                        self.tiles[neighbour].exact = false;
                         let bounds = self.tiles[neighbour].bounds;
                         let rect = tile_source_rect(bounds, local, doc);
                         source_rect = [
@@ -2638,6 +2661,80 @@ mod tests {
         assert!(textures.tiles.iter().all(|tile| !tile.rough));
         check_viewport_samples(&textures, &doc, &images);
     }
+    #[test]
+    fn a_large_stroke_zoomed_out_never_shows_quick_tiles() {
+        // The owner's recording of 2026-11-13: a 300 px brush on a 2048 px
+        // canvas at 32% flickered in tile-shaped patches, quick tiles around
+        // the brush alternating with exact ones.
+        let (ctx, mut doc, mut textures, _) = zoomed_out_canvas();
+        let mut images = std::collections::HashMap::new();
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        assert!(textures.levels.iter().all(|level| *level == 4));
+        for step in 0..4 {
+            let left = 700 + step * 60;
+            let rect = [left, 800, left + 300, 1100];
+            assert!(cached_footprint(rect, &doc) > SMALL_FOOTPRINT);
+            let color = [40 + step as u8 * 50, 200, 90, 255];
+            doc.layers[0]
+                .pixels
+                .writer()
+                .write_region(doc.width, rect, &color.repeat(300 * 300));
+            let mut damage = crate::render_region::Damage::default();
+            damage.include(rect);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            let under: Vec<usize> = (0..textures.tiles.len())
+                .filter(|i| {
+                    dirty_rect(textures.tiles[*i].bounds, rect, doc.width, doc.height).is_some()
+                })
+                .collect();
+            let mut first = true;
+            // Until every tile under the stroke shows it.
+            while first
+                || under.iter().any(|i| {
+                    !unchanged(&textures.tiles[*i], &doc) || textures.pending[*i].is_some()
+                })
+            {
+                let output = ctx.run(Default::default(), |ctx| {
+                    textures.update_damage(
+                        ctx,
+                        &doc,
+                        false,
+                        if first {
+                            damage.clone()
+                        } else {
+                            Default::default()
+                        },
+                        egui::TextureOptions::LINEAR,
+                        &mut Performance::default(),
+                    );
+                });
+                first = false;
+                retain_images(&mut images, &output.textures_delta).unwrap();
+                // (Tiles far from the view may still be quick from the first
+                // drawing; they refine in their turn.)
+                let quick: Vec<_> = textures
+                    .tiles
+                    .iter()
+                    .filter(|tile| {
+                        tile.rough && dirty_rect(tile.bounds, rect, doc.width, doc.height).is_some()
+                    })
+                    .map(|tile| tile.bounds)
+                    .collect();
+                assert!(
+                    quick.is_empty(),
+                    "quick tiles under the stroke at step {step}: {quick:?}"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the stroke never showed"
+                );
+            }
+        }
+        drain_viewport(&ctx, &mut textures, &doc, &mut images);
+        assert!(textures.tiles.iter().all(|tile| unchanged(tile, &doc)));
+        check_viewport_samples(&textures, &doc, &images);
+    }
+
     #[test]
     fn painting_while_quick_tiles_refine_keeps_the_stroke() {
         let (ctx, mut doc, mut textures, _) = zoomed_out_canvas();
