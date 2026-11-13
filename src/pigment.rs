@@ -216,10 +216,16 @@ fn compute(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     let model = model();
     let la = a.map(linear);
     let lb = b.map(linear);
-    let wa = luminance(la).powf(TINT) * (1.0 - t);
-    let wb = luminance(lb).powf(TINT) * t;
+    // No real pigment reflects nothing. A black that did would weigh nothing
+    // in the mix and vanish into any color, so the model takes anything
+    // darker than byte 10 as byte 10; the residual below keeps the colors
+    // themselves exact.
+    let darkest = linear(10);
+    let (ma, mb) = (la.map(|v| v.max(darkest)), lb.map(|v| v.max(darkest)));
+    let wa = luminance(ma).powf(TINT) * (1.0 - t);
+    let wb = luminance(mb).powf(TINT) * t;
     let share = if wa + wb > 0.0 { wb / (wa + wb) } else { t };
-    let (ra, rb) = (spectrum(model, la), spectrum(model, lb));
+    let (ra, rb) = (spectrum(model, ma), spectrum(model, mb));
     let mixed: [f32; BANDS] =
         std::array::from_fn(|i| reflectance(ks(ra[i]) * (1.0 - share) + ks(rb[i]) * share));
     let out = project(model, &mixed);
@@ -282,6 +288,34 @@ mod tests {
         // Linear mixing would make gray; pigment keeps color.
         let [r, g, b] = green;
         assert!(g > r + 40 && g > b + 40, "{green:?}");
+    }
+
+    #[test]
+    fn pure_black_darkens_strongly_like_a_near_black() {
+        // Black of (0, 0, 0) once weighed nothing and vanished into the
+        // color under it (the owner's report of 2026-11-13).
+        for under in [
+            [250, 220, 20],
+            [220, 30, 30],
+            [255, 255, 255],
+            [20, 40, 200],
+        ] {
+            for t in [0.1, 0.25, 0.5] {
+                let pure = mix(under, [0, 0, 0], t);
+                let near = mix(under, [10, 10, 10], t);
+                let darkened = |c: [u8; 3]| luminance(c.map(linear)) / luminance(under.map(linear));
+                assert!(
+                    darkened(pure) < 0.35,
+                    "{t} of black over {under:?}: {pure:?}"
+                );
+                for c in 0..3 {
+                    assert!(
+                        pure[c].abs_diff(near[c]) <= 6,
+                        "{under:?} {t}: {pure:?} {near:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
