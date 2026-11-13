@@ -7,7 +7,7 @@ but not started. Features and releases are in [ROADMAP.md](ROADMAP.md). Written
 Tick an item when it is done and say where (commit or file). Add what you
 find; delete what turns out not to matter, with a line saying why.
 
-## 1. Open report: the wet brush lags on long strokes
+## 1. Report closed: the wet brush lagged on long strokes
 
 **Reported by the owner, 2026-11-12, after the wet-brush speed-up (8ec6ca4).**
 With a paper set on the canvas, a wet brush is "kind of ok", but on long
@@ -301,12 +301,26 @@ At the speed of the owner's fast stretches (about 2,800 px/s) the wet
 Chisel marker now keeps up at full frame rate in the scripted run. At
 4,000 px/s it still trails and drops frames.
 
-### What is left
+### The owner's verdict on the second round (2026-11-13, build 322e0db)
 
-- [ ] **The owner's verdict on the second round.**
-- [ ] If it still trails at the owner's fastest strokes: **coverage and
-      blend** are now most of a wet dab (0.53 and 0.45 ms of 1.48 ms; the
-      paper is 0.22 ms of the coverage), then the copy (0.21 ms).
+**"It feels much better now."** Low latency was on throughout. The trace of
+that session: ten strokes with the same wet Chisel marker (2048 px canvas,
+no paper), the longest 3.8 s and 1,586 dabs.
+
+- 1.24 ms per dab over the session (1.69 ms on the build before).
+- **Every stroke was fully painted at pen lift.** At most 66 dabs behind,
+  for a moment in a stroke asking 443 dabs a second; the long stroke at
+  most 27.
+- Frames 115 to 180 a second (median per stroke). 22 of 1,617 frames came
+  more than 20 ms after the one before, and only one frame had 64 or more
+  dabs waiting, so the longest painting turn almost never ran.
+
+### If it comes back
+
+- [ ] At faster strokes (4,000 px/s scripted, 137 dabs behind at lift),
+      or with a paper on the canvas: **coverage and blend** are now most of
+      a wet dab (0.53 and 0.45 ms of 1.48 ms with paper; the paper is
+      0.22 ms of the coverage), then the copy (0.21 ms).
 - [ ] **Is 30 to 45 frames a second while far behind acceptable?** If the
       pen cursor feels worse than the shorter queue feels better, lower the
       20 ms or raise the 16 dabs.
@@ -346,8 +360,8 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 | Thick paint | 4.9 ms | 3.5 ms |
 | Drying step, 2-megapixel wash, time on the UI thread | 57 to 107 ms | 6 to 7 ms |
 
-- [ ] **Wet brush lag** (section 1: fixed in the scripted run on
-      2026-11-13; to confirm on the owner's pen).
+- [x] **Wet brush lag** (section 1): the owner confirmed it feels much
+      better on 2026-11-13.
 - [ ] **Planning a drying step** takes 34 to 100 ms on a 2-megapixel wash. It
       runs in the background now, so the window stays smooth, but the wash
       dries slowly. `wet::plan` allocates five buffers per 32 px tile.
