@@ -517,6 +517,27 @@ impl Mask {
     pub(crate) fn writer(&mut self) -> Writer<'_> {
         Writer(self)
     }
+    /// The bytes of `rect` (left, top, right, bottom, exclusive) row by
+    /// row into `out`, a tile's run of a row at a time.
+    pub(crate) fn read_region(&self, rect: [usize; 4], out: &mut [u8]) {
+        let [left, top, right, bottom] = rect;
+        let width = right - left;
+        assert!(right <= self.0.dimensions[0] && bottom <= self.0.dimensions[1]);
+        assert_eq!(out.len(), width * (bottom - top));
+        for (y, row) in (top..bottom).zip(out.chunks_exact_mut(width.max(1))) {
+            let mut x = left;
+            while x < right {
+                let end = ((x / SIDE + 1) * SIDE).min(right);
+                let (tile, offset) = self.0.location(x, y);
+                let run = &mut row[x - left..end - left];
+                match &self.0.tiles[tile] {
+                    Some(bytes) => run.copy_from_slice(&bytes[offset..offset + run.len()]),
+                    None => run.fill(self.0.default),
+                }
+                x = end;
+            }
+        }
+    }
     /// Bulk construction writes each tile once. Per-pixel copy-on-write is useful
     /// for live edits, but unnecessary for an unpublished worker result.
     pub(crate) fn generate(
@@ -800,6 +821,48 @@ impl Writer<'_> {
             .get_or_insert_with(|| Arc::new(vec![data.default; (r - l) * (b - t)]));
         Arc::make_mut(tile)[offset] = value;
         true
+    }
+    /// Store `values` (`rect` row by row, as `Mask::read_region` gives it)
+    /// a tile at a time, the same as `set` on every pixel: tiles where
+    /// nothing changes are left alone, shared or not.
+    pub(crate) fn write_region(&mut self, rect: [usize; 4], values: &[u8]) {
+        let [left, top, right, bottom] = rect;
+        let width = right - left;
+        assert!(right <= self.0.0.dimensions[0] && bottom <= self.0.0.dimensions[1]);
+        assert_eq!(values.len(), width * (bottom - top));
+        if width == 0 {
+            return;
+        }
+        for tile_y in top / SIDE..bottom.div_ceil(SIDE) {
+            for tile_x in left / SIDE..right.div_ceil(SIDE) {
+                let index = tile_y * self.0.0.columns() + tile_x;
+                let [tl, tt, tr, tb] = self.0.0.rect(index);
+                let (l, t, r, b) = (tl.max(left), tt.max(top), tr.min(right), tb.min(bottom));
+                let stride = tr - tl;
+                let source =
+                    |y: usize| &values[(y - top) * width + l - left..(y - top) * width + r - left];
+                let changed = match &self.0.0.tiles[index] {
+                    Some(bytes) => (t..b).any(|y| {
+                        let at = (y - tt) * stride + l - tl;
+                        bytes[at..at + r - l] != *source(y)
+                    }),
+                    None => (t..b).any(|y| source(y).iter().any(|v| *v != self.0.0.default)),
+                };
+                if !changed {
+                    continue;
+                }
+                let data = Arc::make_mut(&mut self.0.0);
+                let default = data.default;
+                let tile = Arc::make_mut(
+                    data.tiles[index]
+                        .get_or_insert_with(|| Arc::new(vec![default; (tr - tl) * (tb - tt)])),
+                );
+                for y in t..b {
+                    let at = (y - tt) * stride + l - tl;
+                    tile[at..at + r - l].copy_from_slice(source(y));
+                }
+            }
+        }
     }
     /// Brush coverage interpolates toward grayscale: black conceals, white reveals.
     pub(crate) fn paint(&mut self, x: usize, y: usize, target: u8, coverage: f32) -> bool {

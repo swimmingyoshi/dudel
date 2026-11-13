@@ -228,23 +228,68 @@ pub(crate) fn dry_paper(paper: Option<crate::paper::Paper>, tooth: f32) -> crate
 /// Bristle streaks: how much paint a bristle at `across` pixels from the
 /// middle of the tip carries, 0.5 to 1. Bristles keep their place across
 /// the tip as it moves, so streaks run along the stroke.
+#[cfg(test)]
 fn bristle(across: f32, radius: f32) -> f32 {
-    let spacing = (radius * 0.16).clamp(1.2, 6.0);
-    let hash = |n: f32, seed: i64| {
-        let n = (n as i64).wrapping_add(seed).wrapping_mul(0x2545_F491) as u64;
-        let n = (n ^ (n >> 15)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        ((n >> 40) & 0xFFFF) as f32 / 65535.0
-    };
-    // Smooth value noise across the tip: wide clumps of bristles, and
-    // single hairs within them, so the ridges are uneven like a real brush.
-    let noise = |t: f32, seed: i64| {
-        let (i, f) = (t.floor(), t - t.floor());
-        let s = f * f * (3.0 - 2.0 * f);
-        hash(i, seed) * (1.0 - s) + hash(i + 1.0, seed) * s
-    };
-    let clumps = noise(across / (spacing * 2.6), 7_919);
-    let hairs = noise(across / spacing, 0);
-    0.5 + 0.5 * (0.55 * clumps + 0.45 * hairs)
+    Bristles::new(radius, [0.0, 0.0]).at(across)
+}
+
+fn bristle_hash(n: f32, seed: i64) -> f32 {
+    let n = (n as i64).wrapping_add(seed).wrapping_mul(0x2545_F491) as u64;
+    let n = (n ^ (n >> 15)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    ((n >> 40) & 0xFFFF) as f32 / 65535.0
+}
+
+/// `bristle` for one dab: the hashes its noise needs across the tip,
+/// worked out once instead of four times a pixel.
+struct Bristles {
+    spacing: f32,
+    /// First noise cell in each table, and the hashes from there on.
+    clumps: (f32, Vec<f32>),
+    hairs: (f32, Vec<f32>),
+}
+
+impl Bristles {
+    /// For `across` between `range[0]` and `range[1]`.
+    fn new(radius: f32, range: [f32; 2]) -> Self {
+        let spacing = (radius * 0.16).clamp(1.2, 6.0);
+        let table = |scale: f32, seed: i64| {
+            let first = (range[0] / scale).floor() - 1.0;
+            let last = (range[1] / scale).floor() + 2.0;
+            let cells = ((last - first).max(0.0) as usize + 1).min(1 << 16);
+            let hashes = (0..cells)
+                .map(|i| bristle_hash(first + i as f32, seed))
+                .collect();
+            (first, hashes)
+        };
+        Self {
+            spacing,
+            clumps: table(spacing * 2.6, 7_919),
+            hairs: table(spacing, 0),
+        }
+    }
+
+    /// How much paint a bristle at `across` pixels from the middle of the
+    /// tip carries, 0.5 to 1.
+    fn at(&self, across: f32) -> f32 {
+        // Smooth value noise across the tip: wide clumps of bristles, and
+        // single hairs within them, so the ridges are uneven like a real brush.
+        let noise = |t: f32, (first, hashes): &(f32, Vec<f32>), seed: i64| {
+            let (i, f) = (t.floor(), t - t.floor());
+            let s = f * f * (3.0 - 2.0 * f);
+            let hash = |n: f32| {
+                let at = n - first;
+                if at >= 0.0 && (at as usize) < hashes.len() {
+                    hashes[at as usize]
+                } else {
+                    bristle_hash(n, seed)
+                }
+            };
+            hash(i) * (1.0 - s) + hash(i + 1.0) * s
+        };
+        let clumps = noise(across / (self.spacing * 2.6), &self.clumps, 7_919);
+        let hairs = noise(across / self.spacing, &self.hairs, 0);
+        0.5 + 0.5 * (0.55 * clumps + 0.45 * hairs)
+    }
 }
 
 /// One dab on a thick paint layer, as the relief sees it.
@@ -273,7 +318,188 @@ pub(crate) struct Touch {
 /// - Smudge carries it along with the paint, like a palette knife: each
 ///   pixel takes the height from where its paint was one dab ago. Blur
 ///   smooths it.
+///
+/// The relief under the dab is copied out once, worked out in bands of rows
+/// across cores and written back a tile at a time; every pixel gets the
+/// same value as `touch_relief_by_pixel` (kept in the tests) gives it.
 pub(crate) fn touch_relief(
+    material: &mut Material,
+    [width, height]: [usize; 2],
+    touch: &Touch,
+    coverage: &(impl Fn(i32, i32) -> Option<(f32, f32)> + Sync),
+) {
+    let smearing = !touch.erase && touch.blend.moves_paint();
+    if !(touch.erase || smearing || touch.thickness > 0.0) {
+        return;
+    }
+    let [left, top, right, bottom] = touch.rect;
+    if right < left || bottom < top {
+        return;
+    }
+    let relief = material
+        .relief
+        .get_or_insert_with(|| Mask::new(width, height, 0).expect("relief of a valid canvas"));
+    // Smearing reads the relief as it was before this dab, under and
+    // around it; the other touches read only their own pixel.
+    let reach = match touch.blend {
+        _ if !smearing => 0,
+        crate::brush::Blend::Smudge => {
+            touch.smear[0].abs().max(touch.smear[1].abs()).ceil() as i32 + 2
+        }
+        _ => 3,
+    };
+    let area = [
+        (left - reach).max(0),
+        (top - reach).max(0),
+        (right + reach).min(width as i32 - 1),
+        (bottom + reach).min(height as i32 - 1),
+    ];
+    let area_width = (area[2] - area[0] + 1) as usize;
+    let area_rows = (area[3] - area[1] + 1) as usize;
+    let mut before = vec![0u8; area_width * area_rows];
+    relief.read_region(
+        [
+            area[0] as usize,
+            area[1] as usize,
+            area[2] as usize + 1,
+            area[3] as usize + 1,
+        ],
+        &mut before,
+    );
+    let held = |x: i32, y: i32| {
+        let x = x.clamp(area[0], area[2]);
+        let y = y.clamp(area[1], area[3]);
+        f32::from(before[(y - area[1]) as usize * area_width + (x - area[0]) as usize])
+    };
+    // Blur: each pixel takes the mean of the 7 x 7 pixels around it, summed
+    // a row at a time. The sums are whole numbers, so they come out the same
+    // in any order.
+    let rows_of_seven: Vec<u32> = if smearing && touch.blend != crate::brush::Blend::Smudge {
+        let mut sums = vec![0u32; area_rows * (right - left + 1) as usize];
+        for (row, sums) in sums
+            .chunks_exact_mut((right - left + 1) as usize)
+            .enumerate()
+        {
+            let y = area[1] + row as i32;
+            for (sum, px) in sums.iter_mut().zip(left..=right) {
+                *sum = (-3..=3).map(|dx| held(px + dx, y) as u32).sum();
+            }
+        }
+        sums
+    } else {
+        Vec::new()
+    };
+    let bristles = (!touch.erase && !smearing && touch.heading.is_some()).then(|| {
+        // `across` is linear over the dab, so its range is at the corners.
+        let (sin, cos) = touch.heading.unwrap_or_default();
+        let across = |px: i32, py: i32| {
+            let dx = px as f32 + 0.5 - touch.center[0];
+            let dy = py as f32 + 0.5 - touch.center[1];
+            -dx * sin + dy * cos
+        };
+        let corners = [
+            across(left, top),
+            across(right, top),
+            across(left, bottom),
+            across(right, bottom),
+        ];
+        let low = corners.iter().copied().fold(f32::INFINITY, f32::min);
+        let high = corners.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        Bristles::new(touch.radius, [low, high])
+    });
+    let rect_width = (right - left + 1) as usize;
+    // One band's new heights, rows `rows` of the dab.
+    let band = |rows: std::ops::Range<i32>| {
+        let mut out = Vec::with_capacity(rows.len() * rect_width);
+        for py in rows {
+            for px in left..=right {
+                let old = held(px, py);
+                let Some((a, ceiling)) = coverage(px, py) else {
+                    out.push(old as u8);
+                    continue;
+                };
+                let share = (a / ceiling.max(f32::MIN_POSITIVE)).min(1.0);
+                let new = if touch.erase {
+                    // `Writer::paint` toward 0.
+                    if !share.is_finite() || share <= 0.0 {
+                        old as u8
+                    } else {
+                        let share = share.min(1.0);
+                        (old * (1.0 - share) + 0.0 * share).round() as u8
+                    }
+                } else if smearing {
+                    let source = if touch.blend == crate::brush::Blend::Smudge {
+                        let fx = px as f32 - touch.smear[0];
+                        let fy = py as f32 - touch.smear[1];
+                        let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                        let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
+                        let lower =
+                            held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
+                        upper + (lower - upper) * ty
+                    } else {
+                        let column = (px - left) as usize;
+                        let sum: u32 = (-3..=3)
+                            .map(|dy| {
+                                let y = (py + dy).clamp(area[1], area[3]);
+                                rows_of_seven[(y - area[1]) as usize * rect_width + column]
+                            })
+                            .sum();
+                        sum as f32 / 49.0
+                    };
+                    (old + (source - old) * share).round().clamp(0.0, 255.0) as u8
+                } else {
+                    // Until the stroke has a direction (its first dab), there
+                    // are no streaks to follow.
+                    let streak = match (&bristles, touch.heading) {
+                        (Some(bristles), Some((sin, cos))) => {
+                            let dx = px as f32 + 0.5 - touch.center[0];
+                            let dy = py as f32 + 0.5 - touch.center[1];
+                            bristles.at(-dx * sin + dy * cos)
+                        }
+                        _ => 0.75,
+                    };
+                    let target = (touch.thickness * streak * 255.0).clamp(0.0, 255.0);
+                    if target > old && share > 0.0 {
+                        (old + (target - old) * share).round() as u8
+                    } else {
+                        old as u8
+                    }
+                };
+                out.push(new);
+            }
+        }
+        out
+    };
+    const BAND: i32 = 32;
+    let rows = bottom - top + 1;
+    let after: Vec<u8> = if crate::dab_bands::worthwhile(rect_width, rows as usize) {
+        let bands = (rows + BAND - 1) / BAND;
+        crate::parallel::run(bands as usize, |i| {
+            let from = top + i as i32 * BAND;
+            band(from..(from + BAND).min(bottom + 1))
+        })
+        .into_iter()
+        .flat_map(|result| result.expect("Relief worker panicked"))
+        .collect()
+    } else {
+        band(top..bottom + 1)
+    };
+    relief.writer().write_region(
+        [
+            left as usize,
+            top as usize,
+            right as usize + 1,
+            bottom as usize + 1,
+        ],
+        &after,
+    );
+}
+
+/// `touch_relief` one pixel at a time, as it was before it worked in bands:
+/// the reference its results are checked against.
+#[cfg(test)]
+pub(crate) fn touch_relief_by_pixel(
     material: &mut Material,
     [width, height]: [usize; 2],
     touch: &Touch,
@@ -1243,6 +1469,205 @@ impl Dudel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "prints relief timings for review; run with --release"]
+    fn relief_timing() {
+        use crate::brush::Blend;
+        let size = [2048usize, 2048usize];
+        // A 300 px dab: building with streaks, and a palette knife's smudge.
+        for (name, blend, heading, smear, aspect) in [
+            (
+                "build 300 px round",
+                Blend::Wet,
+                Some(0.6f32),
+                [0.0, 0.0],
+                1.0f32,
+            ),
+            (
+                "smudge 300 x 66 px knife",
+                Blend::Smudge,
+                Some(0.6),
+                [1.5, 1.3],
+                0.22,
+            ),
+        ] {
+            let center = [1000.0f32, 1000.0];
+            let radius = 150.0;
+            let (sin, cos) = 0.6f32.sin_cos();
+            let rect = [850, 850, 1150, 1150];
+            let coverage = |x: i32, y: i32| {
+                let (dx, dy) = (x as f32 + 0.5 - center[0], y as f32 + 0.5 - center[1]);
+                let (along, across) = (dx * cos + dy * sin, -dx * sin + dy * cos);
+                (along.abs() < radius && across.abs() < radius * aspect).then_some((0.8, 1.0))
+            };
+            let drawn = crate::dab_bands::Drawn::new([850, 850, 1151, 1151], |x, y| {
+                coverage(x as i32, y as i32)
+            });
+            let coverage = |x: i32, y: i32| drawn.at(x as usize, y as usize);
+            let touch = Touch {
+                rect,
+                center,
+                radius,
+                heading: heading.map(f32::sin_cos),
+                smear,
+                blend,
+                thickness: 0.9,
+                erase: false,
+            };
+            let mut material = *Material::new(Settings::new(Kind::Paint));
+            let (mut banded, mut by_pixel) = (0.0, 0.0);
+            let rounds = 60;
+            for _ in 0..rounds {
+                let started = std::time::Instant::now();
+                touch_relief(&mut material, size, &touch, &coverage);
+                banded += started.elapsed().as_secs_f64();
+                let started = std::time::Instant::now();
+                touch_relief_by_pixel(&mut material, size, &touch, &coverage);
+                by_pixel += started.elapsed().as_secs_f64();
+            }
+            println!(
+                "{name}: pixel by pixel {:.3} ms, in bands {:.3} ms per dab",
+                by_pixel * 1000.0 / rounds as f64,
+                banded * 1000.0 / rounds as f64
+            );
+        }
+    }
+
+    #[test]
+    fn relief_in_bands_matches_the_pixel_by_pixel_relief() {
+        use crate::brush::Blend;
+        let size = [300usize, 260usize];
+        // A relief with hills, flats and empty tiles, and the same twice.
+        let start = || {
+            let mut material = *Material::new(Settings::new(Kind::Paint));
+            let mut relief = Mask::new(size[0], size[1], 0).unwrap();
+            {
+                let mut writer = relief.writer();
+                for y in 0..size[1] {
+                    for x in 0..170 {
+                        let hash = (x * 7919 + y * 104_729) % 251;
+                        writer.set(x, y, ((x * 3 + y) % 200 + hash / 4) as u8);
+                    }
+                }
+            }
+            material.relief = Some(relief);
+            material
+        };
+        let mut cases = 0;
+        for (index, (rect, center, radius, heading, smear, blend, erase)) in [
+            (
+                [10, 12, 60, 50],
+                [35.0, 31.0],
+                25.0,
+                None,
+                [0.0, 0.0],
+                Blend::Paint,
+                false,
+            ),
+            (
+                [10, 12, 60, 50],
+                [35.0, 31.0],
+                25.0,
+                Some(0.7f32),
+                [0.0, 0.0],
+                Blend::Paint,
+                false,
+            ),
+            (
+                [0, 0, 299, 259],
+                [150.0, 130.0],
+                150.0,
+                Some(2.3),
+                [0.0, 0.0],
+                Blend::Wet,
+                false,
+            ),
+            (
+                [40, 30, 200, 220],
+                [120.0, 125.0],
+                95.0,
+                Some(-1.1),
+                [0.0, 0.0],
+                Blend::Paint,
+                true,
+            ),
+            (
+                [40, 30, 200, 220],
+                [120.0, 125.0],
+                95.0,
+                Some(0.2),
+                [3.4, -1.7],
+                Blend::Smudge,
+                false,
+            ),
+            (
+                [0, 100, 120, 259],
+                [60.0, 180.0],
+                80.0,
+                Some(0.2),
+                [-6.2, 2.5],
+                Blend::Smudge,
+                false,
+            ),
+            (
+                [150, 0, 299, 140],
+                [225.0, 70.0],
+                75.0,
+                None,
+                [0.0, 0.0],
+                Blend::Blur,
+                false,
+            ),
+            (
+                [0, 0, 299, 259],
+                [150.0, 130.0],
+                150.0,
+                Some(1.0),
+                [0.0, 0.0],
+                Blend::Blur,
+                false,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let touch = Touch {
+                rect,
+                center,
+                radius,
+                heading: heading.map(f32::sin_cos),
+                smear,
+                blend,
+                thickness: 0.9,
+                erase,
+            };
+            // A soft round dab with a hole, its ceiling below 1 in places.
+            let coverage = |x: i32, y: i32| {
+                let d = (x as f32 + 0.5 - center[0]).hypot(y as f32 + 0.5 - center[1]) / radius;
+                (d < 1.0 && (x + y * 3 + index as i32) % 11 != 0).then(|| {
+                    let a = (1.0 - d * d) * 0.8;
+                    (a, if x % 5 == 0 { 0.6 } else { 0.8 })
+                })
+            };
+            let (mut banded, mut by_pixel) = (start(), start());
+            touch_relief(&mut banded, size, &touch, &coverage);
+            touch_relief_by_pixel(&mut by_pixel, size, &touch, &coverage);
+            let (a, b) = (banded.relief.unwrap(), by_pixel.relief.unwrap());
+            let original = start().relief.unwrap();
+            let mut changed = 0;
+            for y in 0..size[1] {
+                for x in 0..size[0] {
+                    assert_eq!(a.at(x, y), b.at(x, y), "case {index} at {x}, {y}");
+                    changed += usize::from(a.at(x, y) != original.at(x, y));
+                }
+            }
+            assert!(changed > 100, "case {index} changed only {changed} pixels");
+            assert_eq!(a.painted_tiles(), b.painted_tiles(), "case {index}");
+            cases += 1;
+        }
+        assert_eq!(cases, 8);
+    }
 
     fn paint(doc: &mut Document, brush: &crate::brush::Brush, color: [u8; 3], y: f32, erase: bool) {
         let settings = crate::stroke_buffer::Settings {
