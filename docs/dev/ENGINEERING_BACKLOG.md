@@ -137,9 +137,8 @@ above is far enough over the limit that these cannot change the conclusion.
 - [x] A repeatable stroke (scripted; `--replay-input` was not needed).
 - [x] Which stage costs most, and which grows with the stroke (none does).
 - [x] The owner's brush, size and canvas (2026-11-12), reproduced above.
-- [ ] A trace of the owner's own stroke (`DUDEL_TRACE_STROKE`) would show
-      how fast the pen really moves, which decides whether the fixes
-      applied are enough. If "frame to frame"
+- [x] Traces of the owner's own strokes (2026-11-13, below). For reading
+      later ones: if "frame to frame"
       is well above "CPU per frame", the display or GPU is holding frames
       back; if "rest of the interface" is large, the side panels are.
 
@@ -255,10 +254,29 @@ already has about 83% of the time; the rest has to come from cheaper dabs
 The trace now starts every stroke with a line naming the tool, brush, mode,
 size, water, canvas, paper and layer, so the next one says which it was.
 
+### The owner's wet stroke (2026-11-13, build 6f10d17)
+
+One stroke, traced as Brush: Chisel marker, mode Wet, 300 px, water 50%,
+2048 x 2048, no paper, plain layer, zoom 32%, Low latency on.
+
+- 2.0 s pen down, 784 dabs: 392 a second on average, about 460 a second
+  (2,800 px/s) in its two fast stretches.
+- 1.69 ms per dab (blur 0.61, blend 0.37, coverage 0.31, copy 0.22, water
+  0.16), the same from the first third to the last.
+- **Furthest behind: 44 dabs (about 260 px, less than the tip is long), in
+  the fast stretches; back under 10 dabs within a quarter second, and 0
+  at pen lift.** Before the fixes the same stroke was about six seconds
+  of painting.
+- The longer painting turn ran in those stretches: 40 of 127 frames came
+  more than 20 ms after the one before (about 40 frames a second there,
+  70 to 120 elsewhere).
+
 ### What is left
 
-- [ ] **A trace of a stroke in Wet mode from the owner's pen**, to see
-      whether the remaining fraction of a second is felt.
+- [ ] **The owner's verdict on that stroke**: is a trail of up to 260 px
+      for a quarter second felt, and is 40 frames a second in fast
+      stretches acceptable? If the trail is felt, cheaper dabs are next
+      (the blur is the largest stage).
 - [ ] **Is 30 to 45 frames a second while far behind acceptable?** If the
       pen cursor feels worse than the shorter queue feels better, lower the
       20 ms or raise the 16 dabs.
