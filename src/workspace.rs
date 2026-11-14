@@ -2577,6 +2577,18 @@ pub fn default_brushes() -> Vec<Brush> {
             paper_response: 1.0,
             ..Brush::default()
         },
+        Brush {
+            name: "Pixel pencil".into(),
+            group: Some(BrushGroup::Pencil),
+            tags: "pixel art, sprite, aliased".into(),
+            size: 1.0,
+            hardness: 1.0,
+            pressure_size: false,
+            pressure_opacity: false,
+            pixel: true,
+            paper_response: 0.0,
+            ..Brush::default()
+        },
     ]
 }
 

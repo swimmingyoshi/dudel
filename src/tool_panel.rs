@@ -943,6 +943,9 @@ impl Dudel {
                 self.brush_water_ui(ui);
                 self.brush_size_opacity_ui(ui);
                 self.brush_flow_hardness_ui(ui);
+                ui.checkbox(&mut self.brush.pixel, "Pixel art").on_hover_text(
+                    "Paint whole pixels with no soft edge, one dab on every pixel the stroke                      crosses. One-pixel lines drop the doubled pixel at each corner. The                      eraser erases whole pixels too while this brush is chosen.",
+                );
                 ui.horizontal(|ui| {
                     ui.label("Softness");
                     ui.selectable_value(

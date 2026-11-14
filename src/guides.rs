@@ -21,6 +21,9 @@ pub struct Grid {
     /// Minor divisions per major cell; 1 draws major lines only.
     pub subdivisions: u8,
     pub opacity: f32,
+    /// Outline every canvas pixel when zoomed in to `PIXEL_GRID_ZOOM` or
+    /// closer, independent of the grid above.
+    pub pixels: bool,
 }
 
 impl Default for Grid {
@@ -30,9 +33,14 @@ impl Default for Grid {
             spacing: 100,
             subdivisions: 4,
             opacity: 0.35,
+            pixels: false,
         }
     }
 }
+
+/// Zoom from which the pixel grid shows: 800%, where a pixel is eight screen
+/// points wide. It fades in over the next 50%.
+pub const PIXEL_GRID_ZOOM: f32 = 8.0;
 
 /// A straight guide across the whole canvas at a canvas-pixel position.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -249,6 +257,20 @@ pub fn tick_step(zoom: f32) -> f32 {
 /// Grid lines over the visible part of the canvas only, so zooming in on a
 /// large canvas never issues thousands of off-screen segments.
 pub fn paint_grid(painter: &egui::Painter, view: &View, doc: [usize; 2], grid: Grid) {
+    if grid.pixels && view.zoom >= PIXEL_GRID_ZOOM {
+        let fade = ((view.zoom - PIXEL_GRID_ZOOM) / (PIXEL_GRID_ZOOM * 0.5)).clamp(0.0, 1.0);
+        let alpha = (24.0 + 40.0 * fade).round() as u8;
+        paint_lines_every(
+            painter,
+            view,
+            doc,
+            1.0,
+            Stroke::new(
+                1.0_f32,
+                Color32::from_rgba_unmultiplied(128, 128, 128, alpha),
+            ),
+        );
+    }
     if !grid.visible {
         return;
     }
@@ -306,6 +328,44 @@ pub fn paint_grid(painter: &egui::Painter, view: &View, doc: [usize; 2], grid: G
             } else {
                 minor_stroke
             };
+            painter.line_segment(ends(index as f32 * step).map(|p| view.to_screen(p)), stroke);
+        }
+    };
+    lines(x_range, w, &|x| [pos2(x, y_range.0), pos2(x, y_range.1)]);
+    lines(y_range, h, &|y| [pos2(x_range.0, y), pos2(x_range.1, y)]);
+}
+
+/// Lines every `step` canvas pixels across the visible part of the canvas.
+fn paint_lines_every(
+    painter: &egui::Painter,
+    view: &View,
+    doc: [usize; 2],
+    step: f32,
+    stroke: Stroke,
+) {
+    let (w, h) = (doc[0] as f32, doc[1] as f32);
+    let visible = painter.clip_rect();
+    let corners = [
+        visible.left_top(),
+        visible.right_top(),
+        visible.right_bottom(),
+        visible.left_bottom(),
+    ]
+    .map(|p| view.to_doc(p));
+    let range = |axis: fn(&Pos2) -> f32, limit: f32| {
+        let (low, high) = corners
+            .iter()
+            .map(axis)
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), v| {
+                (low.min(v), high.max(v))
+            });
+        (low.clamp(0.0, limit), high.clamp(0.0, limit))
+    };
+    let (x_range, y_range) = (range(|p| p.x, w), range(|p| p.y, h));
+    let lines = |range: (f32, f32), limit: f32, ends: &dyn Fn(f32) -> [Pos2; 2]| {
+        let first = (range.0 / step).floor() as u32;
+        let last = ((range.1 / step).ceil() as u32).min((limit / step).floor() as u32);
+        for index in first..=last {
             painter.line_segment(ends(index as f32 * step).map(|p| view.to_screen(p)), stroke);
         }
     };
@@ -820,6 +880,8 @@ impl crate::Dudel {
                 ui.add(egui::Slider::new(&mut self.grid.opacity, 0.05..=1.0));
             });
         });
+        ui.checkbox(&mut self.grid.pixels, "Pixel grid when zoomed in")
+            .on_hover_text("Outlines every pixel at 800% zoom and closer, for pixel art");
         ui.separator();
         ui.checkbox(&mut self.show_rulers, "Show rulers")
             .on_hover_text("Drag from a ruler onto the canvas to add a guide line");

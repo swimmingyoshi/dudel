@@ -56,6 +56,110 @@ pub struct Stroke {
     /// Optional native-output allowance for extension-generated strokes.
     dab_budget: Option<usize>,
     budget_exhausted: bool,
+    /// Pixel brushes: the whole pixels the stroke has reached so far.
+    pixels: PixelPath,
+}
+
+/// A pixel brush's stroke as whole pixels: every pixel between two dabs, each
+/// once, centered so the dab covers whole pixels (on a pixel center for odd
+/// sizes, on a pixel corner for even ones). A one-pixel line holds its newest
+/// pixel back until the next one shows whether it was the doubled pixel of
+/// an L-shaped corner, which pixel artists remove ("pixel perfect").
+#[derive(Default)]
+struct PixelPath {
+    /// The pixel before `pending`, already painted.
+    before: Option<[i32; 2]>,
+    /// The newest pixel, not painted yet when corners are cleaned.
+    pending: Option<([i32; 2], Sample)>,
+    /// The newest pixel reached, painted or pending.
+    last: Option<[i32; 2]>,
+}
+
+impl PixelPath {
+    fn cell(brush: &Brush, x: f32, y: f32) -> [i32; 2] {
+        if Self::even(brush) {
+            [x.round() as i32, y.round() as i32]
+        } else {
+            [x.floor() as i32, y.floor() as i32]
+        }
+    }
+    fn even(brush: &Brush) -> bool {
+        (brush.size.round().max(1.0) as i32) % 2 == 0
+    }
+    fn center(brush: &Brush, cell: [i32; 2]) -> [f32; 2] {
+        let offset = if Self::even(brush) { 0.0 } else { 0.5 };
+        [cell[0] as f32 + offset, cell[1] as f32 + offset]
+    }
+    /// Corner cleanup only makes sense for one-pixel lines.
+    fn perfect(brush: &Brush) -> bool {
+        brush.size.round() <= 1.0
+    }
+    fn place(brush: &Brush, cell: [i32; 2], dab: &Sample) -> Sample {
+        let [x, y] = Self::center(brush, cell);
+        Sample {
+            x,
+            y,
+            spacing: Some(1.0),
+            ..*dab
+        }
+    }
+    /// The pixels these dabs reach, in order, minus doubled corners.
+    fn walk(&mut self, dabs: Vec<Sample>, brush: &Brush) -> Vec<Sample> {
+        let mut out = Vec::with_capacity(dabs.len());
+        for dab in dabs {
+            let to = Self::cell(brush, dab.x, dab.y);
+            let Some(from) = self.last else {
+                self.visit(to, &dab, brush, &mut out);
+                continue;
+            };
+            // Bresenham from the last pixel to this one, excluding the last.
+            let (dx, dy) = ((to[0] - from[0]).abs(), -(to[1] - from[1]).abs());
+            let (sx, sy) = ((to[0] - from[0]).signum(), (to[1] - from[1]).signum());
+            let (mut x, mut y, mut error) = (from[0], from[1], dx + dy);
+            while [x, y] != to {
+                let doubled = 2 * error;
+                if doubled >= dy {
+                    error += dy;
+                    x += sx;
+                }
+                if doubled <= dx {
+                    error += dx;
+                    y += sy;
+                }
+                self.visit([x, y], &dab, brush, &mut out);
+            }
+        }
+        out
+    }
+    fn visit(&mut self, cell: [i32; 2], dab: &Sample, brush: &Brush, out: &mut Vec<Sample>) {
+        self.last = Some(cell);
+        let dab = Self::place(brush, cell, dab);
+        if !Self::perfect(brush) {
+            out.push(dab);
+            return;
+        }
+        if let Some((middle, held)) = self.pending.take() {
+            let corner = self.before.is_some_and(|before| {
+                let touches =
+                    |a: [i32; 2], b: [i32; 2]| (a[0] - b[0]).abs() + (a[1] - b[1]).abs() == 1;
+                (before[0] - cell[0]).abs() == 1
+                    && (before[1] - cell[1]).abs() == 1
+                    && touches(before, middle)
+                    && touches(middle, cell)
+            });
+            if !corner {
+                out.push(held);
+                self.before = Some(middle);
+            }
+        }
+        self.pending = Some((cell, dab));
+    }
+    /// The held pixel, when the stroke ends.
+    fn flush(&mut self) -> Option<Sample> {
+        let held = self.pending.take().map(|(_, dab)| dab);
+        *self = Self::default();
+        held
+    }
 }
 
 /// Assumed pen-packet interval when input has no native timestamps.
@@ -168,6 +272,7 @@ impl Stroke {
         self.heading_known = false;
         self.held.clear();
         self.zoom = 1.0;
+        self.pixels = PixelPath::default();
     }
     fn spacing(brush: &Brush, sample: &Sample) -> f32 {
         brush.dab_spacing(&brush.factors(sample))[1]
@@ -187,7 +292,23 @@ impl Stroke {
         self.sample_at_zoom(sample, brush, 1.0)
     }
 
-    pub fn sample_at_zoom(&mut self, mut sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
+    pub fn sample_at_zoom(&mut self, sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
+        let dabs = self.sample_unsnapped(sample, brush, zoom);
+        self.snap(dabs, brush, false)
+    }
+    /// Pixel brushes paint whole pixels (`PixelPath`); other brushes keep
+    /// their dabs as they are.
+    fn snap(&mut self, dabs: Vec<Sample>, brush: &Brush, last: bool) -> Vec<Sample> {
+        if !brush.pixel {
+            return dabs;
+        }
+        let mut out = self.pixels.walk(dabs, brush);
+        if last {
+            out.extend(self.pixels.flush());
+        }
+        out
+    }
+    fn sample_unsnapped(&mut self, mut sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
         self.finished = false;
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
@@ -294,6 +415,10 @@ impl Stroke {
     /// way to it, so a stabilized stroke reaches the pen instead of stopping a
     /// stabilizer radius short. Pressure follows the pen's recorded path.
     pub fn catch_up(&mut self, fraction: f32, brush: &Brush) -> Vec<Sample> {
+        let dabs = self.catch_up_unsnapped(fraction, brush);
+        self.snap(dabs, brush, false)
+    }
+    fn catch_up_unsnapped(&mut self, fraction: f32, brush: &Brush) -> Vec<Sample> {
         let (Some(previous), Some(pen)) = (self.stabilized, self.pen()) else {
             return vec![];
         };
@@ -334,10 +459,14 @@ impl Stroke {
     pub fn finish(&mut self, sample: Sample, brush: &Brush) -> Vec<Sample> {
         self.finish_at_zoom(sample, brush, 1.0)
     }
-    pub fn finish_at_zoom(&mut self, mut sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
+    pub fn finish_at_zoom(&mut self, sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
         if self.finished {
             return Vec::new();
         }
+        let dabs = self.finish_unsnapped(sample, brush, zoom);
+        self.snap(dabs, brush, true)
+    }
+    fn finish_unsnapped(&mut self, mut sample: Sample, brush: &Brush, zoom: f32) -> Vec<Sample> {
         self.finished = true;
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
@@ -1696,5 +1825,120 @@ mod tests {
         for i in 0..2 {
             assert!(((anchor[i] - next[i]) / 1.8 - (anchor[i] - pan[i])).abs() < 0.001);
         }
+    }
+    fn pixel_brush(size: f32) -> Brush {
+        Brush {
+            size,
+            pixel: true,
+            pressure_size: false,
+            spacing: 0.15,
+            ..Brush::default()
+        }
+    }
+    fn stroke_pixels(brush: &Brush, points: &[[f32; 2]]) -> Vec<Sample> {
+        let mut stroke = Stroke::default();
+        let mut dabs = vec![];
+        for (i, [x, y]) in points.iter().enumerate() {
+            let sample = at(*x, *y, i as f64 / 120.0);
+            if i + 1 == points.len() {
+                dabs.extend(stroke.finish(sample, brush));
+            } else {
+                dabs.extend(stroke.sample(sample, brush));
+            }
+        }
+        dabs
+    }
+    #[test]
+    fn pixel_lines_step_one_pixel_at_a_time_and_drop_doubled_corners() {
+        let brush = pixel_brush(1.0);
+        // A wobbly freehand line across fast, uneven packets.
+        let points: Vec<[f32; 2]> = (0..40)
+            .map(|i| {
+                let t = i as f32 * 0.37;
+                [2.0 + t * 1.7, 3.0 + t * 0.9 + (t * 1.3).sin() * 2.0]
+            })
+            .collect();
+        let dabs = stroke_pixels(&brush, &points);
+        let cells: Vec<[i32; 2]> = dabs
+            .iter()
+            .map(|d| {
+                assert_eq!((d.x.fract(), d.y.fract()), (0.5, 0.5), "on pixel centers");
+                [d.x.floor() as i32, d.y.floor() as i32]
+            })
+            .collect();
+        assert!(cells.len() > 20);
+        for pair in cells.windows(2) {
+            let (dx, dy) = (
+                (pair[1][0] - pair[0][0]).abs(),
+                (pair[1][1] - pair[0][1]).abs(),
+            );
+            assert!(
+                dx <= 1 && dy <= 1 && dx + dy > 0,
+                "8-connected, no repeats: {pair:?}"
+            );
+        }
+        for triple in cells.windows(3) {
+            let corner = (triple[0][0] - triple[2][0]).abs() == 1
+                && (triple[0][1] - triple[2][1]).abs() == 1;
+            assert!(!corner, "doubled corner left in: {triple:?}");
+        }
+        // The line ends where the pen lifted.
+        let end = points.last().unwrap();
+        assert_eq!(
+            *cells.last().unwrap(),
+            [end[0].floor() as i32, end[1].floor() as i32]
+        );
+    }
+    #[test]
+    fn pixel_taps_paint_one_pixel_and_even_sizes_sit_on_pixel_corners() {
+        let dabs = stroke_pixels(&pixel_brush(1.0), &[[4.3, 7.8], [4.3, 7.8]]);
+        assert_eq!(dabs.len(), 1);
+        assert_eq!((dabs[0].x, dabs[0].y), (4.5, 7.5));
+        let dabs = stroke_pixels(&pixel_brush(2.0), &[[4.3, 7.8], [9.6, 7.8]]);
+        assert!(
+            dabs.iter()
+                .all(|d| d.x.fract() == 0.0 && d.y.fract() == 0.0)
+        );
+        assert_eq!(dabs.len(), 7, "one dab per pixel from x 4 to 10");
+    }
+    #[test]
+    fn pixel_brushes_paint_whole_pixels_only() {
+        use crate::document::Document;
+        for (size, tip) in [
+            (1.0, crate::brush::Tip::Round),
+            (3.0, crate::brush::Tip::Round),
+            (4.0, crate::brush::Tip::Round),
+            (5.0, crate::brush::Tip::Square),
+        ] {
+            let brush = Brush {
+                tip,
+                ..pixel_brush(size)
+            };
+            let mut doc = Document::new(32, 32);
+            for dab in stroke_pixels(&brush, &[[3.2, 4.1], [20.7, 17.3], [26.1, 9.9]]) {
+                doc.dab(dab.x, dab.y, dab.pressure, &brush, [10, 20, 30], false);
+            }
+            let alphas: Vec<u8> = (0..32 * 32)
+                .map(|i| doc.layers[0].pixels[i * 4 + 3])
+                .collect();
+            assert!(alphas.iter().all(|a| *a == 0 || *a == 255), "size {size}");
+            assert!(alphas.iter().filter(|a| **a == 255).count() > 20);
+        }
+        // The usual pixel circles: a plus at 3 px, a square at 2 px.
+        let mut doc = Document::new(8, 8);
+        doc.dab(3.5, 3.5, 1.0, &pixel_brush(3.0), [0; 3], false);
+        let painted: Vec<usize> = (0..64)
+            .filter(|i| doc.layers[0].pixels[i * 4 + 3] == 255)
+            .collect();
+        assert_eq!(
+            painted,
+            vec![2 * 8 + 3, 3 * 8 + 2, 3 * 8 + 3, 3 * 8 + 4, 4 * 8 + 3]
+        );
+        let mut doc = Document::new(8, 8);
+        doc.dab(4.0, 4.0, 1.0, &pixel_brush(2.0), [0; 3], false);
+        let painted: Vec<usize> = (0..64)
+            .filter(|i| doc.layers[0].pixels[i * 4 + 3] == 255)
+            .collect();
+        assert_eq!(painted, vec![3 * 8 + 3, 3 * 8 + 4, 4 * 8 + 3, 4 * 8 + 4]);
     }
 }

@@ -45,7 +45,9 @@ impl Coverage<'_> {
         if brush.tip == crate::brush::Tip::Image && u.abs().max(v.abs()) >= 1.0 {
             return None;
         }
-        let coverage = if brush.tip == crate::brush::Tip::Image {
+        let coverage = if brush.pixel {
+            brush.pixel_coverage(u, v, radius)
+        } else if brush.tip == crate::brush::Tip::Image {
             brush
                 .image
                 .as_ref()
@@ -216,6 +218,7 @@ impl Document {
         // tips of a pixel or less among them.
         if radius > 1.0
             && brush.tip == crate::brush::Tip::Round
+            && !brush.pixel
             && brush.grain.is_none()
             && brush.grain_amount == 0.0
             && interval_ratio.is_none()

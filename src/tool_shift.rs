@@ -148,7 +148,19 @@ impl Dudel {
     }
     /// What erasing paints with now: the eraser tip, or the brush's shape at
     /// the eraser size. Used for the Eraser tool and the pen's eraser end.
+    /// With a pixel brush in hand the eraser removes whole pixels too, so a
+    /// soft eraser tip never leaves half-transparent pixels in pixel art.
     pub(crate) fn eraser_for_stroke(&self) -> std::borrow::Cow<'_, crate::brush::Brush> {
+        let eraser = self.eraser_unpixelled();
+        if self.paint_brush().pixel && !eraser.pixel {
+            return std::borrow::Cow::Owned(crate::brush::Brush {
+                pixel: true,
+                ..eraser.into_owned()
+            });
+        }
+        eraser
+    }
+    fn eraser_unpixelled(&self) -> std::borrow::Cow<'_, crate::brush::Brush> {
         use std::borrow::Cow;
         if self.eraser_swap.is_some() {
             return Cow::Borrowed(&self.brush);

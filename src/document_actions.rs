@@ -213,8 +213,33 @@ impl Dudel {
         self.layer_reveal = None;
         self.saved_content_revision = None;
         self.status = status.into();
+        if fresh_canvas && std::mem::take(&mut self.new_canvas_form.pixel_art_pending) {
+            self.set_up_pixel_art();
+        }
         self.timelapse_document_changed(fresh_canvas);
         self.heap_compact_pending = true;
+    }
+    /// A canvas made from the New canvas window's Pixel art row: the pixel
+    /// grid on, and a pixel brush in hand (the built-in Pixel pencil is added
+    /// to the library when it has none).
+    pub(crate) fn set_up_pixel_art(&mut self) {
+        self.grid.pixels = true;
+        let index = match self.brushes.iter().position(|brush| brush.pixel) {
+            Some(index) => index,
+            None => {
+                let Some(pencil) = crate::workspace::default_brushes()
+                    .into_iter()
+                    .find(|brush| brush.pixel)
+                else {
+                    return;
+                };
+                self.brushes.push(pencil);
+                self.brushes.len() - 1
+            }
+        };
+        self.select_brush_group(self.brushes[index].group());
+        self.choose_brush(index);
+        self.status = format!("Pixel art canvas created · {}", self.brushes[index].name);
     }
     /// A replaced or closed document frees thousands of 256 KiB tiles inside
     /// the process heap, which can keep those pages committed (measured with
@@ -326,5 +351,21 @@ mod tests {
         assert!(!app.close_ready);
         assert!(app.modified);
         assert!(app.unsaved_action.is_none());
+    }
+    #[test]
+    fn pixel_art_canvas_turns_on_the_pixel_grid_and_picks_a_pixel_brush() {
+        let mut app = Dudel::default();
+        // A library from before pixel brushes existed gets the Pixel pencil.
+        app.brushes.retain(|brush| !brush.pixel);
+        app.new_canvas_form.pixel_art_pending = true;
+        app.apply_action(Action::New(32, 32, 300.0));
+        assert!(app.grid.pixels);
+        assert!(app.brush.pixel && app.brush.size == 1.0);
+        assert_eq!(app.brushes.iter().filter(|brush| brush.pixel).count(), 1);
+        assert!(!app.new_canvas_form.pixel_art_pending);
+        // An ordinary new canvas leaves both alone.
+        app.grid.pixels = false;
+        app.apply_action(Action::New(64, 64, 300.0));
+        assert!(!app.grid.pixels);
     }
 }

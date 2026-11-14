@@ -16,6 +16,17 @@ const BUILT_IN: [(&str, usize, usize, Option<f64>); 7] = [
     ("4K", 3840, 2160, None),
 ];
 
+/// Small canvases for pixel art. Creating one turns on the pixel grid and
+/// picks a pixel brush.
+const PIXEL_ART: [(usize, usize); 6] = [
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (320, 180),
+];
+
 /// A canvas size the artist saved or created recently.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Size {
@@ -82,6 +93,10 @@ pub(crate) struct Form {
     pub prefs: Prefs,
     /// The name being typed for a new preset, while saving one.
     saving: Option<String>,
+    /// The size came from the Pixel art row and was not changed since.
+    pub(crate) pixel_art: bool,
+    /// Set up the canvas being created for pixel art (`apply_action`).
+    pub(crate) pixel_art_pending: bool,
 }
 
 impl Default for Form {
@@ -94,6 +109,8 @@ impl Default for Form {
             focus_width: true,
             prefs: Prefs::default(),
             saving: None,
+            pixel_art: false,
+            pixel_art_pending: false,
         }
     }
 }
@@ -129,6 +146,7 @@ impl Form {
         self.dimensions() == Ok([size.width, size.height]) && self.resolution() == Ok(size.dpi)
     }
     fn set(&mut self, width: usize, height: usize, dpi: Option<f64>) {
+        self.pixel_art = false;
         self.width = width.to_string();
         self.height = height.to_string();
         if let Some(dpi) = dpi {
@@ -238,6 +256,21 @@ impl Dudel {
                             changed_option |= save_preset_button(ui, form);
                         }
                     });
+                    group(ui, "Pixel art");
+                    ui.horizontal_wrapped(|ui| {
+                        for (width, height) in PIXEL_ART {
+                            let selected = form.pixel_art && form.dimensions() == Ok([width, height]);
+                            if ui
+                                .selectable_label(selected, format!("{width} × {height}"))
+                                .on_hover_text("Turns on the pixel grid and picks the Pixel pencil")
+                                .clicked()
+                            {
+                                changed_option = true;
+                                form.set(width, height, None);
+                                form.pixel_art = true;
+                            }
+                        }
+                    });
                     let mut remove = None;
                     if !form.prefs.presets.is_empty() {
                     group(ui, "Your presets");
@@ -324,6 +357,9 @@ impl Dudel {
                                     .char_limit(16)
                                     .desired_width(120.0),
                             );
+                            if edit.changed() {
+                                form.pixel_art = false;
+                            }
                             if !height && form.focus_width {
                                 edit.request_focus();
                                 form.focus_width = false;
@@ -398,10 +434,12 @@ impl Dudel {
             });
             self.new_canvas_form.prefs.remember(width, height, dpi);
             self.new_canvas_form.saving = None;
+            let pixel_art = self.new_canvas_form.pixel_art;
             // A new canvas gets its own tab unless the current one is untouched.
             self.open_in_tab(move |app| {
                 app.new_canvas_form.focus_width = true;
                 app.new_canvas_form.feedback = None;
+                app.new_canvas_form.pixel_art_pending = pixel_art;
                 app.request_replace(Action::New(width, height, dpi));
             });
         }

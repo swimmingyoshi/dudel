@@ -222,6 +222,11 @@ pub struct Brush {
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
+    /// Pixel art: each dab covers whole pixels with no soft edge, dabs land
+    /// on every pixel the stroke crosses, and a one-pixel line drops the
+    /// doubled pixel at each corner (`stroke::PixelPath`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pixel: bool,
 }
 
 /// What a dab does to the layer.
@@ -384,6 +389,7 @@ impl Default for Brush {
             thickness: 0.5,
             pigment: 1.0,
             blend: Blend::Paint,
+            pixel: false,
         }
     }
 }
@@ -480,6 +486,24 @@ impl Brush {
     /// what the stroke uses. They differ when a wet or blur brush is held to
     /// `SOFT_DAB_SPACING`, or a tip that turns with the stroke is spaced
     /// along the way it travels; each dab then delivers more, by their ratio.
+    /// A pixel brush's coverage at a pixel center `u`, `v` (in tip radii):
+    /// all or nothing. Round tips keep pixel centers within a quarter pixel
+    /// inside the radius, which draws the usual pixel-art circles (a plus at
+    /// 3 px, a square with clipped corners at 4 px); a tip of a pixel or less
+    /// covers the one pixel holding its center.
+    pub fn pixel_coverage(&self, u: f32, v: f32, radius: f32) -> f32 {
+        let square = u.abs().max(v.abs());
+        let inside = match self.tip {
+            _ if radius <= 0.75 => square * radius <= 0.5,
+            Tip::Image => self
+                .image
+                .as_ref()
+                .is_some_and(|image| image.coverage(u, v) >= 0.5),
+            Tip::Round => u.hypot(v) <= 1.0 - 0.25 / radius + 1e-4,
+            _ => square < 1.0,
+        };
+        if inside { 1.0 } else { 0.0 }
+    }
     pub fn dab_spacing(&self, factors: &Factors) -> [f32; 2] {
         let asked =
             (self.size * self.aspect * self.spacing * factors.size * factors.spacing).max(0.5);
