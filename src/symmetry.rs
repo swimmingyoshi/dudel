@@ -48,6 +48,11 @@ pub struct Symmetry {
     pub center: Option<[f32; 2]>,
     /// Clockwise rotation of the mirror axes or radial spokes, in degrees.
     pub angle: f32,
+    /// Seamless tiles: a dab crossing a canvas edge continues on the
+    /// opposite side. One setting for the whole canvas (the global one), so
+    /// layers with their own symmetry wrap with it (`Dudel::symmetry_for`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub wrap: bool,
 }
 
 impl Default for Symmetry {
@@ -57,6 +62,7 @@ impl Default for Symmetry {
             segments: 6,
             center: None,
             angle: 0.0,
+            wrap: false,
         }
     }
 }
@@ -92,8 +98,35 @@ impl Symmetry {
         }
     }
     /// Every copy of a dab at (x, y), the original first. The map mirrors or
-    /// rotates the tip so angled and image tips are reflected too.
+    /// rotates the tip so angled and image tips are reflected too. With
+    /// `wrap`, each copy is followed by its eight neighbors one canvas width
+    /// or height away; those off the canvas paint nothing, and the count stays
+    /// the same from dab to dab, as smudging pairs copies by position.
     pub fn copies(&self, x: f32, y: f32, width: usize, height: usize) -> Vec<([f32; 2], Map)> {
+        let copies = self.mirrored(x, y, width, height);
+        if !self.wrap {
+            return copies;
+        }
+        let (w, h) = (width as f32, height as f32);
+        let mut wrapped = Vec::with_capacity(copies.len() * 9);
+        for ([x, y], map) in copies {
+            wrapped.push(([x, y], map));
+            for (dx, dy) in [
+                (-1.0, -1.0),
+                (0.0, -1.0),
+                (1.0, -1.0),
+                (-1.0, 0.0),
+                (1.0, 0.0),
+                (-1.0, 1.0),
+                (0.0, 1.0),
+                (1.0, 1.0),
+            ] {
+                wrapped.push(([x + dx * w, y + dy * h], map));
+            }
+        }
+        wrapped
+    }
+    fn mirrored(&self, x: f32, y: f32, width: usize, height: usize) -> Vec<([f32; 2], Map)> {
         let [cx, cy] = self.center(width, height);
         // Reflection across the line through the center at `axis` radians.
         // The matrix is its own inverse, so it doubles as the tip map.

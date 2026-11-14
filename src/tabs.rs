@@ -1314,6 +1314,7 @@ mod tests {
                 segments: 8,
                 center: Some([4.0, 7.0]),
                 angle: 30.0,
+                wrap: true,
             },
             snapping: false,
             snap_grid: true,

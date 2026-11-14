@@ -2540,9 +2540,9 @@ fn new_canvas_keyboard_presets_and_orientation_do_not_submit_the_form() {
     let original = w.app.doc.clone();
     w.app.open_new_canvas();
     w.settle();
-    // Width has initial focus; the preceding controls are Save as preset,
-    // Swap and 4K.
-    for _ in 0..3 {
+    // Width has initial focus; the preceding controls are the six Pixel art
+    // sizes, Save as preset, Swap and 4K.
+    for _ in 0..9 {
         w.key(egui::Key::Tab, egui::Modifiers::SHIFT);
     }
     w.key(egui::Key::Enter, Default::default());
@@ -2591,8 +2591,9 @@ fn new_canvas_keyboard_submission_uses_current_field_text_and_blocks_artwork_sho
     let created = w.app.doc.clone();
     w.app.open_new_canvas();
     w.settle();
-    // Width, height, DPI, the timelapse option and Create come before Cancel.
-    for _ in 0..5 {
+    // Width, height, DPI, the timelapse option, the form's scroll area (the
+    // form is taller than this 700-point window) and Create come before Cancel.
+    for _ in 0..6 {
         w.key(egui::Key::Tab, Default::default());
     }
     w.key(egui::Key::Enter, Default::default());

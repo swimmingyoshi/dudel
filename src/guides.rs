@@ -882,6 +882,10 @@ impl crate::Dudel {
         });
         ui.checkbox(&mut self.grid.pixels, "Pixel grid when zoomed in")
             .on_hover_text("Outlines every pixel at 800% zoom and closer, for pixel art");
+        ui.checkbox(&mut self.symmetry.wrap, "Wrap around edges (seamless tiles)")
+            .on_hover_text(
+                "Strokes that cross an edge of the canvas continue on the opposite side,                  and copies of the canvas show around it, for textures and tiles that repeat",
+            );
         ui.separator();
         ui.checkbox(&mut self.show_rulers, "Show rulers")
             .on_hover_text("Drag from a ruler onto the canvas to add a guide line");

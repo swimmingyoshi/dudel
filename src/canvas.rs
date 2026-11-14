@@ -1533,6 +1533,37 @@ impl Dudel {
         }
     }
 
+    /// With wrap-around on, the canvas repeated on its eight sides, dimmed,
+    /// so seams show while painting a tile.
+    fn paint_wrapped_neighbors(&self, painter: &egui::Painter, area: egui::Rect, view: view::View) {
+        let (w, h) = (self.doc.width as f32, self.doc.height as f32);
+        for (dx, dy) in [
+            (-1.0, -1.0),
+            (0.0, -1.0),
+            (1.0, -1.0),
+            (-1.0, 0.0),
+            (1.0, 0.0),
+            (-1.0, 1.0),
+            (0.0, 1.0),
+            (1.0, 1.0),
+        ] {
+            let neighbor = view::View {
+                origin: view.to_screen(pos2(w * (0.5 + dx), h * (0.5 + dy))),
+                ..view
+            };
+            if !area.intersects(egui::Rect::from_points(&neighbor.corners())) {
+                continue;
+            }
+            painter.extend(self.texture.backdrop_shapes(area, neighbor));
+            painter.extend(self.texture.tile_shapes(area, neighbor));
+            painter.add(egui::Shape::convex_polygon(
+                neighbor.corners().to_vec(),
+                Color32::from_black_alpha(70),
+                Stroke::NONE,
+            ));
+        }
+    }
+
     fn paint_canvas(
         &self,
         ctx: &egui::Context,
@@ -1556,6 +1587,9 @@ impl Dudel {
                 Color32::from_black_alpha(alpha),
                 Stroke::NONE,
             ));
+        }
+        if self.symmetry.wrap {
+            self.paint_wrapped_neighbors(&painter, area, *view);
         }
         painter.extend(self.layered_canvas_shapes(area, *view, false));
         let dimensions = [self.doc.width, self.doc.height];
@@ -3324,5 +3358,49 @@ mod cancellation_tests {
     #[test]
     fn explicit_cancel_restores_pixels_and_preserves_previous_undo() {
         super::Dudel::test_cancel_buffered_stroke();
+    }
+    #[test]
+    fn wrapped_strokes_continue_across_the_opposite_edges() {
+        let mut app = Dudel::default();
+        app.apply_action(crate::document_actions::Action::New(32, 16, 300.0));
+        app.symmetry.wrap = true;
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: crate::brush::Brush {
+                size: 3.0,
+                pixel: true,
+                pressure_size: false,
+                ..Default::default()
+            },
+            color: [200, 30, 40],
+            secondary: [0; 3],
+            erase: false,
+            layer: 0,
+            symmetry: app.active_symmetry(),
+        };
+        assert!(settings.symmetry.wrap);
+        // A dab on the bottom-right corner pixel.
+        let dabs = vec![crate::stroke::Sample {
+            x: 31.5,
+            y: 15.5,
+            pressure: 1.0,
+            ..Default::default()
+        }];
+        assert!(app.begin_canvas_stroke(settings));
+        app.deliver_canvas_dabs(dabs);
+        app.finish_painted_stroke();
+        app.flush_render_queue();
+        let alpha = |x: usize, y: usize| app.doc.layers[0].pixels.rgba(y * 32 + x)[3];
+        // The 3 px plus around it: left and up on the canvas, right and down
+        // wrapped onto the opposite edges.
+        for (x, y) in [(31, 15), (30, 15), (31, 14), (0, 15), (31, 0)] {
+            assert_eq!(alpha(x, y), 255, "{x},{y}");
+        }
+        assert_eq!(alpha(0, 0), 0, "diagonal corner is outside the plus");
+        assert_eq!(alpha(15, 8), 0);
+        // A layer's own symmetry still wraps with the canvas.
+        let id = app.doc.layers[0].id;
+        app.layer_symmetry.insert(id, Default::default());
+        assert!(app.symmetry_for(Some(0)).wrap);
     }
 }

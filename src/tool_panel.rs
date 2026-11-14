@@ -1220,21 +1220,31 @@ impl Dudel {
 
     /// Symmetry for strokes on `layer`: the layer's own, else the global one.
     pub(crate) fn symmetry_for(&self, layer: Option<usize>) -> symmetry::Symmetry {
-        layer
+        let own = layer
             .and_then(|index| self.doc.layers.get(index))
             .and_then(|layer| self.layer_symmetry.get(&layer.id))
             .copied()
-            .unwrap_or(self.symmetry)
+            .unwrap_or(self.symmetry);
+        // Wrapping belongs to the canvas, not to a layer's symmetry.
+        symmetry::Symmetry {
+            wrap: self.symmetry.wrap,
+            ..own
+        }
     }
     /// Symmetry for the layer the next stroke paints.
     pub(crate) fn active_symmetry(&self) -> symmetry::Symmetry {
         if let Some(index) = self.input_layer() {
             return self.symmetry_for(Some(index));
         }
-        self.input_layer_id()
+        let own = self
+            .input_layer_id()
             .and_then(|id| self.layer_symmetry.get(&id))
             .copied()
-            .unwrap_or(self.symmetry)
+            .unwrap_or(self.symmetry);
+        symmetry::Symmetry {
+            wrap: self.symmetry.wrap,
+            ..own
+        }
     }
     fn input_layer_id(&self) -> Option<crate::document::LayerId> {
         self.input_target()
