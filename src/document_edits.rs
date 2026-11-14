@@ -541,7 +541,7 @@ impl Edit {
             Self::Material(settings) => {
                 let index = doc.active;
                 let layer = &mut doc.layers[index];
-                if !crate::Dudel::takes_material(layer) {
+                if !layer.takes_material() {
                     return Err("Materials belong to raster layers".into());
                 }
                 let before = layer.material.as_ref().map(|m| m.settings);

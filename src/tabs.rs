@@ -1437,4 +1437,86 @@ mod tests {
         app.apply_action(action);
         assert!(app.close_ready);
     }
+
+    /// The app's fields that every tab shares: tools, colors, brushes,
+    /// windows, settings and what belongs to one gesture. Every other field
+    /// is in `project_session!` and is parked with its tab.
+    const SHARED: &str = "\
+        shortcuts shortcut_editor command_search theme theme_editor timelapse \
+        performance capture brush color mask_colors palette palette_assist tool lasso \
+        gradient brush_group group_presets eraser_own eraser_brush eraser_swap \
+        group_live fill_tolerance fill_options fill_source selection_shape \
+        selection_combine selection_feather selection_wand affine_settings \
+        transform_mode brush_live_preview brush_studio preference_recovery \
+        settings_store brush_studio_section brush_studio_preview mesh_grid stroke input \
+        replay frame_packets stroking secondary hsv hex_input recent_colors text_style \
+        quick_menu quick_menu_prefs export_settings export_window text_extents \
+        text_drawer text_moving text_press text_click text_transform_confirmed font_list \
+        adjustment_window_open scripted_tool script_stroke vector_record vector_erase \
+        vector_erase_mode pointer_lasso line_drag bend_reach quick_resize \
+        levels_histogram effects_window_open mask_view mask_view_layers mask_view_ids \
+        tool_shift shortcuts_window about_window layers_height library_height \
+        brush_panel_page brush_panel_section navigator_height inspector_navigator \
+        sidebar_widths graph_editor studio_as_tab studio_tab_active studio_was_open \
+        studio_pad_hidden paper_form material_form material_preview paper_view \
+        brush_export brush_import brush_author brush_license workspaces workspace_name \
+        canvas_area ruler_create display_window settings_open settings_section \
+        settings_search effects_waiting locations storage_window preview theme_library \
+        display_settings display_active smoothing_clock brush_previews status pressure \
+        show_panels inspector_override tool_panel_override scratchpad input_settings \
+        pressure_seen brushes selected_brush brush_search brush_favorites_only \
+        recent_brushes new_canvas new_canvas_form recent clipboard_backend \
+        clipboard_shortcuts package_import experimental_indexed_storage unsaved_action \
+        close_ready heap_compact_pending last_close_prompt_frame extensions \
+        extension_errors extension_manager extension_panels show_transparency \
+        color_height recovery_candidates recovery_window dialogs tabs tip_cursor \
+        pending_opens welcome_open show_welcome setup";
+
+    #[test]
+    fn every_app_field_travels_with_its_tab_or_is_listed_as_shared() {
+        // A field that holds something of the open project and is in neither
+        // list would stay behind when the tab changes and show up in the
+        // next project. Reading the source makes a new field ask the question.
+        fn fields(source: &str, opening: &str) -> Vec<String> {
+            let start = source.find(opening).expect("the block is in the source") + opening.len();
+            let end = start + source[start..].find("\n}\n").expect("the block closes");
+            source[start..end]
+                .lines()
+                .filter(|line| line.starts_with("    ") && !line.starts_with("     "))
+                .filter_map(|line| {
+                    let line = line.trim_start();
+                    let line = line.strip_prefix("pub(crate) ").unwrap_or(line);
+                    let name = line.split(':').next()?;
+                    let named = !name.is_empty()
+                        && line.len() > name.len()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+                    named.then(|| name.to_string())
+                })
+                .collect()
+        }
+        let app = fields(include_str!("main.rs"), "\nstruct Dudel {");
+        let session = fields(include_str!("tabs.rs"), "\nproject_session! {");
+        let shared: Vec<&str> = SHARED.split_whitespace().collect();
+        assert!(
+            app.len() > 200 && session.len() > 100,
+            "the source was not read"
+        );
+        for field in &app {
+            let parked = session.contains(field);
+            let listed = shared.contains(&field.as_str());
+            assert!(
+                parked != listed,
+                "`{field}`: put it in `project_session!` if each project has its own, \
+                 or in SHARED if all tabs share it (parked {parked}, shared {listed})"
+            );
+        }
+        for name in session.iter().map(String::as_str).chain(shared) {
+            assert!(
+                app.iter().any(|field| field == name),
+                "`{name}` is not a field of the app"
+            );
+        }
+    }
 }

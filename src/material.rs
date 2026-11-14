@@ -1081,7 +1081,7 @@ impl Dudel {
         let Some(layer) = self.doc.layers.get(self.doc.active) else {
             return;
         };
-        if !Self::takes_material(layer) {
+        if !layer.takes_material() {
             self.status = "Materials belong to raster layers".into();
             return;
         }
@@ -1276,15 +1276,6 @@ impl Dudel {
                 }
             }
         });
-    }
-
-    /// Raster layers can hold a material; folders, vector, text and
-    /// adjustment layers cannot.
-    pub(crate) fn takes_material(layer: &Layer) -> bool {
-        !layer.folder
-            && layer.vector.is_none()
-            && layer.text.is_none()
-            && layer.adjustment.is_none()
     }
 
     /// A new raster layer holding `kind`, above the selected entry and

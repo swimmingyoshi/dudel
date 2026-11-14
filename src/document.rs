@@ -367,6 +367,11 @@ impl Default for Layer {
 }
 
 impl Layer {
+    /// Raster layers can hold a material; folders, vector, text and
+    /// adjustment layers cannot.
+    pub(crate) fn takes_material(&self) -> bool {
+        !self.folder && self.vector.is_none() && self.text.is_none() && self.adjustment.is_none()
+    }
     pub(crate) fn has_effects(&self) -> bool {
         self.effects.iter().any(|e| e.enabled)
     }
@@ -877,7 +882,7 @@ impl Document {
                 text.validate()?;
             }
             if let Some(material) = &layer.material
-                && (!crate::Dudel::takes_material(layer) || material.settings.validate().is_err())
+                && (!layer.takes_material() || material.settings.validate().is_err())
             {
                 return Err("Invalid layer material".into());
             }

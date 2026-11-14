@@ -490,29 +490,62 @@ Measured with a 200 px brush on a 3000 x 2000 canvas, release build
 
 ## 3. Code structure
 
-In the order they pay off:
+Worked through on 2026-11-13, measuring first.
 
-- [ ] **Split the single crate into a workspace.** Dudel is one binary crate
-      of about 168,000 lines, so any edit recompiles all of it: about a
-      minute for `cargo check`, six minutes for a release test build, and an
-      incremental cache that grows by gigabytes. A core crate (document,
-      pixels, blending, materials, file formats) with no UI code, and the
-      app on top. Do it in stages, starting with modules that already have
-      no egui dependency: `pigment`, `sha256`, `paper`, `brush_edge`,
-      `pixels`, `layer_mask`, the `clip_*` and `psd_*` readers. The engine
-      then also builds and benchmarks without a window.
-- [ ] **Break up `Document::paint_dab_rows`** (`document.rs`). One function
-      holds five painting paths (mask stripes, blend modes row by row, blend
-      modes in bands, plain paint in bands, plain paint row by row) plus the
-      coverage closure. Separate the coverage, and one function per path.
-- [ ] **Screenshot modes in `main.rs`.** About 60 `--capture-*` flags are
-      separate booleans in one 1,500-line `run()`. A table of name and
-      fixture function makes adding one a single line.
-- [ ] **The `Dudel` app struct** has several hundred fields. Group them by
-      subsystem, as `setup` and `drying` are, so per-project state cannot be
-      missed when tabs switch (`project_session!` in `tabs.rs`).
-- [ ] **Line endings.** Sources are a mix of LF and CRLF, which makes
-      scripted edits fragile. Settle it with `.gitattributes`.
+- [x] **Break up `Document::paint_dab_rows`.** It is now `dab_rows.rs`:
+      `Coverage::at` (what a dab delivers at a pixel) and one function per
+      way of painting (`prefix_coverage_rows`, `blend_rows`, `paint_rows`).
+      The arithmetic was moved, not rewritten: the canvases of all 32
+      profiled strokes are byte-identical and paint at the same speed.
+- [x] **`main.rs`.** `run()` was 1,640 lines. The windowless commands are
+      `cli::run` (the eleven one-report benchmarks in a table) and the
+      screenshot fixtures are `capture_fixtures::prepare`, whose `MODES`
+      list replaces the 60-line `||` chain. All 65 screenshot modes give the
+      same pixels as before. Each fixture is still a block in one function,
+      because several build on one another in order (a mask fixture starts
+      from the layer mask one); a new mode is a name and a block.
+- [x] **Per-project state cannot be missed.** `tabs.rs` has a test that
+      reads the app struct from the source: each of its 259 fields must be
+      in `project_session!` (parked with its tab, 106 of them) or in the
+      test's list of fields all tabs share (153). A new field in neither
+      fails the suite. This is the guarantee the regrouping was wanted for,
+      without touching thousands of call sites.
+- [x] **Line endings.** `.gitattributes` gives every checkout LF. The index
+      already held LF; 111 working files were CRLF.
+- [ ] **Split the single crate into a workspace.** Not started, and the
+      case for it is weaker than this list first said. Measured on an idle
+      PC, one edit costs 5 s for `cargo check`, 25 s for the test program
+      and 15 to 45 s for an optimized build with the new `fast` profile
+      (the "minute per check" was measured while other builds ran). What
+      the split would still buy: an engine that tests and benchmarks without
+      a window, engine tests compiled with optimization (six pixel-heavy
+      tests take 20 to 35 s each unoptimized and set the suite's 100 s),
+      and a smaller incremental cache.
+
+      What stands in the way: 110 of the 205 modules (120,000 lines) form
+      one cycle, so no engine crate can be cut out yet. Only 22 modules
+      (8,900 lines, 5%) are free of both the window toolkit and that cycle.
+      The cycle has two causes:
+
+      1. Engine files carry their own panels and dialogs. `fill.rs`,
+         `material.rs`, `paper.rs`, `guides.rs`, `canvas_size.rs` and
+         `gradient_tool.rs` each hold both the pixel work and the egui
+         controls for it.
+      2. Engine files end in an `impl crate::Dudel { ... }` block with the
+         app's side of the feature (`blend_brush`, `vector_layer`,
+         `document_edits`, `stage_timer`, `import_report`).
+
+      So the first stage is not a workspace but a rule applied file by
+      file: split each mixed file into the engine part and a `*_ui.rs` or
+      app part, until `document` and what it uses name neither egui nor
+      `Dudel`. (`document.rs` named `Dudel` once, for `takes_material`;
+      that is now `Layer::takes_material`.) The workspace follows when the
+      cycle no longer contains a panel. To measure progress, list for each
+      module the modules it names with `crate::` (leaving out its tests)
+      and find the groups that reach one another.
+- [ ] **Group the app struct's fields by subsystem**, as `setup` and
+      `drying` are. Still worth doing a subsystem at a time when one is
+      being worked on anyway; the test above removed the urgency.
 
 ## 4. Build folder size
 
@@ -536,21 +569,40 @@ The build output had grown to about 77 GB:
       `target` is now 16 GB and `artifacts` 2.9 GB. Every ZIP and `tar.gz`
       stays, and so do the extracted program folders of old candidates
       (small). The table above is the state before the cleanup.
-- [ ] **Smaller debug symbols:** in `Cargo.toml`, line tables only for the
-      dev profile and no symbols for dependencies. Roughly halves
-      `debug/deps` and shortens linking. `Cargo.toml` is a recorded build
-      input, so do it between releases.
-- [ ] **`scripts/Clean.ps1`** that removes the incremental cache, stale
-      verification folders and extracted candidate folders; run it after
-      each release.
+- [x] **Smaller debug symbols** (2026-11-13): line tables only for the dev
+      profile and none for dependencies. The test program's symbol file
+      went from 690 MB to 254 MB and its link from 8.8 s to 5.8 s.
+- [x] **`scripts/Clean.ps1`** (2026-11-13) lists the incremental caches,
+      measurement and verification folders, old package metadata and
+      extracted source folders whose ZIP matches its checksum, and removes
+      them with `-Apply`. Run it after each release. A day of measuring had
+      put 31 GB back.
 - [ ] The workspace split (section 3) shrinks the incremental cache at its
       source.
 
 ## 5. Development process
 
-- [ ] **CI minutes:** find out whether the hosted runs cache dependencies
-      and what that would save; today each run appears to build from
-      scratch.
+- [x] **CI minutes** (2026-11-13). The hosted runs already cache
+      dependencies (`Swatinem/rust-cache`, restored in about a minute). A
+      Windows run took 25 minutes: 5 for the build and the suite, 5 more to
+      build and run the whole suite again with the diagnostic features, 5
+      for lint and a release build, 1 for the largest-project test and 5.5
+      for packaging, which builds the release again with the shipping flags.
+      Now the diagnostic features' own tests run alone (the suite is not
+      repeated) and Windows skips the release build that packaging repeats.
+      Expected: about 19 minutes on Windows and 7 on Linux; check against
+      the next hosted run.
+- [x] **Optimized builds while working** (2026-11-13). A release build
+      after one edit takes 3 minutes. `cargo run --profile fast` is the
+      release profile with an incremental cache: 15 to 45 s, and the
+      profiled strokes paint within 3% of a release either way. Packages
+      still use `--release`. Details and what else was tried are in
+      [TESTING.md](TESTING.md).
+- [ ] **The suite's 100 seconds** are six tests of compositing and display
+      tiles on 2048 px canvases (20 to 35 s each alone, unoptimized). An
+      optimized test build is not the answer (one edit then takes 4.5
+      minutes to rebuild). Smaller canvases in those tests, where the size
+      is not the point, would be.
 - [ ] **`Package.ps1`:** the `FILES.json` step was fixed after its only full
       run failed (a bad `Replace` call). The fix was run by hand on that
       candidate; the script has not been run end to end since. Do that

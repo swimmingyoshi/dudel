@@ -858,7 +858,7 @@ impl Dudel {
             return;
         };
         let current = layer.material.as_ref().map(|m| m.settings);
-        if !Self::takes_material(layer) || current.is_some_and(|s| s.kind == kind) {
+        if !layer.takes_material() || current.is_some_and(|s| s.kind == kind) {
             return;
         }
         ui.horizontal_wrapped(|ui| {

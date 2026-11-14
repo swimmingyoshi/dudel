@@ -976,7 +976,7 @@ impl Dudel {
         let material = self
             .input_layer()
             .and_then(|i| self.doc.layers.get(i))
-            .filter(|layer| Self::takes_material(layer))
+            .filter(|layer| layer.takes_material())
             .map(|layer| layer.material.as_ref().map(|m| m.kind()));
         if let Some(kind) = material {
             ui.horizontal(|ui| {
