@@ -100,7 +100,7 @@ want to support its development.
 
 1. Download `dudel-<version>-windows-x64.zip` from the
    [Releases page](https://github.com/swimmingyoshi/dudel/releases) or from
-   [Gumroad](https://josuevibe3.gumroad.com/l/dudel). Both carry the same
+   [Gumroad](https://swimmingyoshi.gumroad.com/l/dudel). Both carry the same
    files. Optionally compare the ZIP's SHA-256 with the `.sha256` file on the
    Releases page.
 2. Extract the **whole** ZIP anywhere (even a USB stick). Running `dudel.exe`
