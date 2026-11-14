@@ -590,8 +590,9 @@ The build output had grown to about 77 GB:
       for packaging, which builds the release again with the shipping flags.
       Now the diagnostic features' own tests run alone (the suite is not
       repeated) and Windows skips the release build that packaging repeats.
-      Expected: about 19 minutes on Windows and 7 on Linux; check against
-      the next hosted run.
+      The 0.5.0 run took 17.6 minutes on Windows, with the dependency
+      cache rebuilt for the new debug settings; Linux took 8.8, the same as
+      before, for the same reason.
 - [x] **Optimized builds while working** (2026-11-13). A release build
       after one edit takes 3 minutes. `cargo run --profile fast` is the
       release profile with an incremental cache: 15 to 45 s, and the
@@ -603,13 +604,13 @@ The build output had grown to about 77 GB:
       optimized test build is not the answer (one edit then takes 4.5
       minutes to rebuild). Smaller canvases in those tests, where the size
       is not the point, would be.
-- [ ] **`Package.ps1`:** the `FILES.json` step was fixed after its only full
-      run failed (a bad `Replace` call). The fix was run by hand on that
-      candidate; the script has not been run end to end since. Do that
-      before the next release.
+- [x] **`Package.ps1`** ran end to end for the 0.5.0 candidate and release
+      (2026-11-13), `FILES.json` step included: the list matches the
+      package's 931 files exactly.
 - [ ] **A complete self-update** has never run for real: 0.4.0 cannot update
-      itself, so the first test is possible once a release with `FILES.json`
-      is published. Try it from an installed and from a portable copy.
+      itself. 0.5.0 is the first release with `FILES.json`, so the first
+      test is updating a published 0.5.0 to the release after it. Try it
+      from an installed and from a portable copy.
 
 ## 6. Product gaps found on the way
 
