@@ -5508,3 +5508,83 @@ fn a_wet_brush_offers_to_make_the_layer_watercolor() {
         .is_err()
     );
 }
+
+#[test]
+fn space_taps_play_and_pause_while_holding_space_still_pans_and_keys_step_frames() {
+    let mut w = Workspace::sized([1280.0, 800.0]);
+    w.app.toggle_animation();
+    w.app.new_frame();
+    w.app.new_frame();
+    w.app.flush_render_queue();
+    w.settle();
+    let frame = |w: &Workspace| {
+        let (_, frames) = w.app.animation_frames().unwrap();
+        crate::animation::frame_of(&frames, w.app.doc.active)
+    };
+    assert_eq!(frame(&w), Some(2));
+    // Comma and period step back and forward, wrapping around.
+    w.key(egui::Key::Period, Default::default());
+    w.app.flush_render_queue();
+    assert_eq!(frame(&w), Some(0));
+    w.key(egui::Key::Comma, Default::default());
+    w.app.flush_render_queue();
+    assert_eq!(frame(&w), Some(2));
+    // A tap plays; another pauses.
+    w.key(egui::Key::Space, Default::default());
+    assert!(w.app.animation_play.is_some(), "a tap plays");
+    w.key(egui::Key::Space, Default::default());
+    assert!(w.app.animation_play.is_none(), "a second tap pauses");
+    // The timeline's Play button, then a tap: one toggle each.
+    w.settle();
+    w.click(w.text("\u{25b6} Play"));
+    assert!(w.app.animation_play.is_some());
+    // While playing, the frame's cached picture covers the canvas.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let shown = loop {
+        w.frame(vec![]);
+        if let Some(texture) = w.app.playing_texture() {
+            let id = texture.id();
+            w.frame(vec![]);
+            if let Some(rect) = w.visible_texture_rect(id) {
+                break rect;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no cached frame shown"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    };
+    let corners = w.app.view(w.app.canvas_area).corners();
+    let canvas = egui::Rect::from_points(&corners).intersect(w.app.canvas_area);
+    assert!((shown.min - canvas.min).length() < 1.0 && (shown.max - canvas.max).length() < 1.0);
+    w.key(egui::Key::Space, Default::default());
+    assert!(
+        w.app.animation_play.is_none(),
+        "Space did not also press the focused button"
+    );
+    // Holding Space while dragging pans and does not play.
+    let center = w.app.canvas_area.center();
+    let space = |pressed| egui::Event::Key {
+        key: egui::Key::Space,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Default::default(),
+    };
+    let button = |pressed, at| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    let pan = w.app.pan;
+    w.frame(vec![space(true), egui::Event::PointerMoved(center)]);
+    w.frame(vec![button(true, center)]);
+    let moved = center + egui::vec2(60.0, 20.0);
+    w.frame(vec![egui::Event::PointerMoved(moved)]);
+    w.frame(vec![button(false, moved)]);
+    w.frame(vec![space(false)]);
+    assert!(w.app.animation_play.is_none(), "panning is not a tap");
+    assert_ne!(w.app.pan, pan, "the canvas panned");
+}

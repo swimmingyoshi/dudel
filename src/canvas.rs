@@ -603,6 +603,7 @@ impl Dudel {
             self.paint_canvas(ctx, ui, area, &view, None, false);
             return;
         }
+        self.space_tap(ctx, typing);
         let (space, shift, command, rotate_key, middle, alt) = ctx.input(|i| {
             (
                 i.key_down(egui::Key::Space) && !typing,
@@ -1398,7 +1399,7 @@ impl Dudel {
         self.status = "Move canceled".into();
     }
 
-    fn texture_options(&self) -> egui::TextureOptions {
+    pub(crate) fn texture_options(&self) -> egui::TextureOptions {
         egui::TextureOptions {
             // Crisp pixels when zoomed in; trilinear filtering when zoomed out.
             magnification: if self.zoom >= 2.0 {
@@ -1601,7 +1602,13 @@ impl Dudel {
         if self.symmetry.wrap {
             self.paint_wrapped_neighbors(&painter, area, *view);
         }
-        painter.extend(self.layered_canvas_shapes(area, *view, false));
+        // Playing an animation shows each frame's cached picture.
+        if let Some(frame) = self.playing_texture() {
+            painter.extend(self.texture.backdrop_shapes(area, *view));
+            crate::animation_cache::paint(&painter, *view, frame);
+        } else {
+            painter.extend(self.layered_canvas_shapes(area, *view, false));
+        }
         let dimensions = [self.doc.width, self.doc.height];
         crate::guides::paint_grid(&painter, view, dimensions, self.grid);
         self.paint_affine_handles(&painter, *view);

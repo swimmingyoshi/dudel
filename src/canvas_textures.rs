@@ -5083,3 +5083,200 @@ mod toggle_latency {
         }
     }
 }
+
+/// Animation playback on large canvases: how long the display takes to show
+/// a new frame. Each case switches through every frame of a looping
+/// animation twice (the second pass shows what repeated frames cost) and
+/// reports, per switch, the time until every tile shows the frame and until
+/// every tile is exact, and the longest single UI-thread call.
+pub(crate) fn benchmark_animation(path: &std::path::Path) -> Result<(), String> {
+    use crate::animation;
+    let mut cases = Vec::new();
+    for (width, height, coverage) in [
+        (1920usize, 1080usize, "sprite"),
+        (3840, 2160, "sprite"),
+        (3840, 2160, "full"),
+    ] {
+        let frames_count = 12usize;
+        let mut doc = Document::new(width, height);
+        // A painted background under every frame.
+        doc.layers[0].pixels = crate::pixels::Pixels::read_rgba(
+            &mut [210, 220, 232, 255].repeat(width * height).as_slice(),
+            width,
+            height,
+        )
+        .map_err(|e| e.to_string())?;
+        doc.layers[0].name = "Background".into();
+        for index in 0..frames_count {
+            doc.add_layer();
+            let layer = doc.layers.len() - 1;
+            // A character a fifth of the canvas high moving across it, or
+            // a frame painted edge to edge.
+            let rect = if coverage == "full" {
+                [0, 0, width, height]
+            } else {
+                let side = height / 5;
+                let x = (width - side) * index / frames_count;
+                [x, height / 2, x + side, height / 2 + side]
+            };
+            let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
+            doc.layers[layer].pixels.writer().write_region(
+                width,
+                rect,
+                &[(20 * index) as u8, 83, 201, 255].repeat(w * h),
+            );
+        }
+        doc.animation = Some(animation::Animation {
+            background: true,
+            ..Default::default()
+        });
+        let settings = doc.animation.unwrap();
+        let frames = animation::frames(&doc, &settings);
+        let ctx = egui::Context::default();
+        let mut textures = CanvasTextures::default();
+        let area = Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1600.0, 900.0));
+        let zoom = crate::view::fit_zoom(area.size(), egui::vec2(width as f32, height as f32), 0.0);
+        let view = View {
+            origin: area.center(),
+            zoom,
+            rotation: 0.0,
+            mirror: false,
+            half: egui::vec2(width as f32, height as f32) / 2.0,
+        };
+        let options = egui::TextureOptions {
+            mipmap_mode: Some(egui::TextureFilter::Linear),
+            ..egui::TextureOptions::LINEAR
+        };
+        // Rendering every frame at its on-screen size, as playback does.
+        let step = ((1.0 / zoom).floor() as usize).max(1);
+        let started = std::time::Instant::now();
+        for frame in 0..frames.len() {
+            let view_doc = animation::frame_view(&doc, &settings, &frames, Some(frame), false);
+            view_doc.composite_reduced(step, true, || Ok(()))?;
+        }
+        let reduced_ms = started.elapsed().as_secs_f64() * 1000.0 / frames.len() as f64;
+        eprintln!("{width}x{height} {coverage}: reduced frame at step {step}: {reduced_ms:.1} ms");
+        // Playback as the app does it: the cache job from frame 0.
+        let started = std::time::Instant::now();
+        let key = crate::animation_cache::Key {
+            revision: 0,
+            step,
+            frames: frames.len(),
+        };
+        let mut cache =
+            crate::animation_cache::Cache::start(doc.clone(), settings, frames.clone(), key, 0);
+        let mut first_ms = None;
+        while cache.ready() < frames.len() {
+            let _ = ctx.run(Default::default(), |ctx| cache.poll(ctx, options));
+            if let Some(error) = cache.take_error() {
+                return Err(error);
+            }
+            if first_ms.is_none() && cache.frame(0).is_some() {
+                first_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let cached_ms = started.elapsed().as_secs_f64() * 1000.0;
+        drop(cache);
+        eprintln!(
+            "{width}x{height} {coverage}: playback first frame {:.0} ms, all {} frames cached {cached_ms:.0} ms",
+            first_ms.unwrap_or(0.0),
+            frames.len()
+        );
+        let mut switches = Vec::new();
+        for pass in 0..3 {
+            for frame in 0..frames.len() {
+                let started = std::time::Instant::now();
+                let view_doc = animation::frame_view(&doc, &settings, &frames, Some(frame), false);
+                let view_ms = started.elapsed().as_secs_f64() * 1000.0;
+                let (mut shown_ms, mut calls, mut max_call_ms) = (None, 0usize, 0.0f64);
+                loop {
+                    let call = std::time::Instant::now();
+                    textures.set_viewport(area, view);
+                    let _ = ctx.run(Default::default(), |ctx| {
+                        let mut performance = Performance::default();
+                        textures.update_damage(
+                            ctx,
+                            &view_doc,
+                            true,
+                            Default::default(),
+                            options,
+                            &mut performance,
+                        );
+                    });
+                    max_call_ms = max_call_ms.max(call.elapsed().as_secs_f64() * 1000.0);
+                    calls += 1;
+                    if let Some(error) = textures.take_error() {
+                        return Err(error);
+                    }
+                    let presented = textures.generation.is_none()
+                        && textures.composite.is_none()
+                        && textures.pending.iter().all(Option::is_none)
+                        && !textures.resolution_stale();
+                    if presented && shown_ms.is_none() {
+                        shown_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+                    }
+                    if !textures.busy() {
+                        break;
+                    }
+                    if textures.waiting() {
+                        std::thread::sleep(std::time::Duration::from_micros(500));
+                    }
+                    if calls > 200_000 {
+                        return Err("Display did not drain".into());
+                    }
+                }
+                // The first pass includes the cold start; keep later ones.
+                if pass > 0 {
+                    switches.push(serde_json::json!({
+                        "frame": frame,
+                        "frame_view_ms": view_ms,
+                        "shown_ms": shown_ms,
+                        "exact_ms": started.elapsed().as_secs_f64() * 1000.0,
+                        "calls": calls,
+                        "max_call_ms": max_call_ms,
+                    }));
+                }
+            }
+        }
+        let stat = |key: &str| {
+            let mut values: Vec<f64> = switches.iter().filter_map(|s| s[key].as_f64()).collect();
+            values.sort_by(f64::total_cmp);
+            serde_json::json!({
+                "median": values[values.len() / 2],
+                "max": values[values.len() - 1],
+            })
+        };
+        eprintln!(
+            "{width}x{height} {coverage}: shown {} exact {} longest call {} frame view {}",
+            stat("shown_ms"),
+            stat("exact_ms"),
+            stat("max_call_ms"),
+            stat("frame_view_ms")
+        );
+        cases.push(serde_json::json!({
+            "size": [width, height],
+            "frames": frames_count,
+            "coverage": coverage,
+            "zoom": zoom,
+            "shown_ms": stat("shown_ms"),
+            "exact_ms": stat("exact_ms"),
+            "max_call_ms": stat("max_call_ms"),
+            "frame_view_ms": stat("frame_view_ms"),
+            "reduced_step": step,
+            "reduced_frame_ms": reduced_ms,
+            "playback_first_frame_ms": first_ms,
+            "playback_all_cached_ms": cached_ms,
+            "switches": switches,
+        }));
+    }
+    let report = serde_json::json!({
+        "benchmark": "animation playback display",
+        "budget_ms_at_12_fps": 1000.0 / 12.0,
+        "cases": cases,
+    });
+    crate::storage::atomic_write(
+        path,
+        &serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?,
+    )
+}

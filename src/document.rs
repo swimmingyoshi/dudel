@@ -1289,6 +1289,39 @@ impl Document {
             crate::fill::check_cancel(Some(cancel))
         })
     }
+    /// The whole picture reduced by `step`: one composited pixel from the
+    /// middle of each `step` square, so a 3840-wide canvas at step 3 gives a
+    /// 1280-wide picture. For animation playback, which shows each frame at
+    /// its on-screen size.
+    pub(crate) fn composite_reduced(
+        &self,
+        step: usize,
+        transparent: bool,
+        check: impl Fn() -> Result<(), String> + Sync,
+    ) -> Result<(Vec<u8>, [usize; 2]), String> {
+        check()?;
+        if self.needs_expansion() {
+            let expanded = crate::layer_effects::expand(self, false, &|| check().is_err())?;
+            return expanded.composite_reduced(step, transparent, check);
+        }
+        let step = step.max(1);
+        let samples = |to: usize| -> Vec<usize> {
+            (0..to)
+                .step_by(step)
+                .map(|start| (start + step / 2).min(to - 1))
+                .collect()
+        };
+        let (xs, ys) = (samples(self.width), samples(self.height));
+        let size = [xs.len(), ys.len()];
+        let rgba = self.composite_samples(
+            [0, 0, self.width, self.height],
+            &xs,
+            &ys,
+            transparent,
+            &check,
+        )?;
+        Ok((rgba, size))
+    }
     fn composite_grid(
         &self,
         rect: [usize; 4],

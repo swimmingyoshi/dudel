@@ -14,6 +14,7 @@ mod allocation_profile;
 #[cfg(all(feature = "allocation-stack-profile", windows))]
 mod allocation_trace;
 mod animation;
+mod animation_cache;
 mod animation_export;
 mod animation_ui;
 mod benchmark;
@@ -401,7 +402,12 @@ struct Dudel {
     mask_view_ids: (document::LayerId, document::LayerId),
     mask_view_shown: bool,
     /// Animation playback: when it started and on which frame.
-    animation_play: Option<(std::time::Instant, usize)>,
+    animation_play: Option<animation_cache::Play>,
+    /// Frames rendered for smooth playback (`animation_cache`).
+    animation_cache: Option<animation_cache::Cache>,
+    /// When Space went down, and whether it was used to pan, zoom or
+    /// rotate since: a quick unused tap plays or pauses an animation.
+    space_tap: Option<(std::time::Instant, bool)>,
     /// The animation frame and onion skin the canvas last showed, so a
     /// change redraws it (`animation_display`).
     animation_shown: Option<(Option<usize>, bool)>,
@@ -721,6 +727,8 @@ impl Default for Dudel {
             mask_view_ids: (document::LayerId::new(), document::LayerId::new()),
             mask_view_shown: false,
             animation_play: None,
+            animation_cache: None,
+            space_tap: None,
             animation_shown: None,
             effects_shown: Vec::new(),
             tool_shift: Default::default(),

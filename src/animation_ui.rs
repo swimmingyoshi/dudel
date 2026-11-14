@@ -30,9 +30,13 @@ impl Dudel {
         if frames.is_empty() {
             return None;
         }
-        if let Some((started, start)) = self.animation_play {
-            let seconds = started.elapsed().as_secs_f64();
-            return Some(animation::frame_at(frames, animation, start, seconds));
+        if let Some(play) = self.animation_play {
+            return Some(animation::frame_at(
+                frames,
+                animation,
+                play.start,
+                play.played,
+            ));
         }
         Some(animation::frame_of(frames, doc.active).unwrap_or(0))
     }
@@ -49,7 +53,12 @@ impl Dudel {
             return (None, None);
         };
         let frames = animation::frames(base, &animation);
-        let frame = self.current_frame(base, &animation, &frames);
+        // While playing, the cached frames cover the canvas; the tiles keep
+        // the frame playback started on instead of redrawing every frame.
+        let frame = match self.animation_play {
+            Some(play) => Some(play.start.min(frames.len().saturating_sub(1))),
+            None => self.current_frame(base, &animation, &frames),
+        };
         let onion = self.animation_play.is_none()
             && animation.onion_opacity > 0.0
             && (animation.onion_before > 0 || animation.onion_after > 0);
@@ -65,6 +74,7 @@ impl Dudel {
     /// they are either way.
     pub(crate) fn toggle_animation(&mut self) {
         self.animation_play = None;
+        self.animation_cache = None;
         let next = if self.doc.animation.is_some() {
             None
         } else {
@@ -111,8 +121,38 @@ impl Dudel {
             start
         };
         self.close_input_gestures();
-        self.animation_play = Some((std::time::Instant::now(), start));
+        self.animation_play = Some(crate::animation_cache::Play::new(start));
+        let zoom = self.view(self.canvas_area).zoom;
+        let key = crate::animation_cache::Key {
+            revision: self.revision,
+            step: crate::animation_cache::step(self.doc.width, self.doc.height, zoom, frames.len()),
+            frames: frames.len(),
+        };
+        if self
+            .animation_cache
+            .as_ref()
+            .is_none_or(|cache| cache.key != key)
+        {
+            self.animation_cache = Some(crate::animation_cache::Cache::start(
+                self.doc.clone(),
+                animation,
+                frames,
+                key,
+                start,
+            ));
+        }
         self.status = format!("Playing at {} fps", animation.fps);
+    }
+
+    /// The cached picture of the frame playing now, while it is ready.
+    pub(crate) fn playing_texture(&self) -> Option<&crate::egui::TextureHandle> {
+        self.animation_play?;
+        let cache = self.animation_cache.as_ref()?;
+        if cache.key.revision != self.revision {
+            return None;
+        }
+        let (animation, frames) = self.animation_frames()?;
+        cache.frame(self.current_frame(&self.doc, &animation, &frames)?)
     }
 
     /// Stop playing and select the frame it stopped on.
@@ -130,6 +170,43 @@ impl Dudel {
                 != Some(frames.iter().position(|f| f == frame).unwrap())
         {
             self.select_layer_target(frame.entry);
+        }
+    }
+
+    /// Holding Space pans the canvas (with Ctrl it zooms, with Shift it
+    /// rotates). A quick tap that did none of those plays or pauses an
+    /// animation, as in most animation apps.
+    pub(crate) fn space_tap(&mut self, ctx: &egui::Context, typing: bool) {
+        /// Longest press that still counts as a tap. Tests run many
+        /// windows at once and may take longer between two frames.
+        #[cfg(not(test))]
+        const TAP: std::time::Duration = std::time::Duration::from_millis(300);
+        #[cfg(test)]
+        const TAP: std::time::Duration = std::time::Duration::from_secs(10);
+        let (pressed, released, used) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Space),
+                i.key_released(egui::Key::Space),
+                i.pointer.any_down() || i.modifiers.command || i.modifiers.shift || i.modifiers.alt,
+            )
+        });
+        if typing {
+            self.space_tap = None;
+            return;
+        }
+        if pressed && self.space_tap.is_none() {
+            self.space_tap = Some((std::time::Instant::now(), used));
+        }
+        if let Some((_, spent)) = &mut self.space_tap {
+            *spent |= used;
+        }
+        if released
+            && let Some((at, spent)) = self.space_tap.take()
+            && !spent
+            && at.elapsed() < TAP
+            && self.doc.animation.is_some()
+        {
+            self.toggle_playback();
         }
     }
 
@@ -151,7 +228,7 @@ impl Dudel {
         self.select_frame(&frames, next);
     }
 
-    fn new_frame(&mut self) {
+    pub(crate) fn new_frame(&mut self) {
         self.animation_play = None;
         self.finish_layer_rename(true);
         self.close_input_gestures();
@@ -189,36 +266,71 @@ impl Dudel {
         );
     }
 
-    /// Keep the canvas moving while playing, and stop a Once animation at
-    /// its end.
+    /// Move playback on. The clock only advances to a frame whose picture
+    /// is ready, so the first loop on a heavy canvas may hold a frame while
+    /// the next renders; a Once animation stops at its end, and an edit
+    /// stops playback.
     fn tick_playback(&mut self, ctx: &egui::Context) {
-        let Some((started, start)) = self.animation_play else {
+        let Some(mut play) = self.animation_play else {
             return;
         };
         let Some((animation, frames)) = self.animation_frames() else {
             self.animation_play = None;
             return;
         };
-        if frames.len() < 2 {
+        let options = self.texture_options();
+        let Some(cache) = self.animation_cache.as_mut() else {
+            self.animation_play = None;
+            return;
+        };
+        cache.poll(ctx, options);
+        if let Some(error) = cache.take_error() {
+            self.status = format!("Playback stopped: {error}");
             self.animation_play = None;
             return;
         }
+        if frames.len() < 2 || cache.key.revision != self.revision || cache.len() != frames.len() {
+            self.stop_playback();
+            return;
+        }
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(play.last).as_secs_f64().min(0.25);
+        play.last = now;
+        let next = play.played + elapsed;
+        let frame = animation::frame_at(&frames, &animation, play.start, next);
+        let waiting = cache.frame(frame).is_none();
+        if !waiting {
+            play.played = next;
+        }
+        let ready = cache.ready();
+        self.animation_play = Some(play);
         if animation.playback == Playback::Once {
-            let offset: u32 = frames[..start.min(frames.len())]
+            let offset: u32 = frames[..play.start.min(frames.len())]
                 .iter()
                 .map(|f| u32::from(f.hold))
                 .sum();
-            let periods = started.elapsed().as_secs_f64() * f64::from(animation.fps);
+            let periods = play.played * f64::from(animation.fps);
             if periods >= f64::from(animation::length(&frames).saturating_sub(offset)) {
                 self.stop_playback();
                 return;
             }
         }
-        let period = animation::period(&animation);
-        let into = started.elapsed().as_secs_f64() % period;
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64(
-            (period - into).max(0.001),
-        ));
+        if waiting {
+            self.status = format!(
+                "Preparing frames for playback · {ready} of {}",
+                frames.len()
+            );
+            ctx.request_repaint_after(std::time::Duration::from_millis(4));
+        } else {
+            if ready == frames.len() && self.status.starts_with("Preparing frames") {
+                self.status = format!("Playing at {} fps", animation.fps);
+            }
+            let period = animation::period(&animation);
+            let into = play.played % period;
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                (period - into).max(0.001),
+            ));
+        }
     }
 
     /// The timeline panel, while the project is an animation.
@@ -238,19 +350,25 @@ impl Dudel {
             };
             if ui
                 .button(play)
-                .on_hover_text("Play or pause the animation (Space in the timeline)")
+                .on_hover_text(
+                    "Play or pause the animation · tap Space (hold Space to pan as usual)",
+                )
                 .clicked()
             {
                 self.toggle_playback();
             }
             if ui
                 .button("\u{25c0}")
-                .on_hover_text("Previous frame")
+                .on_hover_text("Previous frame · , (comma)")
                 .clicked()
             {
                 self.step_frame(false);
             }
-            if ui.button("\u{25b6}").on_hover_text("Next frame").clicked() {
+            if ui
+                .button("\u{25b6}")
+                .on_hover_text("Next frame · . (period)")
+                .clicked()
+            {
                 self.step_frame(true);
             }
             ui.label(match current {

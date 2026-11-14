@@ -54,6 +54,11 @@ pub(crate) enum Action {
     DeselectLines,
     LineDrag(LineDrag),
     Tool(Tool),
+    AnimationTimeline,
+    PlayAnimation,
+    PreviousFrame,
+    NextFrame,
+    NewFrame,
 }
 
 pub(crate) struct Command {
@@ -77,6 +82,41 @@ macro_rules! command {
 }
 
 pub(crate) const COMMANDS: &[Command] = &[
+    command!(
+        "animation.timeline",
+        "Animation timeline",
+        "",
+        "animate frames frame by frame onion skin turn on off",
+        Action::AnimationTimeline
+    ),
+    command!(
+        "animation.play",
+        "Play / pause animation",
+        "",
+        "animate start stop playback preview space",
+        Action::PlayAnimation
+    ),
+    command!(
+        "animation.previous_frame",
+        "Previous frame",
+        "Comma",
+        "animate back step",
+        Action::PreviousFrame
+    ),
+    command!(
+        "animation.next_frame",
+        "Next frame",
+        "Period",
+        "animate forward step",
+        Action::NextFrame
+    ),
+    command!(
+        "animation.new_frame",
+        "New frame",
+        "",
+        "animate add frame layer",
+        Action::NewFrame
+    ),
     command!(
         "file.new",
         "New canvas…",
@@ -583,6 +623,14 @@ impl Dudel {
             Action::LineDrag(_) if self.vector_target().is_none() => {
                 Some("Select a vector layer first")
             }
+            Action::PlayAnimation
+            | Action::PreviousFrame
+            | Action::NextFrame
+            | Action::NewFrame
+                if self.doc.animation.is_none() =>
+            {
+                Some("Turn on Canvas › Animation timeline first")
+            }
             _ => None,
         }
     }
@@ -652,6 +700,11 @@ impl Dudel {
                 self.line_drag = drag;
             }
             Action::Tool(tool) => self.select_tool(tool),
+            Action::AnimationTimeline => self.toggle_animation(),
+            Action::PlayAnimation => self.toggle_playback(),
+            Action::PreviousFrame => self.step_frame(false),
+            Action::NextFrame => self.step_frame(true),
+            Action::NewFrame => self.new_frame(),
         }
     }
 }

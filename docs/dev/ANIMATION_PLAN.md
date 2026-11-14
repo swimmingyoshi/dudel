@@ -27,11 +27,20 @@ format and its own save, undo and recovery paths.
   holds as delays that keep time), numbered PNG frames, sprite sheets, and
   MP4 through FFmpeg. Ping-pong exports come back without repeating ends.
 
+- Playback (`src/animation_cache.rs`) shows each frame as one picture
+  rendered at its on-screen size (`Document::composite_reduced`) by a
+  background job, in playing order from the playhead, within 512 MiB (the
+  resolution drops for long animations). The clock only advances to ready
+  frames. Redrawing tiles per frame took about 0.2 s at 1080p and 6 s for a
+  painted 4K frame in the app; cached frames take 60-100 ms each to render
+  once (`--benchmark-animation`). Drawing never uses the cache.
+- Keys: a Space tap plays or pauses (a held or dragged Space still pans,
+  zooms or rotates); comma and period step frames; all are commands with
+  editable shortcuts.
+
 ## Left to do
 
-- The owner's pen pass, including playback speed on large canvases: a frame
-  change redraws the whole canvas.
-- Keyboard shortcuts for play/pause and stepping between frames.
+- The owner's pen pass.
 - Reordering frames by dragging in the timeline (the layers panel does it
   today) and larger frame thumbnails.
 - Later, if asked: linked frames, audio, tweening, camera moves.

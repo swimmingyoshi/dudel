@@ -20,6 +20,12 @@ type Report = (
 );
 const REPORTS: &[Report] = &[
     (
+        "--benchmark-animation",
+        "animation.json",
+        "Animation playback benchmark",
+        canvas_textures::benchmark_animation,
+    ),
+    (
         "--benchmark-prefix-plan",
         "prefix-plan.json",
         "Prefix plan benchmark",

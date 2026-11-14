@@ -21,6 +21,13 @@ Pixel art tools and frame-by-frame animation.
   foreground.
 - **Onion skin:** faint copies of the frames before (red) and after (green)
   while drawing, with their number and opacity adjustable.
+- **Keys:** tap **Space** to play or pause (holding Space still pans);
+  **,** and **.** step to the previous and next frame. Both, and New frame,
+  can be changed in the shortcut settings.
+- **Smooth playback on large canvases:** playing shows each frame as one
+  picture rendered at its on-screen size, so a 4K animation plays at full
+  speed once its frames are ready (about a second for twelve frames; the
+  first loop starts at once and waits for a frame only if it is not ready).
 - **Export animation:** an animated GIF (with transparency, holds as
   delays), numbered PNG frames, a sprite sheet in rows of any number of
   columns, or an MP4 video through FFmpeg, scaled up by a whole number for
