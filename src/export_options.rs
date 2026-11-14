@@ -89,6 +89,9 @@ pub(crate) struct ExportSettings {
     pub(crate) quality: u8,
     /// What see-through areas become when flattened: None is white paper.
     pub(crate) background: Option<[u8; 3]>,
+    /// Write each pixel as a square this many pixels wide (1 to 16), sharp,
+    /// for pixel art.
+    pub(crate) scale: u8,
 }
 
 impl Default for ExportSettings {
@@ -98,6 +101,7 @@ impl Default for ExportSettings {
             transparent: false,
             quality: 92,
             background: None,
+            scale: 1,
         }
     }
 }
@@ -106,6 +110,7 @@ impl ExportSettings {
     /// Make saved settings safe to use.
     pub(crate) fn sanitized(mut self) -> Self {
         self.quality = self.quality.clamp(1, 100);
+        self.scale = self.scale.clamp(1, 16);
         self
     }
     /// Whether the picture keeps see-through areas.
@@ -267,15 +272,42 @@ impl Dudel {
                 if settings.format == Format::Jpeg {
                     ui.add(egui::Slider::new(&mut settings.quality, 1..=100).text("Quality"));
                 }
+                ui.horizontal(|ui| {
+                    ui.label("Scale");
+                    ui.add(
+                        egui::DragValue::new(&mut settings.scale)
+                            .range(1..=16)
+                            .suffix("×"),
+                    )
+                    .on_hover_text(
+                        "Write each pixel as a sharp square this many pixels wide, \
+                             to share small pixel art at a size people can see",
+                    );
+                });
                 ui.add_space(4.0);
                 self.export_preview_ui(ui, &settings);
+                let scale = usize::from(settings.scale.max(1));
                 ui.weak(format!(
                     "{} × {} px at {} DPI",
-                    self.doc.width, self.doc.height, self.doc.dpi
+                    self.doc.width * scale,
+                    self.doc.height * scale,
+                    self.doc.dpi * scale as f64
                 ));
+                let too_large = crate::export_jobs::scaled_size(
+                    self.doc.width,
+                    self.doc.height,
+                    settings.scale,
+                )
+                .err();
+                if let Some(error) = &too_large {
+                    ui.colored_label(ui.visuals().error_fg_color, error);
+                }
                 crate::dialogs::dialog_buttons(ui, |ui| {
                     export = ui
-                        .add(crate::workspace::primary_button(ui, "Export…"))
+                        .add_enabled(
+                            too_large.is_none(),
+                            crate::workspace::primary_button(ui, "Export…"),
+                        )
                         .clicked();
                     cancel = ui.button("Cancel").clicked();
                 });

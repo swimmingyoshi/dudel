@@ -220,10 +220,17 @@ impl Dudel {
         self.heap_compact_pending = true;
     }
     /// A canvas made from the New canvas window's Pixel art row: the pixel
-    /// grid on, and a pixel brush in hand (the built-in Pixel pencil is added
-    /// to the library when it has none).
+    /// grid on, a pixel brush in hand (the built-in Pixel pencil is added to
+    /// the library when it has none), and the tools that could blend colors
+    /// set to keep them exact: fill and magic wand match exact colors with no
+    /// soft fill edges, and free transform uses Pixel quality. Those tool
+    /// settings are shared by every tab, so the status line says so.
     pub(crate) fn set_up_pixel_art(&mut self) {
         self.grid.pixels = true;
+        self.fill_tolerance = 0;
+        self.fill_options.fill_edges = false;
+        self.selection_wand.tolerance = 0;
+        self.affine_settings.sampling = crate::affine::Sampling::Nearest;
         let index = match self.brushes.iter().position(|brush| brush.pixel) {
             Some(index) => index,
             None => {
@@ -239,7 +246,10 @@ impl Dudel {
         };
         self.select_brush_group(self.brushes[index].group());
         self.choose_brush(index);
-        self.status = format!("Pixel art canvas created · {}", self.brushes[index].name);
+        self.status = format!(
+            "Pixel art canvas · {}; fill and magic wand match exact colors, transforms use Pixel quality",
+            self.brushes[index].name
+        );
     }
     /// A replaced or closed document frees thousands of 256 KiB tiles inside
     /// the process heap, which can keep those pages committed (measured with
@@ -363,6 +373,12 @@ mod tests {
         assert!(app.brush.pixel && app.brush.size == 1.0);
         assert_eq!(app.brushes.iter().filter(|brush| brush.pixel).count(), 1);
         assert!(!app.new_canvas_form.pixel_art_pending);
+        assert_eq!((app.fill_tolerance, app.selection_wand.tolerance), (0, 0));
+        assert!(!app.fill_options.fill_edges);
+        assert_eq!(
+            app.affine_settings.sampling,
+            crate::affine::Sampling::Nearest
+        );
         // An ordinary new canvas leaves both alone.
         app.grid.pixels = false;
         app.apply_action(Action::New(64, 64, 300.0));

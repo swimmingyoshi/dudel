@@ -714,6 +714,7 @@ impl Dudel {
                 crate::adjustments::Kind::GaussianBlur,
                 crate::adjustments::Kind::Sharpen,
                 crate::adjustments::Kind::AddNoise,
+                crate::adjustments::Kind::LimitColors,
             ] {
                 if ui.button(format!("{}\u{2026}", kind.name())).clicked() {
                     self.start_adjustment(kind);

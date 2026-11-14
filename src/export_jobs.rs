@@ -16,6 +16,8 @@ pub(crate) enum ExportKind {
         transparent: bool,
         /// What see-through areas become when flattened: None is white paper.
         background: Option<[u8; 3]>,
+        /// Each pixel written as a square this many pixels wide.
+        scale: u8,
     },
     Raster {
         format: image::ImageFormat,
@@ -23,6 +25,7 @@ pub(crate) enum ExportKind {
         /// JPEG quality, 1 to 100.
         quality: u8,
         background: Option<[u8; 3]>,
+        scale: u8,
     },
     Psd {
         effects: crate::psd_export::Effects,
@@ -122,14 +125,53 @@ fn picture(
     }
 }
 
+/// The exported size of a `width` × `height` picture at a whole-number
+/// `scale`, or why it is too large.
+pub(crate) fn scaled_size(width: usize, height: usize, scale: u8) -> Result<[usize; 2], String> {
+    let scale = usize::from(scale.max(1));
+    let size = [width * scale, height * scale];
+    if size[0] > crate::document::MAX_SIDE || size[0] * size[1] > crate::document::MAX_PIXELS {
+        return Err(format!(
+            "{} × {} px at {scale}× is too large: exports are {}",
+            size[0],
+            size[1],
+            crate::document::SIZE_LIMIT
+        ));
+    }
+    Ok(size)
+}
+
+/// Each pixel as a `scale` × `scale` square: sharp, for pixel art.
+fn upscaled(rgba: Vec<u8>, width: usize, height: usize, scale: u8) -> Vec<u8> {
+    let scale = usize::from(scale.max(1));
+    if scale == 1 {
+        return rgba;
+    }
+    let row = width * scale * 4;
+    let mut out = Vec::with_capacity(row * height * scale);
+    for y in 0..height {
+        let start = out.len();
+        for pixel in rgba[y * width * 4..(y + 1) * width * 4].chunks_exact(4) {
+            for _ in 0..scale {
+                out.extend_from_slice(pixel);
+            }
+        }
+        for _ in 1..scale {
+            out.extend_from_within(start..start + row);
+        }
+    }
+    out
+}
+
 fn write_png(
     doc: &Document,
     path: &Path,
     transparent: bool,
     background: Option<[u8; 3]>,
+    scale: u8,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
-    write_png_with_hook(doc, path, transparent, background, cancel, || {})
+    write_png_with_hook(doc, path, transparent, background, scale, cancel, || {})
 }
 
 fn write_png_with_hook(
@@ -137,19 +179,27 @@ fn write_png_with_hook(
     path: &Path,
     transparent: bool,
     background: Option<[u8; 3]>,
+    scale: u8,
     cancel: &AtomicBool,
     before_publish: impl FnOnce(),
 ) -> Result<(), String> {
     doc.validate()?;
     destination(path)?;
+    let [width, height] = scaled_size(doc.width, doc.height, scale)?;
     let check = || crate::fill::check_cancel(Some(cancel));
-    let rgba = picture(doc, transparent, background, check)?;
+    let rgba = upscaled(
+        picture(doc, transparent, background, check)?,
+        doc.width,
+        doc.height,
+        scale,
+    );
     crate::storage::atomic_stream(path, |file| {
         check()?;
-        let mut encoder = png::Encoder::new(file, doc.width as u32, doc.height as u32);
+        let mut encoder = png::Encoder::new(file, width as u32, height as u32);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
-        let ppm = (doc.dpi / 0.0254).round() as u32;
+        // The printed size stays the document's: more pixels per inch.
+        let ppm = (doc.dpi * f64::from(scale.max(1)) / 0.0254).round() as u32;
         encoder.set_pixel_dims(Some(png::PixelDimensions {
             xppu: ppm,
             yppu: ppm,
@@ -195,6 +245,7 @@ struct Raster {
     transparent: bool,
     quality: u8,
     background: Option<[u8; 3]>,
+    scale: u8,
 }
 
 fn write_raster(
@@ -208,13 +259,20 @@ fn write_raster(
         transparent,
         quality,
         background,
+        scale,
     } = raster;
     doc.validate()?;
     raster_destination(path, format)?;
+    let [width, height] = scaled_size(doc.width, doc.height, scale)?;
     let check = || crate::fill::check_cancel(Some(cancel));
     let opaque = matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Bmp);
-    let rgba = picture(doc, transparent && !opaque, background, check)?;
-    let image = image::RgbaImage::from_raw(doc.width as u32, doc.height as u32, rgba)
+    let rgba = upscaled(
+        picture(doc, transparent && !opaque, background, check)?,
+        doc.width,
+        doc.height,
+        scale,
+    );
+    let image = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
         .ok_or("Invalid export dimensions")?;
     crate::storage::atomic_stream(path, |file| {
         check()?;
@@ -257,7 +315,9 @@ impl Dudel {
             return false;
         }
         let format = settings.format.image_format();
-        if let Err(error) = raster_destination(&path, format) {
+        if let Err(error) = raster_destination(&path, format)
+            .and_then(|()| scaled_size(self.doc.width, self.doc.height, settings.scale).map(|_| ()))
+        {
             self.status = format!("Export failed: {error}");
             return false;
         }
@@ -265,6 +325,7 @@ impl Dudel {
             ExportKind::Png {
                 transparent: settings.transparent,
                 background: settings.background,
+                scale: settings.scale,
             }
         } else {
             ExportKind::Raster {
@@ -272,6 +333,7 @@ impl Dudel {
                 transparent: settings.transparent,
                 quality: settings.quality,
                 background: settings.background,
+                scale: settings.scale,
             }
         };
         self.export_snapshot_or_queue(path, kind);
@@ -326,6 +388,7 @@ impl Dudel {
                 transparent,
                 quality,
                 background,
+                scale,
             } => {
                 let opaque = matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Bmp);
                 let note = match background {
@@ -338,6 +401,7 @@ impl Dudel {
                     transparent,
                     quality,
                     background,
+                    scale,
                 };
                 self.start_export_worker(
                     path,
@@ -364,13 +428,14 @@ impl Dudel {
             ExportKind::Png {
                 transparent,
                 background,
+                scale,
             } => self.start_export_worker(
                 path,
                 document,
                 kind,
                 String::new(),
                 move |document, path, cancel| {
-                    write_png(document, path, transparent, background, cancel)
+                    write_png(document, path, transparent, background, scale, cancel)
                 },
             ),
         }
@@ -390,7 +455,13 @@ impl Dudel {
         } else {
             2
         };
-        let raster_bytes = document.width * document.height * 4 * copies;
+        let scale = match kind {
+            ExportKind::Png { scale, .. } | ExportKind::Raster { scale, .. } => {
+                usize::from(scale.max(1))
+            }
+            _ => 1,
+        };
+        let raster_bytes = document.width * document.height * 4 * copies * scale * scale;
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let worker_path = path.clone();
@@ -476,6 +547,7 @@ mod tests {
                 &path,
                 true,
                 None,
+                1,
                 &std::sync::atomic::AtomicBool::new(false),
             )
             .unwrap();
@@ -488,6 +560,54 @@ mod tests {
         }
     }
     use super::*;
+
+    #[test]
+    fn scaled_exports_write_each_pixel_as_a_sharp_square() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut doc = Document::new(3, 2);
+        doc.dpi = 72.0;
+        let colors = [[23, 74, 156, 255], [200, 10, 40, 255], [0, 0, 0, 0]];
+        for (index, color) in colors.iter().enumerate() {
+            doc.layers[0]
+                .pixels
+                .writer()
+                .rgba_mut(index * 2)
+                .copy_from_slice(color);
+        }
+        let cancel = AtomicBool::new(false);
+        let png = dir.path().join("big.png");
+        write_png(&doc, &png, true, None, 4, &cancel).unwrap();
+        let loaded = crate::storage::import_png(&png).unwrap();
+        assert_eq!((loaded.width, loaded.height), (12, 8));
+        assert!((loaded.dpi - 288.0).abs() < 0.05, "printed size kept");
+        let original = doc.composite_transparent();
+        let scaled = loaded.composite_transparent();
+        for y in 0..8 {
+            for x in 0..12 {
+                let at = |rgba: &[u8], width: usize, x: usize, y: usize| {
+                    rgba[(y * width + x) * 4..(y * width + x) * 4 + 4].to_vec()
+                };
+                assert_eq!(
+                    at(&scaled, 12, x, y),
+                    at(&original, 3, x / 4, y / 4),
+                    "{x},{y}"
+                );
+            }
+        }
+        let gif = dir.path().join("big.gif");
+        let raster = Raster {
+            format: image::ImageFormat::Gif,
+            transparent: true,
+            quality: 92,
+            background: None,
+            scale: 3,
+        };
+        write_raster(&doc, &gif, raster, &cancel).unwrap();
+        assert_eq!(image::open(&gif).unwrap().to_rgba8().dimensions(), (9, 6));
+        assert!(scaled_size(2500, 2500, 4).is_ok());
+        assert!(scaled_size(2500, 2500, 5).is_err());
+        assert!(scaled_size(16384, 1, 2).is_err());
+    }
 
     #[test]
     fn common_formats_roundtrip_and_protect_destinations() {
@@ -511,6 +631,7 @@ mod tests {
                 transparent,
                 quality: 92,
                 background: None,
+                scale: 1,
             };
             write_raster(&doc, &path, raster(true), &cancel).unwrap();
             let decoded = image::open(&path).unwrap().to_rgba8();
@@ -635,13 +756,13 @@ mod tests {
         let path = dir.path().join("existing.png");
         let doc = Document::new(3, 2);
         let cancel = AtomicBool::new(false);
-        write_png(&doc, &path, true, None, &cancel).unwrap();
+        write_png(&doc, &path, true, None, 1, &cancel).unwrap();
         let before = std::fs::read(&path).unwrap();
         cancel.store(true, Ordering::Relaxed);
-        assert!(write_png(&doc, &path, false, None, &cancel).is_err());
+        assert!(write_png(&doc, &path, false, None, 1, &cancel).is_err());
         cancel.store(false, Ordering::Relaxed);
         assert!(
-            write_png_with_hook(&doc, &path, false, None, &cancel, || cancel
+            write_png_with_hook(&doc, &path, false, None, 1, &cancel, || cancel
                 .store(true, Ordering::Relaxed))
             .is_err()
         );

@@ -28,6 +28,68 @@ struct PaletteFile {
     version: u32,
     colors: Vec<[u8; 3]>,
 }
+/// Colors from a palette file in any format Dudel reads: its own, a list
+/// of hex colors (`.hex`, as Lospec offers them) or a GIMP palette (`.gpl`).
+/// Repeated colors are kept once.
+fn decode_file(path: &std::path::Path, source: &str) -> Result<Vec<[u8; 3]>, String> {
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut colors = match extension.as_str() {
+        "hex" | "txt" => decode_hex(source)?,
+        "gpl" => decode_gpl(source)?,
+        _ => return PaletteFile::decode(source),
+    };
+    let mut seen = std::collections::HashSet::new();
+    colors.retain(|color| seen.insert(*color));
+    if colors.is_empty() {
+        return Err("The file holds no colors".into());
+    }
+    validate(&colors)?;
+    Ok(colors)
+}
+fn decode_hex(source: &str) -> Result<Vec<[u8; 3]>, String> {
+    source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with(';'))
+        .map(|line| {
+            let digits = line.trim_start_matches('#');
+            let digits = digits
+                .get(digits.len().saturating_sub(6)..)
+                .unwrap_or(digits);
+            let value = u32::from_str_radix(digits, 16)
+                .ok()
+                .filter(|_| digits.len() == 6)
+                .ok_or_else(|| format!("Not a hex color: {line}"))?;
+            Ok([(value >> 16) as u8, (value >> 8) as u8, value as u8])
+        })
+        .collect()
+}
+fn decode_gpl(source: &str) -> Result<Vec<[u8; 3]>, String> {
+    let mut lines = source.lines();
+    if lines.next().map(str::trim) != Some("GIMP Palette") {
+        return Err("Not a GIMP palette".into());
+    }
+    lines
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.starts_with('#')
+                && !line.starts_with("Name:")
+                && !line.starts_with("Columns:")
+        })
+        .map(|line| {
+            let mut values = line.split_whitespace().take(3).map(|v| v.parse::<u8>());
+            match (values.next(), values.next(), values.next()) {
+                (Some(Ok(r)), Some(Ok(g)), Some(Ok(b))) => Ok([r, g, b]),
+                _ => Err(format!("Not a palette color: {line}")),
+            }
+        })
+        .collect()
+}
 impl PaletteFile {
     fn decode(source: &str) -> Result<Vec<[u8; 3]>, String> {
         let palette: Self = serde_json::from_str(source).map_err(|error| error.to_string())?;
@@ -207,19 +269,27 @@ impl Dudel {
         self.palette_assist_ui(ui);
     }
     fn palette_file(&mut self, import: bool) {
+        if import {
+            let dialog = self.dialog_in(
+                crate::locations::Kind::Palettes,
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Palettes", &["dudelpalette", "hex", "gpl"])
+                    .add_filter("Dudel palette", &["dudelpalette"])
+                    .add_filter("Hex colors (Lospec)", &["hex"])
+                    .add_filter("GIMP palette", &["gpl"]),
+            );
+            self.ask_open_file(dialog, Self::import_palette);
+            return;
+        }
         let dialog = self.dialog_in(
             crate::locations::Kind::Palettes,
             rfd::AsyncFileDialog::new().add_filter("Dudel palette", &["dudelpalette"]),
         );
-        if import {
-            self.ask_open_file(dialog, Self::import_palette);
-        } else {
-            let dialog = dialog.set_file_name("My colors.dudelpalette");
-            self.ask_save_file(dialog, Self::export_palette);
-        }
+        let dialog = dialog.set_file_name("My colors.dudelpalette");
+        self.ask_save_file(dialog, Self::export_palette);
     }
     pub(crate) fn import_palette(&mut self, path: std::path::PathBuf) {
-        match read_bounded(&path, 16 * 1024).and_then(|source| PaletteFile::decode(&source)) {
+        match read_bounded(&path, 16 * 1024).and_then(|source| decode_file(&path, &source)) {
             Ok(colors) => {
                 let new: Vec<_> = colors
                     .into_iter()
@@ -271,5 +341,23 @@ mod tests {
         file.version = 2;
         assert!(PaletteFile::decode(&serde_json::to_string(&file).unwrap()).is_err());
         assert!(validate(&(0..65).map(|i| [i, 0, 0]).collect::<Vec<_>>()).is_err());
+    }
+    #[test]
+    fn lospec_hex_and_gimp_palettes_import_their_colors_once() {
+        let hex = std::path::Path::new("pico.hex");
+        assert_eq!(
+            decode_file(hex, "000000\n#1D2B53\n\n7e2553\n000000\n").unwrap(),
+            vec![[0, 0, 0], [29, 43, 83], [126, 37, 83]]
+        );
+        assert!(decode_file(hex, "12345\n").is_err());
+        assert!(decode_file(hex, "\n").is_err());
+        let gpl = "GIMP Palette\nName: Test\nColumns: 4\n# comment\n  0   0   0\tBlack\n255 241 232 White\n";
+        assert_eq!(
+            decode_file(std::path::Path::new("t.GPL"), gpl).unwrap(),
+            vec![[0, 0, 0], [255, 241, 232]]
+        );
+        assert!(decode_file(std::path::Path::new("t.gpl"), "Not GIMP\n1 2 3\n").is_err());
+        let many: String = (0..65).map(|i| format!("{:06x}\n", i)).collect();
+        assert!(decode_file(hex, &many).is_err(), "more than 64 swatches");
     }
 }

@@ -16,6 +16,8 @@ pub(crate) enum Kind {
     GaussianBlur,
     Sharpen,
     AddNoise,
+    /// Every pixel becomes its nearest palette color.
+    LimitColors,
     /// An adjustment-layer kind, by its index in `adjustment::presets()`,
     /// applied to the pixels.
     Layer(u8),
@@ -71,6 +73,46 @@ mod tests {
             &FilterControl::default(),
         )
         .unwrap()
+    }
+    #[test]
+    fn limit_to_palette_maps_every_pixel_to_its_nearest_swatch() {
+        let colors = vec![[0, 0, 0], [255, 255, 255], [200, 30, 40], [70, 110, 170]];
+        assert_eq!(nearest_color([80, 120, 160], &colors), [70, 110, 170]);
+        assert_eq!(nearest_color([255, 0, 0], &colors), [200, 30, 40]);
+        assert_eq!(nearest_color([30, 30, 30], &colors), [0, 0, 0]);
+        let px = |doc: &Document, i: usize| {
+            let p = doc.layers[0].pixels.rgba(i);
+            [p[0], p[1], p[2], p[3]]
+        };
+        let source = fixture();
+        let solid = run(
+            &source,
+            Settings::LimitColors {
+                colors: colors.clone(),
+                solid: true,
+            },
+        );
+        assert_eq!(px(&solid, 0), [70, 110, 170, 255]);
+        assert_eq!(px(&solid, 129), [200, 30, 40, 255]);
+        // Half see-through becomes fully opaque; clear stays clear.
+        assert_eq!(px(&solid, 63)[3], 255);
+        assert_eq!(px(&solid, 64), px(&source, 64));
+        let soft = run(
+            &source,
+            Settings::LimitColors {
+                colors,
+                solid: false,
+            },
+        );
+        assert_eq!(px(&soft, 63)[3], 128);
+        assert!(
+            Settings::LimitColors {
+                colors: vec![],
+                solid: true
+            }
+            .validate()
+            .is_err()
+        );
     }
     fn app() -> Dudel {
         Dudel {
@@ -561,6 +603,7 @@ impl Kind {
             Self::GaussianBlur => "Gaussian blur",
             Self::Sharpen => "Sharpen",
             Self::AddNoise => "Add noise",
+            Self::LimitColors => "Limit to palette",
             Self::Layer(index) => crate::adjustment::presets()[usize::from(index)].name(),
         }
     }
@@ -590,6 +633,11 @@ impl Kind {
             Self::AddNoise => Settings::AddNoise {
                 amount: 10.0,
                 monochrome: false,
+            },
+            // The palette comes from the Color panel (`start_adjustment`).
+            Self::LimitColors => Settings::LimitColors {
+                colors: Vec::new(),
+                solid: true,
             },
             Self::Layer(index) => Settings::Layer(
                 crate::adjustment::presets()
@@ -632,6 +680,13 @@ pub(crate) enum Settings {
         amount: f32,
         monochrome: bool,
     },
+    /// Each pixel becomes the nearest of `colors` (as the eye judges
+    /// distance); with `solid`, partly see-through pixels become fully
+    /// opaque or fully clear, as pixel art needs.
+    LimitColors {
+        colors: Vec<[u8; 3]>,
+        solid: bool,
+    },
     /// Any adjustment-layer setting, applied to the pixels.
     Layer(crate::adjustment::Settings),
 }
@@ -644,6 +699,7 @@ impl Settings {
             Self::GaussianBlur { .. } => Kind::GaussianBlur,
             Self::Sharpen { .. } => Kind::Sharpen,
             Self::AddNoise { .. } => Kind::AddNoise,
+            Self::LimitColors { .. } => Kind::LimitColors,
             Self::Layer(settings) => Kind::Layer(
                 crate::adjustment::presets()
                     .iter()
@@ -659,7 +715,7 @@ impl Settings {
             Self::Sharpen { amount, .. } | Self::AddNoise { amount, .. } => amount == 0.0,
             // Some neutral-looking presets (posterize, threshold) still change
             // pixels, so these always run.
-            Self::Layer(_) => false,
+            Self::Layer(_) | Self::LimitColors { .. } => false,
             ref other => *other == other.kind().defaults(),
         }
     }
@@ -719,6 +775,12 @@ impl Settings {
                     && (0.1..=100.0).contains(&radius)
             }
             Self::AddNoise { amount, .. } => amount.is_finite() && (0.0..=100.0).contains(&amount),
+            Self::LimitColors { ref colors, .. } => {
+                if colors.is_empty() {
+                    return Err("Add colors to the palette in the Color panel first".into());
+                }
+                colors.len() <= 256
+            }
             Self::Layer(_) => unreachable!("checked above"),
         };
         if valid {
@@ -824,6 +886,22 @@ fn blur_radius_slider(radius: &mut f32) -> egui::Slider<'_> {
         .max_decimals(1)
 }
 
+/// The palette color nearest `rgb` as the eye judges it: the "redmean"
+/// weighting, which counts green most and red or blue by how red the colors
+/// are, is close to a perceptual distance at a fraction of the cost.
+pub(crate) fn nearest_color(rgb: [u8; 3], colors: &[[u8; 3]]) -> [u8; 3] {
+    let distance = |c: &[u8; 3]| {
+        let mean = (i32::from(rgb[0]) + i32::from(c[0])) / 2;
+        let [dr, dg, db] = [0, 1, 2].map(|i| i32::from(rgb[i]) - i32::from(c[i]));
+        (512 + mean) * dr * dr / 256 + 4 * dg * dg + (767 - mean) * db * db / 256
+    };
+    colors
+        .iter()
+        .min_by_key(|c| distance(c))
+        .copied()
+        .unwrap_or(rgb)
+}
+
 pub(crate) fn prepare(
     source: &Document,
     target: LayerId,
@@ -869,6 +947,31 @@ pub(crate) fn prepare(
                     p[i] = c[i].round().clamp(0.0, 255.0) as u8;
                 }
                 Ok(p)
+            },
+        )?;
+    } else if let Settings::LimitColors { colors, solid } = &settings {
+        let alpha_locked = layer.alpha_locked;
+        let mut nearest = std::collections::HashMap::<[u8; 3], [u8; 3]>::new();
+        crate::plugins::filter_pixels_masked(
+            layer,
+            source.selection,
+            source.selection_mask.as_ref(),
+            source.width,
+            control,
+            |p| {
+                if p[3] == 0 {
+                    return Ok(p);
+                }
+                let rgb = [p[0], p[1], p[2]];
+                let [r, g, b] = *nearest
+                    .entry(rgb)
+                    .or_insert_with(|| nearest_color(rgb, colors));
+                let alpha = if *solid && !alpha_locked {
+                    if p[3] >= 128 { 255 } else { 0 }
+                } else {
+                    p[3]
+                };
+                Ok([r, g, b, alpha])
             },
         )?;
     } else if matches!(settings, Settings::HueSaturation { .. }) {
@@ -962,9 +1065,16 @@ impl Dudel {
         let Some(target) = self.input_target() else {
             return;
         };
+        let settings = match kind.defaults() {
+            Settings::LimitColors { solid, .. } => Settings::LimitColors {
+                colors: self.palette.clone(),
+                solid,
+            },
+            settings => settings,
+        };
         self.adjustment = Some(Box::new(Preview {
             target,
-            settings: kind.defaults(),
+            settings,
             source: None,
             revision: 0,
             result: None,
@@ -1228,6 +1338,20 @@ impl Dudel {
                             Settings::AddNoise { amount, monochrome } => {
                                 crate::workspace::labeled_slider(ui, "Amount", egui::Slider::new(amount, 0.0..=100.0).suffix("%").max_decimals(1));
                                 ui.checkbox(monochrome, "Monochrome").on_hover_text("The same grain on every channel, so colors keep their hue");
+                            }
+                            Settings::LimitColors { colors, solid } => {
+                                ui.label(format!("{} colors from the Color panel's palette", colors.len()));
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+                                    for color in colors.iter() {
+                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                                        ui.painter().rect_filled(rect, 2.0, egui::Color32::from_rgb(color[0], color[1], color[2]));
+                                    }
+                                });
+                                if ui.button("Use the palette again").on_hover_text("After changing swatches in the Color panel").clicked() {
+                                    *colors = self.palette.clone();
+                                }
+                                ui.checkbox(solid, "Solid pixels").on_hover_text("Partly see-through pixels become fully opaque or fully clear, as pixel art needs");
                             }
                             Settings::Layer(settings) => crate::adjustment_panel::settings_ui(ui, settings, None),
                         });

@@ -431,6 +431,7 @@ mod tests {
             kind: crate::export_jobs::ExportKind::Png {
                 transparent: true,
                 background: None,
+                scale: 1,
             },
             canceled: false,
         });
