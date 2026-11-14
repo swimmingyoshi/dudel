@@ -574,6 +574,17 @@ impl Dudel {
             if menu_item(ui, &paper, "", true) {
                 self.open_paper_dialog();
             }
+            let mut animated = self.doc.animation.is_some();
+            if ui
+                .checkbox(&mut animated, "Animation timeline")
+                .on_hover_text(
+                    "Frame-by-frame animation: each top-level layer or folder is a frame. Turning it off keeps every layer.",
+                )
+                .clicked()
+            {
+                self.toggle_animation();
+                ui.close();
+            }
             if menu_item(
                 ui,
                 "Crop to selection bounds",
@@ -765,17 +776,6 @@ impl Dudel {
             ui.menu_button("Theme", |ui| self.theme_menu(ui));
             if ui.button("Timelapse...").clicked() {
                 self.timelapse.open = true;
-                ui.close();
-            }
-            let mut animated = self.doc.animation.is_some();
-            if ui
-                .checkbox(&mut animated, "Animation timeline")
-                .on_hover_text(
-                    "Frame-by-frame animation: each top-level layer or folder is a frame.                      Turning it off keeps every layer.",
-                )
-                .clicked()
-            {
-                self.toggle_animation();
                 ui.close();
             }
             ui.add_enabled(
@@ -1892,6 +1892,7 @@ impl Dudel {
     pub(crate) fn workspace(&mut self, ctx: &egui::Context) {
         self.window_resize_ui(ctx);
         self.export_window(ctx);
+        self.animation_export_window(ctx);
         self.navigator_paint = None;
         if self.show_panels {
             self.refresh_thumbnails(ctx);

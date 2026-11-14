@@ -1453,7 +1453,7 @@ mod tests {
         transform_mode brush_live_preview brush_studio preference_recovery \
         settings_store brush_studio_section brush_studio_preview mesh_grid stroke input \
         replay frame_packets stroking secondary hsv hex_input recent_colors text_style \
-        quick_menu quick_menu_prefs export_settings export_window text_extents \
+        quick_menu quick_menu_prefs export_settings export_window animation_export text_extents \
         text_drawer text_moving text_press text_click text_transform_confirmed font_list \
         adjustment_window_open scripted_tool script_stroke vector_record vector_erase \
         vector_erase_mode pointer_lasso line_drag bend_reach quick_resize \

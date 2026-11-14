@@ -19,6 +19,7 @@ use std::path::PathBuf;
 /// settings and takes the image to write as its first argument.
 pub(crate) const MODES: &[&str] = &[
     "--capture-animation",
+    "--capture-animation-export",
     "--capture-adjustment",
     "--capture-adjustment-layer",
     "--capture-affine",
@@ -128,6 +129,7 @@ pub(crate) fn prepare(
     let capture_material = mode == "--capture-material";
     let capture_pixel_art = mode == "--capture-pixel-art";
     let capture_animation = mode == "--capture-animation";
+    let capture_animation_export = mode == "--capture-animation-export";
     let capture_shortcut_conflict = mode == "--capture-shortcut-conflict";
     let capture_command_search = mode == "--capture-command-search";
     let capture_workflow = mode == "--capture-workflow";
@@ -774,8 +776,13 @@ pub(crate) fn prepare(
     if capture_pixel_art {
         app.pixel_art_capture_fixture();
     }
-    if capture_animation {
+    if capture_animation || capture_animation_export {
         app.animation_capture_fixture();
+    }
+    if capture_animation_export {
+        app.animation_export.open = true;
+        app.animation_export.settings.format = crate::animation_export::Format::SpriteSheet;
+        app.animation_export.settings.scale = 4;
     }
     if capture_install {
         app.setup_capture_fixture(capture_updates);

@@ -32,6 +32,8 @@ pub(crate) enum ExportKind {
     },
     /// A .zip project package.
     Package,
+    /// The frames of an animation (`animation_export`).
+    Animation(crate::animation_export::Settings),
 }
 impl ExportKind {
     fn label(self) -> &'static str {
@@ -45,6 +47,7 @@ impl ExportKind {
             },
             Self::Psd { .. } => "PSD",
             Self::Package => "Project package",
+            Self::Animation(_) => "Animation",
         }
     }
 }
@@ -74,7 +77,7 @@ impl ExportJob {
     }
 }
 
-fn destination(path: &Path) -> Result<(), String> {
+pub(crate) fn destination(path: &Path) -> Result<(), String> {
     destination_of(path, "png", b"\x89PNG\r\n\x1a\n", "PNG")
 }
 fn psd_destination(path: &Path) -> Result<(), String> {
@@ -142,7 +145,7 @@ pub(crate) fn scaled_size(width: usize, height: usize, scale: u8) -> Result<[usi
 }
 
 /// Each pixel as a `scale` × `scale` square: sharp, for pixel art.
-fn upscaled(rgba: Vec<u8>, width: usize, height: usize, scale: u8) -> Vec<u8> {
+pub(crate) fn upscaled(rgba: Vec<u8>, width: usize, height: usize, scale: u8) -> Vec<u8> {
     let scale = usize::from(scale.max(1));
     if scale == 1 {
         return rgba;
@@ -412,6 +415,15 @@ impl Dudel {
                 )
             }
             ExportKind::Package => self.start_package_snapshot(path, document),
+            ExportKind::Animation(settings) => self.start_export_worker(
+                path,
+                document,
+                kind,
+                String::new(),
+                move |document, path, cancel| {
+                    crate::animation_export::write(document, path, settings, cancel)
+                },
+            ),
             ExportKind::Psd { effects } => {
                 let note = crate::psd_export::notes(&document, effects).join(" ");
                 self.start_export_worker(
@@ -459,9 +471,17 @@ impl Dudel {
             ExportKind::Png { scale, .. } | ExportKind::Raster { scale, .. } => {
                 usize::from(scale.max(1))
             }
+            ExportKind::Animation(settings) => usize::from(settings.scale.max(1)),
             _ => 1,
         };
-        let raster_bytes = document.width * document.height * 4 * copies * scale * scale;
+        // An animation holds every frame's picture while it encodes.
+        let pictures = match kind {
+            ExportKind::Animation(_) => document
+                .animation
+                .map_or(1, |a| crate::animation::frames(&document, &a).len().max(1)),
+            _ => 1,
+        };
+        let raster_bytes = document.width * document.height * 4 * copies * scale * scale * pictures;
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let worker_path = path.clone();

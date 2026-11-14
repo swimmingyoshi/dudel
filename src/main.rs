@@ -14,6 +14,7 @@ mod allocation_profile;
 #[cfg(all(feature = "allocation-stack-profile", windows))]
 mod allocation_trace;
 mod animation;
+mod animation_export;
 mod animation_ui;
 mod benchmark;
 mod binary_project;
@@ -348,6 +349,7 @@ struct Dudel {
     /// How the next image export is written; a preference.
     export_settings: export_options::ExportSettings,
     export_window: export_options::ExportWindow,
+    animation_export: animation_export::Window,
     /// The project's last image export, which Export again repeats.
     last_export: Option<export_options::LastExport>,
     text_extents: text_tool::Extents,
@@ -688,6 +690,7 @@ impl Default for Dudel {
             quick_menu: None,
             quick_menu_prefs: Default::default(),
             export_window: Default::default(),
+            animation_export: Default::default(),
             last_export: None,
             text_extents: Default::default(),
             text_drawer: Default::default(),

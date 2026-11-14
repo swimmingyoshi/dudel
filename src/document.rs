@@ -3633,9 +3633,11 @@ mod tests {
             history.checkpoint(&doc);
             doc.add_layer();
         }
-        // Adding layers shares every existing buffer: snapshots cost no pixels.
+        // Adding layers shares every existing buffer: snapshots cost no pixels,
+        // only their layers' metadata (about 16 KiB for these 36 layer
+        // entries). Copying even one layer's pixels would pass 32 KiB.
         assert_eq!(history.bytes, history.measure(&doc));
-        assert!(history.bytes < 64 * 64 * 4);
+        assert!(history.bytes < 64 * 64 * 4 * 3 / 2);
         for _ in 0..6 {
             history.checkpoint(&doc);
             doc.layers[0].pixels.fill(7);

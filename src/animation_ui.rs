@@ -310,6 +310,14 @@ impl Dudel {
             {
                 self.duplicate_frame();
             }
+            if ui
+                .button("Export…")
+                .on_hover_text("Animated GIF, PNG frames, a sprite sheet or an MP4 video")
+                .clicked()
+            {
+                self.animation_play = None;
+                self.animation_export.open = true;
+            }
             if let Some(frame) = current.and_then(|f| frames.get(f)) {
                 let mut hold = frame.hold;
                 let response = ui

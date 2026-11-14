@@ -424,7 +424,7 @@ fn new_folder(parent: &Path, name: &str) -> Result<PathBuf, String> {
     Err("Too many timelapse folders with this name today".into())
 }
 
-fn gif_destination(path: &Path) -> Result<(), String> {
+pub(crate) fn gif_destination(path: &Path) -> Result<(), String> {
     if !path
         .extension()
         .is_some_and(|s| s.eq_ignore_ascii_case("gif"))
@@ -615,7 +615,7 @@ fn export_gif(
     gif_destination(destination)
 }
 
-fn mp4_destination(path: &Path) -> Result<(), String> {
+pub(crate) fn mp4_destination(path: &Path) -> Result<(), String> {
     use std::io::Read;
     if !path
         .extension()
