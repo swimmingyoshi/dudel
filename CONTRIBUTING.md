@@ -23,6 +23,10 @@ cargo build --locked --release --bin dudel
 .\target\release\dudel.exe
 ```
 
+While you work on a change, `cargo run --profile fast` is the quicker way to
+try it: the same optimization, but a rebuild after an edit takes 15 to 45
+seconds, not three minutes.
+
 On Linux, the system packages are the ones `.github/workflows/linux.yml` installs;
 see also the [Linux port notes](docs/dev/LINUX_PORT.md).
 

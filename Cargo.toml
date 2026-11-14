@@ -53,6 +53,24 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage
 # registry and HTTPS for the installer and the update check.
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WinHttp", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell"] }
 
+# Debug builds and tests keep line numbers for backtraces and nothing else,
+# and no debug information for dependencies: the symbol file is 250 MB, not
+# 690 MB, and each link is 3 s shorter. For a debugger session set
+# CARGO_PROFILE_DEV_DEBUG=full.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# For trying a change at full speed: `cargo run --profile fast`. Optimized
+# like a release, but it keeps an incremental cache, so a rebuild after an
+# edit takes 15 to 45 s, not 3 minutes, and it paints at the same speed
+# (compared 2026-11-13). Packages are still built with `--release`.
+[profile.fast]
+inherits = "release"
+incremental = true
+
 [dev-dependencies]
 rusqlite = { version = "=0.40.2", default-features = false, features = ["serialize"] }
 wat = "1.261.0"

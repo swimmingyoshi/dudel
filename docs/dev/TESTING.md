@@ -45,9 +45,13 @@ file-list decoding uses bounded synthetic CF_HDROP fixtures; actual clipboard
 interoperability remains a separate native workflow check.
 
 Before release/CI use `./scripts/Verify.ps1 -Mode Full` or
-`bash scripts/verify.sh full`. This retains both normal and diagnostic-feature
-tests/lints and release compilation (both the app and thumbnail DLL on Windows).
-Windows CI separately runs the two ignored
+`bash scripts/verify.sh full`. This adds the diagnostic features and release
+compilation (both the app and thumbnail DLL on Windows). The diagnostic
+features add tests of their own and change no other test, so Full runs only
+those again (it lists the tests with and without the features and takes the
+difference) and lints every target with the features on. Windows CI passes
+`-SkipReleaseBuild`, because its packaging step builds the release itself with
+the shipping flags; it also runs the two ignored
 maximum-memory fixtures and matching-source packaging. Full verification refuses
 test filters. Resource soaks and tablet acceptance stay explicit release gates;
 do not run them on routine UI edits or infer acceptance from unit tests.
@@ -195,3 +199,30 @@ triangles, tilted axes, source/destination crossings, clipping, frozen preview
 sources, cancellation, a single undo step, legacy defaults and real UI clicks
 with the properties sidebar shown or hidden. Paired drags use the coalescing
 background transform worker; the single-region GPU overlay is bypassed.
+
+## Build profiles
+
+Measured on the development PC (12 cores), one edit in `document.rs`:
+
+| Command | Rebuild | Use |
+|---|---|---|
+| `cargo check` | 5 s | while editing |
+| `cargo test --no-run` | 25 s | the test program; the suite then runs in about 100 s |
+| `cargo run --profile fast` | 15 to 45 s | trying a change at full speed |
+| `cargo build --release` | 3 min | what is packaged |
+
+`fast` is the release profile with an incremental cache. It paints at the
+same speed as a release (the profiled strokes differ by under 3% either way),
+so it is also the build for `--profile-stroke` measurements and for the
+ignored benchmarks: `cargo test --profile fast ... -- --ignored`. Packages,
+CI and the source-archive rebuild use `--release`, which keeps no cache.
+
+Debug builds carry line numbers only (`debug = "line-tables-only"`, none for
+dependencies), which more than halves the symbol file and shortens each link.
+Set `CARGO_PROFILE_DEV_DEBUG=full` for a debugger session.
+
+Three things were tried and dropped: a different linker (`rust-lld` saves 1 s
+of 9), optimized dependencies in debug builds (the suite is 5% faster, the
+first build much slower), and a lightly optimized debug build (one edit took
+4.5 minutes to rebuild). `scripts/Clean.ps1` lists what can be deleted from
+the build folders and removes it with `-Apply`.

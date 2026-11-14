@@ -1,3 +1,4 @@
-*.sh text eol=lf
-.githooks/* text eol=lf
+# One line ending in every checkout, whatever its autocrlf setting: scripted
+# edits and recorded file hashes then agree between Windows and Linux.
+* text=auto eol=lf
 scripts/upstream-notices/blobs/* -text

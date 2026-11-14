@@ -17,7 +17,16 @@ python3 -m unittest discover -s research -p 'test_*.py'
 # No personal paths or private research in tracked files (the repository is public).
 python3 scripts/check_public_tree.py
 if [[ "$mode" == full ]]; then
-    cargo test --locked --all-features
+    # The diagnostic features add tests of their own and change no other test,
+    # so only those run again; Clippy below still compiles every target with
+    # the features on.
+    listed() { cargo test --locked "$@" -- --list --format terse | sed -n 's/: test$//p' | sort; }
+    plain="$(listed)"
+    mapfile -t diagnostic < <(comm -13 <(echo "$plain") <(listed --all-features))
+    if [[ -z "$plain" || ${#diagnostic[@]} -eq 0 ]]; then
+        echo 'The diagnostic-feature tests were not found' >&2; exit 1
+    fi
+    cargo test --locked --all-features -- --exact "${diagnostic[@]}"
     cargo clippy --locked --all-targets --all-features -- -D warnings
     cargo build --locked --release
 fi

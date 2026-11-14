@@ -34,7 +34,8 @@ jobs:
           python-version: '3.12'
       - name: Verify
         shell: pwsh
-        run: ./scripts/Verify.ps1 -Mode Full
+        # The packaging step below builds the release, with the shipping flags.
+        run: ./scripts/Verify.ps1 -Mode Full -SkipReleaseBuild
       - name: Maximum supported project round-trip
         shell: pwsh
         run: cargo test --locked binary_project::tests::maximum_supported_binary_project_roundtrip -- --ignored --exact

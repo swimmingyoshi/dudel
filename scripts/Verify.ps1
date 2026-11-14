@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Quick', 'Full')][string]$Mode = 'Quick',
     [string[]]$TestFilter,
-    [string]$ReleaseTargetDirectory
+    [string]$ReleaseTargetDirectory,
+    [switch]$SkipReleaseBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,12 +43,28 @@ try {
     # No personal paths or private research in tracked files (the repository is public).
     Invoke-Check python @('scripts/check_public_tree.py')
     if ($Mode -eq 'Full') {
-        Invoke-Check cargo @('test', '--locked', '--all-features')
+        # The diagnostic features add tests of their own and change no other
+        # test, so only those run again; Clippy below still compiles every
+        # target with the features on.
+        function Get-TestNames {
+            param([string[]]$Features)
+            @(Invoke-Check cargo (@('test', '--locked') + $Features + @('--', '--list', '--format', 'terse')) |
+                Where-Object { $_ -match ': test$' } | ForEach-Object { $_ -replace ': test$', '' })
+        }
+        $plain = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($name in (Get-TestNames @())) { [void]$plain.Add($name) }
+        $diagnostic = @(Get-TestNames @('--all-features') | Where-Object { -not $plain.Contains($_) })
+        if ($plain.Count -eq 0 -or $diagnostic.Count -eq 0) { throw 'The diagnostic-feature tests were not found' }
+        Invoke-Check cargo (@('test', '--locked', '--all-features', '--', '--exact') + $diagnostic)
         Invoke-Check cargo @('clippy', '--locked', '--all-targets', '--all-features', '--', '-D', 'warnings')
-        $releaseArguments = @('build', '--locked', '--release')
-        if ($ReleaseTargetDirectory) { $releaseArguments += @('--target-dir', $ReleaseTargetDirectory) }
-        Invoke-Check cargo $releaseArguments
-        Invoke-Check cargo ($releaseArguments + @('--manifest-path', $thumbnailManifest))
+        # Package.ps1 builds the release itself, with the flags it ships with;
+        # a run that packages next skips this copy.
+        if (-not $SkipReleaseBuild) {
+            $releaseArguments = @('build', '--locked', '--release')
+            if ($ReleaseTargetDirectory) { $releaseArguments += @('--target-dir', $ReleaseTargetDirectory) }
+            Invoke-Check cargo $releaseArguments
+            Invoke-Check cargo ($releaseArguments + @('--manifest-path', $thumbnailManifest))
+        }
     }
 } finally {
     Pop-Location
