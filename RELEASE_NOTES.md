@@ -6,8 +6,25 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
 
 ## Unreleased
 
-Pixel art tools; frame-by-frame animation is in progress for the same
-release.
+Pixel art tools and frame-by-frame animation.
+
+**Animation**
+- **Frames are layers:** **Canvas > Animation timeline** turns a project
+  into an animation in which each top-level layer or folder is a frame,
+  bottom first, as in Procreate's Animation Assist. A folder makes a frame
+  of several layers. The layers never change, so older versions open an
+  animation as ordinary layers, and turning the timeline off keeps them.
+- **Timeline:** play and pause, step between frames, frames per second
+  (1 to 60), Loop, Ping-pong or Once, new and duplicated frames, and a hold
+  for each frame (how many frame periods it shows for). The bottom and top
+  layers can stay under and over every frame as a background and a
+  foreground.
+- **Onion skin:** faint copies of the frames before (red) and after (green)
+  while drawing, with their number and opacity adjustable.
+- **Export animation:** an animated GIF (with transparency, holds as
+  delays), numbered PNG frames, a sprite sheet in rows of any number of
+  columns, or an MP4 video through FFmpeg, scaled up by a whole number for
+  pixel art if wanted.
 
 **Pixel art**
 - **Pixel pencil:** a new built-in preset in the Pencil tool. Any brush can

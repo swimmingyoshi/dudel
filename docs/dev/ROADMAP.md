@@ -129,9 +129,11 @@ release.
 - [x] Wrap-around painting with dimmed copies for seamless tiles.
 - [x] Export scaled by whole numbers; Filter > Limit to palette; Lospec
       `.hex` and GIMP `.gpl` palette import.
-- [ ] Frame-by-frame animation: timeline, exposures, playback, onion skin
-      and exports, following the [animation plan](ANIMATION_PLAN.md);
-      sprite sheet export with it.
+- [x] Frame-by-frame animation with frames as layers (decided 2026-11-14):
+      timeline, holds, playback modes, background and foreground, onion
+      skin, and GIF, PNG frames, sprite sheet and MP4 export. See the
+      [animation plan](ANIMATION_PLAN.md) for what is left.
+- [ ] The owner's pen pass on pixel art and animation.
 
 ## Installing and updating
 
