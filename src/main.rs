@@ -50,6 +50,7 @@ mod clipboard_shortcuts;
 mod color_wheel;
 mod composite_cursor;
 mod dab_bands;
+mod dab_rows;
 mod dialogs;
 mod display_settings;
 mod display_workers;
