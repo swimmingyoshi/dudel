@@ -1,8 +1,65 @@
-# Windows 0.4 release decision — 2026-11-12
+# Windows 0.5 release decision — 2026-11-13
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.5.0 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-13 to make the release. The
+earlier decisions that follow remain the record for the evidence carried over.
+
+**Application source:** commit `929d4ab`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`9671660F...D3D23589` and DLL `C36C876C...F4A15F51`, and release packaging refuses
+different bytes.
+
+**What changed since 0.4.0** (see [release notes](../../RELEASE_NOTES.md)):
+Install on this PC and updates from inside Dudel; projects opened from File
+Explorer; wet, smudge, blur and thick paint dabs across processor cores, so
+large wet brushes and the palette knife keep up with the pen; tips that turn
+with the stroke start turned; no display flicker around a large brush; a wet
+stroke and its drying undo together; pure black mixes as a pigment; brush
+graph outputs for water, pigment, thickness, paper texture and granulation.
+Project and file formats are unchanged. Inside, the painting function and
+`main.rs` were broken up, and the build gained a `fast` profile.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full` on `929d4ab`: the suite (1,432 tests,
+  26 ignored), the nine tests the diagnostic features add, the DLL tests,
+  formatting, both Clippy configurations, both release builds, the 42 Python
+  tests and the public-tree check.
+- Candidate `dudel-0.5.0-candidate-20261114-034710-543`: `Package.ps1` ran end to end, the first full run
+  with the `FILES.json` step. Static runtime (no Visual C++ imports), no
+  private paths or terms, 0 public-tree problems in the package and its
+  source ZIP, and `FILES.json` lists exactly the package's 931 files, which
+  is what installing and updating rely on. Third-party notices are identical
+  to 0.4.0's; the dependency list differs only in Dudel's own version.
+- The source ZIP's sources were rebuilt offline from its vendored
+  dependencies (`scripts/check_source_archive.py`).
+- The packaged executable started and captured its welcome window.
+- The refactors were checked against the build before them: all 65
+  screenshot modes give the same pixels, the canvases of all 32 profiled
+  strokes are byte-identical, and the profiled strokes paint at the same
+  speed (within 3%).
+- The owner's pen, 2026-11-13, on builds before the refactors: the wet brush
+  lag, the palette knife and the flicker around a large brush were each
+  reported, fixed and confirmed ("everything works much better now").
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.5.0` tag is made; the tag is the record that they did.
+
+**Not run on this build:** an update from one published release to the next
+(0.4.0 cannot update itself; the download and checksum path was exercised
+against the published 0.4.0 package, and installing a file list by unit
+tests), Install on this PC on a second computer, the private CSP corpus
+comparison (import code is unchanged since 0.2.0), the resource and two-hour
+studies, a launch of the Linux build, and a pen pass after the refactors
+(their output is byte-identical to the build the owner used).
+
+**Known limits** are listed under "Limits in 0.5.0" and "Known limits" in
+the release notes.
+
+# Windows 0.4 release decision — 2026-11-12
 
 **Release preparation for 0.4.0 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-12 to proceed with 0.4.0. The

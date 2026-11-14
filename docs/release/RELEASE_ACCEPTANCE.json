@@ -1,20 +1,20 @@
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-11-12",
+  "decision_date": "2026-11-13",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 pre-release for outside testers, with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at commit b50fc39; later commits change documents only, and the v0.4.0 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "0.4.0: gradients, Gaussian blur, sharpen and noise filters, direct adjustments, named workspaces, smudge, blur and wet brushes, brush graphs with groups, formulas, sharing and an editor that shows node values, Brush Studio as a tab with a test pad, canvas paper shown on the canvas, and material layers (watercolor, dry media, thick paint with a saved relief) whose colors mix as pigments. Projects with material layers use the styled container and a relief trailer that older versions refuse. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.3.0 binaries: dudel.exe 6E92CBFC...CE234D4B, dudel_thumbnails.dll C21A954B...31CFA0CD.",
+  "application_source": "this repository's source at commit 929d4ab; later commits change documents only, and the v0.5.0 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.5.0: Install on this PC and updates from inside Dudel (only when asked, checksum-checked, undone if a file cannot be placed), projects opened from File Explorer, wet, smudge, blur and thick paint dabs across processor cores, large wet brushes and the palette knife keeping up with the pen, tips that turn with the stroke starting turned, no display flicker around a large brush, a wet stroke and its drying as one undo step, pure black mixing as a pigment, and Water, Pigment, Thickness, Paper texture and Granulation outputs for brush graphs. Project and file formats are unchanged from 0.4.0. The painting function and main.rs were broken up with byte-identical output. Evidence: local Verify Full, both packaging gates, an offline rebuild of the source archive and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.4.0 binaries: dudel.exe D18964FD...069242B5, dudel_thumbnails.dll DE919FF4...1CF7BA34.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "D18964FD93CAC3DD89371EA20794F7BDD0F147B565916A0DE84D9DFF069242B5"
+      "sha256": "9671660F9705FD19CB71DDB351AAE0ED712DF0DE6711DA4FBB20AB50D3D23589"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "DE919FF4614914B96DB70AA9715542668C7B261A75E958D0A07165DC1CF7BA34"
+      "sha256": "C36C876CBA63589F253F08B519D614A98EC9418613BAA780782E8685F4A15F51"
     }
   ]
 }
