@@ -1496,6 +1496,11 @@ impl Dudel {
             (None, None)
         };
         let frame_changed = frame_shown != self.animation_shown;
+        if frame_changed && self.animation_shown.is_some() {
+            // Stepping between frames: nobody is drawing, so show the new
+            // frame in a few screen refreshes instead of many.
+            self.texture.hurry();
+        }
         let base = framed.as_ref().unwrap_or(base);
         // Layer effects are drawn as extra layers. A layer whose drawing is
         // out of date shows its previous one while a background worker

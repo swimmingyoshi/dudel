@@ -302,6 +302,9 @@ struct ResolutionKey {
 }
 #[derive(Default)]
 pub struct CanvasTextures {
+    /// A new animation frame is on its way: nobody is drawing, so each
+    /// update may spend `HURRIED` instead of 2 ms until it shows.
+    hurry: bool,
     prefix: crate::prefix_cache::PrefixCache,
     dimensions: [usize; 2],
     tiles: Vec<Tile>,
@@ -780,6 +783,11 @@ impl CanvasTextures {
             *level == 1 || dirty_rect(tile.bounds, rect, doc.width, doc.height).is_none()
         })
     }
+    /// Show a new animation frame sooner: spend more of each update on it
+    /// until every tile shows it.
+    pub(crate) fn hurry(&mut self) {
+        self.hurry = true;
+    }
     pub(crate) fn set_viewport(&mut self, area: Rect, view: View) {
         self.viewport = (area.width() > 0.0 && area.height() > 0.0).then_some((area, view));
     }
@@ -966,6 +974,9 @@ impl CanvasTextures {
             return;
         }
         self.update_sliced(ctx, doc, full, damage.bounds(), options, performance);
+        if self.hurry && self.pending.iter().all(Option::is_none) && self.composite.is_none() {
+            self.hurry = false;
+        }
     }
     pub(crate) fn update_sliced(
         &mut self,
@@ -1121,7 +1132,8 @@ impl CanvasTextures {
                         .as_ref()
                         .map_or(0, |job| job.preparation.capacity_bytes()),
             );
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2);
+        let budget = if self.hurry { HURRIED } else { 2 };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget);
         let units = 4096;
         #[cfg(test)]
         let units = self.test_units.unwrap_or(units);
@@ -1165,7 +1177,8 @@ impl CanvasTextures {
                     let mut next = index as isize + direction;
                     // Quick jobs cost a fraction of an exact one; take more
                     // tiles each, as there is a frame's wait between jobs.
-                    while batch.len() + 1 < BATCH * step
+                    let hurry = if self.hurry { 4 } else { 1 };
+                    while batch.len() + 1 < BATCH * step * hurry
                         && let Some(neighbour) =
                             usize::try_from(next).ok().filter(|n| *n < self.tiles.len())
                         && self.tiles[neighbour].bounds[1] == tile[1]
@@ -1244,6 +1257,12 @@ impl CanvasTextures {
                 .max(performance.display_queued_bytes + job.preparation.capacity_bytes());
             if !complete {
                 if matches!(job.preparation, Preparation::Worker(_)) {
+                    // Hurrying, wait for the worker and hand it the next
+                    // batch in this same update instead of the next frame.
+                    if self.hurry {
+                        std::thread::sleep(std::time::Duration::from_micros(200));
+                        continue;
+                    }
                     break;
                 }
                 continue;
@@ -5084,6 +5103,10 @@ mod toggle_latency {
     }
 }
 
+/// Milliseconds an update may spend while a new animation frame is on its
+/// way (`CanvasTextures::hurry`), against 2 ms while drawing.
+const HURRIED: u64 = 12;
+
 /// Animation playback on large canvases: how long the display takes to show
 /// a new frame. Each case switches through every frame of a looping
 /// animation twice (the second pass shows what repeated frames cost) and
@@ -5183,92 +5206,103 @@ pub(crate) fn benchmark_animation(path: &std::path::Path) -> Result<(), String> 
             first_ms.unwrap_or(0.0),
             frames.len()
         );
-        let mut switches = Vec::new();
-        for pass in 0..3 {
-            for frame in 0..frames.len() {
-                let started = std::time::Instant::now();
-                let view_doc = animation::frame_view(&doc, &settings, &frames, Some(frame), false);
-                let view_ms = started.elapsed().as_secs_f64() * 1000.0;
-                let (mut shown_ms, mut calls, mut max_call_ms) = (None, 0usize, 0.0f64);
-                loop {
-                    let call = std::time::Instant::now();
-                    textures.set_viewport(area, view);
-                    let _ = ctx.run(Default::default(), |ctx| {
-                        let mut performance = Performance::default();
-                        textures.update_damage(
-                            ctx,
-                            &view_doc,
-                            true,
-                            Default::default(),
-                            options,
-                            &mut performance,
-                        );
-                    });
-                    max_call_ms = max_call_ms.max(call.elapsed().as_secs_f64() * 1000.0);
-                    calls += 1;
-                    if let Some(error) = textures.take_error() {
-                        return Err(error);
+        for hurried in [false, true] {
+            let mut switches = Vec::new();
+            for pass in 0..3 {
+                for frame in 0..frames.len() {
+                    let started = std::time::Instant::now();
+                    let view_doc =
+                        animation::frame_view(&doc, &settings, &frames, Some(frame), false);
+                    let view_ms = started.elapsed().as_secs_f64() * 1000.0;
+                    let (mut shown_ms, mut calls, mut max_call_ms) = (None, 0usize, 0.0f64);
+                    if hurried {
+                        textures.hurry();
                     }
-                    let presented = textures.generation.is_none()
-                        && textures.composite.is_none()
-                        && textures.pending.iter().all(Option::is_none)
-                        && !textures.resolution_stale();
-                    if presented && shown_ms.is_none() {
-                        shown_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+                    loop {
+                        let call = std::time::Instant::now();
+                        textures.set_viewport(area, view);
+                        let _ = ctx.run(Default::default(), |ctx| {
+                            let mut performance = Performance::default();
+                            textures.update_damage(
+                                ctx,
+                                &view_doc,
+                                true,
+                                Default::default(),
+                                options,
+                                &mut performance,
+                            );
+                        });
+                        max_call_ms = max_call_ms.max(call.elapsed().as_secs_f64() * 1000.0);
+                        calls += 1;
+                        if let Some(error) = textures.take_error() {
+                            return Err(error);
+                        }
+                        let presented = textures.generation.is_none()
+                            && textures.composite.is_none()
+                            && textures.pending.iter().all(Option::is_none)
+                            && !textures.resolution_stale();
+                        if presented && shown_ms.is_none() {
+                            shown_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+                        }
+                        if !textures.busy() {
+                            break;
+                        }
+                        if textures.waiting() {
+                            std::thread::sleep(std::time::Duration::from_micros(500));
+                        }
+                        if calls > 200_000 {
+                            return Err("Display did not drain".into());
+                        }
                     }
-                    if !textures.busy() {
-                        break;
+                    // The first pass includes the cold start; keep later ones.
+                    if pass > 0 {
+                        switches.push(serde_json::json!({
+                            "frame": frame,
+                            "frame_view_ms": view_ms,
+                            "shown_ms": shown_ms,
+                            "exact_ms": started.elapsed().as_secs_f64() * 1000.0,
+                            "calls": calls,
+                            "max_call_ms": max_call_ms,
+                        }));
                     }
-                    if textures.waiting() {
-                        std::thread::sleep(std::time::Duration::from_micros(500));
-                    }
-                    if calls > 200_000 {
-                        return Err("Display did not drain".into());
-                    }
-                }
-                // The first pass includes the cold start; keep later ones.
-                if pass > 0 {
-                    switches.push(serde_json::json!({
-                        "frame": frame,
-                        "frame_view_ms": view_ms,
-                        "shown_ms": shown_ms,
-                        "exact_ms": started.elapsed().as_secs_f64() * 1000.0,
-                        "calls": calls,
-                        "max_call_ms": max_call_ms,
-                    }));
                 }
             }
+            let stat = |key: &str| {
+                let mut values: Vec<f64> =
+                    switches.iter().filter_map(|s| s[key].as_f64()).collect();
+                values.sort_by(f64::total_cmp);
+                serde_json::json!({
+                    "median": values[values.len() / 2],
+                    "max": values[values.len() - 1],
+                })
+            };
+            let calls = stat("calls");
+            eprintln!(
+                "{width}x{height} {coverage}{}: calls {calls} shown {} exact {} longest call {} frame view {}",
+                if hurried { " hurried" } else { "" },
+                stat("shown_ms"),
+                stat("exact_ms"),
+                stat("max_call_ms"),
+                stat("frame_view_ms")
+            );
+            cases.push(serde_json::json!({
+                "hurried": hurried,
+                "calls": calls,
+                "size": [width, height],
+                "frames": frames_count,
+                "coverage": coverage,
+                "zoom": zoom,
+                "shown_ms": stat("shown_ms"),
+                "exact_ms": stat("exact_ms"),
+                "max_call_ms": stat("max_call_ms"),
+                "frame_view_ms": stat("frame_view_ms"),
+                "reduced_step": step,
+                "reduced_frame_ms": reduced_ms,
+                "playback_first_frame_ms": first_ms,
+                "playback_all_cached_ms": cached_ms,
+                "switches": switches,
+            }));
         }
-        let stat = |key: &str| {
-            let mut values: Vec<f64> = switches.iter().filter_map(|s| s[key].as_f64()).collect();
-            values.sort_by(f64::total_cmp);
-            serde_json::json!({
-                "median": values[values.len() / 2],
-                "max": values[values.len() - 1],
-            })
-        };
-        eprintln!(
-            "{width}x{height} {coverage}: shown {} exact {} longest call {} frame view {}",
-            stat("shown_ms"),
-            stat("exact_ms"),
-            stat("max_call_ms"),
-            stat("frame_view_ms")
-        );
-        cases.push(serde_json::json!({
-            "size": [width, height],
-            "frames": frames_count,
-            "coverage": coverage,
-            "zoom": zoom,
-            "shown_ms": stat("shown_ms"),
-            "exact_ms": stat("exact_ms"),
-            "max_call_ms": stat("max_call_ms"),
-            "frame_view_ms": stat("frame_view_ms"),
-            "reduced_step": step,
-            "reduced_frame_ms": reduced_ms,
-            "playback_first_frame_ms": first_ms,
-            "playback_all_cached_ms": cached_ms,
-            "switches": switches,
-        }));
     }
     let report = serde_json::json!({
         "benchmark": "animation playback display",

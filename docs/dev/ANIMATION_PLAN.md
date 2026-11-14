@@ -34,6 +34,12 @@ format and its own save, undo and recovery paths.
   frames. Redrawing tiles per frame took about 0.2 s at 1080p and 6 s for a
   painted 4K frame in the app; cached frames take 60-100 ms each to render
   once (`--benchmark-animation`). Drawing never uses the cache.
+- Stepping between frames (with the onion skin) uses the tiles. On a frame
+  change the display hurries (`CanvasTextures::hurry`): it waits for its
+  worker within one update for up to 12 ms and gives it larger batches, so
+  a 1080p step shows in about 2 screen refreshes instead of 14, a 4K one
+  with a small character in 6 instead of 41, and a 4K frame painted edge
+  to edge in 165 instead of 421 (still about 3 s).
 - Keys: a Space tap plays or pauses (a held or dragged Space still pans,
   zooms or rotates); comma and period step frames; all are commands with
   editable shortcuts.
