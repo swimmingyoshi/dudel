@@ -18,6 +18,7 @@ use std::path::PathBuf;
 /// Every screenshot mode. Each runs in an isolated window with default
 /// settings and takes the image to write as its first argument.
 pub(crate) const MODES: &[&str] = &[
+    "--capture-animation",
     "--capture-adjustment",
     "--capture-adjustment-layer",
     "--capture-affine",
@@ -126,6 +127,7 @@ pub(crate) fn prepare(
     let capture_paper = mode == "--capture-paper";
     let capture_material = mode == "--capture-material";
     let capture_pixel_art = mode == "--capture-pixel-art";
+    let capture_animation = mode == "--capture-animation";
     let capture_shortcut_conflict = mode == "--capture-shortcut-conflict";
     let capture_command_search = mode == "--capture-command-search";
     let capture_workflow = mode == "--capture-workflow";
@@ -772,6 +774,9 @@ pub(crate) fn prepare(
     if capture_pixel_art {
         app.pixel_art_capture_fixture();
     }
+    if capture_animation {
+        app.animation_capture_fixture();
+    }
     if capture_install {
         app.setup_capture_fixture(capture_updates);
     }
@@ -968,5 +973,77 @@ impl Dudel {
         self.zoom = 14.0;
         self.auto_fit = false;
         self.changed();
+    }
+}
+
+impl Dudel {
+    /// A bouncing ball in six frames over a background, on frame three with
+    /// the onion skin showing the frames around it.
+    fn animation_capture_fixture(&mut self) {
+        let (w, h) = (96usize, 64usize);
+        let mut doc = document::Document::new(w, h);
+        doc.dpi = 72.0;
+        let mut background = document::Layer::raster("Background".into(), w, h);
+        {
+            let mut writer = background.pixels.writer();
+            for y in 0..h {
+                for x in 0..w {
+                    let rgba = if y >= 54 {
+                        [86, 108, 134, 255]
+                    } else {
+                        [232, 238, 244, 255]
+                    };
+                    writer.rgba_mut(y * w + x).copy_from_slice(&rgba);
+                }
+            }
+        }
+        let mut layers = vec![background];
+        let heights = [10.0f32, 26.0, 44.0, 47.0, 30.0, 14.0];
+        for (index, top) in heights.iter().enumerate() {
+            let mut frame = document::Layer::raster(format!("Frame {}", index + 1), w, h);
+            let squash = if index == 3 { 1.35 } else { 1.0 };
+            let (cx, cy) = (16.0 + index as f32 * 13.0, top + 4.0);
+            {
+                let mut writer = frame.pixels.writer();
+                for y in 0..h {
+                    for x in 0..w {
+                        let dx = (x as f32 + 0.5 - cx) / (6.0 * squash);
+                        let dy = (y as f32 + 0.5 - cy) / (6.0 / squash);
+                        let d = dx * dx + dy * dy;
+                        if d <= 1.0 {
+                            let rgba = if d > 0.7 {
+                                [26, 28, 44, 255]
+                            } else if dx < -0.2 && dy < -0.2 {
+                                [255, 205, 117, 255]
+                            } else {
+                                [239, 125, 87, 255]
+                            };
+                            writer.rgba_mut(y * w + x).copy_from_slice(&rgba);
+                        }
+                    }
+                }
+            }
+            if index == 3 {
+                frame.hold = 2;
+            }
+            layers.push(frame);
+        }
+        doc.layers = layers;
+        doc.active = 3;
+        doc.animation = Some(crate::animation::Animation {
+            fps: 10,
+            background: true,
+            onion_before: 2,
+            onion_after: 1,
+            ..Default::default()
+        });
+        self.apply_action(document_actions::Action::Replace {
+            document: Box::new(doc),
+            path: None,
+            modified: false,
+            status: "Animation · frame 3 with the onion skin",
+        });
+        self.zoom = 9.0;
+        self.auto_fit = false;
     }
 }

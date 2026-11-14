@@ -278,6 +278,10 @@ pub struct Layer {
     /// media or thick paint; None is a plain layer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<Box<crate::material::Material>>,
+    /// In an animation, how many frame periods this top-level entry shows
+    /// for (`animation::Frame`). Ignored inside folders.
+    #[serde(default = "one_frame", skip_serializing_if = "is_one_frame")]
+    pub hold: u16,
     pub pixels: crate::pixels::Pixels,
     /// Only injected into canvas display snapshots, never live artwork or files.
     #[serde(skip)]
@@ -360,10 +364,17 @@ impl Default for Layer {
             vector: None,
             text: None,
             material: None,
+            hold: 1,
             pixels: Default::default(),
             display_reference: None,
         }
     }
+}
+fn one_frame() -> u16 {
+    1
+}
+fn is_one_frame(hold: &u16) -> bool {
+    *hold == 1
 }
 
 impl Layer {
@@ -707,6 +718,10 @@ pub struct Document {
     /// The surface brushes paint on; None is a smooth canvas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paper: Option<crate::paper::Paper>,
+    /// Frame-by-frame animation settings (`animation`); None is a still
+    /// picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animation: Option<crate::animation::Animation>,
     /// Where paint is still wet. Never saved.
     #[serde(skip)]
     pub(crate) wet: crate::wet::Field,
@@ -754,6 +769,7 @@ impl Document {
             guides: None,
             references: Vec::new(),
             paper: None,
+            animation: None,
             wet: Default::default(),
         }
     }
@@ -2097,6 +2113,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
         || before.height != after.height
         || before.dpi != after.dpi
         || before.paper != after.paper
+        || before.animation != after.animation
         || before.canvas_frame != after.canvas_frame
         || before.layers.len() != after.layers.len()
     {
@@ -2115,6 +2132,7 @@ fn compact_layer(before: &Document, after: &Document) -> Option<Option<usize>> {
             || a.clipped != b.clipped
             || a.locked != b.locked
             || a.alpha_locked != b.alpha_locked
+            || a.hold != b.hold
             || a.folder != b.folder
             || a.depth != b.depth
             || a.effects != b.effects

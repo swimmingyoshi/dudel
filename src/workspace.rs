@@ -767,6 +767,17 @@ impl Dudel {
                 self.timelapse.open = true;
                 ui.close();
             }
+            let mut animated = self.doc.animation.is_some();
+            if ui
+                .checkbox(&mut animated, "Animation timeline")
+                .on_hover_text(
+                    "Frame-by-frame animation: each top-level layer or folder is a frame.                      Turning it off keeps every layer.",
+                )
+                .clicked()
+            {
+                self.toggle_animation();
+                ui.close();
+            }
             ui.add_enabled(
                 self.doc.paper.is_some(),
                 egui::Checkbox::new(&mut self.paper_view.show, "Paper texture"),
@@ -1919,6 +1930,11 @@ impl Dudel {
             ui.add_space(2.0);
         });
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| self.status_bar(ui));
+        if self.doc.animation.is_some() && self.show_panels {
+            egui::TopBottomPanel::bottom("timeline")
+                .resizable(false)
+                .show(ctx, |ui| self.timeline_ui(ui));
+        }
         if self.show_panels {
             egui::SidePanel::left("tools")
                 .exact_width(TOOL_RAIL_WIDTH)

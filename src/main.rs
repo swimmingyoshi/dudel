@@ -13,6 +13,8 @@ mod affine_preview;
 mod allocation_profile;
 #[cfg(all(feature = "allocation-stack-profile", windows))]
 mod allocation_trace;
+mod animation;
+mod animation_ui;
 mod benchmark;
 mod binary_project;
 mod blend;
@@ -396,6 +398,11 @@ struct Dudel {
     mask_view_layers: Option<([usize; 2], pixels::Pixels, pixels::Pixels)>,
     mask_view_ids: (document::LayerId, document::LayerId),
     mask_view_shown: bool,
+    /// Animation playback: when it started and on which frame.
+    animation_play: Option<(std::time::Instant, usize)>,
+    /// The animation frame and onion skin the canvas last showed, so a
+    /// change redraws it (`animation_display`).
+    animation_shown: Option<(Option<usize>, bool)>,
     /// Effect drawings (generations) the canvas tiles last showed.
     effects_shown: Vec<u64>,
     tool_shift: tool_shift::ToolShift,
@@ -710,6 +717,8 @@ impl Default for Dudel {
             mask_view_layers: None,
             mask_view_ids: (document::LayerId::new(), document::LayerId::new()),
             mask_view_shown: false,
+            animation_play: None,
+            animation_shown: None,
             effects_shown: Vec::new(),
             tool_shift: Default::default(),
             shortcuts_window: false,

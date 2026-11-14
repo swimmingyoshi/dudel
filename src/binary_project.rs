@@ -22,6 +22,9 @@ struct Metadata<'a> {
     /// Optional like the guides: older readers ignore it.
     #[serde(skip_serializing_if = "Option::is_none")]
     paper: Option<crate::paper::Paper>,
+    /// Optional like the guides: older readers open an animation as layers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    animation: Option<crate::animation::Animation>,
     /// Reference layer settings; their images follow in the project trailer.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     references: &'a [crate::reference_layers::ReferenceLayer],
@@ -58,6 +61,8 @@ struct LayerMetadata<'a> {
     /// Material settings; a thick paint relief follows in the trailer.
     #[serde(skip_serializing_if = "Option::is_none")]
     material: Option<&'a crate::material::Settings>,
+    #[serde(skip_serializing_if = "is_one")]
+    hold: u16,
     pixels: [u8; 0],
 }
 #[derive(Serialize)]
@@ -67,6 +72,9 @@ struct MaskMetadata {
 }
 fn is_zero(value: &u8) -> bool {
     *value == 0
+}
+fn is_one(value: &u16) -> bool {
+    *value == 1
 }
 fn is_full(value: &f32) -> bool {
     *value == 1.0
@@ -105,11 +113,13 @@ pub(crate) fn metadata(doc: &Document) -> Result<Vec<u8>, String> {
                 vector: layer.vector.as_ref(),
                 text: layer.text.as_ref(),
                 material: layer.material.as_ref().map(|m| &m.settings),
+                hold: layer.hold,
                 pixels: [],
             })
             .collect(),
         guides: doc.guides.as_deref(),
         paper: doc.paper,
+        animation: doc.animation,
         references: &doc.references,
     };
     let data = serde_json::to_vec(&metadata).map_err(|e| e.to_string())?;

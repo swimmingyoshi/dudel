@@ -30,6 +30,8 @@ pub enum Property {
     Effects(Vec<crate::layer_effects::LayerEffect>),
     /// What an adjustment layer does (it stays an adjustment layer).
     Adjustment(crate::adjustment::Adjustment),
+    /// Frame periods a top-level entry shows for in an animation.
+    Hold(u16),
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Edit {
@@ -72,6 +74,8 @@ pub enum Edit {
     Gradient(Box<crate::gradient_tool::Settings>),
     /// The canvas's paper surface; None is smooth.
     Paper(Option<crate::paper::Paper>),
+    /// Turn animation on with these settings, change them, or turn it off.
+    Animation(Option<crate::animation::Animation>),
     /// The active layer's material; None makes it a plain layer.
     Material(Option<crate::material::Settings>),
     /// A new raster layer holding a material, above the target.
@@ -86,6 +90,9 @@ pub enum Edit {
         property: Property,
     },
     NewLayer,
+    /// A new empty top-level layer above the frame holding the active
+    /// entry: a new animation frame, even when that frame is a folder.
+    NewFrame,
     NewLayerWithId(crate::document::LayerId),
     /// A new adjustment layer above the target, with this identity.
     NewAdjustment {
@@ -216,6 +223,22 @@ impl Document {
         self.active = index;
         self.validate_structure()
     }
+    pub fn insert_frame_above(&mut self) -> Result<(), String> {
+        if !self.has_room(1, 1) {
+            return Err("Document layer capacity reached".into());
+        }
+        let mut top = self.active;
+        while let Some(parent) = self.parent(top) {
+            top = parent;
+        }
+        let index = self.block(top).end;
+        self.add_layer();
+        let mut layer = self.layers.pop().unwrap();
+        layer.depth = 0;
+        self.layers.insert(index, layer);
+        self.active = index;
+        self.validate_structure()
+    }
 }
 impl Edit {
     pub fn resolve(target: &Target, doc: &Document) -> Result<usize, String> {
@@ -318,6 +341,7 @@ impl Edit {
             }
             Self::Gradient(settings) => settings.validate(),
             Self::Paper(Some(paper)) => paper.validate(),
+            Self::Animation(Some(animation)) => animation.validate(),
             Self::Material(Some(settings)) | Self::NewMaterial { settings, .. } => {
                 settings.validate()
             }
@@ -538,6 +562,11 @@ impl Edit {
                 outcome.changed = doc.paper != source.paper;
                 outcome.redraw = false;
             }
+            Self::Animation(animation) => {
+                doc.animation = *animation;
+                outcome.changed = doc.animation != source.animation;
+                outcome.redraw = false;
+            }
             Self::Material(settings) => {
                 let index = doc.active;
                 let layer = &mut doc.layers[index];
@@ -636,6 +665,7 @@ impl Edit {
                         | Property::Collapsed(_)
                         | Property::Locked(_)
                         | Property::AlphaLocked(_)
+                        | Property::Hold(_)
                 );
                 if outcome.changed
                     && matches!(property, Property::Collapsed(true))
@@ -645,6 +675,7 @@ impl Edit {
                 }
             }
             Self::NewLayer => doc.insert_layer_above()?,
+            Self::NewFrame => doc.insert_frame_above()?,
             Self::NewLayerWithId(id) => {
                 if doc.layers.iter().any(|layer| layer.id == *id) {
                     return Err("Layer identity is already present".into());
@@ -1137,6 +1168,12 @@ fn apply_property(layer: &mut Layer, property: &Property) -> Result<bool, String
             set!(collapsed, *value)
         }
         Property::Effects(effects) => set!(effects, effects.clone()),
+        Property::Hold(hold) => {
+            if !(1..=crate::animation::MAX_HOLD).contains(hold) {
+                return Err("A frame holds for 1 to 240 frame periods".into());
+            }
+            set!(hold, *hold)
+        }
         Property::Adjustment(adjustment) => {
             if layer.adjustment.is_none() {
                 return Err("Only adjustment layers have adjustment settings".into());

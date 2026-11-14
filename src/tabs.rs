@@ -161,6 +161,8 @@ project_session! {
     effects_sent: Option<(crate::document::LayerId, crate::effects_panel::Style)>,
     effects_shown: Vec<u64>,
     mask_view_shown: bool,
+    animation_play: Option<(std::time::Instant, usize)>,
+    animation_shown: Option<(Option<usize>, bool)>,
     import_report: crate::import_report::ImportReport,
     symmetry: crate::symmetry::Symmetry,
     symmetry_drag: bool,

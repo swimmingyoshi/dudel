@@ -34,6 +34,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
         && a.height == b.height
         && a.dpi == b.dpi
         && a.paper == b.paper
+        && a.animation == b.animation
         && a.canvas_frame == b.canvas_frame
         && a.active == b.active
         && a.selection == b.selection
@@ -50,6 +51,7 @@ pub(crate) fn same_snapshot(a: &Document, b: &Document) -> bool {
                 && a.clipped == b.clipped
                 && a.locked == b.locked
                 && a.alpha_locked == b.alpha_locked
+                && a.hold == b.hold
                 && a.folder == b.folder
                 && a.depth == b.depth
                 && a.collapsed == b.collapsed

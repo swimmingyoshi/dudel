@@ -1487,6 +1487,15 @@ impl Dudel {
             })
         });
         let base = previewed.as_ref().unwrap_or(base);
+        // An animation shows one frame with its onion skin; changing frames
+        // redraws the canvas.
+        let (framed, frame_shown) = if mask_view.is_none() {
+            self.animation_display(base)
+        } else {
+            (None, None)
+        };
+        let frame_changed = frame_shown != self.animation_shown;
+        let base = framed.as_ref().unwrap_or(base);
         // Layer effects are drawn as extra layers. A layer whose drawing is
         // out of date shows its previous one while a background worker
         // redraws around what changed, so effects follow a stroke and
@@ -1517,7 +1526,7 @@ impl Dudel {
         if redrawn {
             self.effects_shown = drawings;
         }
-        let full = self.dirty || redrawn || switched;
+        let full = self.dirty || redrawn || switched || frame_changed;
         let _timed = crate::stage_timer::scope(crate::stage_timer::Stage::Display);
         self.texture.update_damage(
             ctx,
@@ -1528,6 +1537,7 @@ impl Dudel {
             &mut self.performance,
         );
         self.dirty = false;
+        self.animation_shown = frame_shown;
         if let Some(error) = self.texture.take_error() {
             self.status = error;
         }

@@ -226,7 +226,8 @@ impl PendingLayers {
             Property::Name(_)
             | Property::Effects(_)
             | Property::Fill(_)
-            | Property::Adjustment(_) => {}
+            | Property::Adjustment(_)
+            | Property::Hold(_) => {}
             Property::Visible(value) => entry.visible = *value,
             Property::Opacity(value) => entry.opacity = *value,
             Property::Blend(value) => entry.blend = *value,
