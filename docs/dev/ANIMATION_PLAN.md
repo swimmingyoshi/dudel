@@ -1,8 +1,8 @@
 # Animation timelines and frames
 
-Status: deferred beyond 0.2.0. This proposal is retained for future planning;
-it is not part of the current release scope in the [roadmap](ROADMAP.md).
-Editable animation is separate from timelapse recording.
+Status: scheduled for 0.6 (agreed 2026-11-14), together with the pixel art
+tools; see the [roadmap](ROADMAP.md). Editable animation is separate from
+timelapse recording.
 
 ## Scope
 

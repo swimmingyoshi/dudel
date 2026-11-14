@@ -4,6 +4,35 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+Pixel art tools; frame-by-frame animation is in progress for the same
+release.
+
+**Pixel art**
+- **Pixel pencil:** a new built-in preset in the Pencil tool. Any brush can
+  paint pixel art with **Pixel art** in its settings: whole pixels with no
+  soft edge, a dab on every pixel the stroke crosses, and one-pixel lines
+  that drop the doubled pixel at each corner. The eraser erases whole
+  pixels too while such a brush is chosen. Existing libraries get the
+  preset with **Library > Add built-in brushes**.
+- **Pixel grid:** **View > Pixel grid when zoomed in** outlines every pixel
+  from 800% zoom.
+- **Pixel art canvases:** the New canvas window has a Pixel art row (16 to
+  256 px squares and 320 × 180). Creating one turns on the pixel grid, picks
+  the Pixel pencil, and sets fill and the magic wand to exact colors and
+  free transform to Pixel quality.
+- **Seamless tiles:** **View > Wrap around edges** continues strokes that
+  cross an edge on the opposite side and shows dimmed copies of the canvas
+  around it.
+- **Scaled export:** Export image has a **Scale** from 1× to 16× that writes
+  each pixel as a sharp square.
+- **Limit to palette:** **Filter > Limit to palette** turns every pixel into
+  the nearest swatch of the Color panel's palette, optionally making
+  half-transparent pixels fully solid or clear.
+- **Palette files:** palette import reads Lospec `.hex` lists and GIMP `.gpl`
+  palettes.
+
 ## 0.5.0 (2026-11-13)
 
 Dudel can install itself and update itself, and large wet, smudge and thick

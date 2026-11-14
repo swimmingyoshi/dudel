@@ -61,6 +61,7 @@ pub(crate) const MODES: &[&str] = &[
     "--capture-new-canvas-invalid",
     "--capture-new-canvas-presets",
     "--capture-paper",
+    "--capture-pixel-art",
     "--capture-preview",
     "--capture-project-memory",
     "--capture-quick-menu",
@@ -124,6 +125,7 @@ pub(crate) fn prepare(
     let capture_brush_group = mode == "--capture-brush-group";
     let capture_paper = mode == "--capture-paper";
     let capture_material = mode == "--capture-material";
+    let capture_pixel_art = mode == "--capture-pixel-art";
     let capture_shortcut_conflict = mode == "--capture-shortcut-conflict";
     let capture_command_search = mode == "--capture-command-search";
     let capture_workflow = mode == "--capture-workflow";
@@ -767,6 +769,9 @@ pub(crate) fn prepare(
     if capture_material {
         app.material_capture_fixture();
     }
+    if capture_pixel_art {
+        app.pixel_art_capture_fixture();
+    }
     if capture_install {
         app.setup_capture_fixture(capture_updates);
     }
@@ -863,4 +868,104 @@ pub(crate) fn prepare(
         app.start_affine_preview();
     }
     Ok(())
+}
+
+impl Dudel {
+    /// A 32 × 32 sprite drawn with the Pixel pencil on a pixel art canvas,
+    /// zoomed in so the pixel grid shows, with wrap-around on so the dimmed
+    /// copies of the canvas surround it.
+    fn pixel_art_capture_fixture(&mut self) {
+        self.new_canvas_form.pixel_art_pending = true;
+        self.apply_action(document_actions::Action::New(32, 32, 72.0));
+        self.symmetry.wrap = true;
+        self.palette = vec![
+            [26, 28, 44],
+            [93, 39, 93],
+            [177, 62, 83],
+            [239, 125, 87],
+            [255, 205, 117],
+            [167, 240, 112],
+            [56, 183, 100],
+            [37, 113, 121],
+            [41, 54, 111],
+            [59, 93, 201],
+            [65, 166, 246],
+            [115, 239, 247],
+            [244, 244, 244],
+            [148, 176, 194],
+            [86, 108, 134],
+            [51, 60, 87],
+        ];
+        // A slime: outline, body, shine and eyes.
+        const SPRITE: [&str; 16] = [
+            "................",
+            "......####......",
+            "....##gggg##....",
+            "...#gggggggg#...",
+            "..#ggwwgggggggg#",
+            "..#gwwggggggggg#",
+            ".#gggggggggggg#.",
+            ".#ggg#gggg#ggg#.",
+            ".#ggg#gggg#ggg#.",
+            "#gggggggggggggg#",
+            "#ggggg#..#ggggg#",
+            "#gggggg##gggggd#",
+            "#dggggggggggggd#",
+            ".#ddgggggggddd#.",
+            "..##dddddddd##..",
+            "....########....",
+        ];
+        let color = |c: char| match c {
+            '#' => Some([26, 28, 44, 255]),
+            'g' => Some([56, 183, 100, 255]),
+            'd' => Some([37, 113, 121, 255]),
+            'w' => Some([244, 244, 244, 255]),
+            _ => None,
+        };
+        let mut writer = self.doc.layers[0].pixels.writer();
+        for (y, row) in SPRITE.iter().enumerate() {
+            for (x, c) in row.chars().enumerate() {
+                if let Some(rgba) = color(c) {
+                    let at = (y + 13) * 32 + x + 8;
+                    writer.rgba_mut(at).copy_from_slice(&rgba);
+                }
+            }
+        }
+        drop(writer);
+        // A freehand one-pixel line, as the Pixel pencil draws it, running
+        // off the right edge so wrap-around carries it onto the left.
+        let mut stroke = stroke::Stroke::default();
+        let points: Vec<[f32; 2]> = (0..24)
+            .map(|i| {
+                let t = i as f32 / 23.0;
+                [14.0 + t * 26.0, 6.0 + (t * 3.1).sin() * 4.0]
+            })
+            .collect();
+        let brush = self.brush.clone();
+        let mut dabs = vec![];
+        for (i, [x, y]) in points.iter().enumerate() {
+            let sample = stroke::Sample {
+                x: *x,
+                y: *y,
+                pressure: 1.0,
+                time: Some(i as f64 / 120.0),
+                ..Default::default()
+            };
+            if i + 1 == points.len() {
+                dabs.extend(stroke.finish(sample, &brush));
+            } else {
+                dabs.extend(stroke.sample(sample, &brush));
+            }
+        }
+        for dab in dabs {
+            for ([x, y], _) in self.symmetry.copies(dab.x, dab.y, 32, 32) {
+                self.doc
+                    .dab(x, y, dab.pressure, &brush, [177, 62, 83], false);
+            }
+        }
+        self.color = [56, 183, 100];
+        self.zoom = 14.0;
+        self.auto_fit = false;
+        self.changed();
+    }
 }

@@ -117,6 +117,22 @@ The canvas as a surface that paint reacts to, in stages:
 - [ ] Update from one published release to the next, tried on an installed
       and a portable copy (possible once 0.5.0 is published).
 
+## 0.6: pixel art and animation
+
+Agreed 2026-11-14, after sharing 0.5.0 with game-dev groups: both in one
+release.
+
+- [x] Pixel brushes (whole pixels, pixel-perfect one-pixel lines), the
+      Pixel pencil preset and an eraser that follows them.
+- [x] Pixel grid from 800% zoom; Pixel art canvas sizes that set up the
+      grid, brush, exact-color fill and wand, and Pixel-quality transforms.
+- [x] Wrap-around painting with dimmed copies for seamless tiles.
+- [x] Export scaled by whole numbers; Filter > Limit to palette; Lospec
+      `.hex` and GIMP `.gpl` palette import.
+- [ ] Frame-by-frame animation: timeline, exposures, playback, onion skin
+      and exports, following the [animation plan](ANIMATION_PLAN.md);
+      sprite sheet export with it.
+
 ## Installing and updating
 
 - [x] **Install on this PC** from the portable copy: per-user programs folder,
@@ -140,7 +156,6 @@ These wait for tester feedback or for a reason to do them:
 
 - Code signing.
 - Color management for print work.
-- Editable animation ([proposal](ANIMATION_PLAN.md)).
 - Plugin manager: version ordering and updates; a stable panel widget list.
 - Store distribution.
 
