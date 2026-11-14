@@ -80,6 +80,13 @@ pub(crate) struct DabRaster {
     /// Stroke direction in degrees, once the stroke has moved: thick paint
     /// streaks run along it.
     pub(crate) heading: Option<f32>,
+    /// The brush's Water, Pigment, Thickness, Paper texture and Granulation
+    /// for this dab, after the brush graph.
+    pub(crate) wetness: f32,
+    pub(crate) pigment: f32,
+    pub(crate) thickness: f32,
+    pub(crate) paper_response: f32,
+    pub(crate) granulation: f32,
 }
 /// How far a tip reaches left and right, and up and down, of its center:
 /// the extent of the turned ellipse or rectangle with its soft outer pixel
@@ -187,6 +194,11 @@ impl DabRaster {
             color_shift: factors.color,
             secondary: None,
             heading: sample.heading,
+            wetness: brush.wetness * factors.material.water,
+            pigment: brush.pigment * factors.material.pigment,
+            thickness: brush.thickness * factors.material.thickness,
+            paper_response: brush.paper_response * factors.material.paper,
+            granulation: brush.granulation * factors.material.granulation,
         }
     }
 }
@@ -1963,8 +1975,8 @@ impl Document {
             Some(tooth) => Some(crate::material::dry_paper(paper, tooth)),
             None => paper,
         };
-        let paper_response = dry_tooth.map_or(brush.paper_response, |tooth| {
-            brush.paper_response.max(tooth.sqrt())
+        let paper_response = dry_tooth.map_or(raster.paper_response, |tooth| {
+            raster.paper_response.max(tooth.sqrt())
         });
         // A bounded pure-coverage row separates analytic evaluation from the
         // dependent accumulation stores. Keep all other brush cases on the
@@ -2117,7 +2129,7 @@ impl Document {
                     );
             }
             if let Some(surface) = &paper
-                && (paper_response > 0.0 || brush.granulation > 0.0)
+                && (paper_response > 0.0 || raster.granulation > 0.0)
             {
                 // Once per pixel for both.
                 let height = surface.height(px as usize, py as usize);
@@ -2129,8 +2141,8 @@ impl Document {
                         paper_response,
                     );
                 }
-                if brush.granulation > 0.0 {
-                    a = (a * paper.pool_at(height, brush.granulation)).min(brush.opacity);
+                if raster.granulation > 0.0 {
+                    a = (a * paper.pool_at(height, raster.granulation)).min(brush.opacity);
                 }
             }
             // After the paper, so each of the dabs this one stands for
@@ -2192,7 +2204,7 @@ impl Document {
                     heading: raster.heading.map(|h| h.to_radians().sin_cos()),
                     smear: raster.smear,
                     blend: brush.blend,
-                    thickness: brush.thickness,
+                    thickness: raster.thickness,
                     erase,
                 },
                 &coverage_at,
@@ -2243,7 +2255,7 @@ impl Document {
                     }
                 }
                 let (left, top) = (left as usize, top as usize);
-                let load = brush.pigment;
+                let load = raster.pigment;
                 let timed = crate::stage_timer::scope(crate::stage_timer::Stage::Blend);
                 let left_water = crate::dab_bands::apply(
                     &mut layer.pixels,
@@ -2283,7 +2295,7 @@ impl Document {
                         } else {
                             paint_pixel(pixel, a * load, color, false, alpha_locked);
                         }
-                        strength.min(1.0) * brush.wetness
+                        strength.min(1.0) * raster.wetness
                     },
                 );
                 drop(timed);
@@ -2330,7 +2342,7 @@ impl Document {
                                 );
                             }
                             // Clear water lifts a little of what is there.
-                            let load = brush.pigment;
+                            let load = raster.pigment;
                             if load < 1.0 && !alpha_locked {
                                 let lift = strength.min(1.0) * (1.0 - load) * WATER_LIFT;
                                 pixel[3] = (f32::from(pixel[3]) * (1.0 - lift)).round() as u8;
@@ -2341,7 +2353,7 @@ impl Document {
                                 paint_pixel(pixel, a * load, color, false, alpha_locked);
                             }
                             if watering {
-                                water[column] = strength.min(1.0) * brush.wetness;
+                                water[column] = strength.min(1.0) * raster.wetness;
                             }
                         } else {
                             crate::blend_brush::mix(pixel, source, a, alpha_locked, pigment);

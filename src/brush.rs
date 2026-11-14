@@ -399,6 +399,19 @@ pub struct Factors {
     pub spacing: f32,
     /// The dab's color change, when the brush graph sets color.
     pub color: Option<crate::brush_graph::ColorShift>,
+    /// Shares of Water, Pigment, Thickness, Paper texture and Granulation
+    /// for this dab: 1 unless the brush graph drives them.
+    pub material: Material,
+}
+
+/// Shares of a brush's material settings for one dab (`Factors::material`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Material {
+    pub water: f32,
+    pub pigment: f32,
+    pub thickness: f32,
+    pub paper: f32,
+    pub granulation: f32,
 }
 
 /// The closest wet and blur dabs lie, as a share of the tip's long side.
@@ -454,6 +467,13 @@ impl Brush {
             flow: graph.flow.unwrap_or_else(|| self.plain_flow(sample)),
             spacing: graph.spacing.unwrap_or_else(|| self.plain_spacing(sample)),
             color: graph.color,
+            material: Material {
+                water: graph.water.unwrap_or(1.0),
+                pigment: graph.pigment.unwrap_or(1.0),
+                thickness: graph.thickness.unwrap_or(1.0),
+                paper: graph.paper.unwrap_or(1.0),
+                granulation: graph.granulation.unwrap_or(1.0),
+            },
         }
     }
     /// Distance from one dab to the next: what the settings ask for, and

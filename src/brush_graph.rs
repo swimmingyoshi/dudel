@@ -101,6 +101,16 @@ pub enum NodeKind {
     },
     /// Moves the dab off the stroke, up to two brush sizes at 1.
     ScatterOutput,
+    /// The brush's Water for each dab: 1 all of it, 0 none.
+    WaterOutput,
+    /// The brush's Pigment for each dab: 1 all of it, 0 clear water.
+    PigmentOutput,
+    /// The brush's Thickness for each dab, on thick paint layers.
+    ThicknessOutput,
+    /// The brush's Paper texture for each dab: how much the paper shows.
+    PaperOutput,
+    /// The brush's Granulation for each dab.
+    GranulationOutput,
     /// Turns the dab's hue: 0 is `degrees` one way, 1 the other, 0.5 none.
     HueOutput {
         degrees: f32,
@@ -226,6 +236,11 @@ impl NodeKind {
             | Self::Steps { .. }
             | Self::RotationOutput { .. }
             | Self::ScatterOutput
+            | Self::WaterOutput
+            | Self::PigmentOutput
+            | Self::ThicknessOutput
+            | Self::PaperOutput
+            | Self::GranulationOutput
             | Self::SizeOutput
             | Self::OpacityOutput
             | Self::FlowOutput
@@ -285,6 +300,11 @@ impl NodeKind {
             Self::SpacingOutput => Some(Output::Spacing),
             Self::RotationOutput { .. } => Some(Output::Rotation),
             Self::ScatterOutput => Some(Output::Scatter),
+            Self::WaterOutput => Some(Output::Water),
+            Self::PigmentOutput => Some(Output::Pigment),
+            Self::ThicknessOutput => Some(Output::Thickness),
+            Self::PaperOutput => Some(Output::Paper),
+            Self::GranulationOutput => Some(Output::Granulation),
             Self::HueOutput { .. } => Some(Output::Hue),
             Self::SaturationOutput => Some(Output::Saturation),
             Self::BrightnessOutput => Some(Output::Brightness),
@@ -353,6 +373,11 @@ impl NodeKind {
                     Self::SpacingOutput,
                     Self::RotationOutput { degrees: 180.0 },
                     Self::ScatterOutput,
+                    Self::WaterOutput,
+                    Self::PigmentOutput,
+                    Self::ThicknessOutput,
+                    Self::PaperOutput,
+                    Self::GranulationOutput,
                     Self::HueOutput { degrees: 30.0 },
                     Self::SaturationOutput,
                     Self::BrightnessOutput,
@@ -415,6 +440,11 @@ impl NodeKind {
             Self::SpacingOutput => "Distance to the next dab",
             Self::RotationOutput { .. } => "Turns the tip: 0.5 keeps the brush angle",
             Self::ScatterOutput => "Moves dabs off the stroke: up to two sizes at 1",
+            Self::WaterOutput => "Share of the brush's Water each dab carries (Wet mode)",
+            Self::PigmentOutput => "Share of the brush's Pigment: 0 is clear water (Wet mode)",
+            Self::ThicknessOutput => "Share of the brush's Thickness on thick paint layers",
+            Self::PaperOutput => "Share of the brush's Paper texture: how much the paper shows",
+            Self::GranulationOutput => "Share of the brush's Granulation into the paper's valleys",
             Self::HueOutput { .. } => "Turns each dab's hue: 0.5 keeps it",
             Self::SaturationOutput => "Each dab's color saturation: 1 keeps it, 0 is gray",
             Self::BrightnessOutput => "Each dab's brightness: 1 keeps it, 0 is black",
@@ -457,6 +487,11 @@ impl NodeKind {
             Self::SaturationOutput => "Saturation",
             Self::BrightnessOutput => "Brightness",
             Self::ColorMixOutput => "Color mix",
+            Self::WaterOutput => "Water",
+            Self::PigmentOutput => "Pigment",
+            Self::ThicknessOutput => "Thickness",
+            Self::PaperOutput => "Paper texture",
+            Self::GranulationOutput => "Granulation",
         }
     }
     fn validate(&self) -> Result<(), String> {
@@ -562,13 +597,18 @@ pub enum Output {
     Spacing,
     Rotation,
     Scatter,
+    Water,
+    Pigment,
+    Thickness,
+    Paper,
+    Granulation,
     // Color outputs last: `Values` reads them as one range.
     Hue,
     Saturation,
     Brightness,
     ColorMix,
 }
-const OUTPUTS: usize = 10;
+const OUTPUTS: usize = 15;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -1104,6 +1144,12 @@ pub struct Values {
     pub rotation: Option<f32>,
     /// Scatter distance from 0 to 1, when Scatter is wired (missing: none).
     pub scatter: Option<f32>,
+    /// Shares of the brush's material settings, 0 to 1, where wired.
+    pub water: Option<f32>,
+    pub pigment: Option<f32>,
+    pub thickness: Option<f32>,
+    pub paper: Option<f32>,
+    pub granulation: Option<f32>,
     /// Per-dab color change, when any color output is wired.
     pub color: Option<ColorShift>,
 }
@@ -1337,6 +1383,11 @@ impl Compiled {
             spacing: value(self.outputs[3]),
             rotation,
             scatter,
+            water: value(self.outputs[Output::Water as usize]),
+            pigment: value(self.outputs[Output::Pigment as usize]),
+            thickness: value(self.outputs[Output::Thickness as usize]),
+            paper: value(self.outputs[Output::Paper as usize]),
+            granulation: value(self.outputs[Output::Granulation as usize]),
             color,
         }
     }
@@ -2265,6 +2316,109 @@ mod tests {
         assert!(offsets(scatter(0.0)).iter().all(|o| *o < 1e-4));
         let spread = offsets(scatter(1.0));
         assert!(spread.iter().any(|o| *o > 5.0) && spread.iter().all(|o| *o <= 20.0 + 1e-3));
+    }
+
+    #[test]
+    fn nodes_drive_water_pigment_thickness_paper_and_granulation_per_dab() {
+        use NodeKind::*;
+        let brush = |output: NodeKind| crate::brush::Brush {
+            size: 40.0,
+            pressure_size: false,
+            wetness: 0.8,
+            pigment: 0.9,
+            thickness: 0.6,
+            paper_response: 0.5,
+            granulation: 0.4,
+            // Lighter pressure, more of it: Pressure through Invert.
+            graph: Some(graph(
+                vec![Pressure { shaped: false }, Invert, output],
+                &[(1, 2, 0), (2, 3, 0)],
+            )),
+            ..Default::default()
+        };
+        let raster = |brush: &crate::brush::Brush, pressure: f32| {
+            crate::document::DabRaster::new(
+                crate::stroke::Sample {
+                    x: 50.0,
+                    y: 50.0,
+                    pressure,
+                    pressure_known: true,
+                    ..Default::default()
+                },
+                brush,
+                crate::symmetry::IDENTITY,
+                100,
+                100,
+            )
+        };
+        type Read = fn(&crate::document::DabRaster) -> f32;
+        let cases: [(NodeKind, Read, f32); 5] = [
+            (WaterOutput, |r| r.wetness, 0.8),
+            (PigmentOutput, |r| r.pigment, 0.9),
+            (ThicknessOutput, |r| r.thickness, 0.6),
+            (PaperOutput, |r| r.paper_response, 0.5),
+            (GranulationOutput, |r| r.granulation, 0.4),
+        ];
+        for (output, read, full) in cases {
+            let name = output.name();
+            let brush = brush(output);
+            // The panel setting is the most a dab gets.
+            assert!((read(&raster(&brush, 0.0)) - full).abs() < 1e-5, "{name}");
+            assert!(
+                (read(&raster(&brush, 0.75)) - full * 0.25).abs() < 1e-5,
+                "{name}"
+            );
+            assert!(read(&raster(&brush, 1.0)).abs() < 1e-5, "{name}");
+            // The others stay at their settings.
+            let plain = raster(&brush, 1.0);
+            let others = [
+                plain.wetness,
+                plain.pigment,
+                plain.thickness,
+                plain.paper_response,
+                plain.granulation,
+            ];
+            assert_eq!(
+                others.iter().filter(|v| v.abs() < 1e-5).count(),
+                1,
+                "{name}: {others:?}"
+            );
+        }
+        // On a thick paint layer, a hard press with Thickness by light
+        // pressure builds no relief; a light one does.
+        let relief = |pressure: f32| {
+            let mut doc = crate::document::Document::new(100, 100);
+            doc.layers[0].material = Some(crate::material::Material::new(
+                crate::material::Settings::new(crate::material::Kind::Paint),
+            ));
+            doc.dab(
+                50.0,
+                50.0,
+                pressure,
+                &brush(ThicknessOutput),
+                [200, 60, 40],
+                false,
+            );
+            doc.layers[0]
+                .material
+                .as_ref()
+                .and_then(|m| m.relief.as_ref())
+                .map_or(0, |r| r.at(50, 50))
+        };
+        assert_eq!(relief(1.0), 0);
+        assert!(relief(0.2) > 50, "{}", relief(0.2));
+        // Water by light pressure: a hard press leaves no water.
+        let wet = |pressure: f32| {
+            let mut doc = crate::document::Document::new(100, 100);
+            let brush = crate::brush::Brush {
+                blend: crate::brush::Blend::Wet,
+                ..brush(WaterOutput)
+            };
+            doc.dab(50.0, 50.0, pressure, &brush, [30, 60, 200], false);
+            doc.wet.at(50, 50)
+        };
+        assert_eq!(wet(1.0), 0.0);
+        assert!(wet(0.2) > 0.3, "{}", wet(0.2));
     }
 
     #[test]

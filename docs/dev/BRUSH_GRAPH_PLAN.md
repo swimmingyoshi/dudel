@@ -447,6 +447,22 @@ several independent random values. This round adds what no panel expresses:
   plain **Turns with: Stroke** setting already does it. Templates should only
   show what the graph adds.
 
+### Material outputs (2026-11-13)
+
+Asked for by the owner so node brushes can do what the canvas materials do:
+**Water**, **Pigment**, **Thickness**, **Paper texture** and **Granulation**
+outputs. Like Size and Flow, each gives 0 to 1 per dab and scales the brush's
+own setting (`Factors::material`, carried on `DabRaster` to the painter), so
+the panel slider stays the most a dab gets and brushes without them paint as
+before. Mode (Paint, Wet, Smudge, Blur) stays a panel setting: switching what
+a dab does mid-stroke is not a value to blend. Test:
+`nodes_drive_water_pigment_thickness_paper_and_granulation_per_dab`.
+
+A graph that turns the tip with the stroke (Direction into Rotation over
+180°) is found by trying it once over many pen inputs
+(`Compiled::turn_with_stroke`), so it gets the same along-the-stroke dab
+spacing as a brush set to Turns with: Stroke.
+
 ## 18. Proposal: milestone 5, groups and formulas
 
 For review; nothing here is built. The brief asked for sub-graphs and

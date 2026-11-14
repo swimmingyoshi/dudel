@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-10, after the 0.3.0 pre-release. This replaces the earlier plan
+Updated 2026-11-13, after the 0.4.0 pre-release. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -52,8 +52,9 @@ this order (agreed 2026-11-10), adjusted by tester feedback:
        [brush graph plan](BRUSH_GRAPH_PLAN.md). Brush Studio opens as its own
        tab with a test pad in view; Rotation and Scatter outputs, rhythm and
        noise nodes, templates, and milestone 5 (groups and the Formula node)
-       followed. Next: refine the editor from testers' use, then special
-       canvases.
+       followed, then Water, Pigment, Thickness, Paper texture and
+       Granulation outputs (2026-11-13). Next: refine the editor from
+       testers' use, then special canvases.
 5. [x] Named workspace layouts: **View > Workspaces** saves which panels show,
        their sizes and the Color/Navigator tab, and switches between them.
 
@@ -71,7 +72,8 @@ The canvas as a surface that paint reacts to, in stages:
        map. Live: a wet dab blends into still-wet paint under it. After the
        stroke: wet tiles exchange paint with wet neighbors (conserving it),
        water spreads and evaporates by the paper's absorbency, fibers carry
-       paint along their direction; drying is one undo step and uses at most
+       paint along their direction; drying undoes with the stroke that left the
+       paint wet and uses at most
        about a quarter of frame time. Rewetting dried paint is not done yet,
        and timelapse replays do not include drying (rewetting came in
        stage 5).

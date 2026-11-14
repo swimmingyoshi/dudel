@@ -456,13 +456,18 @@ Color jitter, Pressure color, Speed spray, Stipple and Tilt shading. Then:
   - shaping: Curve, Remap, Invert and **Steps** (snaps to a few levels);
   - combining: Multiply, Add, Minimum, Maximum, Mix;
   - outputs: Size, Opacity, Flow, Spacing, **Rotation** (turns the tip),
-    **Scatter** (moves dabs off the line), and the color outputs **Hue
-    shift**, **Saturation**, **Brightness** and **Color mix** (toward the
-    secondary color).
+    **Scatter** (moves dabs off the line), the material outputs **Water**,
+    **Pigment**, **Thickness**, **Paper texture** and **Granulation** (how
+    much of the brush's own setting each dab gets: the slider is the most),
+    and the color outputs **Hue shift**, **Saturation**, **Brightness** and
+    **Color mix** (toward the secondary color).
 
   For example, Random into Hue shift gives color jitter, Pressure into Color
   mix paints the secondary color where you press hard, Wave (dashes) into
-  Opacity draws a dashed line, and Speed into Scatter sprays faster strokes.
+  Opacity draws a dashed line, Speed into Scatter sprays faster strokes,
+  Pressure into Thickness piles paint up where you press on a thick paint
+  layer, and Pressure through Invert into Water makes a wet brush wetter
+  the lighter you touch.
 - Drag from a node's right dot to another node's left dot to wire them; drag a
   wire's end off an input to move or remove it. A wire that would make a loop
   is refused. Let a new wire go over empty canvas and a node search opens
