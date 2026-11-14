@@ -922,16 +922,17 @@ impl Dudel {
             'w' => Some([244, 244, 244, 255]),
             _ => None,
         };
-        let mut writer = self.doc.layers[0].pixels.writer();
-        for (y, row) in SPRITE.iter().enumerate() {
-            for (x, c) in row.chars().enumerate() {
-                if let Some(rgba) = color(c) {
-                    let at = (y + 13) * 32 + x + 8;
-                    writer.rgba_mut(at).copy_from_slice(&rgba);
+        {
+            let mut writer = self.doc.layers[0].pixels.writer();
+            for (y, row) in SPRITE.iter().enumerate() {
+                for (x, c) in row.chars().enumerate() {
+                    if let Some(rgba) = color(c) {
+                        let at = (y + 13) * 32 + x + 8;
+                        writer.rgba_mut(at).copy_from_slice(&rgba);
+                    }
                 }
             }
         }
-        drop(writer);
         // A freehand one-pixel line, as the Pixel pencil draws it, running
         // off the right edge so wrap-around carries it onto the left.
         let mut stroke = stroke::Stroke::default();
