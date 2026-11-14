@@ -1,16 +1,17 @@
 # Dudel
 
-**A pen-first drawing app for Windows, written in Rust.** Pressure-sensitive
-brushes with stabilization, layers and masks, selections and transforms, and
-native project saving with crash recovery, built for illustrating on a pen
-display or tablet.
+**A pen-first drawing and painting app for Windows, written in Rust.**
+Pressure-sensitive brushes with stabilization, wet paint and material layers
+that behave like watercolor, pastel and thick paint, layers and masks,
+selections and transforms, and native project saving with crash recovery,
+built for illustrating on a pen display or tablet.
 
 ![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078d4)
 ![Linux: experimental](https://img.shields.io/badge/Linux-experimental-lightgrey)
 ![Rust 1.97.1](https://img.shields.io/badge/rust-1.97.1-orange)
 
-![The Dudel workspace: tool rail, brush options bar, canvas with a symmetry guide, navigator, color wheel and layers](docs/images/workspace.png)
+![The Dudel workspace: tool rail, brush options bar, canvas with a symmetry guide, color wheel and layers](docs/images/workspace.png)
 
 **Contents:** [Features](#features) · [Download](#download-and-install) ·
 [First steps](#first-steps) · [Pen tablets](#pen-tablets-and-latency) ·
@@ -26,9 +27,25 @@ display or tablet.
 - Stabilizer with two follow modes: **Smooth** eases toward the pen, **Rope**
   trails it on a string for steady curves and straight runs.
 - Custom image tips, paper grain, scatter and tapers; an editable brush library
-  and **Brush Studio** with a test pad.
-- Fill with gap-friendly *Fill to edges*, Lasso fill/erase, color picker, symmetry
-  (mirror and radial), rulers and guides with stroke snapping.
+  and **Brush Studio** with a test pad. Brushes are shared as `.dudelbrush` files.
+- **Brush graphs:** wire pen pressure, speed, tilt and randomness through curves
+  and math nodes into a brush's size, flow, color, rotation, scatter, water and
+  thickness, with templates, groups and formulas.
+- Fill with gap-friendly *Fill to edges*, **gradients**, Lasso fill/erase, color
+  picker, symmetry (mirror and radial), rulers and guides with stroke snapping.
+
+**Painting**
+- **Wet, Smudge and Blur** brush modes: wet strokes blend into paint that is
+  still wet, keep spreading and dry over a few seconds; clear water re-wets
+  dried paint.
+- A **paper** for the canvas (hot-pressed, cold-pressed, rough, canvas, washi,
+  pastel paper or your own) that breaks light strokes into grain.
+- **Material layers:** Watercolor (washes dry with darker rims and bloom), Dry
+  media (every brush catches on the paper's tooth) and Thick paint (paint
+  stands up with bristle streaks under a light you place, and a palette knife
+  moves it).
+- On watercolor and thick paint, colors **mix like paint**: blue and yellow
+  make green.
 
 **Layers and editing**
 - Raster layers, **vector layers**, folders, clipping, blend modes and nondestructive **layer masks**.
@@ -39,13 +56,15 @@ display or tablet.
 - Selections (rectangle, lasso, polygon, magic wand) and free transform with
   scale/rotate, distort, perspective and mesh, plus *mirror pair* edits for
   symmetric features such as eyes.
-- Adjustments and filters, including Rhai and WebAssembly extensions; API 2
+- Adjustments and filters (Gaussian blur, sharpen, noise, curves and the rest)
+  with live previews, including Rhai and WebAssembly extensions; API 2
   plugins contribute brush presets, tool presets, commands and panels.
 - **Editable text** typed on the canvas: installed fonts with kerning, vertical
   and right-to-left text, styles for selected words and *fit text to box*.
 - A **pen quick menu**: the side button opens a ring of favorite brushes, recent
   colors and your chosen commands under the tip.
-- **Command search** (`Ctrl+K`) and custom keyboard shortcuts.
+- **Command search** (`Ctrl+K`), custom keyboard shortcuts and named
+  **workspaces** for your panel arrangements.
 
 **Your work stays safe**
 - Editable `.dudel` projects with atomic saves, cancelable background saves and
@@ -62,8 +81,10 @@ display or tablet.
 
 | | |
 |---|---|
-| ![Brush settings with the Rope stabilizer, its Distance and follow mode](docs/images/brush-settings-rope.png) | ![Brush Studio editing a brush's stabilizer with a live stroke preview](docs/images/brush-studio.png) |
-| **Brush settings**: size, opacity, stabilizer and Rope distance in the tool panel | **Brush Studio**: every brush setting with a live preview and test pad |
+| ![Brush settings with the Rope stabilizer, its Distance and follow mode](docs/images/brush-settings-rope.png) | ![Brush Studio in its own tab, editing a brush's stabilizer above the test pad](docs/images/brush-studio.png) |
+| **Brush settings**: mode, size, opacity, stabilizer and Rope distance in the tool panel | **Brush Studio**: every brush setting with a live preview and test pad |
+| ![A brush graph wiring pressure and speed through a curve into size and flow](docs/images/brush-graph.png) | ![Watercolor, dry media and thick paint strokes on a paper, with the Layer material dialog](docs/images/material-layers.png) |
+| **Brush graphs**: nodes show their values for the pen input you set | **Material layers**: watercolor, dry media and thick paint on a paper |
 | ![A layer mask fading half of the artwork, with the mask thumbnail in the layer row](docs/images/layer-mask.png) | ![Free transform with scale, rotate, distort, perspective and mesh options](docs/images/free-transform.png) |
 | **Layer masks**: paint, fill, lasso and transform masks without touching pixels | **Free transform**: numeric fields, flips, quality and mirror-pair editing |
 | ![Reference boards grouped in a folder beside the layer list](docs/images/reference-boards.png) | ![The timelapse window with playback and GIF export](docs/images/timelapse.png) |
@@ -176,12 +197,15 @@ exactly; details are in the [quick start](docs/QUICK_START.md#if-the-line-lags-b
   version or later.
 - Native saves use project format v4, v5 when layer masks are used, or v6 when
   layer effects, adjustment layers or fill opacity are used, or v7 for vector
-  layers, v8 for text layers; newer files need a compatible
-  Dudel (older builds refuse them rather than drop that data). Indexed `.didx` storage is experimental.
+  layers, v8 for text layers; projects with material layers need 0.4.0 or
+  later. Newer files need a compatible Dudel (older builds refuse them rather
+  than drop that data). Indexed `.didx` storage is experimental.
 - CSP/PSD import is bounded to the documented subsets. Unsupported CSP
   files can open their saved preview, often at lower resolution. Unsupported PSD
   layer features use the saved composite when available. Color-managed print
   workflows and universal format compatibility are not supported.
+- Paint-like color mixing is an approximation of real pigments and happens on
+  watercolor and thick paint layers only.
 - Windows x64 is the supported platform; Linux builds are experimental.
 
 See [release notes](RELEASE_NOTES.md#known-limits) for the full list.
@@ -196,11 +220,14 @@ cargo build --locked --release --bin dudel
 .\target\release\dudel.exe
 ```
 
+While working on a change, `cargo run --profile fast` builds with the same
+optimization but rebuilds in seconds.
+
 Development checks (Python 3.11+ is required for the script's extra checks):
 
 ```powershell
 .\scripts\Verify.ps1              # formatting, tests, clippy, Python checks
-.\scripts\Verify.ps1 -Mode Full   # everything CI runs, including release builds
+.\scripts\Verify.ps1 -Mode Full   # adds the diagnostic features and release builds
 ```
 
 The script also enables a pre-push hook that refuses unformatted Rust and

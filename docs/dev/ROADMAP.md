@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-13, after the 0.4.0 pre-release. This replaces the earlier plan
+Updated 2026-11-13, with the 0.5.0 pre-release. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -100,6 +100,22 @@ The canvas as a surface that paint reacts to, in stages:
        paint, Blur smooths it. Drying mixes too: paint running in from each
        wet neighbor mixes as pigment where its color differs. Not yet: paint
        thickness changing how colors mix.
+
+## 0.5: installing, updating and painting speed
+
+- [x] Install on this PC and updates from inside Dudel (next section).
+- [x] Wet, smudge, blur and thick paint dabs across processor cores; large
+      wet brushes and the palette knife keep up with the pen on the owner's
+      tablet. Measurements and what is left are in the
+      [engineering backlog](ENGINEERING_BACKLOG.md).
+- [x] Tips that turn with the stroke start turned; no display flicker
+      around a large brush; a wet stroke and its drying undo together; pure
+      black mixes as a pigment.
+- [x] Brush graph outputs for the material settings.
+- [x] Code structure and builds: the painting function and `main.rs` broken
+      up, a `fast` build profile, shorter CI.
+- [ ] Update from one published release to the next, tried on an installed
+      and a portable copy (possible once 0.5.0 is published).
 
 ## Installing and updating
 

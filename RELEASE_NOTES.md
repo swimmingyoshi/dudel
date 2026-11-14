@@ -4,7 +4,13 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.5.0 (2026-11-13)
+
+Dudel can install itself and update itself, and large wet, smudge and thick
+paint brushes keep up with the pen. Projects and file formats are unchanged
+from 0.4.0.
+
+### Installing and updating
 
 - **Install on this PC:** the welcome window and the Help menu offer to install
   the portable copy for your Windows account: Dudel copies itself to your
@@ -22,21 +28,50 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   only when you ask for it. On Linux the check links to the download.
 - **Open projects from File Explorer:** `dudel.exe` opens the project files it
   is started with, each in its own tab.
-- **Faster wet paint, smudge and blur:** large wet, smudge, blur and palette
-  knife dabs now use every processor core, as plain paint already did. With a
-  200 px brush a wet dab takes about a quarter of the time it did and a
-  palette knife dab about a third. The result is the same, pixel for pixel.
+
+### Painting
+
+- **Large wet brushes keep up with the pen:** large wet, smudge, blur and
+  palette knife dabs now use every processor core, as plain paint already
+  did, and a wide wet dab does far less work for the same look. A 300 px wet
+  brush on a 2048 px canvas now finishes its stroke as you lift the pen;
+  before, it fell further and further behind on a long stroke.
+- **Thick paint under a big brush:** building the paint's height takes about
+  a tenth of the time it did, and a 300 px palette knife no longer trails
+  behind the pen.
+- **Tips that turn with the stroke start turned:** the Palette knife, Flat
+  bristle, Dry gouache and Impasto brushes, and graph brushes that turn the
+  same way, no longer begin each stroke with a flat mark before they find
+  their direction.
+- **No flicker around a large brush:** zoomed out on a large canvas, the area
+  around a big brush no longer flickers in square patches while you paint.
+- **One undo for a wet stroke:** Undo takes back a wet stroke together with
+  the drying that followed it. Before, it took two.
+- **Black on watercolor:** pure black painted into another color on
+  watercolor and thick paint layers darkens it strongly, as any near-black
+  already did. Before, it could seem to vanish.
+- **Brush graphs reach the material settings:** new **Water**, **Pigment**,
+  **Thickness**, **Paper texture** and **Granulation** outputs set how much
+  of each a dab gets: paint that piles up where you press, a brush that gets
+  wetter the lighter you touch, granulation that comes and goes.
 - **Drying no longer stalls the window:** a drying wash is worked out in the
   background, so panning and zooming stay smooth while a large wash dries.
 - **Small fixes:** Brush Studio's section list fits beside the test pad on a
   small window, and Settings opens in the middle of the window.
 
-Known limits: 0.4.0 and earlier cannot update themselves, so this version is
-installed by downloading its ZIP once. Dudel has no icon of its own yet, so
-shortcuts and `.dudel` files show the generic program icon. Builds are still
-unsigned, and an update is trusted because it comes from the project's
-GitHub releases over a secure connection and matches the checksum published
-there.
+### Limits in 0.5.0
+
+- 0.4.0 and earlier cannot update themselves, so install this version by
+  downloading its ZIP once. Updating has been tested against a published
+  package but not yet from one published release to the next; that becomes
+  possible with the release after this one.
+- Dudel has no icon of its own yet, so shortcuts and `.dudel` files show the
+  generic program icon.
+- Builds are still unsigned. An update is trusted because it comes from the
+  project's GitHub releases over a secure connection and matches the checksum
+  published there.
+- A 300 px wet brush is still the most expensive brush; very fast strokes
+  with it can trail briefly and catch up when the pen slows.
 
 ## 0.4.0 (2026-11-12)
 
