@@ -17,6 +17,10 @@ pub struct Preferences {
     pub version: u32,
     #[serde(default)]
     pub theme: crate::themes::Theme,
+    /// Interface style: layout, icons, density and colors. Older versions
+    /// ignore it and keep the Classic interface.
+    #[serde(default)]
+    pub interface: crate::ui::style::Interface,
     pub brushes: Vec<Brush>,
     pub current_brush: Brush,
     pub selected_brush: usize,
@@ -207,6 +211,7 @@ mod tests {
             shortcuts_dropped: 0,
             graphs_dropped: 0,
             theme: crate::themes::Theme::presets().remove(1),
+            interface: crate::ui::style::Interface::preset(crate::ui::style::Layout::Atelier),
             version: 1,
             brushes: vec![brush.clone()],
             current_brush: brush,
@@ -271,6 +276,7 @@ mod tests {
         };
         let restored = Preferences::decode(&serde_json::to_string(&p).unwrap()).unwrap();
         assert_eq!(restored.theme, p.theme);
+        assert_eq!(restored.interface, p.interface);
         assert_eq!(restored.brushes[0].size, 42.0);
         assert_eq!(restored.selected_brush, 0);
         assert!(restored.show_transparency);
@@ -295,6 +301,7 @@ mod tests {
         let legacy = Preferences::decode(&legacy).unwrap();
         assert_eq!(legacy.secondary, [255, 255, 255]);
         assert!(legacy.recent_colors.is_empty());
+        assert_eq!(legacy.interface, Default::default());
         assert!(legacy.native_pen);
         assert_eq!(legacy.tabs.max, crate::tabs::DEFAULT_MAX);
         assert!(!legacy.timelapse.record_new);

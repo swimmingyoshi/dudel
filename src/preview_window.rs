@@ -295,7 +295,7 @@ impl Dudel {
                     || (self.preview.fullscreen && i.key_pressed(egui::Key::Escape))
             });
             let background = match self.preview.settings.background {
-                Background::Theme => crate::color_wheel::color32(self.theme.canvas_background),
+                Background::Theme => crate::color_wheel::color32(self.canvas_background()),
                 Background::Black => Color32::BLACK,
                 Background::White => Color32::WHITE,
                 Background::Green => Color32::from_rgb(0, 255, 0),

@@ -566,9 +566,7 @@ impl Dudel {
         }
         egui::TopBottomPanel::top("editing target").show(ctx, |ui| self.editing_target_ui(ui));
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::NONE.fill(crate::color_wheel::color32(self.theme.canvas_background)),
-            )
+            .frame(egui::Frame::NONE.fill(crate::color_wheel::color32(self.canvas_background())))
             .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
         self.text_editor(ctx);
         self.quick_menu_ui(ctx);

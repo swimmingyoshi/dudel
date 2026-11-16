@@ -1,3 +1,7 @@
+use crate::ui::{
+    icon_art::Glyph,
+    style::{Active, IconLook},
+};
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, vec2};
 
 /// Vector icons drawn with the painter so they scale cleanly at any display
@@ -54,9 +58,117 @@ pub enum Icon {
     More,
     /// The Fill tool's Gradient mode: a frame with a rising ramp.
     Gradient,
+    // Drawn only from the shared icon shapes (`ui::icon_art`), in every look.
+    /// Wet paint: a drop.
+    Wet,
+    /// Blending and smudging: a smear.
+    Blend,
+    /// Pixel art: a stepped line.
+    Pixel,
+    Layers,
+    Play,
+    /// Onion skin: a frame with fainter frames behind it.
+    Onion,
+    Search,
+    /// A grid of four squares.
+    Grid,
+    /// A pressure curve.
+    Pressure,
+    /// A magnet: snapping.
+    Snap,
+    /// Three lines: the main menu.
+    Menu,
+    /// Two sliders: settings.
+    Sliders,
+}
+
+impl Icon {
+    /// The shape this icon has in the shared icon art.
+    pub fn glyph(self) -> Glyph {
+        match self {
+            Icon::Brush => Glyph::Brush,
+            Icon::Pencil => Glyph::Pencil,
+            Icon::Pen => Glyph::Pen,
+            Icon::Airbrush => Glyph::Airbrush,
+            Icon::Eraser => Glyph::Eraser,
+            Icon::Fill => Glyph::Fill,
+            Icon::Picker => Glyph::Picker,
+            Icon::Select => Glyph::Select,
+            Icon::LassoFill => Glyph::Lasso,
+            Icon::LassoErase => Glyph::LassoErase,
+            Icon::Move => Glyph::Move,
+            Icon::Eye => Glyph::Eye,
+            Icon::EyeOff => Glyph::EyeOff,
+            Icon::Lock => Glyph::Lock,
+            Icon::Plus => Glyph::Plus,
+            Icon::Trash => Glyph::Trash,
+            Icon::Duplicate => Glyph::Duplicate,
+            Icon::MergeDown => Glyph::MergeDown,
+            Icon::Undo => Glyph::Undo,
+            Icon::Redo => Glyph::Redo,
+            Icon::Clip => Glyph::Clip,
+            Icon::AlphaLock | Icon::Transparency => Glyph::AlphaLock,
+            Icon::Folder => Glyph::Folder,
+            Icon::NewFolder => Glyph::NewFolder,
+            Icon::ChevronRight => Glyph::ChevronRight,
+            Icon::ChevronDown => Glyph::ChevronDown,
+            Icon::ChevronUp => Glyph::ChevronUp,
+            Icon::ZoomIn => Glyph::ZoomIn,
+            Icon::ZoomOut => Glyph::ZoomOut,
+            Icon::RotateLeft => Glyph::RotateLeft,
+            Icon::RotateRight => Glyph::RotateRight,
+            Icon::Flip => Glyph::Flip,
+            Icon::Fit => Glyph::Fit,
+            Icon::Symmetry => Glyph::Symmetry,
+            Icon::Global => Glyph::Global,
+            Icon::Guide => Glyph::Guide,
+            Icon::Pointer => Glyph::Pointer,
+            Icon::Text => Glyph::Text,
+            Icon::Effects => Glyph::Effects,
+            Icon::Adjustment => Glyph::Adjustment,
+            Icon::Mask => Glyph::Mask,
+            Icon::More => Glyph::More,
+            Icon::Gradient => Glyph::Gradient,
+            Icon::Wet => Glyph::Wet,
+            Icon::Blend => Glyph::Blend,
+            Icon::Pixel => Glyph::Pixel,
+            Icon::Layers => Glyph::Layers,
+            Icon::Play => Glyph::Play,
+            Icon::Onion => Glyph::Onion,
+            Icon::Search => Glyph::Search,
+            Icon::Grid => Glyph::Grid,
+            Icon::Pressure => Glyph::Pressure,
+            Icon::Snap => Glyph::Snap,
+            Icon::Menu => Glyph::Menu,
+            Icon::Sliders => Glyph::Sliders,
+        }
+    }
+    /// Icons that have no painter-drawn Classic version.
+    fn art_only(self) -> bool {
+        matches!(
+            self,
+            Icon::Wet
+                | Icon::Blend
+                | Icon::Pixel
+                | Icon::Layers
+                | Icon::Play
+                | Icon::Onion
+                | Icon::Search
+                | Icon::Grid
+                | Icon::Pressure
+                | Icon::Snap
+                | Icon::Menu
+                | Icon::Sliders
+        )
+    }
 }
 
 pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
+    let look = Active::get(painter.ctx()).icons;
+    if look != IconLook::Classic || icon.art_only() {
+        crate::ui::icon_art::paint(painter, rect, icon.glyph(), look, color);
+        return;
+    }
     let side = rect.width().min(rect.height());
     let origin = rect.center() - vec2(side, side) / 2.0;
     let p = |x: f32, y: f32| origin + vec2(x, y) * side;
@@ -447,6 +559,18 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 p(flip(0.38), 0.90),
             ]);
         }
+        Icon::Wet
+        | Icon::Blend
+        | Icon::Pixel
+        | Icon::Layers
+        | Icon::Play
+        | Icon::Onion
+        | Icon::Search
+        | Icon::Grid
+        | Icon::Pressure
+        | Icon::Snap
+        | Icon::Menu
+        | Icon::Sliders => unreachable!("drawn from the icon art above"),
     }
 }
 
@@ -459,18 +583,31 @@ pub fn button(ui: &mut Ui, icon: Icon, side: f32, selected: bool, enabled: bool)
     };
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), sense);
     let visuals = ui.style().interact_selectable(&response, selected);
+    let active = Active::get(ui.ctx());
+    // Classic follows the live theme (the theme editor previews it); a
+    // styled palette decides its own chosen colors.
+    let (chosen_fill, chosen_ink) = if active.styled {
+        (active.chosen_fill, active.chosen_ink)
+    } else {
+        (ui.visuals().selection.bg_fill, Color32::WHITE)
+    };
+    let radius = if active.styled {
+        f32::from(ui.visuals().widgets.inactive.corner_radius.nw).max(4.0) + 2.0
+    } else {
+        6.0
+    };
     if selected || response.hovered() && enabled {
         let fill = if selected {
-            ui.visuals().selection.bg_fill
+            chosen_fill
         } else {
             visuals.weak_bg_fill
         };
-        ui.painter().rect_filled(rect, 6.0, fill);
+        ui.painter().rect_filled(rect, radius, fill);
     }
     let color = if !enabled {
         ui.visuals().weak_text_color().gamma_multiply(0.5)
     } else if selected {
-        Color32::WHITE
+        chosen_ink
     } else {
         visuals.fg_stroke.color
     };

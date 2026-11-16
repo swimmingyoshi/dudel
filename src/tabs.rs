@@ -1446,7 +1446,7 @@ mod tests {
     /// windows, settings and what belongs to one gesture. Every other field
     /// is in `project_session!` and is parked with its tab.
     const SHARED: &str = "\
-        shortcuts shortcut_editor command_search theme theme_editor timelapse \
+        shortcuts shortcut_editor command_search theme theme_editor interface ui_layout timelapse \
         performance capture brush color mask_colors palette palette_assist tool lasso \
         gradient brush_group group_presets eraser_own eraser_brush eraser_swap \
         group_live fill_tolerance fill_options fill_source selection_shape \

@@ -87,6 +87,7 @@ mod indexed_thumbnail;
 mod indexed_tile;
 mod input;
 mod install;
+mod interface;
 mod jobs;
 mod lasso_paint;
 mod layer_effects;
@@ -135,6 +136,7 @@ mod editing_feedback;
 mod layer_batch;
 mod layer_menu;
 mod layer_navigation;
+mod layouts;
 mod material;
 mod native_session;
 mod navigator;
@@ -208,6 +210,7 @@ mod tools;
 #[cfg(windows)]
 mod touch_keyboard;
 mod transform;
+mod ui;
 mod update;
 mod vector_layer;
 mod vector_pick;
@@ -241,6 +244,10 @@ struct Dudel {
     layer_selection: layer_batch::Selection,
     theme: themes::Theme,
     theme_editor: Option<themes::Editor>,
+    /// The interface style: layout, icons, density and colors.
+    interface: ui::style::Interface,
+    /// Panel choices of the styled layouts.
+    ui_layout: layouts::LayoutState,
     timelapse: timelapse::Timelapse,
     recording: timelapse::Recording,
     performance: performance::Performance,
@@ -602,6 +609,8 @@ impl Default for Dudel {
             capture: None,
             theme: Default::default(),
             theme_editor: None,
+            interface: Default::default(),
+            ui_layout: Default::default(),
             timelapse: Default::default(),
             recording: Default::default(),
             doc: Document::new(1024, 768),
@@ -1008,6 +1017,8 @@ impl Dudel {
     fn apply_preferences(&mut self, p: preferences::Preferences) {
         self.unswap_eraser();
         self.theme = p.theme;
+        self.interface = p.interface;
+        self.interface.sanitize();
         self.brushes = p.brushes;
         self.brush = p.current_brush;
         self.selected_brush = p.selected_brush;
@@ -1071,6 +1082,7 @@ impl Dudel {
         let (paint, eraser) = (paint.as_ref(), eraser.as_ref());
         let p = preferences::Preferences {
             theme: self.theme_for_preferences().clone(),
+            interface: self.interface.clone(),
             version: 1,
             brushes: self.brushes.clone(),
             current_brush: if paint.validate().is_ok() {
@@ -1317,7 +1329,7 @@ impl eframe::App for Dudel {
             self.performance.note_drawing();
         }
         self.track_guide_changes();
-        themes::apply(ctx, &self.theme);
+        interface::apply(ctx, &self.interface, &self.theme);
         self.poll_filter(ctx);
         self.poll_save(ctx);
         self.poll_export(ctx);
@@ -1373,6 +1385,7 @@ impl eframe::App for Dudel {
         }
         self.workspace(ctx);
         self.canvas_after_tool_change(ctx, &packets, previous_tool);
+        self.float_overlays(ctx);
         self.track_guide_changes();
         if !self.stroking
             && !self.render_queue.busy()

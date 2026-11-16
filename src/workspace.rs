@@ -413,7 +413,7 @@ impl Dudel {
                 ui.small("The download package includes license notices and matching-source information.");
             });
     }
-    fn menus(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn menus(&mut self, ui: &mut egui::Ui) {
         let file_menu = bounded_menu(ui, "File", |ui| {
             self.command_menu_item(ui, crate::commands::Action::New);
             self.command_menu_item(ui, crate::commands::Action::Open);
@@ -908,8 +908,16 @@ impl Dudel {
     }
 
     pub(crate) fn opacity_slider(&mut self, ui: &mut egui::Ui) {
-        ui.label("Opacity");
         let mut percent = (self.brush.opacity * 100.0).round();
+        if self.scrub_fields() {
+            if crate::ui::widgets::scrub_field(ui, "Opacity", &mut percent, 0.0..=100.0, "%", false)
+                .changed()
+            {
+                self.brush.opacity = percent / 100.0;
+            }
+            return;
+        }
+        ui.label("Opacity");
         if ui
             .add(
                 egui::Slider::new(&mut percent, 0.0..=100.0)
@@ -923,6 +931,18 @@ impl Dudel {
     }
 
     fn brush_size_control(&mut self, ui: &mut egui::Ui, direct: bool) {
+        if self.scrub_fields() {
+            crate::ui::widgets::scrub_field(
+                ui,
+                "Size",
+                &mut self.brush.size,
+                1.0..=300.0,
+                " px",
+                true,
+            )
+            .on_hover_text("[ and ] change size");
+            return;
+        }
         ui.label("Size");
         if direct {
             ui.add(
@@ -942,7 +962,7 @@ impl Dudel {
         }
     }
 
-    fn options_bar(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn options_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             // A previous wider/DPI pass can leave this child wider than the
             // viewport. Responsive choices must still respect visible bounds.
@@ -956,14 +976,24 @@ impl Dudel {
             if self.capture.as_ref().is_some_and(|capture|capture.frames == 5) {
                 println!("Capture toolbar: width={bar_width} content={:?} pixels_per_point={} zoom={} narrow={narrow} tiny={tiny}",ui.ctx().content_rect(),ui.ctx().pixels_per_point(),ui.ctx().zoom_factor());
             }
-            let panel_open = self.show_panels && self.tool_panel_visible(ui.ctx());
+            let styled = self.interface.layout != crate::ui::style::Layout::Classic;
+            let panel_open = self.show_panels
+                && if styled {
+                    self.styled_tool_settings_open()
+                } else {
+                    self.tool_panel_visible(ui.ctx())
+                };
             let (tool_name, tool_icon) = self.tool_label();
             if icons::button(ui, tool_icon, 30.0, panel_open, true)
-                .on_hover_text("Show or hide the tool property panel")
+                .on_hover_text("Show or hide the tool settings")
                 .clicked()
             {
-                self.show_panels = true;
-                self.tool_panel_override = Some(!panel_open);
+                if styled {
+                    self.toggle_styled_tool_settings();
+                } else {
+                    self.show_panels = true;
+                    self.tool_panel_override = Some(!panel_open);
+                }
             }
             let target_label = if self.input_stroke_target().is_raster() {
                 tool_name
@@ -1038,7 +1068,7 @@ impl Dudel {
                     if !tiny {
                         self.brush_size_control(ui, narrow);
                     }
-                    if narrow && !tiny {
+                    if narrow && !tiny && !self.scrub_fields() {
                         let mut percent = (self.brush.opacity * 100.0).round();
                         if ui
                             .add(
@@ -1086,7 +1116,13 @@ impl Dudel {
                             ui.horizontal(|ui| self.brush_size_control(ui, false));
                             ui.horizontal(|ui| self.opacity_slider(ui));
                         }
+                        let scrub = self.scrub_fields();
                         let mut stabilizer = |ui: &mut egui::Ui| {
+                            if scrub {
+                                crate::ui::widgets::scrub_field(ui, "Stabilizer", &mut self.brush.stabilization, 0.0..=50.0, "", false)
+                                    .on_hover_text("Smooths hand jitter; higher values follow the pen more slowly");
+                                return;
+                            }
                             ui.label("Stabilizer");
                             ui.add(
                             egui::Slider::new(&mut self.brush.stabilization, 0.0..=50.0)
@@ -1779,7 +1815,7 @@ impl Dudel {
             .request_repaint_after(std::time::Duration::from_secs(if fresh { 1 } else { 30 }));
     }
 
-    fn status_bar(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn status_bar(&mut self, ui: &mut egui::Ui) {
         let width = ui.available_width();
         ui.spacing_mut().item_spacing = egui::vec2(6.0, 3.0);
         if width < 1100.0 {
@@ -1897,6 +1933,103 @@ impl Dudel {
         if self.show_panels {
             self.refresh_thumbnails(ctx);
         }
+        if self.interface.layout == crate::ui::style::Layout::Classic {
+            self.classic_panels(ctx);
+        } else {
+            self.styled_panels(ctx);
+        }
+        self.shortcuts_ui(ctx);
+        self.about_ui(ctx);
+        self.welcome_ui(ctx);
+        self.setup_ui(ctx);
+        self.extension_manager_ui(ctx);
+        self.import_report_ui(ctx);
+        self.extension_panels_ui(ctx);
+        self.settings_ui(ctx);
+        self.references_ui(ctx);
+        let mut input_settings = self.input_settings;
+        egui::Window::new("Tablet input")
+            .open(&mut input_settings)
+            .show(ctx, |ui| {
+                ui.label(if self.pressure_seen {
+                    "Pressure capability confirmed this session"
+                } else {
+                    "Draw a stroke to detect pressure"
+                });
+                ui.add(egui::ProgressBar::new(self.pressure.unwrap_or(0.0)).show_percentage());
+                ui.label("Pressure controls are available in Brush Editor.");
+                if let Some(mut enabled) = self.input.native_enabled()
+                    && ui
+                        .checkbox(&mut enabled, NATIVE_PEN_LABEL)
+                        .changed()
+                {
+                    self.input.set_native_enabled(enabled);
+                }
+                ui.separator();
+                let diagnostics = &self.input.diagnostics;
+                ui.label(if diagnostics.status.is_empty() {
+                    "egui input fallback"
+                } else {
+                    &diagnostics.status
+                });
+                ui.label(format!("Received packets: {}", diagnostics.packets));
+                if let Some(sample) = diagnostics.last {
+                    ui.label(if sample.time.is_some() {
+                        "Sample timing: native monotonic clock"
+                    } else {
+                        "Sample timing: unavailable in fallback input"
+                    });
+                    if let Some([x, y]) = sample.tilt {
+                        ui.label(format!("Tilt: {x:.0}°, {y:.0}°"));
+                    }
+                    if let Some(twist) = sample.twist {
+                        ui.label(format!("Rotation: {twist:.0}°"));
+                    }
+                    ui.label(format!(
+                        "Eraser end: {} · Barrel button: {}",
+                        sample.eraser, sample.barrel
+                    ));
+                }
+                if ui.button("Export recent input…").clicked() {
+                    let dialog = rfd::AsyncFileDialog::new()
+                        .add_filter("Input recording", &["json"])
+                        .set_file_name("dudel-input.json");
+                    self.ask_save_file(dialog, |app, path| {
+                        app.status = match app.input.diagnostics.export(&path) {
+                            Ok(()) => "Exported recent input packets".into(),
+                            Err(error) => format!("Input export: {error}"),
+                        };
+                    });
+                }
+                ui.small("Recordings contain up to 4,096 recent packets and screen coordinates.");
+                ui.separator();
+                if ui.checkbox(&mut self.replay.enabled, "Capture painted strokes for replay").changed() {
+                    self.replay.clear();
+                    self.replay.status.clear();
+                }
+                ui.small("Captures one active-layer stroke, its brush/view settings and starting/result pixels. Up to 65,536 commands and 32MiB of layer snapshots; off by default.");
+                if !self.replay.status.is_empty() { ui.label(&self.replay.status); }
+                if ui.add_enabled(self.replay.ready(), egui::Button::new("Export last stroke replay…")).clicked() {
+                    let dialog = rfd::AsyncFileDialog::new().add_filter("Stroke replay", &["dudelreplay"]).set_file_name("stroke.dudelreplay");
+                    self.ask_save_file(dialog, |app, path| {
+                        app.status = match app.replay.export(&path) {
+                            Ok(()) => "Exported reproducible active-layer stroke".into(),
+                            Err(error) => format!("Stroke export: {error}"),
+                        };
+                    });
+                }
+            });
+        self.input_settings = input_settings;
+        self.new_canvas_ui(ctx);
+        self.canvas_size_ui(ctx);
+        self.adjustment_ui(ctx);
+        self.command_search_ui(ctx);
+        self.shortcut_capture_ui(ctx);
+    }
+
+    /// The Classic layout: tool rail, tool settings on the left, color and
+    /// layers on the right.
+    fn classic_panels(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu").show(ctx, |ui| {
             let compact = ctx.content_rect().width() < 900.0;
             let brand = |ui: &mut egui::Ui| {
@@ -2171,93 +2304,6 @@ impl Dudel {
                     });
             }
         }
-        self.shortcuts_ui(ctx);
-        self.about_ui(ctx);
-        self.welcome_ui(ctx);
-        self.setup_ui(ctx);
-        self.extension_manager_ui(ctx);
-        self.import_report_ui(ctx);
-        self.extension_panels_ui(ctx);
-        self.settings_ui(ctx);
-        self.references_ui(ctx);
-        let mut input_settings = self.input_settings;
-        egui::Window::new("Tablet input")
-            .open(&mut input_settings)
-            .show(ctx, |ui| {
-                ui.label(if self.pressure_seen {
-                    "Pressure capability confirmed this session"
-                } else {
-                    "Draw a stroke to detect pressure"
-                });
-                ui.add(egui::ProgressBar::new(self.pressure.unwrap_or(0.0)).show_percentage());
-                ui.label("Pressure controls are available in Brush Editor.");
-                if let Some(mut enabled) = self.input.native_enabled()
-                    && ui
-                        .checkbox(&mut enabled, NATIVE_PEN_LABEL)
-                        .changed()
-                {
-                    self.input.set_native_enabled(enabled);
-                }
-                ui.separator();
-                let diagnostics = &self.input.diagnostics;
-                ui.label(if diagnostics.status.is_empty() {
-                    "egui input fallback"
-                } else {
-                    &diagnostics.status
-                });
-                ui.label(format!("Received packets: {}", diagnostics.packets));
-                if let Some(sample) = diagnostics.last {
-                    ui.label(if sample.time.is_some() {
-                        "Sample timing: native monotonic clock"
-                    } else {
-                        "Sample timing: unavailable in fallback input"
-                    });
-                    if let Some([x, y]) = sample.tilt {
-                        ui.label(format!("Tilt: {x:.0}°, {y:.0}°"));
-                    }
-                    if let Some(twist) = sample.twist {
-                        ui.label(format!("Rotation: {twist:.0}°"));
-                    }
-                    ui.label(format!(
-                        "Eraser end: {} · Barrel button: {}",
-                        sample.eraser, sample.barrel
-                    ));
-                }
-                if ui.button("Export recent input…").clicked() {
-                    let dialog = rfd::AsyncFileDialog::new()
-                        .add_filter("Input recording", &["json"])
-                        .set_file_name("dudel-input.json");
-                    self.ask_save_file(dialog, |app, path| {
-                        app.status = match app.input.diagnostics.export(&path) {
-                            Ok(()) => "Exported recent input packets".into(),
-                            Err(error) => format!("Input export: {error}"),
-                        };
-                    });
-                }
-                ui.small("Recordings contain up to 4,096 recent packets and screen coordinates.");
-                ui.separator();
-                if ui.checkbox(&mut self.replay.enabled, "Capture painted strokes for replay").changed() {
-                    self.replay.clear();
-                    self.replay.status.clear();
-                }
-                ui.small("Captures one active-layer stroke, its brush/view settings and starting/result pixels. Up to 65,536 commands and 32MiB of layer snapshots; off by default.");
-                if !self.replay.status.is_empty() { ui.label(&self.replay.status); }
-                if ui.add_enabled(self.replay.ready(), egui::Button::new("Export last stroke replay…")).clicked() {
-                    let dialog = rfd::AsyncFileDialog::new().add_filter("Stroke replay", &["dudelreplay"]).set_file_name("stroke.dudelreplay");
-                    self.ask_save_file(dialog, |app, path| {
-                        app.status = match app.replay.export(&path) {
-                            Ok(()) => "Exported reproducible active-layer stroke".into(),
-                            Err(error) => format!("Stroke export: {error}"),
-                        };
-                    });
-                }
-            });
-        self.input_settings = input_settings;
-        self.new_canvas_ui(ctx);
-        self.canvas_size_ui(ctx);
-        self.adjustment_ui(ctx);
-        self.command_search_ui(ctx);
-        self.shortcut_capture_ui(ctx);
     }
 }
 

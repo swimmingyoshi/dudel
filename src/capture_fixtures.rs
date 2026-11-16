@@ -255,6 +255,18 @@ pub(crate) fn prepare(
     {
         app.theme = theme;
     }
+    // DUDEL_CAPTURE_STYLE=Slate (or Float, Atelier) shoots any mode in a style.
+    if let Ok(name) = std::env::var("DUDEL_CAPTURE_STYLE")
+        && let Some(layout) = crate::ui::style::Layout::ALL
+            .into_iter()
+            .find(|l| l.name().eq_ignore_ascii_case(&name))
+    {
+        app.interface = crate::ui::style::Interface::preset(layout);
+        if capture_settings {
+            // The Interface page shows the style controls.
+            app.settings_section = 5;
+        }
+    }
     app.timelapse.open = capture_timelapse;
     if capture_timelapse && let Err(error) = app.sample_timelapse() {
         eprintln!("Timelapse sample: {error}");

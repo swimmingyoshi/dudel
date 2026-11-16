@@ -113,8 +113,18 @@ impl Theme {
     }
 }
 
+fn applied_id() -> egui::Id {
+    egui::Id::new("applied dudel theme")
+}
+
+/// Make the next pply rebuild the style even for the same theme, after
+/// something else (an interface style) changed it.
+pub fn forget_applied(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove::<Theme>(applied_id()));
+}
+
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
-    let id = egui::Id::new("applied dudel theme");
+    let id = applied_id();
     if ctx.data(|d| d.get_temp::<Theme>(id)).as_ref() == Some(theme) {
         return;
     }
@@ -412,6 +422,8 @@ impl Dudel {
         }
     }
     pub(crate) fn theme_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Interface style", |ui| self.interface_menu(ui));
+        ui.separator();
         if ui.button("Edit theme...").clicked() {
             self.begin_theme_editor();
             ui.close();

@@ -2,7 +2,7 @@
 use crate::{Dudel, egui};
 
 /// Settings pages: tab name, heading, introduction and what resetting does.
-const PAGES: [(&str, &str, &str, &str); 5] = [
+const PAGES: [(&str, &str, &str, &str); 6] = [
     (
         "Workspace",
         "Make room for your work",
@@ -33,6 +33,12 @@ const PAGES: [(&str, &str, &str, &str); 5] = [
         "Bindings are saved with your settings and can be shared as profiles.",
         "Restore every command's default shortcuts.",
     ),
+    (
+        "Interface",
+        "Interface style",
+        "Choose how panels, icons and controls look. Every style keeps every feature.",
+        "Return to the Classic interface style.",
+    ),
 ];
 
 /// One setting; searching matches its label and extra keywords.
@@ -42,6 +48,7 @@ enum Item {
     Panels,
     PanelLayout,
     ProjectLimit,
+    Interface,
     Theme,
     Extensions,
     NativePen,
@@ -62,6 +69,7 @@ impl Item {
         Item::Panels,
         Item::PanelLayout,
         Item::ProjectLimit,
+        Item::Interface,
         Item::Theme,
         Item::Extensions,
         Item::NativePen,
@@ -78,6 +86,7 @@ impl Item {
     fn page(self) -> usize {
         match self {
             Item::Shortcuts => 4,
+            Item::Interface => 5,
             Item::Panels
             | Item::PanelLayout
             | Item::ProjectLimit
@@ -103,6 +112,9 @@ impl Item {
             Item::Panels => "show workspace panels hide sidebar inspector tool panel",
             Item::PanelLayout => "restore automatic panel layout reset sidebar",
             Item::ProjectLimit => "open project limit tabs memory documents",
+            Item::Interface => {
+                "interface style layout slate float atelier classic icons line duotone solid density compact touch corners colors palette appearance tablet left handed"
+            }
             Item::Theme => "choose customize theme colors dark light appearance",
             Item::Extensions => "manage extensions plugins add-ons filters install",
             Item::NativePen => "native pen input tablet wacom xp-pen windows ink pressure stylus",
@@ -237,6 +249,7 @@ impl Dudel {
                 });
                 ui.weak("Each open project uses memory, including parked tabs.");
             }
+            Item::Interface => self.interface_settings_ui(ui),
             Item::Theme => {
                 ui.menu_button("Choose or customize a theme", |ui| self.theme_menu(ui));
             }
@@ -315,6 +328,7 @@ impl Dudel {
                 self.quick_menu_prefs = Default::default();
             }
             2 => self.performance.open = false,
+            5 => self.interface = Default::default(),
             4 => {
                 self.apply_shortcuts(Default::default());
                 self.shortcut_editor.message = "Default shortcuts restored".into();
@@ -346,6 +360,7 @@ mod tests {
         assert_eq!(find("vsync"), vec![Item::Graphics]);
         assert_eq!(find("snap guides"), vec![Item::Snapping]);
         assert!(find("plugins").contains(&Item::Extensions));
+        assert_eq!(find("atelier"), vec![Item::Interface]);
         assert!(find("nothing like this").is_empty());
     }
 
@@ -365,6 +380,9 @@ mod tests {
         assert_eq!(app.tabs.max, crate::tabs::DEFAULT_MAX);
         app.reset_settings_page(2);
         assert!(!app.performance.open);
+        app.interface = crate::ui::style::Interface::preset(crate::ui::style::Layout::Float);
+        app.reset_settings_page(5);
+        assert_eq!(app.interface, Default::default());
         app.locations.beside_project = false;
         app.reset_settings_page(3);
         assert!(app.locations.beside_project);
