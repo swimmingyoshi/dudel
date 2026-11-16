@@ -124,7 +124,7 @@ project_session! {
     thumbnail_timer: std::time::Instant,
     thumbnail_stamps: std::collections::HashMap<
         crate::document::LayerId,
-        (bool, crate::pixels::RegionStamp, crate::layer_mask::LayerStamp),
+        (u64, crate::pixels::RegionStamp, crate::layer_mask::LayerStamp),
     >,
     layer_reveal: Option<(crate::document::LayerId, crate::paint_target::Target, [i32; 2])>,
     navigator_paint: Option<crate::navigator::PaintRequest>,

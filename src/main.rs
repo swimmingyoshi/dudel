@@ -298,7 +298,7 @@ struct Dudel {
     /// Pixel identity each thumbnail was drawn from, by layer.
     thumbnail_stamps: std::collections::HashMap<
         document::LayerId,
-        (bool, pixels::RegionStamp, layer_mask::LayerStamp),
+        (u64, pixels::RegionStamp, layer_mask::LayerStamp),
     >,
     dirty: bool,
     dirty_region: render_region::Damage,

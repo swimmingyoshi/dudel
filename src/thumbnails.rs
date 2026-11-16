@@ -1,4 +1,8 @@
-use crate::{Dudel, document::Layer, egui};
+use crate::{
+    Dudel,
+    document::{Document, Layer},
+    egui,
+};
 
 const SIDE: usize = 40;
 
@@ -30,12 +34,69 @@ pub(crate) fn mask_pixels(mask: &crate::layer_mask::Mask, side: usize) -> Vec<u8
 /// Small checkerboard preview of raw layer contents. Bounded subsampling keeps
 /// preview work independent of large document dimensions; fine detail is approximate.
 pub fn pixels(layer: &Layer, width: usize, height: usize, side: usize) -> Vec<u8> {
-    let mut output = vec![255; side * side * 4];
     if layer.folder {
         // Folder rows draw an icon instead; keep one texture per stack entry.
-        output.fill(0);
-        return output;
+        return vec![0; side * side * 4];
     }
+    preview(width, height, side, |index| {
+        let pixel = layer.pixels.rgba(index);
+        (
+            [pixel[0], pixel[1], pixel[2]],
+            pixel[3] as f32 / 255.0 * layer.mask_coverage(index, width),
+        )
+    })
+}
+
+/// A top-level folder's contents composited the way the canvas shows them,
+/// for its frame in the animation timeline. Only the folder is composited,
+/// sampled at a few times the preview's resolution.
+pub(crate) fn folder_pixels(doc: &Document, folder: usize, side: usize) -> Vec<u8> {
+    let mut view = doc.clone();
+    view.layers = doc.layers[doc.block(folder)].to_vec();
+    view.active = 0;
+    if let Some(header) = view.layers.last_mut() {
+        header.visible = true;
+    }
+    let step = (doc.width.max(doc.height) / (side * 4)).max(1);
+    let Ok((rgba, [columns, _])) = view.composite_reduced(step, true, || Ok(())) else {
+        return vec![0; side * side * 4];
+    };
+    preview(doc.width, doc.height, side, |index| {
+        let (x, y) = (index % doc.width / step, index / doc.width / step);
+        let pixel = &rgba[(y * columns + x) * 4..][..4];
+        (
+            [pixel[0], pixel[1], pixel[2]],
+            f32::from(pixel[3]) / 255.0,
+        )
+    })
+}
+
+/// A key for what a frame folder's preview shows besides its layers'
+/// pixels, which `refresh_thumbnails` tracks layer by layer: its layers and
+/// how they are composited. Never 0 (a layer) or 1 (any other folder).
+fn folder_key(doc: &Document, folder: usize) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for layer in &doc.layers[doc.block(folder)] {
+        layer.id.hash(&mut hasher);
+        (layer.visible, layer.clipped, layer.folder, layer.depth).hash(&mut hasher);
+        (layer.opacity.to_bits(), layer.fill.to_bits()).hash(&mut hasher);
+        layer.mask.as_ref().map(|mask| mask.enabled).hash(&mut hasher);
+        format!("{:?}{:?}{:?}", layer.blend, layer.effects, layer.adjustment).hash(&mut hasher);
+    }
+    hasher.finish().max(2)
+}
+
+/// A `side` square preview of a `width` × `height` picture on a
+/// checkerboard, letterboxed. `sample` gives a pixel's color and coverage
+/// by its index; a few are averaged per preview pixel.
+fn preview(
+    width: usize,
+    height: usize,
+    side: usize,
+    sample: impl Fn(usize) -> ([u8; 3], f32),
+) -> Vec<u8> {
+    let mut output = vec![255; side * side * 4];
     let scale = side as f32 / width.max(height) as f32;
     let shown_width = width as f32 * scale;
     let shown_height = height as f32 * scale;
@@ -62,9 +123,7 @@ pub fn pixels(layer: &Layer, width: usize, height: usize, side: usize) -> Vec<u8
                     let py = ((y as f32 - top + (sy as f32 + 0.5) / count as f32) / scale)
                         .floor()
                         .clamp(0.0, (height - 1) as f32) as usize;
-                    let pixel = layer.pixels.rgba(py * width + px);
-                    let alpha =
-                        pixel[3] as f32 / 255.0 * layer.mask_coverage(py * width + px, width);
+                    let (pixel, alpha) = sample(py * width + px);
                     for c in 0..3 {
                         rgba[c] += pixel[c] as f32 * alpha;
                     }
@@ -120,7 +179,19 @@ impl Dudel {
         self.mask_thumbnails.retain(|id, _| present.contains(id));
         self.thumbnail_stamps.retain(|id, _| present.contains(id));
         let mut prepared = 0;
-        for layer in &self.doc.layers {
+        let animated = self.doc.animation.is_some();
+        for (index, layer) in self.doc.layers.iter().enumerate() {
+            // A top-level folder is a frame in an animation, and the timeline
+            // shows its contents; anywhere else a folder shows an icon.
+            let frame = animated
+                && layer.folder
+                && layer.depth == 0
+                && layer.display_reference.is_none();
+            let kind = match (layer.folder, frame) {
+                (false, _) => 0,
+                (true, false) => 1,
+                (true, true) => folder_key(&self.doc, index),
+            };
             // Only layers whose pixels changed are redrawn; painting one layer
             // no longer regenerates every thumbnail every 200ms.
             let current = self.layer_thumbnails.contains_key(&layer.id)
@@ -128,13 +199,22 @@ impl Dudel {
                 && self
                     .thumbnail_stamps
                     .get(&layer.id)
-                    .is_some_and(|(folder, stamp, mask)| {
-                        *folder == layer.folder
+                    .is_some_and(|(drawn, stamp, mask)| {
+                        *drawn == kind
                             && stamp.matches(&layer.pixels)
                             && mask.matches(layer.mask.as_ref())
                     });
             if current {
                 continue;
+            }
+            // A changed layer inside a folder changes the folder's frame:
+            // its header comes later in the stack and is redrawn after it.
+            if animated && layer.depth > 0 {
+                let top = (index + 1..self.doc.layers.len())
+                    .find(|&above| self.doc.layers[above].depth == 0);
+                if let Some(top) = top {
+                    self.thumbnail_stamps.remove(&self.doc.layers[top].id);
+                }
             }
             // Large imports/reorders settle over several updates instead of
             // preparing every changed layer on the input thread at once.
@@ -171,7 +251,7 @@ impl Dudel {
             self.thumbnail_stamps.insert(
                 layer.id,
                 (
-                    layer.folder,
+                    kind,
                     layer.pixels.region_stamp(rect),
                     crate::layer_mask::LayerStamp::new(
                         layer.mask.as_ref(),
@@ -179,10 +259,12 @@ impl Dudel {
                     ),
                 ),
             );
-            let image = egui::ColorImage::from_rgba_unmultiplied(
-                [SIDE, SIDE],
-                &pixels(layer, self.doc.width, self.doc.height, SIDE),
-            );
+            let preview = if frame {
+                folder_pixels(&self.doc, index, SIDE)
+            } else {
+                pixels(layer, self.doc.width, self.doc.height, SIDE)
+            };
+            let image = egui::ColorImage::from_rgba_unmultiplied([SIDE, SIDE], &preview);
             if let Some(texture) = self.layer_thumbnails.get_mut(&layer.id) {
                 texture.set(image, egui::TextureOptions::LINEAR);
             } else {
@@ -260,6 +342,72 @@ mod tests {
         let preview = pixels(&doc.layers[0], 1, 1, 10);
         assert_eq!(&preview[..4], &[210, 210, 210, 255]);
         assert_eq!(&preview[20..24], &[170, 170, 170, 255]);
+    }
+    #[test]
+    fn a_frame_folder_previews_its_contents_and_follows_their_changes() {
+        let ctx = egui::Context::default();
+        let mut doc = Document::new(8, 8);
+        doc.layers = vec![
+            Layer::raster("Frame 1".into(), 8, 8),
+            Layer {
+                depth: 1,
+                ..Layer::raster("Color".into(), 8, 8)
+            },
+            Layer {
+                depth: 1,
+                ..Layer::raster("Lines".into(), 8, 8)
+            },
+            Layer::new_folder("Frame 2".into()),
+        ];
+        doc.active = 1;
+        doc.layers[1]
+            .pixels
+            .writer()
+            .write_region(8, [0, 0, 8, 8], &[200, 0, 0, 255].repeat(64));
+        let mut app = crate::Dudel {
+            doc,
+            ..Default::default()
+        };
+        let refresh = |app: &mut crate::Dudel| {
+            app.revision += 1;
+            app.thumbnail_timer = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            let mut set = Vec::new();
+            for _ in 0..4 {
+                let output = ctx.run(Default::default(), |ctx| app.refresh_thumbnails(ctx));
+                set.extend(output.textures_delta.set.into_iter().map(|(id, _)| id));
+            }
+            set
+        };
+        let folder = app.doc.layers[3].id;
+        // Outside an animation a folder keeps its empty preview.
+        refresh(&mut app);
+        assert!(folder_pixels(&app.doc, 3, 10)[..4] != [0; 4]);
+        assert!(
+            pixels(&app.doc.layers[3], 8, 8, 10)
+                .chunks_exact(4)
+                .all(|p| p == [0; 4])
+        );
+        // As a frame it shows the red layer inside it.
+        app.doc.animation = Some(Default::default());
+        let texture = app.layer_thumbnails[&folder].id();
+        assert!(refresh(&mut app).contains(&texture));
+        let preview = folder_pixels(&app.doc, 3, 10);
+        assert!(preview.chunks_exact(4).all(|p| p == [200, 0, 0, 255]));
+        // Painting a layer inside redraws the frame; nothing else does.
+        app.doc.layers[2]
+            .pixels
+            .writer()
+            .write_region(8, [0, 0, 8, 8], &[0, 0, 200, 255].repeat(64));
+        assert!(refresh(&mut app).contains(&texture));
+        assert!(
+            folder_pixels(&app.doc, 3, 10)
+                .chunks_exact(4)
+                .all(|p| p == [0, 0, 200, 255])
+        );
+        assert!(!refresh(&mut app).contains(&texture));
+        // So does hiding a layer inside.
+        app.doc.layers[2].visible = false;
+        assert!(refresh(&mut app).contains(&texture));
     }
     #[test]
     fn painting_one_layer_redraws_only_its_thumbnail() {

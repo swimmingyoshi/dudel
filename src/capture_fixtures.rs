@@ -985,7 +985,8 @@ impl Dudel {
 
 impl Dudel {
     /// A bouncing ball in six frames over a background, on frame three with
-    /// the onion skin showing the frames around it.
+    /// the onion skin showing the frames around it. Frame five is a folder
+    /// of line art and color.
     fn animation_capture_fixture(&mut self) {
         let (w, h) = (96usize, 64usize);
         let mut doc = document::Document::new(w, h);
@@ -1032,6 +1033,30 @@ impl Dudel {
             }
             if index == 3 {
                 frame.hold = 2;
+            }
+            if index == 4 {
+                // A frame drawn in parts: its outline and color in a folder.
+                let mut lines = document::Layer::raster("Lines".into(), w, h);
+                {
+                    let color = frame.pixels.clone();
+                    let mut outline = lines.pixels.writer();
+                    let mut fill = frame.pixels.writer();
+                    for i in 0..w * h {
+                        if color.rgba(i) == [26, 28, 44, 255] {
+                            outline.rgba_mut(i).copy_from_slice(&[26, 28, 44, 255]);
+                            fill.rgba_mut(i).copy_from_slice(&[0; 4]);
+                        }
+                    }
+                }
+                frame.name = "Color".into();
+                frame.depth = 1;
+                lines.depth = 1;
+                layers.extend([
+                    frame,
+                    lines,
+                    document::Layer::new_folder("Frame 5".into()),
+                ]);
+                continue;
             }
             layers.push(frame);
         }
