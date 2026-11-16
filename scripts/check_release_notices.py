@@ -75,7 +75,8 @@ if "SOURCE_BUILD.json" not in s or json.loads(s["SOURCE_BUILD.json"].decode("utf
 # Notice index vs dependency inventory
 index = json.loads(b["third-party-licenses/INDEX.json"].decode("utf-8-sig"))
 deps = json.loads(b["DEPENDENCIES.json"].decode("utf-8-sig"))
-dep_map = {(d["name"], d["version"]): d.get("license") for d in deps if d["name"] != "dudel"}
+# Dudel's own crates (the app, its engine and interface kit) have no registry source.
+dep_map = {(d["name"], d["version"]): d.get("license") for d in deps if d.get("source")}
 idx_map = {(p["package"], p["version"]): p for p in index["packages"]}
 if set(dep_map) != set(idx_map):
     problems.append(f"index/dependency mismatch: missing {sorted(set(dep_map) - set(idx_map))[:5]}, extra {sorted(set(idx_map) - set(dep_map))[:5]}")

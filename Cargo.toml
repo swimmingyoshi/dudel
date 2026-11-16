@@ -1,9 +1,46 @@
-[package]
-name = "dudel"
+[workspace]
+# The app (this package), its engine and its interface kit. `cargo test`,
+# `cargo clippy` and `cargo build` here cover all three.
+members = ["crates/dudel-core", "crates/dudel-ui"]
+default-members = [".", "crates/dudel-core", "crates/dudel-ui"]
+
+[workspace.package]
 version = "0.5.0"
 edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/swimmingyoshi/dudel"
+
+# One version of each shared dependency for every crate here.
+[workspace.dependencies]
+ab_glyph = "=0.2.32"
+ab_glyph_rasterizer = "=0.1.10"
+directories = "6"
+# The engine uses only egui's geometry crate, `emath`.
+egui = { version = "0.33", default-features = false }
+emath = "0.33"
+epaint_default_fonts = "0.33"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
+moxcms = "=0.8.1"
+png = "=0.18.1"
+rhai = "1"
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "hooks", "limits"] }
+rustybuzz = "=0.20.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+ttf-parser = "=0.25.1"
+unicode-bidi = "=0.3.18"
+wasmi = "2"
+wat = "1.261.0"
+windows-sys = "0.61"
+
+[package]
+name = "dudel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 # Diagnostic build only: requested Rust allocation bytes, not heap commitment/VRAM.
@@ -11,33 +48,35 @@ allocation-profile = ["windows-sys/Win32_System_Memory", "windows-sys/Win32_Syst
 allocation-stack-profile = ["allocation-profile", "dep:rustc-demangle", "windows-sys/Win32_System_Diagnostics_Debug", "windows-sys/Win32_System_LibraryLoader"]
 
 [dependencies]
+dudel-core = { path = "crates/dudel-core" }
+dudel-ui = { path = "crates/dudel-ui" }
 arboard = "=3.6.1"
 eframe = { version = "0.33", features = ["persistence", "wgpu"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde.workspace = true
+serde_json.workspace = true
 rustc-demangle = { version = "0.1", optional = true }
 ron = { version = "=0.11.0", features = ["integer128"] }
-image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
+image.workspace = true
 # Timelapse GIFs encode only the pixels that changed between frames.
 gif = "0.14"
 color_quant = "1"
-png = "=0.18.1"
+png.workspace = true
 rfd = "0.15"
-rhai = "1"
-tempfile = "3"
-flate2 = "1"
-directories = "6"
-wasmi = "2"
-rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "hooks", "limits"] }
+rhai.workspace = true
+tempfile.workspace = true
+flate2.workspace = true
+directories.workspace = true
+wasmi.workspace = true
+rusqlite.workspace = true
 # Already built for `image`; converts CMYK Photoshop files through their profile.
-moxcms = "=0.8.1"
+moxcms.workspace = true
 zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
 # Already built for egui; draw text with installed fonts.
-ab_glyph = "=0.2.32"
-ab_glyph_rasterizer = "=0.1.10"
-ttf-parser = "=0.25.1"
-rustybuzz = "=0.20.1"
-unicode-bidi = "=0.3.18"
+ab_glyph.workspace = true
+ab_glyph_rasterizer.workspace = true
+ttf-parser.workspace = true
+rustybuzz.workspace = true
+unicode-bidi.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 raw-window-handle = "0.6"
@@ -72,8 +111,9 @@ inherits = "release"
 incremental = true
 
 [dev-dependencies]
-rusqlite = { version = "=0.40.2", default-features = false, features = ["serialize"] }
-wat = "1.261.0"
+dudel-core = { path = "crates/dudel-core", features = ["testing"] }
+rusqlite = { workspace = true, features = ["serialize"] }
+wat.workspace = true
 
 [[example]]
 name = "dx12_upload_probe"

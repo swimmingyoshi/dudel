@@ -38,7 +38,7 @@ def sha(path):
 def source_identity():
     """Hash actual build inputs, including uncommitted/untracked Rust modules."""
     names = ["Cargo.toml", "Cargo.lock", "LICENSE", "LICENSE-psd-tools", "shell/thumbnails/Cargo.toml", "shell/thumbnails/Cargo.lock"]
-    for folder in ("src", "examples", "plugins", "shell/thumbnails/src"):
+    for folder in ("src", "crates", "examples", "plugins", "shell/thumbnails/src"):
         names += [p.relative_to(REPOSITORY).as_posix() for p in (REPOSITORY / folder).rglob("*") if p.is_file()]
     return [{"path": name, "sha256": sha(REPOSITORY / name)} for name in sorted(names)]
 

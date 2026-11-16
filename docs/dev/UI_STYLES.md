@@ -23,12 +23,13 @@ reachable in every style.
 
 ## Where the code is
 
-- `src/ui/` names only egui, so it can become the `dudel-ui` crate:
+- The `dudel-ui` crate (`crates/dudel-ui`, egui only; see `CRATES.md`):
   - `style.rs`: `Interface`, the presets, palettes, applying colors and
     spacing, and `Active` (the style in use, kept in the egui context).
   - `icon_art.rs`: every icon as parts on a 24-unit grid in SVG path data,
     drawn as Line, Duotone or Solid through `ab_glyph_rasterizer` and cached
     as textures at the exact pixel size.
+  - `icons.rs`: the `Icon` names, icon buttons, and the Classic painter icons.
   - `widgets.rs`: scrub field, tab strip, segmented control.
 - `src/interface.rs`: applying a style on top of the theme, the settings
   page and the menu.

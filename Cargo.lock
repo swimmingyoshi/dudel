@@ -896,6 +896,8 @@ dependencies = [
  "arboard",
  "color_quant",
  "directories",
+ "dudel-core",
+ "dudel-ui",
  "eframe",
  "flate2",
  "gif",
@@ -922,6 +924,42 @@ dependencies = [
  "windows 0.61.3",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "dudel-core"
+version = "0.5.0"
+dependencies = [
+ "ab_glyph",
+ "ab_glyph_rasterizer",
+ "directories",
+ "emath",
+ "epaint_default_fonts",
+ "flate2",
+ "image",
+ "moxcms",
+ "png",
+ "rhai",
+ "rusqlite",
+ "rustybuzz",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ttf-parser",
+ "unicode-bidi",
+ "wasmi",
+ "wat",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "dudel-ui"
+version = "0.5.0"
+dependencies = [
+ "ab_glyph_rasterizer",
+ "egui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-mod adjustment;
+use dudel_core::*;
 mod adjustment_panel;
 mod adjustments;
 mod affine;
@@ -13,17 +13,12 @@ mod affine_preview;
 mod allocation_profile;
 #[cfg(all(feature = "allocation-stack-profile", windows))]
 mod allocation_trace;
-mod animation;
 mod animation_cache;
 mod animation_export;
 mod animation_ui;
 mod benchmark;
-mod binary_project;
-mod blend;
 mod blend_brush;
 mod brush;
-mod brush_edge;
-mod brush_formula;
 mod brush_graph;
 mod brush_library;
 mod brush_pack;
@@ -36,55 +31,31 @@ mod canvas_textures;
 mod capture;
 mod capture_fixtures;
 mod cli;
-mod clip_attributes;
-mod clip_blocks;
-mod clip_container;
-mod clip_document;
-mod clip_metadata;
-mod clip_preview;
-mod clip_raster;
-mod clip_text;
-mod clip_timeline;
-mod clip_vector;
 mod clipboard;
 #[cfg(windows)]
 mod clipboard_files;
 #[cfg(windows)]
 mod clipboard_shortcuts;
 mod color_wheel;
-mod composite_cursor;
-mod dab_bands;
-mod dab_rows;
 mod dialogs;
 mod display_settings;
 mod display_workers;
-mod document;
 mod document_actions;
-mod document_edits;
 mod dynamics;
 mod effects_panel;
 mod export_jobs;
 mod export_options;
 mod extension_api;
 mod extensions;
-mod file_preview;
 mod fill;
-mod filters;
-mod folders;
 #[cfg(feature = "allocation-profile")]
 mod gpu_profile;
 mod gradient_tool;
 mod graph_editor;
 mod guides;
-mod history_pixels;
-mod icons;
+use dudel_ui::icons;
 mod image_paste;
 mod import_report;
-mod indexed_commit;
-mod indexed_document;
-mod indexed_mask;
-mod indexed_thumbnail;
-mod indexed_tile;
 mod input;
 mod install;
 mod interface;
@@ -93,12 +64,10 @@ mod lasso_paint;
 mod layer_effects;
 mod layer_guides;
 mod layer_import;
-mod layer_mask;
 #[cfg(test)]
 mod layer_mask_document_tests;
 #[cfg(test)]
 mod layer_mask_edit_tests;
-mod layer_mask_edits;
 #[cfg(test)]
 mod layer_mask_geometry_tests;
 #[cfg(test)]
@@ -110,25 +79,19 @@ mod mask_clipboard;
 mod mask_controller;
 #[cfg(test)]
 mod mask_feedback_tests;
-mod mask_fill;
 #[cfg(test)]
 mod mask_fill_tests;
 #[cfg(test)]
 mod mask_stroke_tests;
 mod mask_transform;
 mod mask_transform_benchmark;
-mod move_preview;
 mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
-mod pattern;
 mod psd_export;
-mod psd_import;
-mod psd_vector;
 mod quick_menu;
 #[cfg(target_os = "linux")]
 use wayland_pen as native_pen;
-mod background;
 mod command_search;
 mod commands;
 mod crash_report;
@@ -141,20 +104,13 @@ mod material;
 mod native_session;
 mod navigator;
 mod new_canvas;
-mod paint_target;
 mod palette;
 mod palette_assist;
 mod paper;
 mod paper_view;
-mod parallel;
-mod pending_layers;
 mod performance;
-mod pigment;
-mod pixels;
-mod plugins;
 mod preference_recovery;
 mod preferences;
-mod prefix_cache;
 mod pressure_editor;
 mod preview;
 mod preview_window;
@@ -168,39 +124,26 @@ mod references;
 #[cfg(feature = "allocation-profile")]
 mod region_census;
 mod render_controller;
-mod render_queue;
-mod render_region;
 mod replay;
 mod rulers;
 mod save_jobs;
-mod screentone;
 mod scripted_tool;
-mod selection;
 mod selection_contour;
-mod selection_mask;
 mod selection_ui;
 mod settings_store;
 mod settings_ui;
 mod setup_ui;
-mod sha256;
 mod shortcut_editor;
 mod shortcuts;
-mod snapshot_memory;
 mod stage_timer;
-mod storage;
-mod stroke;
-mod stroke_buffer;
 mod stroke_profile;
 mod svg_export;
-mod symmetry;
 mod tabs;
 mod text_layer;
 mod text_options;
-mod text_render;
 mod text_tool;
 mod themes;
 mod thumbnails;
-mod tile_project;
 mod timelapse;
 mod tip_cursor;
 mod tip_import;
@@ -209,14 +152,10 @@ mod tool_shift;
 mod tools;
 #[cfg(windows)]
 mod touch_keyboard;
-mod transform;
-mod ui;
+use dudel_ui as ui;
 mod update;
 mod vector_layer;
 mod vector_pick;
-mod view;
-mod wand;
-mod wasm_filters;
 #[cfg(target_os = "linux")]
 mod wayland_pen;
 mod welcome;

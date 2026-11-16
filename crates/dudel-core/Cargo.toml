@@ -1,0 +1,42 @@
+# Dudel's engine: documents, painting, selections, transforms and file
+# formats, with no window toolkit. The app crate at the repository root draws
+# the interface around it. Tests here run without a window.
+[package]
+name = "dudel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Test helpers (a built-in font, fixture builders) for the app's tests.
+testing = ["dep:epaint_default_fonts"]
+
+[dependencies]
+ab_glyph.workspace = true
+ab_glyph_rasterizer.workspace = true
+directories.workspace = true
+emath.workspace = true
+epaint_default_fonts = { workspace = true, optional = true }
+flate2.workspace = true
+image.workspace = true
+moxcms.workspace = true
+png.workspace = true
+rhai.workspace = true
+rusqlite.workspace = true
+rustybuzz.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+ttf-parser.workspace = true
+unicode-bidi.workspace = true
+wasmi.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+epaint_default_fonts.workspace = true
+rusqlite = { workspace = true, features = ["serialize"] }
+wat.workspace = true

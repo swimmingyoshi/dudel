@@ -1,0 +1,1842 @@
+//! Material layers: layers that know what kind of paint they hold. This is
+//! stage four of the canvas material plan, built on the paper (stage one),
+//! granulation (two) and wet paint (three).
+//!
+//! - Watercolor: while a wash dries, water flows toward its drying edges
+//!   and carries pigment there, so washes dry with darker rims; fresh water
+//!   dropped into a drying wash pushes the paint aside into blooms.
+//! - Dry media: every brush catches on the paper's tooth, as pastel and
+//!   charcoal do; firmer pressure fills the valleys. With no paper on the
+//!   canvas the layer brings a fine tooth of its own.
+//! - Thick paint: brushes leave paint that stands up from the canvas. A
+//!   relief channel (one byte per pixel, saved with the project) records
+//!   how high, with bristle streaks along each stroke, and a light shades
+//!   it. The shading is drawn as a layer clipped to the paint whenever the
+//!   document is composited, and redrawn only where the relief changed.
+use crate::{
+    document::{Document, Layer, LayerId},
+    layer_mask::Mask,
+    pixels::Pixels,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+
+/// What a material layer holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Kind {
+    Watercolor,
+    Dry,
+    Paint,
+}
+impl Kind {
+    pub const ALL: [Kind; 3] = [Self::Watercolor, Self::Dry, Self::Paint];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Watercolor => "Watercolor",
+            Self::Dry => "Dry media",
+            Self::Paint => "Thick paint",
+        }
+    }
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Watercolor => {
+                "Wet washes dry with darker edges, and fresh water pushes drying paint into blooms. \
+                 Paint with a Wet brush (Brush settings › Blending)."
+            }
+            Self::Dry => {
+                "Every brush catches on the paper's tooth like pastel or charcoal; press harder to \
+                 fill the valleys. Brings a fine tooth of its own when the canvas has no paper."
+            }
+            Self::Paint => {
+                "Brushes leave paint that stands up, with bristle streaks, lit by a light you \
+                 choose. Each brush's Thickness setting says how thick (Brush settings › Texture)."
+            }
+        }
+    }
+}
+
+fn default_edges() -> f32 {
+    0.6
+}
+fn default_blooms() -> f32 {
+    0.5
+}
+fn default_tooth() -> f32 {
+    0.7
+}
+fn default_light() -> f32 {
+    135.0
+}
+fn default_depth() -> f32 {
+    0.5
+}
+fn default_shine() -> f32 {
+    0.35
+}
+
+/// A material layer's settings. Every kind keeps all of them, so switching
+/// kinds and back loses nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Settings {
+    pub kind: Kind,
+    /// Watercolor: how much drying paint gathers at the edges of a wash.
+    #[serde(default = "default_edges")]
+    pub edges: f32,
+    /// Watercolor: how far fresh water pushes drying paint aside.
+    #[serde(default = "default_blooms")]
+    pub blooms: f32,
+    /// Dry media: how much the paper's tooth catches every stroke.
+    #[serde(default = "default_tooth")]
+    pub tooth: f32,
+    /// Thick paint: where the light comes from, in degrees counterclockwise
+    /// from the right (135 is the upper left).
+    #[serde(default = "default_light")]
+    pub light: f32,
+    /// Thick paint: how deep the relief looks.
+    #[serde(default = "default_depth")]
+    pub depth: f32,
+    /// Thick paint: how glossy the ridges are.
+    #[serde(default = "default_shine")]
+    pub shine: f32,
+}
+
+impl Settings {
+    pub fn new(kind: Kind) -> Self {
+        Self {
+            kind,
+            edges: default_edges(),
+            blooms: default_blooms(),
+            tooth: default_tooth(),
+            light: default_light(),
+            depth: default_depth(),
+            shine: default_shine(),
+        }
+    }
+    pub fn validate(&self) -> Result<(), String> {
+        let unit = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
+        if unit(self.edges)
+            && unit(self.blooms)
+            && unit(self.tooth)
+            && unit(self.depth)
+            && unit(self.shine)
+            && self.light.is_finite()
+            && (-180.0..=180.0).contains(&self.light)
+        {
+            Ok(())
+        } else {
+            Err("Material setting outside supported range".into())
+        }
+    }
+    /// Lighting depends on these alone.
+    fn look(&self) -> [f32; 3] {
+        [self.light, self.depth, self.shine]
+    }
+}
+
+/// A layer's material: its settings, and for thick paint the relief.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Material {
+    #[serde(flatten)]
+    pub settings: Settings,
+    /// Thick paint: how high the paint stands at each pixel (0 flat, 255 the
+    /// thickest). Saved in the project's relief trailer, not its metadata.
+    #[serde(skip)]
+    pub relief: Option<Mask>,
+    #[serde(skip)]
+    cache: Cache,
+}
+
+impl Material {
+    /// Boxed: most layers have none, and layers stay small.
+    pub fn new(settings: Settings) -> Box<Self> {
+        Box::new(Self {
+            settings,
+            relief: None,
+            cache: Cache::default(),
+        })
+    }
+    pub fn kind(&self) -> Kind {
+        self.settings.kind
+    }
+    /// Thick paint with some relief: drawn with its light.
+    pub fn lit(&self) -> bool {
+        self.settings.kind == Kind::Paint
+            && self
+                .relief
+                .as_ref()
+                .is_some_and(|r| r.painted_bounds().is_some())
+    }
+}
+
+/// Whether two materials are the same snapshot: same settings and the same
+/// relief storage.
+pub fn same(a: &Option<Box<Material>>, b: &Option<Box<Material>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.settings == b.settings
+                && match (&a.relief, &b.relief) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => a.shares(b),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
+
+/// Whether two layers have the same kind of material with the same
+/// settings; their reliefs may differ.
+pub fn same_settings(a: &Option<Box<Material>>, b: &Option<Box<Material>>) -> bool {
+    a.as_ref().map(|m| m.settings) == b.as_ref().map(|m| m.settings)
+}
+
+/// Check a layer's material against the document size.
+pub fn validate(material: &Material, size: [usize; 2], folder: bool) -> Result<(), String> {
+    material.settings.validate()?;
+    if folder {
+        return Err("Folders have no material".into());
+    }
+    if let Some(relief) = &material.relief {
+        if material.settings.kind != Kind::Paint {
+            return Err("Only thick paint keeps a relief".into());
+        }
+        if relief.dimensions() != size || relief.default_value() != 0 {
+            return Err("Paint relief differs from the document".into());
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Painting
+
+/// The surface dry media feels: the canvas's paper (or, with none, a
+/// fine tooth of its own), its relief deepened by `tooth` and drawing in
+/// little: dry pigment sits on the peaks until pressure pushes it down.
+pub fn dry_paper(paper: Option<crate::paper::Paper>, tooth: f32) -> crate::paper::Paper {
+    let paper = paper.unwrap_or(crate::paper::Paper::presets()[5].1);
+    crate::paper::Paper {
+        roughness: paper.roughness.max(0.35 + 0.6 * tooth),
+        absorbency: paper.absorbency * (1.0 - tooth),
+        ..paper
+    }
+}
+
+/// Bristle streaks: how much paint a bristle at `across` pixels from the
+/// middle of the tip carries, 0.5 to 1. Bristles keep their place across
+/// the tip as it moves, so streaks run along the stroke.
+#[cfg(any(test, feature = "testing"))]
+fn bristle(across: f32, radius: f32) -> f32 {
+    Bristles::new(radius, [0.0, 0.0]).at(across)
+}
+
+fn bristle_hash(n: f32, seed: i64) -> f32 {
+    let n = (n as i64).wrapping_add(seed).wrapping_mul(0x2545_F491) as u64;
+    let n = (n ^ (n >> 15)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    ((n >> 40) & 0xFFFF) as f32 / 65535.0
+}
+
+/// `bristle` for one dab: the hashes its noise needs across the tip,
+/// worked out once instead of four times a pixel.
+struct Bristles {
+    spacing: f32,
+    /// First noise cell in each table, and the hashes from there on.
+    clumps: (f32, Vec<f32>),
+    hairs: (f32, Vec<f32>),
+}
+
+impl Bristles {
+    /// For `across` between `range[0]` and `range[1]`.
+    fn new(radius: f32, range: [f32; 2]) -> Self {
+        let spacing = (radius * 0.16).clamp(1.2, 6.0);
+        let table = |scale: f32, seed: i64| {
+            let first = (range[0] / scale).floor() - 1.0;
+            let last = (range[1] / scale).floor() + 2.0;
+            let cells = ((last - first).max(0.0) as usize + 1).min(1 << 16);
+            let hashes = (0..cells)
+                .map(|i| bristle_hash(first + i as f32, seed))
+                .collect();
+            (first, hashes)
+        };
+        Self {
+            spacing,
+            clumps: table(spacing * 2.6, 7_919),
+            hairs: table(spacing, 0),
+        }
+    }
+
+    /// How much paint a bristle at `across` pixels from the middle of the
+    /// tip carries, 0.5 to 1.
+    fn at(&self, across: f32) -> f32 {
+        // Smooth value noise across the tip: wide clumps of bristles, and
+        // single hairs within them, so the ridges are uneven like a real brush.
+        let noise = |t: f32, (first, hashes): &(f32, Vec<f32>), seed: i64| {
+            let (i, f) = (t.floor(), t - t.floor());
+            let s = f * f * (3.0 - 2.0 * f);
+            let hash = |n: f32| {
+                let at = n - first;
+                if at >= 0.0 && (at as usize) < hashes.len() {
+                    hashes[at as usize]
+                } else {
+                    bristle_hash(n, seed)
+                }
+            };
+            hash(i) * (1.0 - s) + hash(i + 1.0) * s
+        };
+        let clumps = noise(across / (self.spacing * 2.6), &self.clumps, 7_919);
+        let hairs = noise(across / self.spacing, &self.hairs, 0);
+        0.5 + 0.5 * (0.55 * clumps + 0.45 * hairs)
+    }
+}
+
+/// One dab on a thick paint layer, as the relief sees it.
+pub struct Touch {
+    /// The dab's pixels: left, top, right, bottom, inclusive.
+    pub rect: [i32; 4],
+    pub center: [f32; 2],
+    pub radius: f32,
+    /// Sine and cosine of the stroke's direction, once it has one.
+    pub heading: Option<(f32, f32)>,
+    /// Smudge: how far the tip moved since the previous dab.
+    pub smear: [f32; 2],
+    pub blend: crate::brush::Blend,
+    /// The brush's Thickness.
+    pub thickness: f32,
+    pub erase: bool,
+}
+
+/// What one dab does to a thick paint layer's relief. `coverage` gives the
+/// dab's alpha and its ceiling at a pixel, as for the paint itself.
+///
+/// - Painting builds: the relief moves toward the brush's thickness times
+///   its bristle streaks, by the dab's strength, and never sinks under new
+///   paint.
+/// - Erasing wears it away with the color.
+/// - Smudge carries it along with the paint, like a palette knife: each
+///   pixel takes the height from where its paint was one dab ago. Blur
+///   smooths it.
+///
+/// The relief under the dab is copied out once, worked out in bands of rows
+/// across cores and written back a tile at a time; every pixel gets the
+/// same value as `touch_relief_by_pixel` (kept in the tests) gives it.
+pub fn touch_relief(
+    material: &mut Material,
+    [width, height]: [usize; 2],
+    touch: &Touch,
+    coverage: &(impl Fn(i32, i32) -> Option<(f32, f32)> + Sync),
+) {
+    let smearing = !touch.erase && touch.blend.moves_paint();
+    if !(touch.erase || smearing || touch.thickness > 0.0) {
+        return;
+    }
+    let [left, top, right, bottom] = touch.rect;
+    if right < left || bottom < top {
+        return;
+    }
+    let relief = material
+        .relief
+        .get_or_insert_with(|| Mask::new(width, height, 0).expect("relief of a valid canvas"));
+    // Smearing reads the relief as it was before this dab, under and
+    // around it; the other touches read only their own pixel.
+    let reach = match touch.blend {
+        _ if !smearing => 0,
+        crate::brush::Blend::Smudge => {
+            touch.smear[0].abs().max(touch.smear[1].abs()).ceil() as i32 + 2
+        }
+        _ => 3,
+    };
+    let area = [
+        (left - reach).max(0),
+        (top - reach).max(0),
+        (right + reach).min(width as i32 - 1),
+        (bottom + reach).min(height as i32 - 1),
+    ];
+    let area_width = (area[2] - area[0] + 1) as usize;
+    let area_rows = (area[3] - area[1] + 1) as usize;
+    let mut before = vec![0u8; area_width * area_rows];
+    relief.read_region(
+        [
+            area[0] as usize,
+            area[1] as usize,
+            area[2] as usize + 1,
+            area[3] as usize + 1,
+        ],
+        &mut before,
+    );
+    let held = |x: i32, y: i32| {
+        let x = x.clamp(area[0], area[2]);
+        let y = y.clamp(area[1], area[3]);
+        f32::from(before[(y - area[1]) as usize * area_width + (x - area[0]) as usize])
+    };
+    // Blur: each pixel takes the mean of the 7 x 7 pixels around it, summed
+    // a row at a time. The sums are whole numbers, so they come out the same
+    // in any order.
+    let rows_of_seven: Vec<u32> = if smearing && touch.blend != crate::brush::Blend::Smudge {
+        let mut sums = vec![0u32; area_rows * (right - left + 1) as usize];
+        for (row, sums) in sums
+            .chunks_exact_mut((right - left + 1) as usize)
+            .enumerate()
+        {
+            let y = area[1] + row as i32;
+            for (sum, px) in sums.iter_mut().zip(left..=right) {
+                *sum = (-3..=3).map(|dx| held(px + dx, y) as u32).sum();
+            }
+        }
+        sums
+    } else {
+        Vec::new()
+    };
+    let bristles = (!touch.erase && !smearing && touch.heading.is_some()).then(|| {
+        // `across` is linear over the dab, so its range is at the corners.
+        let (sin, cos) = touch.heading.unwrap_or_default();
+        let across = |px: i32, py: i32| {
+            let dx = px as f32 + 0.5 - touch.center[0];
+            let dy = py as f32 + 0.5 - touch.center[1];
+            -dx * sin + dy * cos
+        };
+        let corners = [
+            across(left, top),
+            across(right, top),
+            across(left, bottom),
+            across(right, bottom),
+        ];
+        let low = corners.iter().copied().fold(f32::INFINITY, f32::min);
+        let high = corners.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        Bristles::new(touch.radius, [low, high])
+    });
+    let rect_width = (right - left + 1) as usize;
+    // One band's new heights, rows `rows` of the dab.
+    let band = |rows: std::ops::Range<i32>| {
+        let mut out = Vec::with_capacity(rows.len() * rect_width);
+        for py in rows {
+            for px in left..=right {
+                let old = held(px, py);
+                let Some((a, ceiling)) = coverage(px, py) else {
+                    out.push(old as u8);
+                    continue;
+                };
+                let share = (a / ceiling.max(f32::MIN_POSITIVE)).min(1.0);
+                let new = if touch.erase {
+                    // `Writer::paint` toward 0.
+                    if !share.is_finite() || share <= 0.0 {
+                        old as u8
+                    } else {
+                        let share = share.min(1.0);
+                        (old * (1.0 - share) + 0.0 * share).round() as u8
+                    }
+                } else if smearing {
+                    let source = if touch.blend == crate::brush::Blend::Smudge {
+                        let fx = px as f32 - touch.smear[0];
+                        let fy = py as f32 - touch.smear[1];
+                        let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                        let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
+                        let lower =
+                            held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
+                        upper + (lower - upper) * ty
+                    } else {
+                        let column = (px - left) as usize;
+                        let sum: u32 = (-3..=3)
+                            .map(|dy| {
+                                let y = (py + dy).clamp(area[1], area[3]);
+                                rows_of_seven[(y - area[1]) as usize * rect_width + column]
+                            })
+                            .sum();
+                        sum as f32 / 49.0
+                    };
+                    (old + (source - old) * share).round().clamp(0.0, 255.0) as u8
+                } else {
+                    // Until the stroke has a direction (its first dab), there
+                    // are no streaks to follow.
+                    let streak = match (&bristles, touch.heading) {
+                        (Some(bristles), Some((sin, cos))) => {
+                            let dx = px as f32 + 0.5 - touch.center[0];
+                            let dy = py as f32 + 0.5 - touch.center[1];
+                            bristles.at(-dx * sin + dy * cos)
+                        }
+                        _ => 0.75,
+                    };
+                    let target = (touch.thickness * streak * 255.0).clamp(0.0, 255.0);
+                    if target > old && share > 0.0 {
+                        (old + (target - old) * share).round() as u8
+                    } else {
+                        old as u8
+                    }
+                };
+                out.push(new);
+            }
+        }
+        out
+    };
+    const BAND: i32 = 32;
+    let rows = bottom - top + 1;
+    let after: Vec<u8> = if crate::dab_bands::worthwhile(rect_width, rows as usize) {
+        let bands = (rows + BAND - 1) / BAND;
+        crate::parallel::run(bands as usize, |i| {
+            let from = top + i as i32 * BAND;
+            band(from..(from + BAND).min(bottom + 1))
+        })
+        .into_iter()
+        .flat_map(|result| result.expect("Relief worker panicked"))
+        .collect()
+    } else {
+        band(top..bottom + 1)
+    };
+    relief.writer().write_region(
+        [
+            left as usize,
+            top as usize,
+            right as usize + 1,
+            bottom as usize + 1,
+        ],
+        &after,
+    );
+}
+
+/// `touch_relief` one pixel at a time, as it was before it worked in bands:
+/// the reference its results are checked against.
+#[cfg(any(test, feature = "testing"))]
+pub fn touch_relief_by_pixel(
+    material: &mut Material,
+    [width, height]: [usize; 2],
+    touch: &Touch,
+    coverage: &impl Fn(i32, i32) -> Option<(f32, f32)>,
+) {
+    let smearing = !touch.erase && touch.blend.moves_paint();
+    if !(touch.erase || smearing || touch.thickness > 0.0) {
+        return;
+    }
+    let [left, top, right, bottom] = touch.rect;
+    let relief = material
+        .relief
+        .get_or_insert_with(|| Mask::new(width, height, 0).expect("relief of a valid canvas"));
+    // Smearing reads the relief as it was before this dab, under and
+    // around it.
+    let reach = match touch.blend {
+        crate::brush::Blend::Smudge => {
+            touch.smear[0].abs().max(touch.smear[1].abs()).ceil() as i32 + 2
+        }
+        _ => 3,
+    };
+    let area = [
+        (left - reach).max(0),
+        (top - reach).max(0),
+        (right + reach).min(width as i32 - 1),
+        (bottom + reach).min(height as i32 - 1),
+    ];
+    let area_width = (area[2] - area[0] + 1) as usize;
+    let before: Vec<f32> = if smearing {
+        (area[1]..=area[3])
+            .flat_map(|y| (area[0]..=area[2]).map(move |x| (x, y)))
+            .map(|(x, y)| f32::from(relief.at(x as usize, y as usize)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let held = |x: i32, y: i32| {
+        let x = x.clamp(area[0], area[2]);
+        let y = y.clamp(area[1], area[3]);
+        before[(y - area[1]) as usize * area_width + (x - area[0]) as usize]
+    };
+    let mut writer = relief.writer();
+    for py in top..=bottom {
+        for px in left..=right {
+            let Some((a, ceiling)) = coverage(px, py) else {
+                continue;
+            };
+            let share = (a / ceiling.max(f32::MIN_POSITIVE)).min(1.0);
+            let (ux, uy) = (px as usize, py as usize);
+            if touch.erase {
+                writer.paint(ux, uy, 0, share);
+            } else if smearing {
+                let source = if touch.blend == crate::brush::Blend::Smudge {
+                    let fx = px as f32 - touch.smear[0];
+                    let fy = py as f32 - touch.smear[1];
+                    let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                    let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                    let upper = held(x0, y0) + (held(x0 + 1, y0) - held(x0, y0)) * tx;
+                    let lower = held(x0, y0 + 1) + (held(x0 + 1, y0 + 1) - held(x0, y0 + 1)) * tx;
+                    upper + (lower - upper) * ty
+                } else {
+                    let mut sum = 0.0;
+                    for dy in -3..=3 {
+                        for dx in -3..=3 {
+                            sum += held(px + dx, py + dy);
+                        }
+                    }
+                    sum / 49.0
+                };
+                let old = held(px, py);
+                let new = old + (source - old) * share;
+                writer.set(ux, uy, new.round().clamp(0.0, 255.0) as u8);
+            } else {
+                // Until the stroke has a direction (its first dab), there
+                // are no streaks to follow.
+                let streak = touch.heading.map_or(0.75, |(sin, cos)| {
+                    let dx = px as f32 + 0.5 - touch.center[0];
+                    let dy = py as f32 + 0.5 - touch.center[1];
+                    bristle(-dx * sin + dy * cos, touch.radius)
+                });
+                let old = f32::from(writer.at(ux, uy));
+                let target = (touch.thickness * streak * 255.0).clamp(0.0, 255.0);
+                if target > old && share > 0.0 {
+                    writer.set(ux, uy, (old + (target - old) * share).round() as u8);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Light
+
+/// Elevation of the light above the canvas.
+const ELEVATION: f32 = 0.70;
+/// Relief height of a full byte at depth 1, in pixels.
+const HEIGHT: f32 = 9.0;
+
+/// Shading over `rect`: black where the paint faces away from the light,
+/// white on ridges facing it, straight RGBA. `alpha` (the owner's
+/// coverage) scales it when given.
+fn shade(relief: &Mask, settings: &Settings, rect: [usize; 4], alpha: Option<&Pixels>) -> Vec<u8> {
+    let [width, height] = relief.dimensions();
+    let [left, top, right, bottom] = rect;
+    // The relief with a one-pixel border, edges repeated.
+    let (bl, bt) = (left.saturating_sub(1), top.saturating_sub(1));
+    let (br, bb) = ((right + 1).min(width), (bottom + 1).min(height));
+    let bw = br - bl;
+    let mut heights = Vec::with_capacity(bw * (bb - bt));
+    for y in bt..bb {
+        for x in bl..br {
+            heights.push(f32::from(relief.at(x, y)));
+        }
+    }
+    let at = |x: usize, y: usize| {
+        let x = x.clamp(bl, br - 1);
+        let y = y.clamp(bt, bb - 1);
+        heights[(y - bt) * bw + (x - bl)]
+    };
+    let scale = settings.depth * HEIGHT / 255.0;
+    let (sin, cos) = settings.light.to_radians().sin_cos();
+    let (ce, se) = (ELEVATION.cos(), ELEVATION.sin());
+    // Toward the light: x right, y down, z out of the canvas.
+    let light = [cos * ce, -sin * ce, se];
+    let owner = alpha.map(|pixels| pixels.region(width, rect));
+    let mut out = Vec::with_capacity((right - left) * (bottom - top) * 4);
+    let mut i = 0;
+    for y in top..bottom {
+        for x in left..right {
+            let (xm, xp) = (x.saturating_sub(1), x + 1);
+            let (ym, yp) = (y.saturating_sub(1), y + 1);
+            // Sobel slopes: smooth over the bristle streaks' byte steps.
+            let gx = (at(xp, ym) + 2.0 * at(xp, y) + at(xp, yp)
+                - at(xm, ym)
+                - 2.0 * at(xm, y)
+                - at(xm, yp))
+                / 8.0
+                * scale;
+            let gy = (at(xm, yp) + 2.0 * at(x, yp) + at(xp, yp)
+                - at(xm, ym)
+                - 2.0 * at(x, ym)
+                - at(xp, ym))
+                / 8.0
+                * scale;
+            let length = (gx * gx + gy * gy + 1.0).sqrt();
+            let normal = [-gx / length, -gy / length, 1.0 / length];
+            let facing = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
+            let delta = facing - se;
+            let mut pixel = if delta < 0.0 {
+                [0.0, 0.0, 0.0, (-delta * 2.4).min(0.85)]
+            } else {
+                // Gloss: the light mirrored about the normal, seen from above.
+                let mirror = 2.0 * facing * normal[2] - light[2];
+                let gloss = mirror.max(0.0).powi(28) * settings.shine * 1.6;
+                [255.0, 255.0, 255.0, (delta * 1.6 + gloss).min(0.9)]
+            };
+            if let Some(owner) = &owner {
+                pixel[3] *= f32::from(owner[i * 4 + 3]) / 255.0;
+            }
+            let a = (pixel[3] * 255.0).round() as u8;
+            if a == 0 {
+                out.extend_from_slice(&[0, 0, 0, 0]);
+            } else {
+                out.extend_from_slice(&[pixel[0] as u8, pixel[1] as u8, pixel[2] as u8, a]);
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The last lighting drawn for a layer, to redraw only what changed.
+struct Lit {
+    relief: Mask,
+    look: [f32; 3],
+    /// The owner's pixels, when its coverage was applied (a clipped owner).
+    owner: Option<Pixels>,
+    shading: Pixels,
+    id: LayerId,
+}
+
+/// Lighting drawn for one layer. Clones share it, so snapshots and the
+/// display find the same drawing.
+#[derive(Clone, Default)]
+pub struct Cache(Arc<Mutex<Option<Lit>>>);
+
+/// Grow `rect` by `by` pixels inside `size`.
+fn grow(rect: [usize; 4], by: usize, [w, h]: [usize; 2]) -> [usize; 4] {
+    [
+        rect[0].saturating_sub(by),
+        rect[1].saturating_sub(by),
+        (rect[2] + by).min(w),
+        (rect[3] + by).min(h),
+    ]
+}
+
+/// Draw `rects` of the shading into `pixels`, in parallel bands.
+fn draw_into(
+    pixels: &mut Pixels,
+    relief: &Mask,
+    settings: &Settings,
+    rects: &[[usize; 4]],
+    owner: Option<&Pixels>,
+) {
+    let width = relief.dimensions()[0];
+    let drawn: Vec<Vec<u8>> = if rects.len() > 4 {
+        crate::parallel::run(rects.len(), |i| shade(relief, settings, rects[i], owner))
+            .into_iter()
+            .map(|r| r.expect("a shading band"))
+            .collect()
+    } else {
+        rects
+            .iter()
+            .map(|rect| shade(relief, settings, *rect, owner))
+            .collect()
+    };
+    let mut writer = pixels.writer();
+    for (rect, bytes) in rects.iter().zip(drawn) {
+        writer.write_region(width, *rect, &bytes);
+        writer.reclaim_region(width, *rect);
+    }
+}
+
+/// The shading layer for a thick paint `owner`, clipped to it; None when
+/// it has no relief.
+pub fn light_layer(owner: &Layer, size: [usize; 2]) -> Option<Layer> {
+    let material = owner.material.as_ref()?;
+    if !material.lit() {
+        return None;
+    }
+    let relief = material.relief.as_ref()?;
+    let settings = &material.settings;
+    let look = settings.look();
+    // A clipped owner cannot have layers clipped to it, so the shading
+    // carries its coverage instead.
+    let owner_pixels = owner.clipped.then(|| owner.pixels.clone());
+    let mut cache = material.cache.0.lock().unwrap_or_else(|e| e.into_inner());
+    let reusable = cache.as_ref().filter(|lit| {
+        lit.look == look
+            && lit.relief.dimensions() == size
+            && match (&lit.owner, &owner_pixels) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.shares(b),
+                _ => false,
+            }
+    });
+    let lit = match reusable {
+        Some(lit) if lit.relief.shares(relief) => cache.as_ref().unwrap(),
+        Some(_) => {
+            let lit = cache.as_mut().unwrap();
+            // Redraw around the relief tiles that changed: slopes reach one
+            // pixel past them.
+            let rects: Vec<[usize; 4]> = lit
+                .relief
+                .changed_tiles(relief)
+                .into_iter()
+                .map(|rect| grow(rect, 2, size))
+                .collect();
+            draw_into(
+                &mut lit.shading,
+                relief,
+                settings,
+                &rects,
+                owner_pixels.as_ref(),
+            );
+            lit.relief = relief.clone();
+            lit
+        }
+        None => {
+            let mut shading = Pixels::sparse(size[0], size[1]);
+            let rects: Vec<[usize; 4]> = relief
+                .painted_tiles()
+                .into_iter()
+                .map(|rect| grow(rect, 2, size))
+                .collect();
+            draw_into(
+                &mut shading,
+                relief,
+                settings,
+                &rects,
+                owner_pixels.as_ref(),
+            );
+            let id = cache.as_ref().map_or_else(LayerId::new, |lit| lit.id);
+            *cache = Some(Lit {
+                relief: relief.clone(),
+                look,
+                owner: owner_pixels,
+                shading,
+                id,
+            });
+            cache.as_ref().unwrap()
+        }
+    };
+    let mut layer = Layer::raster(format!("{}'s light", owner.name), size[0], size[1]);
+    layer.id = lit.id;
+    layer.pixels = lit.shading.clone();
+    layer.visible = owner.visible;
+    layer.clipped = true;
+    layer.depth = owner.depth;
+    Some(layer)
+}
+
+// ---------------------------------------------------------------------------
+// Saving
+
+/// Trailer of a project with thick paint: each relief, in layer order.
+pub const TRAILER: &[u8; 5] = b"RELF\x01";
+
+/// Write the reliefs of `doc`'s layers, if any.
+pub fn encode_trailer(
+    doc: &Document,
+    writer: &mut impl std::io::Write,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    let reliefs: Vec<(usize, &Mask)> = doc
+        .layers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| Some((i, l.material.as_ref()?.relief.as_ref()?)))
+        .collect();
+    if reliefs.is_empty() {
+        return Ok(());
+    }
+    writer.write_all(TRAILER).map_err(|e| e.to_string())?;
+    writer
+        .write_all(&(reliefs.len() as u32).to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    for (index, relief) in reliefs {
+        writer
+            .write_all(&(index as u32).to_le_bytes())
+            .map_err(|e| e.to_string())?;
+        relief.encode(&mut *writer, cancel)?;
+    }
+    Ok(())
+}
+
+/// Read the reliefs written by `encode_trailer` (after its tag).
+pub fn decode_trailer(
+    doc: &mut Document,
+    reader: &mut impl std::io::Read,
+    payload_budget: usize,
+) -> Result<usize, String> {
+    let mut word = [0u8; 4];
+    let mut number = |reader: &mut dyn std::io::Read| -> Result<usize, String> {
+        reader
+            .read_exact(&mut word)
+            .map_err(|e| format!("Damaged paint relief: {e}"))?;
+        Ok(u32::from_le_bytes(word) as usize)
+    };
+    let count = number(reader)?;
+    if count == 0 || count > doc.layers.len() {
+        return Err("Invalid paint relief count".into());
+    }
+    let mut used = 0usize;
+    let mut previous = None;
+    for _ in 0..count {
+        let index = number(reader)?;
+        if index >= doc.layers.len() || previous.is_some_and(|p| index <= p) {
+            return Err("Invalid or unordered paint relief".into());
+        }
+        previous = Some(index);
+        let size = [doc.width, doc.height];
+        let material = doc.layers[index]
+            .material
+            .as_mut()
+            .filter(|m| m.settings.kind == Kind::Paint)
+            .ok_or("Paint relief for a layer without thick paint")?;
+        let relief = Mask::decode(
+            &mut *reader,
+            size,
+            payload_budget.saturating_sub(used),
+            None,
+        )?;
+        if relief.default_value() != 0 {
+            return Err("Invalid paint relief".into());
+        }
+        used += relief.payload_bytes();
+        material.relief = Some(relief);
+    }
+    Ok(used)
+}
+
+// ---------------------------------------------------------------------------
+// Following the pixels
+
+/// Carry the active layer's relief through a whole-layer move of its pixels
+/// (`apply` maps a relief to its moved copy). Nothing happens when the layer
+/// has no relief.
+pub fn follow(
+    layer: &mut Layer,
+    apply: impl FnOnce(&Mask) -> Result<Mask, String>,
+) -> Result<(), String> {
+    if let Some(material) = &mut layer.material
+        && let Some(relief) = &material.relief
+    {
+        material.relief = Some(apply(relief)?);
+    }
+    Ok(())
+}
+
+/// How much of the pixel at (x, y) an edit limited to `doc`'s selection
+/// takes along: 0 to 1, and everything without a selection.
+pub fn selected(doc: &Document) -> impl Fn(usize, usize) -> f32 + '_ {
+    move |x, y| {
+        if let Some(mask) = &doc.selection_mask {
+            f32::from(mask.at(x, y)) / 255.0
+        } else if let Some(s) = doc.selection {
+            f32::from(u8::from(
+                x >= s.left && x < s.right && y >= s.top && y < s.bottom,
+            ))
+        } else {
+            1.0
+        }
+    }
+}
+
+/// The relief after selected paint moved: what was not taken along stays,
+/// and what was arrives where `source` says the paint at each pixel came
+/// from. Where both meet, the higher paint shows. `lands` bounds where moved
+/// paint can arrive, when the caller knows (None: anywhere); the rest of
+/// the canvas is skipped, so a small stroke on a huge canvas stays cheap.
+pub fn moved_relief(
+    relief: &Mask,
+    selected: impl Fn(usize, usize) -> f32,
+    source: impl Fn(usize, usize) -> Option<[usize; 2]>,
+    lands: Option<[usize; 4]>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<Mask, String> {
+    let [w, h] = relief.dimensions();
+    let Some(painted) = relief.painted_bounds() else {
+        return Ok(relief.clone());
+    };
+    let inside = |rect: [usize; 4], x: usize, y: usize| {
+        x >= rect[0] && x < rect[2] && y >= rect[1] && y < rect[3]
+    };
+    Mask::generate(w, h, 0, cancel, |x, y| {
+        if !inside(painted, x, y) && lands.is_some_and(|lands| !inside(lands, x, y)) {
+            return Ok(0);
+        }
+        let stays = f32::from(relief.at(x, y)) * (1.0 - selected(x, y));
+        let arrives = source(x, y)
+            .filter(|[sx, sy]| *sx < w && *sy < h)
+            .map_or(0.0, |[sx, sy]| {
+                f32::from(relief.at(sx, sy)) * selected(sx, sy)
+            });
+        Ok(stays.max(arrives).round() as u8)
+    })
+}
+
+#[cfg(test)]
+mod look {
+    use super::*;
+
+    #[test]
+    #[ignore = "prints drying timings for review"]
+    fn drying_cost() {
+        // 2000 x 1000 px wet at once, in 40 px stripes of two colors: a
+        // seam every 40 px is far more mixing than real washes have.
+        for kind in [None, Some(Kind::Watercolor)] {
+            let (w, h) = (2000, 1000);
+            let mut doc = Document::new(w, h);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for y in 0..h {
+                    for x in 0..w {
+                        let c = if x / 40 % 2 == 0 {
+                            [20, 40, 200]
+                        } else {
+                            [250, 220, 20]
+                        };
+                        writer
+                            .rgba_mut(y * w + x)
+                            .copy_from_slice(&[c[0], c[1], c[2], 200]);
+                    }
+                }
+            }
+            let id = doc.layers[0].id;
+            let row = vec![1.0; w];
+            for y in 0..h {
+                doc.wet.add_row(id, y, 0, &row);
+            }
+            // Planning runs on a background worker in the app; only the
+            // write holds up a frame.
+            let (mut planning, mut writing) = (0.0, 0.0);
+            for _ in 0..10 {
+                let start = std::time::Instant::now();
+                let plan = crate::wet::plan(crate::wet::inputs(&mut doc).unwrap());
+                planning += start.elapsed().as_secs_f64() * 100.0;
+                let start = std::time::Instant::now();
+                crate::wet::commit(&mut doc, plan);
+                writing += start.elapsed().as_secs_f64() * 100.0;
+            }
+            eprintln!("{kind:?}: {planning:.1} ms to plan a step, {writing:.1} ms to write it");
+        }
+    }
+    /// What one dab of a large brush costs on each kind of surface.
+    #[test]
+    #[ignore = "prints painting timings for review"]
+    fn painting_cost() {
+        use crate::brush::{Blend, Brush};
+        let base = Brush {
+            size: 200.0,
+            hardness: 0.5,
+            spacing: 0.1,
+            pressure_size: false,
+            ..Default::default()
+        };
+        let cases: [(&str, Option<Kind>, bool, Brush); 8] = [
+            ("plain layer", None, false, base.clone()),
+            ("paper", None, true, base.clone()),
+            (
+                "wet brush",
+                None,
+                true,
+                Brush {
+                    blend: Blend::Wet,
+                    wetness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            (
+                "watercolor layer, wet brush",
+                Some(Kind::Watercolor),
+                true,
+                Brush {
+                    blend: Blend::Wet,
+                    wetness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            ("dry media layer", Some(Kind::Dry), true, base.clone()),
+            (
+                "thick paint layer",
+                Some(Kind::Paint),
+                true,
+                Brush {
+                    thickness: 0.8,
+                    ..base.clone()
+                },
+            ),
+            (
+                "thick paint, smudge",
+                Some(Kind::Paint),
+                true,
+                Brush {
+                    blend: Blend::Smudge,
+                    ..base.clone()
+                },
+            ),
+            (
+                "plain layer, smudge",
+                None,
+                false,
+                Brush {
+                    blend: Blend::Smudge,
+                    ..base.clone()
+                },
+            ),
+        ];
+        for (name, kind, paper, brush) in cases {
+            let (w, h) = (3000, 2000);
+            let mut doc = Document::new(w, h);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            if paper {
+                doc.paper = Some(crate::paper::Paper::presets()[1].1);
+            }
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for index in 0..w * h {
+                    let c = if index / 97 % 2 == 0 {
+                        [20, 40, 200]
+                    } else {
+                        [250, 220, 20]
+                    };
+                    writer
+                        .rgba_mut(index)
+                        .copy_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+            }
+            let settings = crate::stroke_buffer::Settings {
+                target: crate::paint_target::Target::Raster,
+                brush: brush.clone(),
+                color: [200, 40, 30],
+                secondary: [200, 40, 30],
+                erase: false,
+                layer: doc.active,
+                symmetry: Default::default(),
+            };
+            let mut path = crate::stroke::Stroke::default();
+            let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+            let mut count = 0;
+            let start = std::time::Instant::now();
+            for i in 0..=250 {
+                let sample = crate::stroke::Sample {
+                    x: 200.0 + i as f32 * 10.0,
+                    y: 600.0 + (i as f32 * 0.05).sin() * 300.0,
+                    pressure: 1.0,
+                    pressure_known: true,
+                    ..Default::default()
+                };
+                let dabs = if i == 250 {
+                    path.finish(sample, &brush)
+                } else {
+                    path.sample(sample, &brush)
+                };
+                for dab in dabs {
+                    count += 1;
+                    buffer.paint(&mut doc, dab, &settings);
+                }
+            }
+            buffer.finish_tail(&mut doc, &settings);
+            let paint = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            let expanded = crate::layer_effects::expand(&doc, false, &|| false);
+            let expand = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            let mut steps = 0;
+            while !doc.wet.is_empty() && steps < 400 {
+                crate::wet::dry_step(&mut doc);
+                steps += 1;
+            }
+            let dry = start.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "{name}: {count} dabs, {:.2} ms per dab; expand for display {expand:.0} ms ({}); drying {steps} steps, {:.1} ms each",
+                paint / f64::from(count.max(1)),
+                if expanded.is_ok() {
+                    "done"
+                } else {
+                    "not needed"
+                },
+                dry / f64::from(steps.max(1)),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "prints relief timings for review; run with --release"]
+    fn relief_timing() {
+        use crate::brush::Blend;
+        let size = [2048usize, 2048usize];
+        // A 300 px dab: building with streaks, and a palette knife's smudge.
+        for (name, blend, heading, smear, aspect) in [
+            (
+                "build 300 px round",
+                Blend::Wet,
+                Some(0.6f32),
+                [0.0, 0.0],
+                1.0f32,
+            ),
+            (
+                "smudge 300 x 66 px knife",
+                Blend::Smudge,
+                Some(0.6),
+                [1.5, 1.3],
+                0.22,
+            ),
+        ] {
+            let center = [1000.0f32, 1000.0];
+            let radius = 150.0;
+            let (sin, cos) = 0.6f32.sin_cos();
+            let rect = [850, 850, 1150, 1150];
+            let coverage = |x: i32, y: i32| {
+                let (dx, dy) = (x as f32 + 0.5 - center[0], y as f32 + 0.5 - center[1]);
+                let (along, across) = (dx * cos + dy * sin, -dx * sin + dy * cos);
+                (along.abs() < radius && across.abs() < radius * aspect).then_some((0.8, 1.0))
+            };
+            let drawn = crate::dab_bands::Drawn::new([850, 850, 1151, 1151], |x, y| {
+                coverage(x as i32, y as i32)
+            });
+            let coverage = |x: i32, y: i32| drawn.at(x as usize, y as usize);
+            let touch = Touch {
+                rect,
+                center,
+                radius,
+                heading: heading.map(f32::sin_cos),
+                smear,
+                blend,
+                thickness: 0.9,
+                erase: false,
+            };
+            let mut material = *Material::new(Settings::new(Kind::Paint));
+            let (mut banded, mut by_pixel) = (0.0, 0.0);
+            let rounds = 60;
+            for _ in 0..rounds {
+                let started = std::time::Instant::now();
+                touch_relief(&mut material, size, &touch, &coverage);
+                banded += started.elapsed().as_secs_f64();
+                let started = std::time::Instant::now();
+                touch_relief_by_pixel(&mut material, size, &touch, &coverage);
+                by_pixel += started.elapsed().as_secs_f64();
+            }
+            println!(
+                "{name}: pixel by pixel {:.3} ms, in bands {:.3} ms per dab",
+                by_pixel * 1000.0 / rounds as f64,
+                banded * 1000.0 / rounds as f64
+            );
+        }
+    }
+
+    #[test]
+    fn relief_in_bands_matches_the_pixel_by_pixel_relief() {
+        use crate::brush::Blend;
+        let size = [300usize, 260usize];
+        // A relief with hills, flats and empty tiles, and the same twice.
+        let start = || {
+            let mut material = *Material::new(Settings::new(Kind::Paint));
+            let mut relief = Mask::new(size[0], size[1], 0).unwrap();
+            {
+                let mut writer = relief.writer();
+                for y in 0..size[1] {
+                    for x in 0..170 {
+                        let hash = (x * 7919 + y * 104_729) % 251;
+                        writer.set(x, y, ((x * 3 + y) % 200 + hash / 4) as u8);
+                    }
+                }
+            }
+            material.relief = Some(relief);
+            material
+        };
+        let mut cases = 0;
+        for (index, (rect, center, radius, heading, smear, blend, erase)) in [
+            (
+                [10, 12, 60, 50],
+                [35.0, 31.0],
+                25.0,
+                None,
+                [0.0, 0.0],
+                Blend::Paint,
+                false,
+            ),
+            (
+                [10, 12, 60, 50],
+                [35.0, 31.0],
+                25.0,
+                Some(0.7f32),
+                [0.0, 0.0],
+                Blend::Paint,
+                false,
+            ),
+            (
+                [0, 0, 299, 259],
+                [150.0, 130.0],
+                150.0,
+                Some(2.3),
+                [0.0, 0.0],
+                Blend::Wet,
+                false,
+            ),
+            (
+                [40, 30, 200, 220],
+                [120.0, 125.0],
+                95.0,
+                Some(-1.1),
+                [0.0, 0.0],
+                Blend::Paint,
+                true,
+            ),
+            (
+                [40, 30, 200, 220],
+                [120.0, 125.0],
+                95.0,
+                Some(0.2),
+                [3.4, -1.7],
+                Blend::Smudge,
+                false,
+            ),
+            (
+                [0, 100, 120, 259],
+                [60.0, 180.0],
+                80.0,
+                Some(0.2),
+                [-6.2, 2.5],
+                Blend::Smudge,
+                false,
+            ),
+            (
+                [150, 0, 299, 140],
+                [225.0, 70.0],
+                75.0,
+                None,
+                [0.0, 0.0],
+                Blend::Blur,
+                false,
+            ),
+            (
+                [0, 0, 299, 259],
+                [150.0, 130.0],
+                150.0,
+                Some(1.0),
+                [0.0, 0.0],
+                Blend::Blur,
+                false,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let touch = Touch {
+                rect,
+                center,
+                radius,
+                heading: heading.map(f32::sin_cos),
+                smear,
+                blend,
+                thickness: 0.9,
+                erase,
+            };
+            // A soft round dab with a hole, its ceiling below 1 in places.
+            let coverage = |x: i32, y: i32| {
+                let d = (x as f32 + 0.5 - center[0]).hypot(y as f32 + 0.5 - center[1]) / radius;
+                (d < 1.0 && (x + y * 3 + index as i32) % 11 != 0).then(|| {
+                    let a = (1.0 - d * d) * 0.8;
+                    (a, if x % 5 == 0 { 0.6 } else { 0.8 })
+                })
+            };
+            let (mut banded, mut by_pixel) = (start(), start());
+            touch_relief(&mut banded, size, &touch, &coverage);
+            touch_relief_by_pixel(&mut by_pixel, size, &touch, &coverage);
+            let (a, b) = (banded.relief.unwrap(), by_pixel.relief.unwrap());
+            let original = start().relief.unwrap();
+            let mut changed = 0;
+            for y in 0..size[1] {
+                for x in 0..size[0] {
+                    assert_eq!(a.at(x, y), b.at(x, y), "case {index} at {x}, {y}");
+                    changed += usize::from(a.at(x, y) != original.at(x, y));
+                }
+            }
+            assert!(changed > 100, "case {index} changed only {changed} pixels");
+            assert_eq!(a.painted_tiles(), b.painted_tiles(), "case {index}");
+            cases += 1;
+        }
+        assert_eq!(cases, 8);
+    }
+
+    fn paint(doc: &mut Document, brush: &crate::brush::Brush, color: [u8; 3], y: f32, erase: bool) {
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: brush.clone(),
+            color,
+            secondary: color,
+            erase,
+            layer: doc.active,
+            symmetry: Default::default(),
+        };
+        let mut path = crate::stroke::Stroke::default();
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        for i in 0..=20 {
+            let sample = crate::stroke::Sample {
+                x: 20.0 + i as f32 * 6.0,
+                y,
+                pressure: 1.0,
+                pressure_known: true,
+                ..Default::default()
+            };
+            let dabs = if i == 20 {
+                path.finish(sample, brush)
+            } else {
+                path.sample(sample, brush)
+            };
+            for dab in dabs {
+                buffer.paint(doc, dab, &settings);
+            }
+        }
+        buffer.finish_tail(doc, &settings);
+    }
+
+    fn thick() -> crate::brush::Brush {
+        crate::brush::Brush {
+            size: 24.0,
+            hardness: 0.9,
+            spacing: 0.08,
+            thickness: 0.8,
+            pressure_size: false,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn thick_paint_builds_relief_with_streaks_and_the_light_shades_it() {
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let relief = doc.layers[0]
+            .material
+            .as_ref()
+            .unwrap()
+            .relief
+            .clone()
+            .unwrap();
+        // Across the stroke, the bristles leave ridges of different heights.
+        let column: Vec<u8> = (22..39).map(|y| relief.at(80, y)).collect();
+        let (low, high) = column
+            .iter()
+            .fold((255, 0), |(l, h), v| (l.min(*v), h.max(*v)));
+        assert!(high > 120, "thick paint stands up: {column:?}");
+        assert!(high - low > 30, "bristle streaks vary: {column:?}");
+        // Along the stroke, a bristle's ridge stays put.
+        let along: Vec<u8> = (60..100).step_by(5).map(|x| relief.at(x, 30)).collect();
+        let spread = along.iter().max().unwrap() - along.iter().min().unwrap();
+        assert!(spread < 40, "streaks run along the stroke: {along:?}");
+        assert_eq!(relief.at(80, 5), 0, "no paint, no relief");
+        assert!(doc.needs_expansion());
+        let light = light_layer(&doc.layers[0], [160, 60]).unwrap();
+        assert!(light.clipped);
+        // The upper edge faces the upper-left light, the lower edge turns away.
+        let column = |y: usize| light.pixels.rgba(y * 160 + 80);
+        let lit = (18..30).map(column).find(|p| p[0] == 255 && p[3] > 40);
+        let dark = (30..43).map(column).find(|p| p[0] == 0 && p[3] > 40);
+        assert!(lit.is_some() && dark.is_some(), "{lit:?} {dark:?}");
+        // The composite shows the shading.
+        let flat = {
+            let mut plain = doc.clone();
+            plain.layers[0].material = None;
+            plain.composite_transparent()
+        };
+        assert_ne!(doc.composite_transparent(), flat);
+    }
+
+    #[test]
+    fn the_light_redraws_only_where_the_relief_changed() {
+        let mut doc = Document::new(400, 200);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 40.0, false);
+        let first = light_layer(&doc.layers[0], [400, 200]).unwrap();
+        // A second stroke far below leaves the first stroke's tiles alone.
+        paint(&mut doc, &thick(), [200, 80, 40], 170.0, false);
+        let second = light_layer(&doc.layers[0], [400, 200]).unwrap();
+        assert_eq!(first.id, second.id, "the display sees the same layer");
+        let changed = first.pixels.changed_regions(&second.pixels, 400, 200);
+        assert!(!changed.is_empty());
+        assert!(changed.iter().all(|r| r[1] >= 64), "{changed:?}");
+        // Drawn incrementally equals drawn from scratch.
+        let mut fresh = doc.layers[0].clone();
+        fresh.material.as_mut().unwrap().cache = Cache::default();
+        let scratch = light_layer(&fresh, [400, 200]).unwrap();
+        assert_eq!(
+            scratch.pixels.region(400, [0, 0, 400, 200]),
+            second.pixels.region(400, [0, 0, 400, 200])
+        );
+        // Turning the light redraws everything.
+        doc.layers[0].material.as_mut().unwrap().settings.light = -45.0;
+        let turned = light_layer(&doc.layers[0], [400, 200]).unwrap();
+        assert_ne!(
+            turned.pixels.region(400, [0, 0, 400, 200]),
+            second.pixels.region(400, [0, 0, 400, 200])
+        );
+    }
+
+    #[test]
+    fn erasing_thick_paint_flattens_it() {
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let eraser = crate::brush::Brush {
+            size: 40.0,
+            ..thick()
+        };
+        paint(&mut doc, &eraser, [0, 0, 0], 30.0, true);
+        let relief = doc.layers[0]
+            .material
+            .as_ref()
+            .unwrap()
+            .relief
+            .clone()
+            .unwrap();
+        assert!(
+            (40..120).all(|x| relief.at(x, 30) < 30),
+            "{}",
+            relief.at(80, 30)
+        );
+    }
+
+    #[test]
+    fn dry_media_catches_on_the_tooth_and_pressure_fills_it() {
+        let soft = crate::brush::Brush {
+            size: 16.0,
+            hardness: 0.8,
+            flow: 0.35,
+            spacing: 0.1,
+            paper_response: 0.0,
+            pressure_size: false,
+            ..Default::default()
+        };
+        let covered = |kind: Option<Kind>, brush: &crate::brush::Brush| {
+            let mut doc = Document::new(160, 60);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            paint(&mut doc, brush, [0, 0, 0], 30.0, false);
+            (26..34)
+                .flat_map(|y| (30..130).map(move |x| (x, y)))
+                .filter(|(x, y)| doc.layers[0].pixels.rgba(y * 160 + x)[3] > 0)
+                .count()
+        };
+        let plain = covered(None, &soft);
+        let dry = covered(Some(Kind::Dry), &soft);
+        assert_eq!(plain, 800);
+        assert!(
+            dry < plain * 9 / 10,
+            "the tooth breaks the stroke up: {dry}"
+        );
+        let firm = crate::brush::Brush { flow: 1.0, ..soft };
+        assert!(
+            covered(Some(Kind::Dry), &firm) > dry,
+            "firm strokes fill more"
+        );
+    }
+
+    #[test]
+    fn watercolor_washes_dry_with_darker_edges() {
+        let wash = crate::brush::Brush {
+            size: 30.0,
+            hardness: 0.9,
+            flow: 0.08,
+            spacing: 0.1,
+            pressure_size: false,
+            blend: crate::brush::Blend::Wet,
+            wetness: 1.0,
+            paper_response: 0.0,
+            ..Default::default()
+        };
+        let dried = |kind: Option<Kind>| {
+            let mut doc = Document::new(160, 70);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            // A broad wash: overlapping strokes with an even middle.
+            for y in [22.0, 27.0, 32.0, 37.0] {
+                paint(&mut doc, &wash, [30, 60, 160], y, false);
+            }
+            crate::wet::settle(&mut doc);
+            let alpha = |y: usize| {
+                (60..100)
+                    .map(|x| f32::from(doc.layers[0].pixels.rgba(y * 160 + x)[3]))
+                    .sum::<f32>()
+                    / 40.0
+            };
+            // Walking in from the top edge: how far the paint falls back
+            // after the darkest point so far, which is a rim.
+            let mut darkest = 0.0f32;
+            let mut rim = 0.0f32;
+            for y in 5..30 {
+                let a = alpha(y);
+                darkest = darkest.max(a);
+                rim = rim.max(darkest - a);
+            }
+            rim
+        };
+        assert!(dried(None) < 1.0, "a plain wash rises evenly to its middle");
+        let rim = dried(Some(Kind::Watercolor));
+        assert!(
+            rim > 10.0,
+            "a watercolor wash dries with a darker rim: {rim}"
+        );
+    }
+
+    fn wet(color_flow: f32, pigment: f32) -> crate::brush::Brush {
+        crate::brush::Brush {
+            size: 30.0,
+            hardness: 0.9,
+            flow: color_flow,
+            spacing: 0.1,
+            pressure_size: false,
+            blend: crate::brush::Blend::Wet,
+            wetness: 1.0,
+            pigment,
+            paper_response: 0.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wet_blue_and_yellow_make_green_on_watercolor_and_gray_on_plain() {
+        let mixed = |kind: Option<Kind>| {
+            let mut doc = Document::new(160, 60);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            paint(&mut doc, &wet(0.5, 1.0), [20, 40, 200], 30.0, false);
+            // Into the wet blue, before it dries.
+            paint(&mut doc, &wet(0.12, 1.0), [250, 220, 20], 30.0, false);
+            doc.layers[0].pixels.rgba(30 * 160 + 80)
+        };
+        let green = |[r, g, b, _]: [u8; 4]| {
+            let [r, g, b] = [r, g, b].map(i32::from);
+            g > r + 30 && g > b + 30
+        };
+        let watercolor = mixed(Some(Kind::Watercolor));
+        assert!(green(watercolor), "green on watercolor: {watercolor:?}");
+        let plain = mixed(None);
+        assert!(!green(plain), "plain mixes in RGB: {plain:?}");
+    }
+
+    #[test]
+    fn wet_paint_running_together_mixes_as_pigment_while_it_dries() {
+        let seam = |kind: Option<Kind>| {
+            let mut doc = Document::new(64, 16);
+            doc.layers[0].material = kind.map(|k| Material::new(Settings::new(k)));
+            {
+                let mut writer = doc.layers[0].pixels.writer();
+                for y in 0..16 {
+                    for x in 0..64 {
+                        let color = if x < 32 {
+                            [20, 40, 200]
+                        } else {
+                            [250, 220, 20]
+                        };
+                        writer
+                            .rgba_mut(y * 64 + x)
+                            .copy_from_slice(&[color[0], color[1], color[2], 255]);
+                    }
+                }
+            }
+            let id = doc.layers[0].id;
+            for y in 0..16 {
+                doc.wet.add_row(id, y, 0, &[1.0; 64]);
+            }
+            crate::wet::settle(&mut doc);
+            doc.layers[0].pixels.rgba(8 * 64 + 32)
+        };
+        let green = |[r, g, b, _]: [u8; 4]| {
+            let [r, g, b] = [r, g, b].map(i32::from);
+            g > r + 25 && g > b + 25
+        };
+        let watercolor = seam(Some(Kind::Watercolor));
+        assert!(
+            green(watercolor),
+            "blue and yellow ran into green: {watercolor:?}"
+        );
+        let plain = seam(None);
+        assert!(!green(plain), "a plain layer mixes in RGB: {plain:?}");
+    }
+
+    #[test]
+    fn clear_water_rewets_dried_paint_and_lifts_some() {
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Watercolor)));
+        paint(&mut doc, &wet(0.4, 1.0), [30, 60, 160], 30.0, false);
+        crate::wet::settle(&mut doc);
+        assert!(doc.wet.is_empty());
+        let dried = doc.layers[0].pixels.rgba(30 * 160 + 80);
+        // Water across the dried wash: wet again, a little lighter, color kept.
+        paint(&mut doc, &wet(0.4, 0.0), [255, 0, 0], 30.0, false);
+        assert!(doc.wet.at(80, 30) > 0.3, "the paint is wet again");
+        let wetted = doc.layers[0].pixels.rgba(30 * 160 + 80);
+        assert!(
+            wetted[3] < dried[3],
+            "water lifts paint: {dried:?} -> {wetted:?}"
+        );
+        assert!(wetted[0] < 120, "clear water adds no color: {wetted:?}");
+        // And the paint runs again as it dries.
+        let before = doc.layers[0].pixels.region(160, [0, 0, 160, 60]);
+        crate::wet::settle(&mut doc);
+        assert_ne!(doc.layers[0].pixels.region(160, [0, 0, 160, 60]), before);
+    }
+
+    #[test]
+    fn smudging_thick_paint_carries_its_relief() {
+        let mut doc = Document::new(160, 100);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let relief = |doc: &Document, y: usize| {
+            let r = doc.layers[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .relief
+                .clone()
+                .unwrap();
+            (60..100).map(|x| u32::from(r.at(x, y))).sum::<u32>()
+        };
+        assert_eq!(relief(&doc, 50), 0);
+        // A knife dragged down across the stroke pulls the paint's height along.
+        let knife = crate::brush::Brush {
+            size: 30.0,
+            hardness: 0.9,
+            opacity: 0.9,
+            spacing: 0.05,
+            pressure_size: false,
+            blend: crate::brush::Blend::Smudge,
+            ..Default::default()
+        };
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: knife.clone(),
+            color: [0, 0, 0],
+            secondary: [0, 0, 0],
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        };
+        let mut path = crate::stroke::Stroke::default();
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        for i in 0..=20 {
+            let sample = crate::stroke::Sample {
+                x: 80.0,
+                y: 20.0 + i as f32 * 2.0,
+                pressure: 1.0,
+                pressure_known: true,
+                ..Default::default()
+            };
+            let dabs = if i == 20 {
+                path.finish(sample, &knife)
+            } else {
+                path.sample(sample, &knife)
+            };
+            for dab in dabs {
+                buffer.paint(&mut doc, dab, &settings);
+            }
+        }
+        buffer.finish_tail(&mut doc, &settings);
+        assert!(
+            relief(&doc, 50) > 200,
+            "relief dragged below: {}",
+            relief(&doc, 50)
+        );
+        assert!(
+            doc.layers[0].pixels.rgba(50 * 160 + 80)[3] > 0,
+            "and the paint came with it"
+        );
+    }
+
+    #[test]
+    fn relief_moves_and_flips_with_the_selected_paint_only() {
+        let mut doc = Document::new(200, 80);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        let relief = |doc: &Document| {
+            doc.layers[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .relief
+                .clone()
+                .unwrap()
+        };
+        let before = relief(&doc);
+        // Select the left part of the stroke and move it down 30 px.
+        doc.selection = Some(crate::selection::Selection {
+            left: 0,
+            top: 0,
+            right: 60,
+            bottom: 80,
+        });
+        crate::move_preview::apply(&mut doc, [0, 30], None).unwrap();
+        let after = relief(&doc);
+        assert!(
+            after.at(40, 60) > 60,
+            "the selected paint's height moved down"
+        );
+        assert_eq!(after.at(40, 30), 0, "and left its old place");
+        assert_eq!(after.at(120, 30), before.at(120, 30), "the rest stayed");
+        // Flipping a selection turns the relief inside it only.
+        let moved = relief(&doc);
+        doc.selection = Some(crate::selection::Selection {
+            left: 100,
+            top: 0,
+            right: 200,
+            bottom: 80,
+        });
+        doc.transform_active(crate::transform::Transform::FlipHorizontal)
+            .unwrap();
+        let flipped = relief(&doc);
+        assert_eq!(flipped.at(150, 30), moved.at(149, 30));
+        assert_eq!(
+            flipped.at(40, 60),
+            moved.at(40, 60),
+            "outside the selection unchanged"
+        );
+        doc.validate().unwrap();
+    }
+
+    #[test]
+    fn thick_strokes_undo_and_redo_with_their_relief_as_small_patches() {
+        let mut doc = Document::new(1024, 1024);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        let mut history = crate::document::History::new();
+        history.begin_stroke_checkpoint(&doc);
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        history.settle(&doc);
+        history.begin_stroke_checkpoint(&doc);
+        paint(&mut doc, &thick(), [40, 80, 200], 60.0, false);
+        history.settle(&doc);
+        let relief = |doc: &Document| doc.layers[0].material.as_ref().unwrap().relief.clone();
+        let both = relief(&doc).unwrap();
+        let pixels = doc.layers[0].pixels.region(1024, [0, 0, 200, 100]);
+        // Two strokes kept as changed regions, far below a layer's 4 MiB.
+        assert!(
+            history.retained_bytes() < 600_000,
+            "{}",
+            history.retained_bytes()
+        );
+        assert!(history.undo(&mut doc));
+        let one = relief(&doc).unwrap();
+        assert!(one.at(80, 30) > 100 && one.at(80, 60) == 0);
+        assert!(history.undo(&mut doc));
+        assert!(relief(&doc).is_none_or(|r| r.painted_bounds().is_none()));
+        assert!(history.redo(&mut doc) && history.redo(&mut doc));
+        assert!(relief(&doc).unwrap().equivalent(&both, None).unwrap());
+        assert_eq!(doc.layers[0].pixels.region(1024, [0, 0, 200, 100]), pixels);
+        doc.validate().unwrap();
+    }
+
+    #[test]
+    fn reliefs_survive_saving_and_canvas_changes() {
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));
+        paint(&mut doc, &thick(), [200, 80, 40], 30.0, false);
+        doc.add_layer();
+        doc.layers[1].material = Some(Material::new(Settings {
+            edges: 0.25,
+            ..Settings::new(Kind::Watercolor)
+        }));
+        let mut bytes = Vec::new();
+        crate::tile_project::encode(&doc, &mut bytes).unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &bytes).unwrap();
+        let loaded = crate::storage::load_project(file.path()).unwrap();
+        let relief = |doc: &Document| {
+            doc.layers[0]
+                .material
+                .as_ref()
+                .unwrap()
+                .relief
+                .clone()
+                .unwrap()
+        };
+        assert!(relief(&loaded).equivalent(&relief(&doc), None).unwrap());
+        assert_eq!(
+            loaded.layers[1].material.as_ref().unwrap().settings.edges,
+            0.25
+        );
+        assert!(loaded.layers[1].material.as_ref().unwrap().relief.is_none());
+        // Rotating the canvas turns the relief with the paint.
+        let mut turned = doc.clone();
+        turned.rotate_canvas_clockwise();
+        let r = relief(&turned);
+        assert_eq!(r.dimensions(), [60, 160]);
+        assert_eq!(r.at(60 - 1 - 30, 80), relief(&doc).at(80, 30));
+        turned.validate().unwrap();
+    }
+}

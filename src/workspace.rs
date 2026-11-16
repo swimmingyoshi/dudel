@@ -1,3 +1,4 @@
+use crate::tools::GroupIcon;
 use crate::{
     Dudel,
     brush::Brush,

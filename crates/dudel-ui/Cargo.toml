@@ -1,0 +1,17 @@
+# Dudel's interface styles, icon art and widgets. Depends on egui only, not
+# on the app or the engine, so a change to a panel never rebuilds it.
+[package]
+name = "dudel-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ab_glyph_rasterizer.workspace = true
+egui.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

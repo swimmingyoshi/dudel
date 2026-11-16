@@ -1,5 +1,6 @@
 //! Left "Tool property" sidebar: the brush library and every brush setting
 //! for Brush/Eraser, and the relevant options for the other tools.
+use crate::tools::GroupIcon;
 use crate::{
     Dudel,
     brush::Tip,

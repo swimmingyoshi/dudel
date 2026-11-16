@@ -1,10 +1,18 @@
 use super::*;
 use crate::{
+    affine::{self, Mapping, Sampling},
+    document::Document,
+    layer_mask::Mask,
+    selection::Selection,
+    transform::Transform,
+};
+use crate::{
     affine::{Matrix, Mesh, Settings, Warp},
     document::{History, LayerId},
     layer_mask::LayerMask,
     paint_target::Target,
 };
+use std::sync::atomic::AtomicBool;
 use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},

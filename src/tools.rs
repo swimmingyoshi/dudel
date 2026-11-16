@@ -1,4 +1,19 @@
-use crate::icons::Icon;
+use crate::{brush::BrushGroup, icons::Icon};
+
+/// The icon of a brush group. The engine knows brush groups but not icons.
+pub(crate) trait GroupIcon {
+    fn icon(self) -> Icon;
+}
+impl GroupIcon for BrushGroup {
+    fn icon(self) -> Icon {
+        match self {
+            Self::Pencil => Icon::Pencil,
+            Self::Pen => Icon::Pen,
+            Self::Brush => Icon::Brush,
+            Self::Airbrush => Icon::Airbrush,
+        }
+    }
+}
 
 /// What of the eraser is in the brush slot while the Eraser tool is active.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

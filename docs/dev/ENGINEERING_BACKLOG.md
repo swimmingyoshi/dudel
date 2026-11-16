@@ -460,7 +460,7 @@ many dabs. Auto-drying is not involved: it waits while a stroke is painted.
 ## 2. Performance still on the table
 
 Measured with a 200 px brush on a 3000 x 2000 canvas, release build
-(`cargo test --release --bin dudel -- material::look --ignored --nocapture`).
+(`cargo test --release -p dudel-core -- material::look --ignored --nocapture`).
 
 | Case | Before 8ec6ca4 | Now |
 |---|---|---|
@@ -512,37 +512,29 @@ Worked through on 2026-11-13, measuring first.
       without touching thousands of call sites.
 - [x] **Line endings.** `.gitattributes` gives every checkout LF. The index
       already held LF; 111 working files were CRLF.
-- [ ] **Split the single crate into a workspace.** Not started, and the
-      case for it is weaker than this list first said. Measured on an idle
-      PC, one edit costs 5 s for `cargo check`, 25 s for the test program
-      and 15 to 45 s for an optimized build with the new `fast` profile
-      (the "minute per check" was measured while other builds ran). What
-      the split would still buy: an engine that tests and benchmarks without
-      a window, engine tests compiled with optimization (six pixel-heavy
-      tests take 20 to 35 s each unoptimized and set the suite's 100 s),
-      and a smaller incremental cache.
+- [x] **Split the single crate into a workspace** (2026-11-16, `ui`
+      branch). Three crates, described in `CRATES.md`: `dudel-core` (the
+      engine, 98 files, 77,000 lines, no window toolkit), `dudel-ui` (styles,
+      icon art, icons, widgets; egui only) and the app.
 
-      What stands in the way: 110 of the 205 modules (120,000 lines) form
-      one cycle, so no engine crate can be cut out yet. Only 22 modules
-      (8,900 lines, 5%) are free of both the window toolkit and that cycle.
-      The cycle has two causes:
+      The earlier count of a 110-module cycle was too high: the script read
+      names inside nested `use crate::{a::{B, C}}` lists as crate-root items.
+      Parsed properly, the engine reached the interface through about 45
+      edges in 25 files. Each such file was cut in two at the same module
+      name: the engine part in `dudel-core`, the `impl Dudel` blocks,
+      dialogs and painting in the app's file of that name, which re-exports
+      the engine part. No app call site changed. Engine tests that need no
+      window went back into the engine (656 of them); tests that drive the
+      app stayed in the app. The engine's `testing` feature lends the app's
+      tests the test font and the CSP fixtures.
 
-      1. Engine files carry their own panels and dialogs. `fill.rs`,
-         `material.rs`, `paper.rs`, `guides.rs`, `canvas_size.rs` and
-         `gradient_tool.rs` each hold both the pixel work and the egui
-         controls for it.
-      2. Engine files end in an `impl crate::Dudel { ... }` block with the
-         app's side of the feature (`blend_brush`, `vector_layer`,
-         `document_edits`, `stage_timer`, `import_report`).
-
-      So the first stage is not a workspace but a rule applied file by
-      file: split each mixed file into the engine part and a `*_ui.rs` or
-      app part, until `document` and what it uses name neither egui nor
-      `Dudel`. (`document.rs` named `Dudel` once, for `takes_material`;
-      that is now `Layer::takes_material`.) The workspace follows when the
-      cycle no longer contains a panel. To measure progress, list for each
-      module the modules it names with `crate::` (leaving out its tests)
-      and find the groups that reach one another.
+      Proof: the same 1,469 tests pass; Clippy is clean with and without
+      the diagnostic features; the 32 profiled strokes paint byte-identical
+      canvases at the same speed (138 s against 139 s for the whole run).
+      Still to measure on an idle PC: rebuild times per edit (the run on
+      2026-11-16 overlapped a game that used 7 of 12 cores) and the 68
+      screenshot modes in each style (hover from the moving mouse spoiled
+      that run).
 - [ ] **Group the app struct's fields by subsystem**, as `setup` and
       `drying` are. Still worth doing a subsystem at a time when one is
       being worked on anyway; the test above removed the urgency.

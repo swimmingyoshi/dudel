@@ -3,6 +3,7 @@
 //! Each layout arranges the same panel contents the Classic layout uses
 //! (color, layers, brushes, tool settings, navigator, timeline), so every
 //! feature is reachable in every style; only the chrome around them differs.
+use crate::tools::GroupIcon;
 use crate::{
     Dudel,
     brush::BrushGroup,

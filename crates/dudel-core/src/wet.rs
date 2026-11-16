@@ -1,0 +1,550 @@
+//! Wetness: where the canvas is still wet, and what happens there. Wet
+//! brushes leave water with their paint. While painting, a wet dab blends
+//! into paint that is still wet under it (wet-on-wet) and stays crisp on dry
+//! paper (wet-on-dry). After the stroke, wet areas keep spreading and dry out
+//! over a few seconds.
+//!
+//! Only wet 32 px tiles are stored and processed, so a dry canvas costs
+//! nothing and a drying stroke costs in proportion to its wet area. This is
+//! stage three of the canvas material plan.
+use crate::{document::Document, document::LayerId};
+use std::{collections::HashMap, sync::Arc};
+
+pub const TILE: usize = 32;
+/// Simulation steps per second while paint dries.
+pub const RATE: f32 = 30.0;
+/// Seconds for full water to dry on paper of middling absorbency.
+const DRY_SECONDS: f32 = 3.0;
+/// Below this a pixel counts as dry.
+const DRY: f32 = 0.01;
+
+/// Wet tiles by tile column and row, each 32 x 32 water values.
+type Tiles = HashMap<(u32, u32), Box<[f32]>>;
+/// One tile's drying result: its new pixels, its water, whether any water
+/// is left, and whether any pixel changed.
+type TileStep = (Vec<[u8; 4]>, Box<[f32]>, bool, bool);
+
+/// Everything one drying step reads, copied cheaply (pixels and water are
+/// shared until written), so the step can be worked out on another thread.
+pub struct Inputs {
+    width: usize,
+    height: usize,
+    pixels: crate::pixels::Pixels,
+    tiles: Arc<Tiles>,
+    evaporation: f32,
+    mobility: f32,
+    along: (f32, f32),
+    alpha_locked: bool,
+    flow: (f32, f32),
+    pigment: bool,
+}
+
+/// One drying step worked out from `Inputs`, not yet written.
+pub struct Plan {
+    keys: Vec<(u32, u32)>,
+    results: Vec<TileStep>,
+}
+
+/// Water per pixel (0 to 1) on one layer, in sparse tiles. Cloning shares
+/// the tiles until one copy changes.
+#[derive(Clone, Default)]
+pub struct Field {
+    layer: Option<LayerId>,
+    pub tiles: Arc<Tiles>,
+}
+
+impl Field {
+    pub fn is_empty(&self) -> bool {
+        self.tiles.is_empty()
+    }
+    pub fn clear(&mut self) {
+        if !self.tiles.is_empty() {
+            self.tiles = Default::default();
+        }
+        self.layer = None;
+    }
+    /// The layer that is wet, if any.
+    pub fn layer(&self) -> Option<LayerId> {
+        self.layer.filter(|_| !self.tiles.is_empty())
+    }
+    #[cfg(any(test, feature = "testing"))]
+    pub fn at(&self, x: usize, y: usize) -> f32 {
+        self.tiles
+            .get(&((x / TILE) as u32, (y / TILE) as u32))
+            .map_or(0.0, |tile| tile[(y % TILE) * TILE + x % TILE])
+    }
+    /// Water along row `y` from `left`, for the wet layer `layer`.
+    pub fn read_row(&self, layer: LayerId, y: usize, left: usize, out: &mut [f32]) {
+        out.fill(0.0);
+        if self.layer != Some(layer) || self.tiles.is_empty() {
+            return;
+        }
+        let mut at = 0;
+        while at < out.len() {
+            let x = left + at;
+            let count = (TILE - x % TILE).min(out.len() - at);
+            if let Some(tile) = self.tiles.get(&((x / TILE) as u32, (y / TILE) as u32)) {
+                let offset = (y % TILE) * TILE + x % TILE;
+                out[at..at + count].copy_from_slice(&tile[offset..offset + count]);
+            }
+            at += count;
+        }
+    }
+    /// Add water along row `y` from `left`. Water on another layer dries at
+    /// once: one layer is wet at a time.
+    pub fn add_row(&mut self, layer: LayerId, y: usize, left: usize, water: &[f32]) {
+        if water.iter().all(|w| *w <= 0.0) {
+            return;
+        }
+        if self.layer != Some(layer) {
+            self.clear();
+            self.layer = Some(layer);
+        }
+        let tiles = Arc::make_mut(&mut self.tiles);
+        let mut at = 0;
+        while at < water.len() {
+            let x = left + at;
+            let count = (TILE - x % TILE).min(water.len() - at);
+            let span = &water[at..at + count];
+            if span.iter().any(|w| *w > 0.0) {
+                let tile = tiles
+                    .entry(((x / TILE) as u32, (y / TILE) as u32))
+                    .or_insert_with(|| vec![0.0; TILE * TILE].into_boxed_slice());
+                let offset = (y % TILE) * TILE + x % TILE;
+                for (cell, add) in tile[offset..offset + count].iter_mut().zip(span) {
+                    *cell = (*cell + add.max(0.0)).min(1.0);
+                }
+            }
+            at += count;
+        }
+    }
+}
+
+/// One drying step: paint spreads between wet neighbors, water spreads a
+/// little and evaporates. Returns the changed area, or None once dry.
+pub fn dry_step(doc: &mut Document) -> Option<[usize; 4]> {
+    let inputs = inputs(doc)?;
+    let plan = plan(inputs);
+    commit(doc, plan)
+}
+
+/// What the next drying step needs, or None when nothing is wet (water on
+/// a layer that cannot take it dries at once).
+pub fn inputs(doc: &mut Document) -> Option<Inputs> {
+    if doc.wet.is_empty() {
+        return None;
+    }
+    let (width, height) = (doc.width, doc.height);
+    let layer_index = doc
+        .wet
+        .layer
+        .and_then(|id| doc.layers.iter().position(|l| l.id == id));
+    let Some(index) = layer_index.filter(|&i| {
+        let layer = &doc.layers[i];
+        !layer.folder && !layer.locked && layer.vector.is_none() && layer.text.is_none()
+    }) else {
+        doc.wet.clear();
+        return None;
+    };
+    let paper = doc.paper;
+    let absorbency = paper.map_or(0.5, |p| p.absorbency);
+    // Absorbent paper dries faster and lets paint travel less.
+    let evaporation = (0.4 + 1.2 * absorbency) / (DRY_SECONDS * RATE);
+    let mobility = 0.24 * (1.0 - 0.5 * absorbency);
+    // Fibers carry paint further along their direction.
+    let (along_x, along_y) = match paper {
+        Some(p) if p.pattern == crate::paper::Pattern::Fibers => {
+            let (sin, cos) = p.direction.to_radians().sin_cos();
+            (0.6 + 0.8 * cos * cos, 0.6 + 0.8 * sin * sin)
+        }
+        _ => (1.0, 1.0),
+    };
+    let alpha_locked = doc.layers[index].alpha_locked;
+    // On a watercolor layer, water flowing toward drier parts of a wash
+    // carries pigment with it: rims darken as a wash dries, and a sudden
+    // rush of fresh water (a large difference) pushes paint into blooms.
+    let (carry, push) = doc.layers[index]
+        .material
+        .as_ref()
+        .filter(|m| m.kind() == crate::material::Kind::Watercolor)
+        .map_or((0.0, 0.0), |m| {
+            (0.3 * m.settings.edges, 0.3 * m.settings.blooms)
+        });
+    let pigment = doc.layers[index].material.as_ref().is_some_and(|m| {
+        matches!(
+            m.kind(),
+            crate::material::Kind::Watercolor | crate::material::Kind::Paint
+        )
+    });
+    Some(Inputs {
+        width,
+        height,
+        pixels: doc.layers[index].pixels.clone(),
+        tiles: doc.wet.tiles.clone(),
+        evaporation,
+        mobility,
+        along: (along_x, along_y),
+        alpha_locked,
+        flow: (carry, push),
+        pigment,
+    })
+}
+
+/// Work out one drying step. Nothing is written; `inputs` is released
+/// before returning, so writing the result copies no tile needlessly.
+pub fn plan(inputs: Inputs) -> Plan {
+    let Inputs {
+        width,
+        height,
+        ref pixels,
+        ref tiles,
+        evaporation,
+        mobility,
+        along: (along_x, along_y),
+        alpha_locked,
+        flow: (carry, push),
+        pigment,
+    } = inputs;
+    let keys: Vec<(u32, u32)> = tiles.keys().copied().collect();
+    // Every tile is computed from the state before the step, then written.
+    let step = |key: (u32, u32)| -> TileStep {
+        let (left, top) = (key.0 as usize * TILE, key.1 as usize * TILE);
+        let (right, bottom) = ((left + TILE).min(width), (top + TILE).min(height));
+        // The tile with a one-pixel border, premultiplied.
+        let (bl, bt) = (left.saturating_sub(1), top.saturating_sub(1));
+        let (br, bb) = ((right + 1).min(width), (bottom + 1).min(height));
+        let (bw, bh) = (br - bl, bb - bt);
+        let bytes = pixels.region(width, [bl, bt, br, bb]);
+        // Premultiplied once; every pixel is read up to five times.
+        let lifted: Vec<[f32; 4]> = bytes
+            .chunks_exact(4)
+            .map(|p| {
+                let a = f32::from(p[3]) / 255.0;
+                [
+                    f32::from(p[0]) * a,
+                    f32::from(p[1]) * a,
+                    f32::from(p[2]) * a,
+                    f32::from(p[3]),
+                ]
+            })
+            .collect();
+        debug_assert_eq!(lifted.len(), bw * bh);
+        let around = |x: usize, y: usize| lifted[(y - bt) * bw + (x - bl)];
+        // Water over the same bordered area: a few tile lookups per row
+        // instead of one per neighbor.
+        let mut damp = vec![0.0f32; bw * bh];
+        for y in bt..bb {
+            let mut x = bl;
+            while x < br {
+                let count = (TILE - x % TILE).min(br - x);
+                if let Some(t) = tiles.get(&((x / TILE) as u32, (y / TILE) as u32)) {
+                    let from = (y % TILE) * TILE + x % TILE;
+                    let to = (y - bt) * bw + (x - bl);
+                    damp[to..to + count].copy_from_slice(&t[from..from + count]);
+                }
+                x += count;
+            }
+        }
+        let tile = &tiles[&key];
+        let mut out = Vec::with_capacity((right - left) * (bottom - top));
+        let mut water = vec![0.0f32; TILE * TILE].into_boxed_slice();
+        let mut wet = false;
+        let mut changed = false;
+        for y in top..bottom {
+            for x in left..right {
+                let w = tile[(y - top) * TILE + (x - left)];
+                let here = around(x, y);
+                let mut moved = [0.0f32; 4];
+                // Paint arriving from each neighbor, for mixing as pigment.
+                let mut arrivals = [[0.0f32; 4]; 8];
+                let mut arrived = 0;
+                let mut water_flow = 0.0;
+                for (dx, dy, weight) in [
+                    (-1i64, 0i64, along_x),
+                    (1, 0, along_x),
+                    (0, -1, along_y),
+                    (0, 1, along_y),
+                ] {
+                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                    if nx < 0 || ny < 0 || nx >= width as i64 || ny >= height as i64 {
+                        continue;
+                    }
+                    let wn = damp[(ny as usize - bt) * bw + (nx as usize - bl)];
+                    // Paint moves only where both sides are wet, the same
+                    // amount each way, so none is made or lost.
+                    let rate = mobility * weight * w.min(wn);
+                    if rate > 0.0 {
+                        let there = around(nx as usize, ny as usize);
+                        for c in 0..4 {
+                            moved[c] += rate * (there[c] - here[c]);
+                        }
+                        arrivals[arrived] = there.map(|v| v * rate);
+                        arrived += 1;
+                        // Carried by the flow: out to a drier wet neighbor,
+                        // in from a wetter one. Each pair computes the same
+                        // amount from both sides, so paint is conserved.
+                        let gap = w - wn;
+                        // Capped so a pixel never sends out more than half
+                        // its paint in one step.
+                        let flow = (weight * gap.abs() * (carry + push * gap.abs())).min(0.12);
+                        if flow > 0.0 {
+                            let from = if gap > 0.0 { &here } else { &there };
+                            let sign = if gap > 0.0 { -1.0 } else { 1.0 };
+                            for c in 0..4 {
+                                moved[c] += sign * flow * from[c];
+                            }
+                            if gap < 0.0 {
+                                arrivals[arrived] = there.map(|v| v * flow);
+                                arrived += 1;
+                            }
+                        }
+                    }
+                    water_flow += 0.04 * weight * (wn - w);
+                }
+                let mut pixel = [0u8; 4];
+                let alpha = (here[3] + moved[3]).clamp(0.0, 255.0);
+                if alpha >= 0.5 {
+                    let scale = 255.0 / alpha;
+                    for c in 0..3 {
+                        pixel[c] = ((here[c] + moved[c]) * scale).round().clamp(0.0, 255.0) as u8;
+                    }
+                    pixel[3] = alpha.round() as u8;
+                    // Different paint running in mixes as pigment does: what
+                    // stays here, then each neighbor's paint in turn.
+                    let straight = |v: &[f32; 4]| {
+                        let a = v[3] / 255.0;
+                        [0, 1, 2].map(|c| (v[c] / a).round().clamp(0.0, 255.0) as u8)
+                    };
+                    let own = (pigment && here[3] >= 0.5).then(|| straight(&here));
+                    if let Some(own) = own
+                        && arrivals[..arrived].iter().any(|a| {
+                            a[3] >= 0.05 && {
+                                let theirs = straight(a);
+                                (0..3).any(|c| theirs[c].abs_diff(own[c]) > 4)
+                            }
+                        })
+                    {
+                        let incoming: f32 = arrivals[..arrived].iter().map(|a| a[3]).sum();
+                        let mut held = (alpha - incoming).max(0.0);
+                        let mut color = own;
+                        for arrival in &arrivals[..arrived] {
+                            if arrival[3] < 0.05 {
+                                continue;
+                            }
+                            held += arrival[3];
+                            color =
+                                crate::pigment::mix(color, straight(arrival), arrival[3] / held);
+                        }
+                        pixel[..3].copy_from_slice(&color);
+                    }
+                } else {
+                    // Clear: keep the hidden color.
+                    let p = &bytes[((y - bt) * bw + (x - bl)) * 4..][..4];
+                    pixel = [p[0], p[1], p[2], 0];
+                }
+                if alpha_locked {
+                    pixel[3] = bytes[((y - bt) * bw + (x - bl)) * 4 + 3];
+                }
+                changed |= pixel[..] != bytes[((y - bt) * bw + (x - bl)) * 4..][..4];
+                out.push(pixel);
+                let w = (w + water_flow - evaporation).max(0.0);
+                let w = if w < DRY { 0.0 } else { w.min(1.0) };
+                wet |= w > 0.0;
+                water[(y - top) * TILE + (x - left)] = w;
+            }
+        }
+        (out, water, wet, changed)
+    };
+    // Large wet areas use the worker pool; small ones are not worth the handoff.
+    let results: Vec<TileStep> = if keys.len() >= 24 {
+        crate::parallel::run(keys.len(), |i| step(keys[i]))
+            .into_iter()
+            .map(|r| r.expect("a drying tile"))
+            .collect()
+    } else {
+        keys.iter().map(|key| step(*key)).collect()
+    };
+    Plan { keys, results }
+}
+
+/// Write a planned step. The plan must come from this document as it is
+/// now: nothing may have changed since its inputs were taken.
+pub fn commit(doc: &mut Document, plan: Plan) -> Option<[usize; 4]> {
+    let Plan { keys, results } = plan;
+    let (width, height) = (doc.width, doc.height);
+    let layer = doc.wet.layer;
+    let Some(index) = doc.layers.iter().position(|l| Some(l.id) == layer) else {
+        doc.wet.clear();
+        return None;
+    };
+    let mut next: HashMap<(u32, u32), Box<[f32]>> = HashMap::with_capacity(keys.len());
+    let mut damage: Option<[usize; 4]> = None;
+    {
+        let mut writer = doc.layers[index].pixels.writer();
+        for (key, (out, water, wet, changed)) in keys.iter().zip(results) {
+            let (left, top) = (key.0 as usize * TILE, key.1 as usize * TILE);
+            let (right, bottom) = ((left + TILE).min(width), (top + TILE).min(height));
+            if changed {
+                writer.write_region(width, [left, top, right, bottom], out.as_flattened());
+                crate::render_region::include(&mut damage, [left, top, right, bottom]);
+            }
+            if wet {
+                next.insert(*key, water);
+            }
+        }
+    }
+    doc.wet.tiles = Arc::new(next);
+    if doc.wet.tiles.is_empty() {
+        doc.wet.clear();
+    }
+    // Still wet with nothing moved this step is not yet dry.
+    damage.or((!doc.wet.is_empty()).then_some([0, 0, 0, 0]))
+}
+
+/// Dry completely, for previews: at most ten seconds' worth of steps.
+pub fn settle(doc: &mut Document) {
+    for _ in 0..(10.0 * RATE) as usize {
+        if dry_step(doc).is_none() {
+            break;
+        }
+    }
+    doc.wet.clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::brush::{Blend, Brush};
+
+    fn wash() -> Brush {
+        Brush {
+            size: 24.0,
+            hardness: 0.9,
+            flow: 0.5,
+            spacing: 0.1,
+            pressure_size: false,
+            blend: Blend::Wet,
+            wetness: 1.0,
+            ..Default::default()
+        }
+    }
+
+    fn stroke(doc: &mut Document, brush: &Brush, color: [u8; 3], y: f32) {
+        let settings = crate::stroke_buffer::Settings {
+            target: crate::paint_target::Target::Raster,
+            brush: brush.clone(),
+            color,
+            secondary: color,
+            erase: false,
+            layer: 0,
+            symmetry: Default::default(),
+        };
+        let mut path = crate::stroke::Stroke::default();
+        let mut buffer = crate::stroke_buffer::StrokeBuffer::default();
+        for i in 0..=20 {
+            let sample = crate::stroke::Sample {
+                x: 30.0 + i as f32 * 5.0,
+                y,
+                pressure: 1.0,
+                pressure_known: true,
+                ..Default::default()
+            };
+            let dabs = if i == 20 {
+                path.finish(sample, brush)
+            } else {
+                path.sample(sample, brush)
+            };
+            for dab in dabs {
+                buffer.paint(doc, dab, &settings);
+            }
+        }
+        buffer.finish_tail(doc, &settings);
+    }
+
+    /// Total paint on the layer: alpha summed over every pixel.
+    fn paint(doc: &Document) -> f64 {
+        let (w, h) = (doc.width, doc.height);
+        doc.layers[0]
+            .pixels
+            .region(w, [0, 0, w, h])
+            .chunks_exact(4)
+            .map(|p| f64::from(p[3]))
+            .sum()
+    }
+
+    #[test]
+    fn wet_strokes_leave_water_that_spreads_paint_and_dries() {
+        let mut doc = Document::new(160, 80);
+        stroke(&mut doc, &wash(), [200, 30, 30], 34.0);
+        assert!(doc.wet.at(80, 34) > 0.9, "the stroke's core is wet");
+        assert_eq!(doc.wet.at(80, 5), 0.0);
+        // A blue stroke beside it, overlapping a little while both are wet.
+        stroke(&mut doc, &wash(), [30, 30, 200], 54.0);
+        // In the red just above the blue's edge, blue creeps in as it dries.
+        let blue = |doc: &Document| doc.layers[0].pixels.rgba(40 * 160 + 80)[2];
+        let before = (blue(&doc), paint(&doc));
+        let mut steps = 0;
+        while dry_step(&mut doc).is_some() {
+            steps += 1;
+            assert!(steps < 600, "drying ends");
+        }
+        assert!(doc.wet.is_empty());
+        assert!(steps > 30, "drying takes a while: {steps}");
+        assert!(
+            blue(&doc) > before.0 + 5,
+            "{} then {}",
+            before.0,
+            blue(&doc)
+        );
+        // Spreading moves paint; it does not make or lose it (within rounding).
+        let after = paint(&doc);
+        assert!(
+            (after - before.1).abs() / before.1 < 0.02,
+            "{} {after}",
+            before.1
+        );
+        // Far from the stroke nothing changed.
+        assert_eq!(doc.layers[0].pixels.rgba(5 * 160 + 80)[3], 0);
+    }
+
+    #[test]
+    fn wet_on_wet_blends_and_wet_on_dry_stays_crisp() {
+        // Blue over red: while the red is wet the overlap mixes more red in.
+        let overlap = |dry_first: bool| {
+            let mut doc = Document::new(160, 80);
+            stroke(&mut doc, &wash(), [200, 30, 30], 34.0);
+            if dry_first {
+                settle(&mut doc);
+            }
+            let light = Brush {
+                flow: 0.15,
+                ..wash()
+            };
+            stroke(&mut doc, &light, [30, 30, 200], 52.0);
+            // Just inside the blue stroke's upper edge, over red's lower edge.
+            doc.layers[0].pixels.rgba(42 * 160 + 80)
+        };
+        let (wet, dry) = (overlap(false), overlap(true));
+        assert_ne!(wet, dry, "wet paint underneath changes the result");
+        // A plain brush leaves no water.
+        let mut doc = Document::new(160, 80);
+        stroke(&mut doc, &Brush::default(), [0, 0, 0], 40.0);
+        assert!(doc.wet.is_empty());
+    }
+
+    #[test]
+    fn water_follows_one_layer_and_locked_layers_do_not_dry() {
+        let mut doc = Document::new(160, 80);
+        stroke(&mut doc, &wash(), [200, 30, 30], 40.0);
+        assert!(!doc.wet.is_empty());
+        doc.layers[0].locked = true;
+        let before = doc.layers[0].pixels.clone();
+        assert!(dry_step(&mut doc).is_none());
+        assert!(doc.wet.is_empty() && doc.layers[0].pixels == before);
+        // Saved documents carry no water.
+        let mut doc = Document::new(64, 64);
+        stroke(&mut doc, &wash(), [200, 30, 30], 30.0);
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(!json.contains("wet"));
+    }
+}

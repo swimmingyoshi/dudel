@@ -59,7 +59,7 @@ def bundle(repository, destination, binary, metadata_path):
                  "RELEASE_NOTES.md", "CONTRIBUTING.md", "build.rs", "rust-toolchain.toml"):
         if (repository / name).is_file():
             paths.add(Path(name))
-    for folder in ("src", "examples", "plugins", "scripts", ".github", "docs", "research/fixtures/replay"):
+    for folder in ("src", "crates", "examples", "plugins", "scripts", ".github", "docs", "research/fixtures/replay"):
         paths.update(p.relative_to(repository) for p in (repository / folder).rglob("*") if p.is_file())
     paths.update(p.relative_to(repository) for p in (repository / "research").glob("*.py"))
     # The subset check above keeps the shared vendor/notices tree complete.
