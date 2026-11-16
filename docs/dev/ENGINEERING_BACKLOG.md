@@ -531,10 +531,19 @@ Worked through on 2026-11-13, measuring first.
       Proof: the same 1,469 tests pass; Clippy is clean with and without
       the diagnostic features; the 32 profiled strokes paint byte-identical
       canvases at the same speed (138 s against 139 s for the whole run).
-      Still to measure on an idle PC: rebuild times per edit (the run on
-      2026-11-16 overlapped a game that used 7 of 12 cores) and the 68
-      screenshot modes in each style (hover from the moving mouse spoiled
-      that run).
+      Classic's 68 screenshot modes match 07d04bb's pixels except the live
+      numbers of project-memory, which also differ between two runs of
+      the same binary.
+
+      Rebuild after one edit, old and new trees measured alternately
+      (2026-11-16, about half the CPU busy with other programs, so treat
+      the numbers as relative): an edit in the app now rebuilds the test
+      program in 34 s instead of 53 s and the `fast` build in 31 s instead
+      of 55 s; `cargo check` is about the same (12 s against 9 s). An edit
+      in the engine costs more for tests (101 s against 57 s), because the
+      engine, its own tests and the app's tests all rebuild; the `fast`
+      build is unchanged (61 s). For engine work, `cargo test -p
+      dudel-core` builds and runs the engine's tests without the app.
 - [ ] **Group the app struct's fields by subsystem**, as `setup` and
       `drying` are. Still worth doing a subsystem at a time when one is
       being worked on anyway; the test above removed the urgency.
