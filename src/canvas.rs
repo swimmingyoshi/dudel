@@ -1874,7 +1874,7 @@ impl Dudel {
                     .show(ui, |ui| {
                         if ui.button("Customize shortcuts...").clicked() {
                             self.settings_open = true;
-                            self.settings_section = 4;
+                            self.settings_section = crate::settings_ui::page::SHORTCUTS;
                             self.settings_search.clear();
                         }
                         egui::Grid::new("current command bindings")

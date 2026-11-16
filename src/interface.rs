@@ -204,7 +204,7 @@ impl Dudel {
         ui.separator();
         if ui.button("Customize…").clicked() {
             self.settings_open = true;
-            self.settings_section = 5;
+            self.settings_section = crate::settings_ui::page::INTERFACE;
             self.settings_search.clear();
             ui.close();
         }

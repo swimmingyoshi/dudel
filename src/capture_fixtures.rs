@@ -264,7 +264,7 @@ pub(crate) fn prepare(
         app.interface = crate::ui::style::Interface::preset(layout);
         if capture_settings {
             // The Interface page shows the style controls.
-            app.settings_section = 5;
+            app.settings_section = crate::settings_ui::page::INTERFACE;
         }
         // DUDEL_CAPTURE_PALETTES=Layers,Color opens those palettes too.
         for name in std::env::var("DUDEL_CAPTURE_PALETTES")
@@ -819,7 +819,7 @@ pub(crate) fn prepare(
     }
     if capture_shortcuts || capture_shortcut_conflict {
         app.settings_open = true;
-        app.settings_section = 4;
+        app.settings_section = crate::settings_ui::page::SHORTCUTS;
         app.shortcut_editor.filter = "layer".into();
         if capture_shortcut_conflict {
             app.shortcut_editor.capture = Some(commands::Action::NewLayer);

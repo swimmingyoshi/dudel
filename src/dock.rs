@@ -206,6 +206,13 @@ impl Docks {
         }
     }
 
+    /// Every style back to the arrangement it starts with.
+    pub(crate) fn reset_all(&mut self) {
+        self.states.clear();
+        self.unplaced.clear();
+        self.locked = false;
+    }
+
     /// The arrangement of `layout`, as saved in a workspace.
     pub(crate) fn arrangement(&self, layout: Layout) -> Option<DockState<Palette>> {
         self.states.get(&layout).cloned()

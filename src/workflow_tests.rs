@@ -81,7 +81,7 @@ fn shortcut_search_respects_text_focus_and_new_canvas_owns_its_frame() {
         )
         .unwrap();
     w.app.settings_open = true;
-    w.app.settings_section = 4;
+    w.app.settings_section = crate::settings_ui::page::SHORTCUTS;
     w.settle();
     w.click(w.text("Find a command or shortcut"));
     assert!(w.ctx.wants_keyboard_input());
@@ -137,7 +137,7 @@ fn shortcut_editor_captures_conflicts_without_executing_then_rebinds_and_resets(
     use crate::{commands::Action, shortcuts::Chord};
     let mut w = Workspace::sized([960., 640.]);
     w.app.settings_open = true;
-    w.app.settings_section = 4;
+    w.app.settings_section = crate::settings_ui::page::SHORTCUTS;
     w.app.shortcut_editor.filter = "New raster".into();
     w.settle();
     let default = w.app.shortcuts.label(Action::NewLayer);
