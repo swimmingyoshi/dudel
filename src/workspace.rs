@@ -859,6 +859,10 @@ impl Dudel {
             }
         });
         self.open_capture_popup(&view_menu, crate::capture::Popup::ViewMenu);
+        if self.docked() {
+            // Palettes: show or hide each, lock them, or start over.
+            bounded_menu(ui, "Window", |ui| self.palettes_menu(ui));
+        }
         bounded_menu(ui, "Help", |ui| {
             if menu_item(ui, "Welcome screen", "", true) {
                 self.welcome_open = true;

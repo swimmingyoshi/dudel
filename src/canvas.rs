@@ -564,17 +564,31 @@ impl Dudel {
             self.quick_menu_ui(ctx);
             return;
         }
-        egui::TopBottomPanel::top("editing target").show(ctx, |ui| self.editing_target_ui(ui));
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(crate::color_wheel::color32(self.canvas_background())))
-            .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
+        if self.docked() {
+            // The canvas is the dock's centre tab, among the palettes.
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(ctx.style().visuals.panel_fill))
+                .show(ctx, |ui| self.dock_ui(ctx, ui, packets));
+        } else {
+            egui::TopBottomPanel::top("editing target").show(ctx, |ui| self.editing_target_ui(ui));
+            egui::CentralPanel::default()
+                .frame(
+                    egui::Frame::NONE.fill(crate::color_wheel::color32(self.canvas_background())),
+                )
+                .show(ctx, |ui| self.canvas_ui(ctx, ui, packets));
+        }
         self.text_editor(ctx);
         self.quick_menu_ui(ctx);
         self.ask_about_held_transform();
         self.finish_navigator_paint(ctx);
     }
 
-    fn canvas_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, packets: &[input::Packet]) {
+    pub(crate) fn canvas_ui(
+        &mut self,
+        ctx: &egui::Context,
+        ui: &mut egui::Ui,
+        packets: &[input::Packet],
+    ) {
         self.prepare_transform_overlay(ctx);
         self.prepare_tip_cursor(ctx);
         let (area, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());

@@ -1,0 +1,738 @@
+//! Dockable palettes, as in Clip Studio Paint and Photoshop. In the Slate,
+//! Float and Atelier styles every panel is a palette: a tab that can be
+//! dragged to another group, split off beside the canvas, pulled out to float
+//! over it, closed, and opened again from the Window menu. The canvas is the
+//! one tab that always stays docked.
+//!
+//! Each style starts from its own arrangement and remembers the artist's
+//! changes to it; named workspaces save the arrangement too. Lock palettes
+//! (Window menu) stops tabs from being dragged by accident with a pen.
+use crate::{
+    Dudel, egui, input,
+    ui::style::{Active, Layout},
+};
+#[cfg(test)]
+use egui_dock::SurfaceIndex;
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, TabViewer};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// A palette: one tab of the dock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) enum Palette {
+    /// The drawing; always docked, never closed.
+    Canvas,
+    Tools,
+    ToolProperty,
+    Brushes,
+    Color,
+    Navigator,
+    Layers,
+    LayerProperty,
+    Timeline,
+}
+
+impl Palette {
+    /// Every palette the Window menu lists, in its order.
+    pub(crate) const MENU: [Palette; 8] = [
+        Palette::Tools,
+        Palette::ToolProperty,
+        Palette::Brushes,
+        Palette::Color,
+        Palette::Navigator,
+        Palette::Layers,
+        Palette::LayerProperty,
+        Palette::Timeline,
+    ];
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Palette::Canvas => "Canvas",
+            Palette::Tools => "Tools",
+            Palette::ToolProperty => "Tool property",
+            Palette::Brushes => "Brushes",
+            Palette::Color => "Color",
+            Palette::Navigator => "Navigator",
+            Palette::Layers => "Layers",
+            Palette::LayerProperty => "Layer property",
+            Palette::Timeline => "Timeline",
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Palette::Canvas => "",
+            Palette::Tools => "Every tool; right-click or hold one for its variants",
+            Palette::ToolProperty => "Size, opacity and every setting of the current tool",
+            Palette::Brushes => "The brush library",
+            Palette::Color => "Color wheel, sliders and swatches",
+            Palette::Navigator => "The whole canvas, zoom and rotation",
+            Palette::Layers => "The layer stack",
+            Palette::LayerProperty => "Blend mode, opacity, locks and mask of the current layer",
+            Palette::Timeline => "Animation frames",
+        }
+    }
+}
+
+/// The arrangement a style starts from.
+pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
+    if layout == Layout::Float {
+        // Float keeps the canvas whole, outside the dock; palettes float over
+        // it when opened.
+        return DockState::new(Vec::new());
+    }
+    let mut state = DockState::new(vec![Palette::Canvas]);
+    let tree = state.main_surface_mut();
+    match layout {
+        Layout::Slate => {
+            // Tools on the left; color, brushes and layers in a column on the right.
+            let [canvas, _] = tree.split_left(NodeIndex::root(), 0.1, vec![Palette::Tools]);
+            let [_, column] =
+                tree.split_right(canvas, 0.7, vec![Palette::Color, Palette::Navigator]);
+            let [_, lower] =
+                tree.split_below(column, 0.32, vec![Palette::Brushes, Palette::ToolProperty]);
+            tree.split_below(lower, 0.45, vec![Palette::Layers, Palette::LayerProperty]);
+        }
+        Layout::Atelier => {
+            // Brushes and the tool grid on the left; tool property and color
+            // above the layers on the right.
+            let [canvas, drawer] = tree.split_left(NodeIndex::root(), 0.19, vec![Palette::Brushes]);
+            tree.split_below(drawer, 0.72, vec![Palette::Tools]);
+            let [_, tray] = tree.split_right(
+                canvas,
+                0.71,
+                vec![Palette::ToolProperty, Palette::Color, Palette::Navigator],
+            );
+            tree.split_below(tray, 0.48, vec![Palette::Layers, Palette::LayerProperty]);
+        }
+        Layout::Float | Layout::Classic => {}
+    }
+    state
+}
+
+/// The canvas lives outside the dock: Float.
+fn canvas_outside(layout: Layout) -> bool {
+    layout == Layout::Float
+}
+
+/// A usable arrangement: no palette twice, and the canvas exactly where the
+/// style wants it (docked in the main area, or outside the dock for Float).
+fn valid(layout: Layout, state: &DockState<Palette>) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let unique = state.iter_all_tabs().all(|(_, tab)| seen.insert(*tab));
+    let canvas = if canvas_outside(layout) {
+        // Float's main area stays empty: whatever docked there would cover
+        // the canvas.
+        state.main_surface().num_tabs() == 0
+    } else {
+        state.find_main_surface_tab(&Palette::Canvas).is_some()
+    };
+    unique && canvas && layout != Layout::Classic
+}
+
+/// An arrangement as text. RON, not JSON: an area not laid out yet has an
+/// infinite rectangle, which JSON cannot hold.
+pub(crate) fn encode(state: &DockState<Palette>) -> Option<String> {
+    ron::to_string(state).ok()
+}
+
+/// A saved arrangement of `layout`, if it reads and is usable.
+pub(crate) fn decode(layout: Layout, text: &str) -> Option<DockState<Palette>> {
+    const LIMIT: usize = 256 * 1024;
+    if text.len() > LIMIT {
+        return None;
+    }
+    ron::from_str(text)
+        .ok()
+        .filter(|state| valid(layout, state))
+}
+
+/// What the dock remembers between sessions: each style's arrangement and
+/// the lock.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub(crate) struct DockPrefs {
+    #[serde(default)]
+    pub locked: bool,
+    /// Each style with its arrangement, encoded by `encode`.
+    #[serde(default)]
+    pub layouts: Vec<(Layout, String)>,
+}
+
+/// The dock of the session: one arrangement per style.
+#[derive(Default)]
+pub(crate) struct Docks {
+    states: HashMap<Layout, DockState<Palette>>,
+    pub(crate) locked: bool,
+    /// Changes asked for while the dock is being drawn.
+    pending: Vec<Change>,
+    drawing: bool,
+    /// Palettes just pulled out to float, placed when the dock is next drawn
+    /// and the canvas's real size is known.
+    unplaced: Vec<(Layout, Palette)>,
+    /// The dock's area last frame: palettes are placed once it holds still,
+    /// not while the window is still opening or being resized.
+    last_area: Option<egui::Rect>,
+}
+
+#[derive(Clone, Copy)]
+enum Change {
+    Show(Palette),
+    Hide(Palette),
+    Reset,
+}
+
+impl Docks {
+    /// Restore saved arrangements, keeping only usable ones.
+    pub(crate) fn restore(&mut self, prefs: Option<DockPrefs>) {
+        let prefs = prefs.unwrap_or_default();
+        self.locked = prefs.locked;
+        self.states = prefs
+            .layouts
+            .into_iter()
+            .filter_map(|(layout, text)| Some((layout, decode(layout, &text)?)))
+            .collect();
+    }
+
+    pub(crate) fn prefs(&self) -> DockPrefs {
+        let mut layouts: Vec<_> = self
+            .states
+            .iter()
+            .filter_map(|(layout, state)| Some((*layout, encode(state)?)))
+            .collect();
+        layouts.sort_by_key(|(layout, _)| Layout::ALL.iter().position(|l| l == layout));
+        DockPrefs {
+            locked: self.locked,
+            layouts,
+        }
+    }
+
+    /// The arrangement of `layout`, as saved in a workspace.
+    pub(crate) fn arrangement(&self, layout: Layout) -> Option<DockState<Palette>> {
+        self.states.get(&layout).cloned()
+    }
+
+    /// Put back an arrangement from a workspace.
+    pub(crate) fn set_arrangement(&mut self, layout: Layout, state: DockState<Palette>) {
+        if valid(layout, &state) {
+            self.states.insert(layout, state);
+        }
+    }
+
+    fn state(&mut self, layout: Layout) -> &mut DockState<Palette> {
+        self.states.entry(layout).or_insert_with(|| preset(layout))
+    }
+
+    fn visible(&self, layout: Layout, palette: Palette) -> bool {
+        let check = |state: &DockState<Palette>| {
+            state
+                .find_tab(&palette)
+                .is_some_and(|(surface, node, tab)| {
+                    state[surface][node]
+                        .get_leaf()
+                        .is_some_and(|leaf| leaf.active == tab)
+                })
+        };
+        match self.states.get(&layout) {
+            Some(state) => check(state),
+            None => check(&preset(layout)),
+        }
+    }
+
+    fn present(&self, layout: Layout, palette: Palette) -> bool {
+        match self.states.get(&layout) {
+            Some(state) => state.find_tab(&palette).is_some(),
+            None => preset(layout).find_tab(&palette).is_some(),
+        }
+    }
+
+    /// Where the floating palettes of `layout` are.
+    #[cfg(test)]
+    pub(crate) fn floating_rects(&mut self, layout: Layout) -> Vec<egui::Rect> {
+        let state = self.state(layout);
+        let windows: Vec<SurfaceIndex> = state
+            .iter_all_tabs()
+            .map(|((surface, _), _)| surface)
+            .filter(|s| *s != SurfaceIndex::main())
+            .collect();
+        windows
+            .into_iter()
+            .filter_map(|s| state.get_window_state(s).map(|w| w.rect()))
+            .collect()
+    }
+
+    /// Place palettes that just started floating: side by side from the
+    /// right, below Float's islands, in the order they were opened.
+    fn place_floating(&mut self, layout: Layout, area: egui::Rect) {
+        let settled = self.last_area == Some(area);
+        self.last_area = Some(area);
+        if !settled || self.unplaced.is_empty() {
+            return;
+        }
+        let mut placed = 0;
+        let unplaced = std::mem::take(&mut self.unplaced);
+        let state = self.state(layout);
+        for (at, palette) in unplaced {
+            if at != layout {
+                continue;
+            }
+            let Some((surface, _, _)) = state.find_tab(&palette) else {
+                continue;
+            };
+            let Some(window) = state.get_window_state_mut(surface) else {
+                continue;
+            };
+            let width = 320.0;
+            let height = (area.height() * 0.62).clamp(220.0, 640.0);
+            let column = (placed % 3) as f32;
+            let row = (placed / 3) as f32;
+            window
+                .set_position(egui::pos2(
+                    (area.right() - 16.0 - (width + 12.0) * (column + 1.0)).max(area.left() + 16.0),
+                    area.top() + 132.0 + 32.0 * row,
+                ))
+                .set_size(egui::vec2(width, height));
+            placed += 1;
+        }
+    }
+
+    fn apply(&mut self, layout: Layout, change: Change) {
+        if self.drawing {
+            self.pending.push(change);
+            return;
+        }
+        match change {
+            Change::Reset => {
+                self.states.insert(layout, preset(layout));
+            }
+            Change::Hide(palette) => {
+                let state = self.state(layout);
+                if palette != Palette::Canvas
+                    && let Some(found) = state.find_tab(&palette)
+                {
+                    state.remove_tab(found);
+                }
+            }
+            Change::Show(palette) => {
+                let state = self.state(layout);
+                if let Some((surface, node, tab)) = state.find_tab(&palette) {
+                    state.set_active_tab((surface, node, tab));
+                    state.set_focused_node_and_surface((surface, node));
+                    return;
+                }
+                // Back into the group it starts in, if one of its partners is
+                // still docked; otherwise it floats beside the canvas.
+                let partners: Vec<Palette> = preset(layout)
+                    .iter_all_tabs()
+                    .filter(|(_, tab)| **tab != palette)
+                    .filter(|(at, _)| {
+                        preset(layout)
+                            .find_tab(&palette)
+                            .is_some_and(|(s, n, _)| (s, n) == *at)
+                    })
+                    .map(|(_, tab)| *tab)
+                    .collect();
+                let home = partners.iter().find_map(|p| state.find_tab(p));
+                if let Some((surface, node, _)) = home
+                    && let Some(leaf) = state[surface][node].get_leaf_mut()
+                {
+                    leaf.append_tab(palette);
+                    let last = leaf.tabs().len() - 1;
+                    leaf.set_active_tab(last);
+                    return;
+                }
+                // The timeline docks under the canvas, as a strip.
+                if palette == Palette::Timeline
+                    && let Some((canvas_node, _)) = state.find_main_surface_tab(&Palette::Canvas)
+                {
+                    state
+                        .main_surface_mut()
+                        .split_below(canvas_node, 0.8, vec![palette]);
+                    return;
+                }
+                state.add_window(vec![palette]);
+                self.unplaced.push((layout, palette));
+            }
+        }
+    }
+}
+
+impl Dudel {
+    /// The styles built from palettes; Classic keeps its fixed panels.
+    pub(crate) fn docked(&self) -> bool {
+        self.interface.layout != Layout::Classic
+    }
+
+    /// The palette is on screen: docked or floating, and its group's chosen tab.
+    pub(crate) fn palette_visible(&self, palette: Palette) -> bool {
+        self.docked() && self.ui_layout.docks.visible(self.interface.layout, palette)
+    }
+
+    /// The palette is somewhere in the arrangement, chosen or not.
+    pub(crate) fn palette_present(&self, palette: Palette) -> bool {
+        self.docked() && self.ui_layout.docks.present(self.interface.layout, palette)
+    }
+
+    pub(crate) fn show_palette(&mut self, palette: Palette) {
+        self.show_panels = true;
+        self.ui_layout
+            .docks
+            .apply(self.interface.layout, Change::Show(palette));
+    }
+
+    pub(crate) fn hide_palette(&mut self, palette: Palette) {
+        self.ui_layout
+            .docks
+            .apply(self.interface.layout, Change::Hide(palette));
+    }
+
+    pub(crate) fn toggle_palette(&mut self, palette: Palette) {
+        if self.palette_visible(palette) {
+            self.hide_palette(palette);
+        } else {
+            self.show_palette(palette);
+        }
+    }
+
+    /// Back to the style's own arrangement.
+    pub(crate) fn reset_palettes(&mut self) {
+        self.ui_layout
+            .docks
+            .apply(self.interface.layout, Change::Reset);
+        self.status = format!(
+            "Palettes back to the {} arrangement",
+            self.interface.layout.name()
+        );
+    }
+
+    /// The Window menu: every palette with a check, the lock and the reset.
+    pub(crate) fn palettes_menu(&mut self, ui: &mut egui::Ui) {
+        for palette in Palette::MENU {
+            let mut shown = self.palette_present(palette);
+            if ui
+                .checkbox(&mut shown, palette.name())
+                .on_hover_text(palette.hint())
+                .clicked()
+            {
+                if shown {
+                    self.show_palette(palette);
+                } else {
+                    self.hide_palette(palette);
+                }
+                ui.close();
+            }
+        }
+        ui.separator();
+        ui.checkbox(&mut self.ui_layout.docks.locked, "Lock palettes")
+            .on_hover_text("Keep tabs where they are: no dragging, closing or floating");
+        if ui
+            .button(format!(
+                "Reset to the {} arrangement",
+                self.interface.layout.name()
+            ))
+            .clicked()
+        {
+            self.reset_palettes();
+            ui.close();
+        }
+    }
+
+    /// The dock filling the central area: palettes around the canvas, or for
+    /// Float the canvas with palettes floating over it.
+    pub(crate) fn dock_ui(
+        &mut self,
+        ctx: &egui::Context,
+        ui: &mut egui::Ui,
+        packets: &[input::Packet],
+    ) {
+        let layout = self.interface.layout;
+        let whole = ui.max_rect();
+        if canvas_outside(layout) {
+            self.canvas_tab_ui(ctx, ui, packets);
+        }
+        self.ui_layout.docks.place_floating(layout, whole);
+        let empty = || DockState::new(Vec::new());
+        let saved = std::mem::replace(self.ui_layout.docks.state(layout), empty());
+        // Tab hides every palette; the arrangement waits unchanged.
+        let (mut state, waiting) = if self.show_panels {
+            (saved, None)
+        } else if canvas_outside(layout) {
+            (empty(), Some(saved))
+        } else {
+            (DockState::new(vec![Palette::Canvas]), Some(saved))
+        };
+        let before = state.clone();
+        let locked = self.ui_layout.docks.locked;
+        let mut style = egui_dock::Style::from_egui(ui.style().as_ref());
+        let active = Active::get(ctx);
+        if active.styled {
+            style.tab.active.text_color = ui.visuals().strong_text_color();
+            style.tab.focused.text_color = ui.visuals().strong_text_color();
+            style.tab.hovered.text_color = ui.visuals().text_color();
+            style.tab.active.outline_color = active.accent;
+            style.tab.focused.outline_color = active.accent;
+        }
+        style.tab_bar.fill_tab_bar = true;
+        // A tab's right-click menu: Close, and Float to pull it out.
+        state.translations.tab_context_menu = egui_dock::TabContextMenuTranslations {
+            close_button: "Close".into(),
+            eject_button: "Float".into(),
+        };
+        self.ui_layout.docks.drawing = true;
+        let mut viewer = Viewer {
+            app: self,
+            ctx,
+            packets,
+        };
+        let area = DockArea::new(&mut state)
+            .id(egui::Id::new("dudel dock"))
+            .style(style)
+            .draggable_tabs(!locked)
+            // Closing is in a tab's right-click menu and the Window menu, so
+            // tabs stay uncluttered; a group or a floating palette has its X.
+            .show_close_buttons(false)
+            .tab_context_menus(!locked)
+            .allowed_splits(if locked {
+                AllowedSplits::None
+            } else {
+                AllowedSplits::All
+            })
+            .show_leaf_close_all_buttons(!locked)
+            .show_leaf_collapse_buttons(false)
+            .window_bounds(whole);
+        if canvas_outside(layout) {
+            // Over the canvas, which already took the space.
+            ui.scope_builder(egui::UiBuilder::new().max_rect(whole), |ui| {
+                area.show_inside(ui, &mut viewer);
+            });
+        } else {
+            area.show_inside(ui, &mut viewer);
+        }
+        self.ui_layout.docks.drawing = false;
+        // A drop the style can't take (a palette into Float's canvas) snaps back.
+        let state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
+            state
+        } else {
+            before
+        };
+        *self.ui_layout.docks.state(layout) = waiting.unwrap_or(state);
+        for change in std::mem::take(&mut self.ui_layout.docks.pending) {
+            self.ui_layout.docks.apply(layout, change);
+        }
+    }
+
+    /// The canvas with the strip naming what a stroke edits.
+    fn canvas_tab_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, packets: &[input::Packet]) {
+        egui::TopBottomPanel::top("editing target")
+            .show_inside(ui, |ui| self.editing_target_ui(ui));
+        let rect = ui.available_rect_before_wrap();
+        ui.painter().rect_filled(
+            rect,
+            0.0,
+            crate::color_wheel::color32(self.canvas_background()),
+        );
+        self.canvas_ui(ctx, ui, packets);
+    }
+}
+
+struct Viewer<'a> {
+    app: &'a mut Dudel,
+    ctx: &'a egui::Context,
+    packets: &'a [input::Packet],
+}
+
+impl TabViewer for Viewer<'_> {
+    type Tab = Palette;
+
+    fn title(&mut self, tab: &mut Palette) -> egui::WidgetText {
+        match tab {
+            Palette::Canvas => {
+                let (name, modified) = self.app.tab_title(self.app.tabs.active);
+                if modified {
+                    format!("{name} •")
+                } else {
+                    name
+                }
+                .into()
+            }
+            Palette::Color => self.app.color_tab_name().into(),
+            _ => tab.name().into(),
+        }
+    }
+
+    fn id(&mut self, tab: &mut Palette) -> egui::Id {
+        egui::Id::new(("palette", *tab))
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Palette) {
+        let app = &mut *self.app;
+        match tab {
+            Palette::Canvas => app.canvas_tab_ui(self.ctx, ui, self.packets),
+            Palette::Tools => app.tools_palette(ui),
+            Palette::ToolProperty => {
+                egui::ScrollArea::vertical()
+                    .id_salt("tool property")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| app.tool_panel_ui(ui));
+            }
+            Palette::Brushes => {
+                app.brush_groups_row(ui);
+                app.brush_library_ui(ui);
+            }
+            Palette::Color => {
+                if ui.available_height() < 300.0 {
+                    ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                    ui.spacing_mut().interact_size.y = ui.spacing().interact_size.y.min(26.0);
+                    app.compact_palette_ui(ui);
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("color palette")
+                        .show(ui, |ui| app.palette_ui(ui));
+                }
+            }
+            Palette::Navigator => {
+                let room = ui.available_height();
+                egui::ScrollArea::vertical()
+                    .id_salt("navigator palette")
+                    .show(ui, |ui| app.navigator_ui(ui, room));
+            }
+            Palette::Layers => {
+                ui.horizontal(|ui| app.layer_guide_controls(ui));
+                // With Layer property open, its controls live there.
+                let inline = !app.palette_visible(Palette::LayerProperty);
+                app.layers_ui(ui, inline, true);
+            }
+            Palette::LayerProperty => {
+                egui::ScrollArea::vertical()
+                    .id_salt("layer property")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| app.layer_controls_ui(ui));
+            }
+            Palette::Timeline => app.timeline_palette(ui),
+        }
+    }
+
+    fn is_closeable(&self, tab: &Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn allowed_in_windows(&self, tab: &mut Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn clear_background(&self, tab: &Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn scroll_bars(&self, _tab: &Palette) -> [bool; 2] {
+        [false, false]
+    }
+
+    fn on_tab_button(&mut self, tab: &mut Palette, response: &egui::Response) {
+        if *tab != Palette::Canvas {
+            response.clone().on_hover_text(tab.hint());
+        }
+    }
+}
+
+impl Dudel {
+    /// Brush groups as chips, above the library.
+    pub(crate) fn brush_groups_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            for group in crate::brush::BrushGroup::ALL {
+                let chosen = self.tool == crate::tools::Tool::Brush && self.brush_group == group;
+                if ui
+                    .selectable_label(chosen, group.name())
+                    .on_hover_text(group.hint())
+                    .clicked()
+                {
+                    self.select_brush_group(group);
+                }
+            }
+        });
+    }
+
+    fn timeline_palette(&mut self, ui: &mut egui::Ui) {
+        if self.doc.animation.is_some() {
+            self.timeline_ui(ui);
+        } else {
+            ui.horizontal(|ui| {
+                ui.label("This canvas has no frames yet.");
+                if ui.button("Turn on the animation timeline").clicked() {
+                    self.execute_command(crate::commands::Action::AnimationTimeline);
+                }
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_preset_is_usable_and_saves_and_restores() {
+        for layout in [Layout::Slate, Layout::Float, Layout::Atelier] {
+            let state = preset(layout);
+            assert!(valid(layout, &state), "{layout:?}");
+            let mut docks = Docks::default();
+            docks.states.insert(layout, state);
+            docks.locked = true;
+            let text = serde_json::to_string(&docks.prefs()).unwrap();
+            let mut back = Docks::default();
+            back.restore(serde_json::from_str(&text).ok());
+            assert!(back.locked);
+            assert!(back.states.contains_key(&layout));
+        }
+    }
+
+    #[test]
+    fn an_arrangement_without_the_canvas_is_not_restored() {
+        let broken = encode(&DockState::new(vec![Palette::Layers])).unwrap();
+        let mut docks = Docks::default();
+        docks.restore(Some(DockPrefs {
+            locked: false,
+            layouts: vec![
+                (Layout::Slate, broken),
+                (Layout::Atelier, "not an arrangement".into()),
+            ],
+        }));
+        assert!(docks.states.is_empty());
+    }
+
+    #[test]
+    fn closed_palettes_come_back_to_their_group_or_float() {
+        let mut docks = Docks::default();
+        // Slate: Navigator shares a group with Color, so it returns there.
+        assert!(docks.visible(Layout::Slate, Palette::Color));
+        docks.apply(Layout::Slate, Change::Hide(Palette::Navigator));
+        assert!(!docks.present(Layout::Slate, Palette::Navigator));
+        docks.apply(Layout::Slate, Change::Show(Palette::Navigator));
+        let state = docks.state(Layout::Slate);
+        let (s, n, _) = state.find_tab(&Palette::Navigator).unwrap();
+        assert_eq!(
+            Some((s, n)),
+            state.find_tab(&Palette::Color).map(|(s, n, _)| (s, n))
+        );
+        assert!(docks.visible(Layout::Slate, Palette::Navigator));
+        // Float has no groups: palettes open as floating windows.
+        docks.apply(Layout::Float, Change::Show(Palette::Layers));
+        let state = docks.state(Layout::Float);
+        let (surface, _, _) = state.find_tab(&Palette::Layers).unwrap();
+        assert_ne!(surface, SurfaceIndex::main());
+        // The canvas can't be closed.
+        docks.apply(Layout::Slate, Change::Hide(Palette::Canvas));
+        assert!(docks.present(Layout::Slate, Palette::Canvas));
+    }
+
+    #[test]
+    fn float_never_docks_over_its_canvas() {
+        let mut docked = DockState::new(vec![Palette::Layers]);
+        assert!(!valid(Layout::Float, &docked));
+        docked = DockState::new(Vec::new());
+        docked.add_window(vec![Palette::Layers]);
+        assert!(valid(Layout::Float, &docked));
+        // Slate needs its canvas in the main area.
+        assert!(!valid(Layout::Slate, &docked));
+    }
+}

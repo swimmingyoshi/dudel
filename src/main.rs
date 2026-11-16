@@ -40,6 +40,7 @@ mod color_wheel;
 mod dialogs;
 mod display_settings;
 mod display_workers;
+mod dock;
 mod document_actions;
 mod dynamics;
 mod effects_panel;
@@ -958,6 +959,9 @@ impl Dudel {
         self.theme = p.theme;
         self.interface = p.interface;
         self.interface.sanitize();
+        self.ui_layout
+            .docks
+            .restore(serde_json::from_value(p.palettes).ok());
         self.brushes = p.brushes;
         self.brush = p.current_brush;
         self.selected_brush = p.selected_brush;
@@ -1022,6 +1026,7 @@ impl Dudel {
         let p = preferences::Preferences {
             theme: self.theme_for_preferences().clone(),
             interface: self.interface.clone(),
+            palettes: serde_json::to_value(self.ui_layout.docks.prefs()).unwrap_or_default(),
             version: 1,
             brushes: self.brushes.clone(),
             current_brush: if paint.validate().is_ok() {

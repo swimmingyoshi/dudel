@@ -22,6 +22,10 @@ pub struct Workspace {
     pub widths: [Option<f32>; 2],
     #[serde(default)]
     pub layout: LayoutPrefs,
+    /// The style and its palette arrangement, for the styles built from
+    /// palettes. Plain JSON, so a workspace from a newer version still loads.
+    #[serde(default)]
+    pub palettes: Option<serde_json::Value>,
 }
 fn shown() -> bool {
     true
@@ -69,6 +73,14 @@ impl Dudel {
                 layers_height: self.layers_height,
                 navigator_tab: self.inspector_navigator,
             },
+            palettes: self
+                .docked()
+                .then(|| {
+                    let layout = self.interface.layout;
+                    let dock = self.ui_layout.docks.arrangement(layout)?;
+                    serde_json::to_value((layout, crate::dock::encode(&dock)?)).ok()
+                })
+                .flatten(),
         }
     }
 
@@ -107,6 +119,14 @@ impl Dudel {
         self.navigator_height = w.layout.navigator_height;
         self.layers_height = w.layout.layers_height;
         self.inspector_navigator = w.layout.navigator_tab;
+        if let Some((layout, dock)) = w
+            .palettes
+            .and_then(|v| serde_json::from_value::<(crate::ui::style::Layout, String)>(v).ok())
+            .and_then(|(layout, text)| Some((layout, crate::dock::decode(layout, &text)?)))
+        {
+            self.interface.layout = layout;
+            self.ui_layout.docks.set_arrangement(layout, dock);
+        }
         self.status = format!("Workspace “{}”", w.name);
     }
 
@@ -214,6 +234,26 @@ mod tests {
         let json = serde_json::to_string(&prefs).unwrap();
         let loaded = crate::preferences::Preferences::decode(&json).unwrap();
         assert!(loaded.workspaces == app.workspaces);
+    }
+
+    #[test]
+    fn workspaces_keep_the_style_and_its_palettes() {
+        use crate::{dock::Palette, ui::style::Layout};
+        let mut app = Dudel::default();
+        app.interface.layout = Layout::Slate;
+        app.hide_palette(Palette::Navigator);
+        app.show_palette(Palette::Timeline);
+        app.save_workspace("Animating").unwrap();
+        app.reset_palettes();
+        app.interface.layout = Layout::Classic;
+        // Through the preferences, as after a restart.
+        let prefs =
+            crate::preferences::Preferences::decode(&app.encode_preferences().unwrap()).unwrap();
+        app.workspaces = prefs.workspaces;
+        app.apply_workspace(0);
+        assert_eq!(app.interface.layout, Layout::Slate);
+        assert!(!app.palette_present(Palette::Navigator));
+        assert!(app.palette_present(Palette::Timeline));
     }
 
     #[test]

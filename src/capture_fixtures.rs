@@ -266,6 +266,18 @@ pub(crate) fn prepare(
             // The Interface page shows the style controls.
             app.settings_section = 5;
         }
+        // DUDEL_CAPTURE_PALETTES=Layers,Color opens those palettes too.
+        for name in std::env::var("DUDEL_CAPTURE_PALETTES")
+            .unwrap_or_default()
+            .split(',')
+        {
+            if let Some(palette) = crate::dock::Palette::MENU
+                .into_iter()
+                .find(|p| p.name().eq_ignore_ascii_case(name.trim()))
+            {
+                app.show_palette(palette);
+            }
+        }
     }
     app.timelapse.open = capture_timelapse;
     if capture_timelapse && let Err(error) = app.sample_timelapse() {

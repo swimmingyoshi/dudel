@@ -21,6 +21,30 @@ reachable in every style.
 - The choice is saved with the preferences (`interface`). Older versions
   ignore the field and show Classic.
 
+## Palettes
+
+In Slate, Float and Atelier every panel is a palette, as in Clip Studio Paint
+and Photoshop: Tools, Tool property, Brushes, Color, Navigator, Layers,
+Layer property and Timeline.
+
+- Drag a palette's tab onto another group to join it, or onto an edge of a
+  group or of the canvas to split that area. Drag it off to let it float.
+- Right-click a tab for Close and Float. A group or a floating palette has an
+  X that closes it.
+- **Window** (between View and Help) lists every palette: check one to open
+  it, uncheck it to close it. A palette opens in the group it started in, or
+  floats when that group is gone. Window also holds **Lock palettes** (no
+  dragging, closing or floating, for a pen on a tablet) and **Reset to the
+  … arrangement**.
+- Each style starts from its own arrangement and remembers your changes to
+  it. Float keeps the canvas whole: its palettes always float, opened from the
+  right island. Atelier's Draw, Paint and Animate buttons bring their palettes
+  forward.
+- **View › Workspaces** saves the style and its arrangement under a name.
+- Tab still hides every panel; the palettes come back as they were.
+
+With Layer property open, the Layers palette leaves the layer controls to it.
+
 ## Where the code is
 
 - The `dudel-ui` crate (`crates/dudel-ui`, egui only; see `CRATES.md`):
@@ -33,8 +57,17 @@ reachable in every style.
   - `widgets.rs`: scrub field, tab strip, segmented control.
 - `src/interface.rs`: applying a style on top of the theme, the settings
   page and the menu.
-- `src/layouts.rs`: the Slate, Float and Atelier layouts.
-  `workspace::classic_panels` is the Classic layout, unchanged.
+- `src/dock.rs`: palettes and their arrangements, built on `egui_dock`
+  (0.18, the release for egui 0.33). Arrangements are saved as RON text in
+  the preferences (`palettes`), because an area not laid out yet has an
+  infinite rectangle that JSON cannot hold; one that no longer reads falls
+  back to the style's own.
+- `src/layouts.rs`: the bars of the Slate, Float and Atelier styles and
+  Float's islands. `workspace::classic_panels` is the Classic layout,
+  unchanged.
+
+`DUDEL_CAPTURE_PALETTES=Layers,Color` (with `DUDEL_CAPTURE_STYLE`) opens
+those palettes in a capture.
 
 ## Checking a style
 

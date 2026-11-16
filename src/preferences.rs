@@ -21,6 +21,11 @@ pub struct Preferences {
     /// ignore it and keep the Classic interface.
     #[serde(default)]
     pub interface: crate::ui::style::Interface,
+    /// Each style's palette arrangement and the palette lock. Kept as plain
+    /// JSON: an arrangement that no longer reads falls back to the style's
+    /// own, without touching the other preferences.
+    #[serde(default)]
+    pub palettes: serde_json::Value,
     pub brushes: Vec<Brush>,
     pub current_brush: Brush,
     pub selected_brush: usize,
@@ -212,6 +217,7 @@ mod tests {
             graphs_dropped: 0,
             theme: crate::themes::Theme::presets().remove(1),
             interface: crate::ui::style::Interface::preset(crate::ui::style::Layout::Atelier),
+            palettes: serde_json::Value::Null,
             version: 1,
             brushes: vec![brush.clone()],
             current_brush: brush,
