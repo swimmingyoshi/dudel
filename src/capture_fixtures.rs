@@ -1051,11 +1051,7 @@ impl Dudel {
                 frame.name = "Color".into();
                 frame.depth = 1;
                 lines.depth = 1;
-                layers.extend([
-                    frame,
-                    lines,
-                    document::Layer::new_folder("Frame 5".into()),
-                ]);
+                layers.extend([frame, lines, document::Layer::new_folder("Frame 5".into())]);
                 continue;
             }
             layers.push(frame);

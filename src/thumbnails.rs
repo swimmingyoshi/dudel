@@ -64,10 +64,7 @@ pub(crate) fn folder_pixels(doc: &Document, folder: usize, side: usize) -> Vec<u
     preview(doc.width, doc.height, side, |index| {
         let (x, y) = (index % doc.width / step, index / doc.width / step);
         let pixel = &rgba[(y * columns + x) * 4..][..4];
-        (
-            [pixel[0], pixel[1], pixel[2]],
-            f32::from(pixel[3]) / 255.0,
-        )
+        ([pixel[0], pixel[1], pixel[2]], f32::from(pixel[3]) / 255.0)
     })
 }
 
@@ -81,7 +78,11 @@ fn folder_key(doc: &Document, folder: usize) -> u64 {
         layer.id.hash(&mut hasher);
         (layer.visible, layer.clipped, layer.folder, layer.depth).hash(&mut hasher);
         (layer.opacity.to_bits(), layer.fill.to_bits()).hash(&mut hasher);
-        layer.mask.as_ref().map(|mask| mask.enabled).hash(&mut hasher);
+        layer
+            .mask
+            .as_ref()
+            .map(|mask| mask.enabled)
+            .hash(&mut hasher);
         format!("{:?}{:?}{:?}", layer.blend, layer.effects, layer.adjustment).hash(&mut hasher);
     }
     hasher.finish().max(2)
@@ -183,10 +184,8 @@ impl Dudel {
         for (index, layer) in self.doc.layers.iter().enumerate() {
             // A top-level folder is a frame in an animation, and the timeline
             // shows its contents; anywhere else a folder shows an icon.
-            let frame = animated
-                && layer.folder
-                && layer.depth == 0
-                && layer.display_reference.is_none();
+            let frame =
+                animated && layer.folder && layer.depth == 0 && layer.display_reference.is_none();
             let kind = match (layer.folder, frame) {
                 (false, _) => 0,
                 (true, false) => 1,
@@ -394,10 +393,11 @@ mod tests {
         let preview = folder_pixels(&app.doc, 3, 10);
         assert!(preview.chunks_exact(4).all(|p| p == [200, 0, 0, 255]));
         // Painting a layer inside redraws the frame; nothing else does.
-        app.doc.layers[2]
-            .pixels
-            .writer()
-            .write_region(8, [0, 0, 8, 8], &[0, 0, 200, 255].repeat(64));
+        app.doc.layers[2].pixels.writer().write_region(
+            8,
+            [0, 0, 8, 8],
+            &[0, 0, 200, 255].repeat(64),
+        );
         assert!(refresh(&mut app).contains(&texture));
         assert!(
             folder_pixels(&app.doc, 3, 10)
