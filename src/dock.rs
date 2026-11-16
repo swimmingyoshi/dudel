@@ -97,12 +97,9 @@ pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
             // Brushes and the tool grid on the left; tool property and color
             // above the layers on the right.
             let [canvas, drawer] = tree.split_left(NodeIndex::root(), 0.19, vec![Palette::Brushes]);
-            tree.split_below(drawer, 0.72, vec![Palette::Tools]);
-            let [_, tray] = tree.split_right(
-                canvas,
-                0.71,
-                vec![Palette::ToolProperty, Palette::Color, Palette::Navigator],
-            );
+            tree.split_below(drawer, 0.66, vec![Palette::Tools, Palette::Navigator]);
+            let [_, tray] =
+                tree.split_right(canvas, 0.71, vec![Palette::ToolProperty, Palette::Color]);
             tree.split_below(tray, 0.48, vec![Palette::Layers, Palette::LayerProperty]);
         }
         Layout::Float | Layout::Classic => {}
@@ -172,6 +169,19 @@ pub(crate) struct Docks {
     /// The dock's area last frame: palettes are placed once it holds still,
     /// not while the window is still opening or being resized.
     last_area: Option<egui::Rect>,
+    /// While the dock is drawn its arrangement is out of the map: which
+    /// palettes are in it, and which are on screen.
+    drawn: Option<(Vec<Palette>, Vec<Palette>)>,
+}
+
+/// The palettes of an arrangement, and those on screen (each group's chosen tab).
+fn listing(state: &DockState<Palette>) -> (Vec<Palette>, Vec<Palette>) {
+    let present = state.iter_all_tabs().map(|(_, tab)| *tab).collect();
+    let shown = state
+        .iter_leaves()
+        .filter_map(|(_, leaf)| leaf.tabs().get(leaf.active.0).copied())
+        .collect();
+    (present, shown)
 }
 
 #[derive(Clone, Copy)]
@@ -230,6 +240,9 @@ impl Docks {
     }
 
     fn visible(&self, layout: Layout, palette: Palette) -> bool {
+        if let Some((_, shown)) = &self.drawn {
+            return shown.contains(&palette);
+        }
         let check = |state: &DockState<Palette>| {
             state
                 .find_tab(&palette)
@@ -246,6 +259,9 @@ impl Docks {
     }
 
     fn present(&self, layout: Layout, palette: Palette) -> bool {
+        if let Some((present, _)) = &self.drawn {
+            return present.contains(&palette);
+        }
         match self.states.get(&layout) {
             Some(state) => state.find_tab(&palette).is_some(),
             None => preset(layout).find_tab(&palette).is_some(),
@@ -485,6 +501,7 @@ impl Dudel {
             eject_button: "Float".into(),
         };
         self.ui_layout.docks.drawing = true;
+        self.ui_layout.docks.drawn = Some(listing(&state));
         let mut viewer = Viewer {
             app: self,
             ctx,
@@ -515,6 +532,7 @@ impl Dudel {
             area.show_inside(ui, &mut viewer);
         }
         self.ui_layout.docks.drawing = false;
+        self.ui_layout.docks.drawn = None;
         // A drop the style can't take (a palette into Float's canvas) snaps back.
         let state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
             state
@@ -730,6 +748,17 @@ mod tests {
         // The canvas can't be closed.
         docks.apply(Layout::Slate, Change::Hide(Palette::Canvas));
         assert!(docks.present(Layout::Slate, Palette::Canvas));
+    }
+
+    #[test]
+    fn a_group_shows_only_its_chosen_tab() {
+        let (present, shown) = listing(&preset(Layout::Atelier));
+        assert!(present.contains(&Palette::LayerProperty));
+        // Layers is chosen in its group, so Layer property is behind it and
+        // the Layers palette keeps the layer controls.
+        assert!(shown.contains(&Palette::Layers) && !shown.contains(&Palette::LayerProperty));
+        // Brushes stands on its own, so Tool property leaves its library out.
+        assert!(shown.contains(&Palette::Brushes) && shown.contains(&Palette::ToolProperty));
     }
 
     #[test]

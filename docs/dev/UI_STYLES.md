@@ -43,7 +43,11 @@ Layer property and Timeline.
 - **View › Workspaces** saves the style and its arrangement under a name.
 - Tab still hides every panel; the palettes come back as they were.
 
-With Layer property open, the Layers palette leaves the layer controls to it.
+Palettes don't repeat each other: with Layer property on screen, the Layers
+palette leaves the layer controls to it, and with Brushes on screen, Tool
+property shows the current tool's settings without a second brush list (as
+in Atelier). Brush Studio (the Studio button) stays the full editor, like
+CSP's sub tool detail.
 
 ## Where the code is
 

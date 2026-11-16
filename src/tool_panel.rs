@@ -650,6 +650,12 @@ impl Dudel {
         ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
         ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
         ui.spacing_mut().interact_size.y = 26.0;
+        if self.palette_visible(crate::dock::Palette::Brushes) {
+            // The Brushes palette is on screen beside this one: the tool
+            // property is the settings alone, without a second library.
+            self.brush_settings_ui(ui);
+            return;
+        }
         let total = ui.available_height();
         // Brush settings scroll, so the library may take all but 120 px of them.
         let minimum = 60.0_f32.min(total * 0.42);
