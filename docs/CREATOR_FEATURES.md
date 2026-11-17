@@ -17,13 +17,23 @@ captured twice, so breaks and edits that leave the picture as it was add no
 frames. Pause leaves out work you plan to undo. Stop captures the latest state;
 **Continue recording** later adds to the same recording.
 
-A saved project's recording continues automatically when the project is opened
-again, as long as it was not stopped and the canvas size is the same. Resizing
-the canvas stops the recording and keeps its frames.
+Saving a canvas renames its recording's folder after the project, keeping
+the date it was started: "Untitled 2026-11-17" becomes "LAVA_BASE
+2026-11-17". When the project is opened again its latest recording comes back
+with it, if the canvas size is the same. A recording still running continues
+by itself; a stopped one shows in the window, and **Continue recording** adds
+to it rather than starting a separate folder. Resizing the canvas stops the
+recording and keeps its frames.
 
 The **Playback** section plays the recording in the window, while it is still
 recording too: Play/Pause, drag the timeline to scrub, and set frames per second
 (1-30); the length shown includes a 2-second hold on the finished artwork.
+**Exported length** fits a long session into 1 minute, 30 seconds or 15
+seconds by keeping evenly spaced frames, always the first and the last; each
+kept frame is exported at full quality, so a shorter video is a smaller file.
+Full length plays every frame. As a guide, video at 1280 px took 0.6 to 0.7 MB
+per 10 seconds in tests on pixel art and on paintings; a 15-second fit
+of a 1,145-frame pixel art session came to 1.3 MB against 2.8 MB in full.
 **Export GIF…** writes that playback at Large (1280 px), Medium (960 px), Small
 (720 px) or Tiny (480 px) size. Each GIF frame stores only the pixels that
 changed, so export is fast and files stay small; repeated frames just lengthen
