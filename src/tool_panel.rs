@@ -76,7 +76,7 @@ impl Dudel {
     }
     pub(crate) fn stabilizer_mode_ui(&mut self, ui: &mut egui::Ui) {
         use crate::brush::StabilizerMode;
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             ui.label("Follow");
             ui.selectable_value(
                 &mut self.brush.stabilizer_mode,
@@ -96,7 +96,7 @@ impl Dudel {
     }
     /// Brush-shape / own-tip switch shared by the tool panel and quick bar.
     pub(crate) fn eraser_mode_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             if ui
                 .selectable_label(!self.eraser_own, "Brush shape")
                 .on_hover_text("Erase with the current brush preset's shape and texture at the eraser's own size")
@@ -147,12 +147,12 @@ impl Dudel {
         {
             brush.hardness = hardness / 100.0;
         }
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             ui.label("Tip");
             ui.selectable_value(&mut brush.tip, crate::brush::Tip::Round, "Round");
             ui.selectable_value(&mut brush.tip, crate::brush::Tip::Square, "Square");
         });
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             ui.label("Pressure");
             ui.checkbox(&mut brush.pressure_size, "Size");
             ui.checkbox(&mut brush.pressure_opacity, "Strength");
@@ -170,7 +170,7 @@ impl Dudel {
     }
     /// Fill/Erase switch shared by the tool panel and the quick bar.
     pub(crate) fn lasso_mode_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             ui.selectable_value(&mut self.lasso.erase, false, "Fill")
                 .on_hover_text("Fill the shape with the current color");
             ui.selectable_value(&mut self.lasso.erase, true, "Erase")
@@ -183,6 +183,26 @@ impl Dudel {
         self.show_panels = true;
         if !matches!(self.tool, Tool::Brush | Tool::Eraser) {
             self.select_tool(Tool::Brush);
+        }
+    }
+
+    /// The Tool property palette: one scroll area, never one inside another.
+    /// Brush, selection and canvas settings keep their headings in place and
+    /// scroll their own lists; the rest scroll as a whole.
+    pub(crate) fn tool_property_palette(&mut self, ui: &mut egui::Ui) {
+        let scrolls_itself = self.affine_preview.is_none()
+            && match self.tool {
+                Tool::Brush | Tool::Select | Tool::Pointer => true,
+                Tool::Eraser => !self.eraser_own,
+                _ => false,
+            };
+        if scrolls_itself {
+            self.tool_panel_ui(ui);
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt("tool property")
+                .auto_shrink([false, false])
+                .show(ui, |ui| self.tool_panel_ui(ui));
         }
     }
 
@@ -233,7 +253,7 @@ impl Dudel {
                 if self.vector_target().is_some() {
                     use crate::vector_layer::EraseMode;
                     ui.label("Vector lines");
-                    ui.horizontal(|ui| {
+                    choice_row(ui, |ui| {
                         ui.selectable_value(
                             &mut self.vector_erase_mode,
                             EraseMode::Touched,
@@ -759,7 +779,7 @@ impl Dudel {
             36.0,
             self.stroking || self.render_queue.busy() || self.performance.defer_optional(),
         );
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             for (page, label) in [
                 (BrushPage::Brush, "Basic"),
                 (BrushPage::Tip, "Tip"),
@@ -830,7 +850,7 @@ impl Dudel {
 
     /// Paint, Smudge or Blur.
     fn brush_blend_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        choice_row(ui, |ui| {
             ui.label("Mode");
             for blend in crate::brush::Blend::ALL {
                 ui.selectable_value(&mut self.brush.blend, blend, blend.name())
@@ -908,7 +928,7 @@ impl Dudel {
             .show(ui, |ui| {
                 self.brush_flow_hardness_ui(ui);
                 let [size, opacity, ..] = self.graph_driven();
-                ui.horizontal(|ui| {
+                choice_row(ui, |ui| {
                     ui.label("Pressure");
                     pressure_toggle(ui, &mut self.brush.pressure_size, "Size", size)
                         .on_hover_text("Pen pressure changes brush size");
@@ -953,7 +973,7 @@ impl Dudel {
                 ui.checkbox(&mut self.brush.pixel, "Pixel art").on_hover_text(
                     "Paint whole pixels with no soft edge, one dab on every pixel the stroke                      crosses. One-pixel lines drop the doubled pixel at each corner. The                      eraser erases whole pixels too while this brush is chosen.",
                 );
-                ui.horizontal(|ui| {
+                choice_row(ui, |ui| {
                     ui.label("Softness");
                     ui.selectable_value(
                         &mut self.brush.softness_profile,
@@ -1031,7 +1051,7 @@ impl Dudel {
             }
             Section::Graph => self.brush_graph_ui(ui),
             Section::Tip => {
-                ui.horizontal(|ui| {
+                choice_row(ui, |ui| {
                     ui.selectable_value(&mut self.brush.tip, Tip::Round, "Round");
                     ui.selectable_value(&mut self.brush.tip, Tip::Square, "Square");
                     if ui
@@ -1279,6 +1299,16 @@ impl Dudel {
 
 pub(crate) fn hint(ui: &mut egui::Ui, text: &str) {
     ui.label(egui::RichText::new(text).small().weak());
+}
+
+/// A row of choices. In a palette, which can be made narrow, it wraps onto
+/// more lines; Classic's panels and Brush Studio keep it on one line.
+fn choice_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if crate::dock::in_palette(ui) {
+        ui.horizontal_wrapped(add).inner
+    } else {
+        ui.horizontal(add).inner
+    }
 }
 
 /// Fixed-width label column so sliders line up.

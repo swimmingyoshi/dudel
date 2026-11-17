@@ -7,7 +7,7 @@ reachable in every style.
 | Style   | Layout                                                                 | Icons   | Density | Colors              |
 |---------|------------------------------------------------------------------------|---------|---------|---------------------|
 | Classic | Tool rail, tool settings left, color and layers right                  | Classic | Regular | The chosen theme    |
-| Slate   | Grouped rail, context bar, one dock of tabbed groups, status bar       | Line    | Compact | Graphite and amber  |
+| Slate   | Tools, brushes and tool property left; color and layers right; status bar | Line | Compact | Graphite and amber  |
 | Float   | Canvas fills the window; tool islands, slider rail, popovers           | Duotone | Touch   | Smoked glass, teal  |
 | Atelier | Brush drawer, color tray and layers, timeline below, Draw/Paint/Animate | Solid   | Regular | Stone, ultramarine  |
 
@@ -42,6 +42,14 @@ Layer property and Timeline.
   forward.
 - **View › Workspaces** saves the style and its arrangement under a name.
 - Tab still hides every panel; the palettes come back as they were.
+- When a style's starting arrangement changes (`PRESETS` in `src/dock.rs`),
+  arrangements saved before give way to it once; named workspaces keep theirs.
+
+Each palette keeps a margin around its contents, and its scroll bar stays in
+view beside the contents whenever there is more to scroll to. Tool property
+has one scroll area: brush, selection and canvas settings keep their name,
+preview and page tabs in place and scroll the settings below them; other
+tools scroll as a whole. Rows of choices wrap in a narrow palette.
 
 Palettes don't repeat each other: with Layer property on screen, the Layers
 palette leaves the layer controls to it, and with Brushes on screen, Tool

@@ -85,13 +85,14 @@ pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
     let tree = state.main_surface_mut();
     match layout {
         Layout::Slate => {
-            // Tools on the left; color, brushes and layers in a column on the right.
-            let [canvas, _] = tree.split_left(NodeIndex::root(), 0.1, vec![Palette::Tools]);
+            // As in Clip Studio Paint: tools, brushes and the tool property
+            // down the left; color and layers down the right.
+            let [canvas, tools] = tree.split_left(NodeIndex::root(), 0.21, vec![Palette::Tools]);
+            let [_, brushes] = tree.split_below(tools, 0.21, vec![Palette::Brushes]);
+            tree.split_below(brushes, 0.44, vec![Palette::ToolProperty]);
             let [_, column] =
-                tree.split_right(canvas, 0.7, vec![Palette::Color, Palette::Navigator]);
-            let [_, lower] =
-                tree.split_below(column, 0.32, vec![Palette::Brushes, Palette::ToolProperty]);
-            tree.split_below(lower, 0.45, vec![Palette::Layers, Palette::LayerProperty]);
+                tree.split_right(canvas, 0.71, vec![Palette::Color, Palette::Navigator]);
+            tree.split_below(column, 0.4, vec![Palette::Layers, Palette::LayerProperty]);
         }
         Layout::Atelier => {
             // Brushes and the tool grid on the left; tool property and color
@@ -105,6 +106,17 @@ pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
         Layout::Float | Layout::Classic => {}
     }
     state
+}
+
+fn in_palette_id() -> egui::Id {
+    egui::Id::new("dudel drawing palettes")
+}
+
+/// Whether `ui` is inside a palette: Classic's fixed panels and separate
+/// windows such as Brush Studio are not.
+pub(crate) fn in_palette(ui: &egui::Ui) -> bool {
+    ui.data(|d| d.get_temp::<bool>(in_palette_id()))
+        .unwrap_or(false)
 }
 
 /// The canvas lives outside the dock: Float.
@@ -153,7 +165,14 @@ pub(crate) struct DockPrefs {
     /// Each style with its arrangement, encoded by `encode`.
     #[serde(default)]
     pub layouts: Vec<(Layout, String)>,
+    /// The `PRESETS` the arrangements were saved under.
+    #[serde(default)]
+    pub presets: u32,
 }
+
+/// Raised when the starting arrangements change, so arrangements saved
+/// before give way to the new ones once.
+const PRESETS: u32 = 1;
 
 /// The dock of the session: one arrangement per style.
 #[derive(Default)]
@@ -196,9 +215,11 @@ impl Docks {
     pub(crate) fn restore(&mut self, prefs: Option<DockPrefs>) {
         let prefs = prefs.unwrap_or_default();
         self.locked = prefs.locked;
+        let current = prefs.presets >= PRESETS;
         self.states = prefs
             .layouts
             .into_iter()
+            .filter(|_| current)
             .filter_map(|(layout, text)| Some((layout, decode(layout, &text)?)))
             .collect();
     }
@@ -213,6 +234,7 @@ impl Docks {
         DockPrefs {
             locked: self.locked,
             layouts,
+            presets: PRESETS,
         }
     }
 
@@ -502,6 +524,7 @@ impl Dudel {
         };
         self.ui_layout.docks.drawing = true;
         self.ui_layout.docks.drawn = Some(listing(&state));
+        ctx.data_mut(|d| d.insert_temp(in_palette_id(), true));
         let mut viewer = Viewer {
             app: self,
             ctx,
@@ -533,6 +556,7 @@ impl Dudel {
         }
         self.ui_layout.docks.drawing = false;
         self.ui_layout.docks.drawn = None;
+        ctx.data_mut(|d| d.remove_temp::<bool>(in_palette_id()));
         // A drop the style can't take (a palette into Float's canvas) snaps back.
         let state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
             state
@@ -584,21 +608,59 @@ impl TabViewer for Viewer<'_> {
         }
     }
 
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Palette) {
+        if *tab == Palette::Canvas {
+            self.app.canvas_tab_ui(self.ctx, ui, self.packets);
+            return;
+        }
+        // Room between a palette's edges and its contents, and scroll bars
+        // that stay in view, beside the contents rather than over them,
+        // whenever there is more to scroll to.
+        let mut scroll = egui::style::ScrollStyle::solid();
+        scroll.bar_width = 8.0;
+        ui.spacing_mut().scroll = scroll;
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(6, 4))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                self.palette_ui(ui, *tab);
+            });
+    }
+
     fn id(&mut self, tab: &mut Palette) -> egui::Id {
         egui::Id::new(("palette", *tab))
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Palette) {
+    fn is_closeable(&self, tab: &Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn allowed_in_windows(&self, tab: &mut Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn clear_background(&self, tab: &Palette) -> bool {
+        *tab != Palette::Canvas
+    }
+
+    fn scroll_bars(&self, _tab: &Palette) -> [bool; 2] {
+        [false, false]
+    }
+
+    fn on_tab_button(&mut self, tab: &mut Palette, response: &egui::Response) {
+        if *tab != Palette::Canvas {
+            response.clone().on_hover_text(tab.hint());
+        }
+    }
+}
+
+impl Viewer<'_> {
+    fn palette_ui(&mut self, ui: &mut egui::Ui, tab: Palette) {
         let app = &mut *self.app;
         match tab {
-            Palette::Canvas => app.canvas_tab_ui(self.ctx, ui, self.packets),
+            Palette::Canvas => {}
             Palette::Tools => app.tools_palette(ui),
-            Palette::ToolProperty => {
-                egui::ScrollArea::vertical()
-                    .id_salt("tool property")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| app.tool_panel_ui(ui));
-            }
+            Palette::ToolProperty => app.tool_property_palette(ui),
             Palette::Brushes => {
                 app.brush_groups_row(ui);
                 app.brush_library_ui(ui);
@@ -633,28 +695,6 @@ impl TabViewer for Viewer<'_> {
                     .show(ui, |ui| app.layer_controls_ui(ui));
             }
             Palette::Timeline => app.timeline_palette(ui),
-        }
-    }
-
-    fn is_closeable(&self, tab: &Palette) -> bool {
-        *tab != Palette::Canvas
-    }
-
-    fn allowed_in_windows(&self, tab: &mut Palette) -> bool {
-        *tab != Palette::Canvas
-    }
-
-    fn clear_background(&self, tab: &Palette) -> bool {
-        *tab != Palette::Canvas
-    }
-
-    fn scroll_bars(&self, _tab: &Palette) -> [bool; 2] {
-        [false, false]
-    }
-
-    fn on_tab_button(&mut self, tab: &mut Palette, response: &egui::Response) {
-        if *tab != Palette::Canvas {
-            response.clone().on_hover_text(tab.hint());
         }
     }
 }
@@ -721,8 +761,49 @@ mod tests {
                 (Layout::Slate, broken),
                 (Layout::Atelier, "not an arrangement".into()),
             ],
+            presets: PRESETS,
         }));
         assert!(docks.states.is_empty());
+    }
+
+    #[test]
+    fn arrangements_saved_before_the_presets_changed_start_fresh() {
+        let mut docks = Docks::default();
+        docks
+            .states
+            .insert(Layout::Atelier, preset(Layout::Atelier));
+        let mut prefs = docks.prefs();
+        prefs.presets = PRESETS - 1;
+        prefs.locked = true;
+        let mut back = Docks::default();
+        back.restore(Some(prefs));
+        assert!(back.states.is_empty());
+        assert!(back.locked);
+    }
+
+    #[test]
+    fn slate_keeps_tools_brushes_and_tool_property_down_the_left() {
+        let state = preset(Layout::Slate);
+        // The first split puts its new group on the left of the root.
+        let side = |palette| {
+            let (_, mut node, _) = state.find_tab(&palette).unwrap();
+            while let Some(parent) = node.parent().filter(|p| *p != NodeIndex::root()) {
+                node = parent;
+            }
+            node
+        };
+        let left = NodeIndex::root().left();
+        for palette in [Palette::Tools, Palette::Brushes, Palette::ToolProperty] {
+            assert_eq!(side(palette), left, "{palette:?}");
+        }
+        for palette in [Palette::Canvas, Palette::Color, Palette::Layers] {
+            assert_ne!(side(palette), left, "{palette:?}");
+        }
+        // Each in a group of its own, so all three are on screen at once.
+        let shown = listing(&state).1;
+        for palette in [Palette::Tools, Palette::Brushes, Palette::ToolProperty] {
+            assert!(shown.contains(&palette), "{palette:?}");
+        }
     }
 
     #[test]
