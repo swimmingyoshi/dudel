@@ -94,5 +94,19 @@ render in that style; with `--capture-settings` it opens the Interface page.
 Without the variable every capture is Classic and matches master's pixels,
 except the Settings window, which has the new Interface tab.
 
-Rail buttons with a corner mark have variants: right-click or press and hold
-for brush presets, fill or gradient, lasso fill or erase, and tool options.
+Rail buttons with a corner mark have variants: brush presets, fill or
+gradient, lasso fill or erase, and tool options. They open with a tap on the
+button already chosen, a press and hold (`HOLD` in `src/layouts.rs`), the
+pen's side button pressed over the button, or a right-click. egui's own
+context menu needed a clean right-click and closed on any left click, so
+with a pen it opened and closed at once.
+
+In Float the color sits at the top of the side rail and at the end of the
+right island; either opens a popover with a large wheel, both colors and
+hex, recent colors, swatches and color ideas, and **Open the Color palette**
+to keep a wheel on screen.
+
+A floating palette's tab fills its bar, so a grip along its top moves the
+window (egui_dock 0.18 never records a window's rect; `window_rect` reads
+it from egui). In Float a palette dropped on the canvas floats where it was
+dropped rather than snapping back.

@@ -102,13 +102,39 @@ impl PaletteFile {
 }
 impl Dudel {
     pub(crate) fn palette_ui(&mut self, ui: &mut eframe::egui::Ui) {
+        self.palette_ui_up_to(ui, 200.0);
+    }
+
+    /// Float's color popover: the palette with a larger wheel for a pen or
+    /// a finger, and a way to the Color palette.
+    pub(crate) fn color_popover_ui(&mut self, ui: &mut eframe::egui::Ui) {
+        use eframe::egui;
+        ui.set_width(280.0);
+        let room = (ui.ctx().content_rect().height() - 120.0).clamp(160.0, 640.0);
+        ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+        egui::ScrollArea::vertical()
+            .id_salt("color popover")
+            .max_height(room)
+            .show(ui, |ui| self.palette_ui_up_to(ui, 248.0));
+        ui.separator();
+        if ui
+            .button("Open the Color palette")
+            .on_hover_text("Keep the wheel on screen while painting")
+            .clicked()
+        {
+            self.show_palette(crate::dock::Palette::Color);
+            ui.close();
+        }
+    }
+
+    fn palette_ui_up_to(&mut self, ui: &mut eframe::egui::Ui, largest: f32) {
         if !self.input_stroke_target().is_raster() {
             self.mask_palette_ui(ui);
             return;
         }
         use crate::color_wheel;
         color_wheel::sync(&mut self.hsv, self.color);
-        let size = ui.available_width().clamp(140.0, 200.0);
+        let size = ui.available_width().clamp(140.0, largest);
         ui.vertical_centered(|ui| {
             if color_wheel::wheel(ui, &mut self.hsv, size) {
                 self.color = color_wheel::hsv_to_rgb(self.hsv);

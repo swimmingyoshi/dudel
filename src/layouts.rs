@@ -25,6 +25,9 @@ pub(crate) struct LayoutState {
     pub(crate) docks: crate::dock::Docks,
 }
 
+/// Seconds the pen or a finger rests on a rail button to open its variants.
+const HOLD: f64 = 0.45;
+
 /// A tool rail entry: a brush group or a tool.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -122,8 +125,15 @@ impl Dudel {
         }
     }
 
-    /// One rail button. A click chooses it; a right-click or a long press
-    /// opens its variants: presets for a brush group, modes for a tool.
+    /// One rail button. A click chooses it. Its variants (presets for a
+    /// brush group, modes for a tool) open on a tap of the button that is
+    /// already chosen, a press and hold, or the pen's side button or a
+    /// right-click.
+    ///
+    /// egui's own context menu wants a right-click to press and release on
+    /// the button with nothing in between, and closes on any left click; a
+    /// pen's side button and tip together rarely give it that, so the menu
+    /// opened and closed again at once.
     fn rail_button(&mut self, ui: &mut egui::Ui, item: Item, side: f32) {
         let (active, icon, name, hint, variants) = self.item_state(item);
         let action = match item {
@@ -131,7 +141,7 @@ impl Dudel {
             Item::Tool(tool) => Action::Tool(tool),
         };
         let response = icons::button(ui, icon, side, active, true).on_hover_text(format!(
-            "{name} · {}\n{hint}\nRight-click or press and hold for {}",
+            "{name} · {}\n{hint}\nTap again, press and hold, or right-click for {}",
             self.shortcuts.label(action),
             if matches!(item, Item::Group(_)) {
                 "its presets"
@@ -153,13 +163,102 @@ impl Dudel {
                 egui::Stroke::NONE,
             ));
         }
-        if response.clicked() {
+        let id = response.id.with("variants");
+        let open = egui::Popup::is_id_open(ui.ctx(), id);
+        let down = response.is_pointer_button_down_on();
+        let held = down
+            && ui.input(|i| {
+                i.pointer.could_any_button_be_click()
+                    && i.pointer
+                        .press_start_time()
+                        .is_some_and(|start| i.time - start >= HOLD)
+            });
+        if down && !open {
+            // Notice the hold while the pen rests on the button.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        // The side button opens the menu as it is pressed over the button,
+        // not on release, so the tip touching down in between can't undo it.
+        let side_pressed = response.hovered()
+            && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
+        let opening = !open
+            && (held
+                || side_pressed
+                || response.secondary_clicked()
+                || (response.clicked() && active));
+        if response.clicked() && !active {
             match item {
                 Item::Group(group) => self.select_brush_group(group),
                 Item::Tool(tool) => self.select_tool(tool),
             }
         }
-        response.context_menu(|ui| self.variants_ui(ui, item));
+        // Clicks on the button itself never close its menu: the release that
+        // ends a hold, or the tip landing while the side button is held.
+        let on_button = down || response.contains_pointer();
+        egui::Popup::menu(&response)
+            .id(id)
+            .open_memory(opening.then_some(egui::SetOpenCommand::Bool(true)))
+            .close_behavior(if on_button {
+                egui::PopupCloseBehavior::IgnoreClicks
+            } else {
+                egui::PopupCloseBehavior::CloseOnClickOutside
+            })
+            .show(|ui| self.variants_ui(ui, item));
+    }
+
+    /// The current color as a round button, the second color peeking out
+    /// behind it; the ring is the accent while its popover is open.
+    fn color_puck(&mut self, ui: &mut egui::Ui, side: f32) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click());
+        let open = egui::Popup::is_id_open(ui.ctx(), response.id.with("color popover"));
+        let ring = if open {
+            Active::get(ui.ctx()).accent
+        } else {
+            ui.visuals().text_color()
+        };
+        let color = crate::color_wheel::color32;
+        let radius = side * 0.3;
+        ui.painter().circle(
+            rect.center() + vec2(radius * 0.55, radius * 0.55),
+            radius * 0.75,
+            color(self.secondary),
+            egui::Stroke::new(1.5_f32, ui.visuals().weak_text_color()),
+        );
+        ui.painter().circle(
+            rect.center() - vec2(radius * 0.15, radius * 0.15),
+            radius,
+            color(self.paint_color()),
+            egui::Stroke::new(2.5_f32, ring),
+        );
+        response.on_hover_text(format!(
+            "{} · tap for the wheel, recent colors and swatches",
+            self.color_tab_name()
+        ))
+    }
+
+    /// The color popover, from Float's color dot and the color on its rail:
+    /// a large wheel, both colors and hex, recent colors and swatches.
+    fn color_popover(&mut self, response: &egui::Response, align: egui::RectAlign) {
+        let id = response.id.with("color popover");
+        let opening = response.clicked() && !egui::Popup::is_id_open(&response.ctx, id);
+        egui::Popup::from_response(response)
+            .id(id)
+            .open_memory(if opening {
+                Some(egui::SetOpenCommand::Bool(true))
+            } else if response.clicked() {
+                Some(egui::SetOpenCommand::Bool(false))
+            } else {
+                None
+            })
+            .align(align)
+            .gap(8.0)
+            .close_behavior(if response.clicked() {
+                egui::PopupCloseBehavior::IgnoreClicks
+            } else {
+                egui::PopupCloseBehavior::CloseOnClickOutside
+            })
+            .show(|ui| self.color_popover_ui(ui));
     }
 
     fn variants_ui(&mut self, ui: &mut egui::Ui, item: Item) {
@@ -553,24 +652,9 @@ impl Dudel {
                             self.toggle_palette(palette);
                         }
                     }
-                    // The color dot opens the Color palette.
-                    let (rect, response) =
-                        ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click());
-                    let open = self.palette_visible(Palette::Color);
-                    let ring = if open {
-                        Active::get(ui.ctx()).accent
-                    } else {
-                        ui.visuals().text_color()
-                    };
-                    ui.painter().circle(
-                        rect.center(),
-                        side * 0.32,
-                        crate::color_wheel::color32(self.paint_color()),
-                        egui::Stroke::new(2.5_f32, ring),
-                    );
-                    if response.on_hover_text(self.color_tab_name()).clicked() {
-                        self.toggle_palette(Palette::Color);
-                    }
+                    // The color dot opens the color popover below it.
+                    let response = self.color_puck(ui, side);
+                    self.color_popover(&response, egui::RectAlign::BOTTOM_END);
                 });
             },
         );
@@ -599,6 +683,24 @@ impl Dudel {
                     ui.vertical_centered(|ui| {
                         ui.spacing_mut().item_spacing.y = 6.0;
                         ui.spacing_mut().slider_width = (area.height() * 0.16).clamp(60.0, 160.0);
+                        // The color right under the hand that holds the
+                        // sliders; its popover opens beside the rail.
+                        let response = self.color_puck(ui, side);
+                        // `--capture-color-picker` in Float shows this popover.
+                        self.open_capture_popup_id(
+                            ui.ctx(),
+                            response.id.with("color popover"),
+                            crate::capture::Popup::Color,
+                        );
+                        self.color_popover(
+                            &response,
+                            if self.interface.rails_right {
+                                egui::RectAlign::LEFT_START
+                            } else {
+                                egui::RectAlign::RIGHT_START
+                            },
+                        );
+                        ui.add_space(4.0);
                         ui.label(RichText::new("SIZE").small().weak());
                         ui.add(
                             egui::Slider::new(&mut self.brush.size, 1.0..=300.0)
@@ -715,6 +817,125 @@ impl Dudel {
 mod tests {
     use super::*;
     use crate::ui::style::Interface;
+
+    /// A rail button for `item` at a known place, run for one frame with
+    /// `events`; reports whether its variants are open.
+    fn rail_frame(
+        app: &mut Dudel,
+        ctx: &egui::Context,
+        item: Item,
+        time: f64,
+        events: Vec<egui::Event>,
+    ) -> bool {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))),
+            time: Some(time),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            egui::Area::new(egui::Id::new("rail test"))
+                .fixed_pos(Pos2::ZERO)
+                .show(ctx, |ui| app.rail_button(ui, item, 40.0));
+        });
+        egui::Popup::is_any_open(ctx)
+    }
+
+    #[test]
+    fn rail_variants_open_with_a_pen_tap_again_hold_or_side_button() {
+        let at = egui::pos2(20.0, 20.0);
+        let button = |button, pressed| egui::Event::PointerButton {
+            pos: at,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        use egui::PointerButton::{Primary, Secondary};
+        let item = Item::Tool(Tool::Fill);
+
+        // A tap on a tool not chosen yet chooses it and opens nothing.
+        let mut app = Dudel::default();
+        let ctx = egui::Context::default();
+        // A new area measures itself on its first frame before it takes input.
+        rail_frame(&mut app, &ctx, item, 0.0, vec![]);
+        rail_frame(
+            &mut app,
+            &ctx,
+            item,
+            0.05,
+            vec![egui::Event::PointerMoved(at)],
+        );
+        rail_frame(&mut app, &ctx, item, 0.1, vec![button(Primary, true)]);
+        let open = rail_frame(&mut app, &ctx, item, 0.2, vec![button(Primary, false)]);
+        assert!(app.tool == Tool::Fill);
+        assert!(!open);
+        // A second tap on the chosen tool opens its options, and they stay.
+        rail_frame(&mut app, &ctx, item, 0.5, vec![button(Primary, true)]);
+        rail_frame(&mut app, &ctx, item, 0.6, vec![button(Primary, false)]);
+        assert!(rail_frame(&mut app, &ctx, item, 0.7, vec![]));
+
+        // Press and hold opens them, and lifting the pen keeps them open.
+        let mut app = Dudel::default();
+        let ctx = egui::Context::default();
+        // A new area measures itself on its first frame before it takes input.
+        rail_frame(&mut app, &ctx, item, 0.0, vec![]);
+        rail_frame(
+            &mut app,
+            &ctx,
+            item,
+            0.05,
+            vec![egui::Event::PointerMoved(at)],
+        );
+        rail_frame(&mut app, &ctx, item, 0.1, vec![button(Primary, true)]);
+        assert!(!rail_frame(&mut app, &ctx, item, 0.3, vec![]));
+        assert!(rail_frame(&mut app, &ctx, item, 0.1 + HOLD + 0.05, vec![]));
+        rail_frame(&mut app, &ctx, item, 0.7, vec![button(Primary, false)]);
+        assert!(rail_frame(&mut app, &ctx, item, 0.8, vec![]));
+
+        // The side button opens them as it is pressed, and the tip touching
+        // down while it is held does not close them.
+        let mut app = Dudel::default();
+        let ctx = egui::Context::default();
+        // A new area measures itself on its first frame before it takes input.
+        rail_frame(&mut app, &ctx, item, 0.0, vec![]);
+        rail_frame(
+            &mut app,
+            &ctx,
+            item,
+            0.05,
+            vec![egui::Event::PointerMoved(at)],
+        );
+        assert!(rail_frame(
+            &mut app,
+            &ctx,
+            item,
+            0.1,
+            vec![button(Secondary, true)]
+        ));
+        rail_frame(&mut app, &ctx, item, 0.2, vec![button(Primary, true)]);
+        rail_frame(&mut app, &ctx, item, 0.3, vec![button(Primary, false)]);
+        rail_frame(&mut app, &ctx, item, 0.4, vec![button(Secondary, false)]);
+        assert!(rail_frame(&mut app, &ctx, item, 0.5, vec![]));
+
+        // A click elsewhere closes them.
+        let away = egui::pos2(600.0, 500.0);
+        let click_away = |pressed| egui::Event::PointerButton {
+            pos: away,
+            button: Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rail_frame(
+            &mut app,
+            &ctx,
+            item,
+            0.6,
+            vec![egui::Event::PointerMoved(away)],
+        );
+        rail_frame(&mut app, &ctx, item, 0.7, vec![click_away(true)]);
+        rail_frame(&mut app, &ctx, item, 0.8, vec![click_away(false)]);
+        assert!(!rail_frame(&mut app, &ctx, item, 0.9, vec![]));
+    }
 
     /// Run a few frames of the whole workspace in `layout` at `size`.
     fn frames(app: &mut Dudel, size: Vec2, count: usize) -> Vec<egui::FullOutput> {

@@ -1701,7 +1701,10 @@ impl Dudel {
                     .show(ui, |ui| self.palette_ui(ui));
             })
             .0;
-        self.open_capture_popup(&response, crate::capture::Popup::Color);
+        // In Float the capture shows the color popover of the side rail.
+        if self.interface.layout != crate::ui::style::Layout::Float {
+            self.open_capture_popup(&response, crate::capture::Popup::Color);
+        }
         response.on_hover_text(if masked {
             "Choose mask coverage; black conceals and white reveals"
         } else {

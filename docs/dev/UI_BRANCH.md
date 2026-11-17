@@ -28,7 +28,8 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `3e72e33` | Slate puts Tools, Brushes and Tool property down the left; every palette gets a margin and a scroll bar that stays in view; Tool property has one scroll area |
 | `cfb9287` | These notes |
 | `d944045` | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
-| after `eee5222` | Slate's tools become a vertical bar at the left edge, as in Classic, with brushes and tool property beside it; Slate's columns start at fixed widths in points |
+| `44b8e69` | Slate's tools become a vertical bar at the left edge, as in Classic, with brushes and tool property beside it; Slate's columns start at fixed widths in points |
+| after `44b8e69` | Pen fixes and a comfier Float: rail variants open with a tap again, a hold or the side button; floating palettes have a grip to move them, and in Float one dropped on the canvas floats there; Float's color popover from its rail and island |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.
@@ -80,7 +81,11 @@ as a whole.
 6. **Palettes outside the window**, for second monitors. egui can open extra
    native windows, but each one costs a renderer and adds focus problems with
    a pen; this was turned down for now (see Decided so far).
-7. **Tablet use.** Whether Lock palettes should be on by default for pen-only
+7. **More for Float.** The owner asked for a comfier Float (2026-11-16).
+   The color popover is the first step; candidates next are larger rail
+   sliders, a brush preview on the rail, and remembering where each
+   floating palette was left.
+8. **Tablet use.** Whether Lock palettes should be on by default for pen-only
    setups, and whether Float's touch density suits the Artist 12.
 
 ## Before it can be merged

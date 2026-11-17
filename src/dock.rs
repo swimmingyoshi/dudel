@@ -592,10 +592,17 @@ impl Dudel {
         self.ui_layout.docks.drawing = true;
         self.ui_layout.docks.drawn = Some(listing(&state));
         ctx.data_mut(|d| d.insert_temp(in_palette_id(), true));
+        let floating = state
+            .iter_all_tabs()
+            .filter(|((surface, _), _)| *surface != egui_dock::SurfaceIndex::main())
+            .map(|(_, tab)| *tab)
+            .collect();
         let mut viewer = Viewer {
             app: self,
             ctx,
             packets,
+            floating,
+            moves: Vec::new(),
         };
         let area = DockArea::new(&mut state)
             .id(egui::Id::new("dudel dock"))
@@ -621,10 +628,18 @@ impl Dudel {
         } else {
             area.show_inside(ui, &mut viewer);
         }
+        let moves = viewer.moves;
         self.ui_layout.docks.drawing = false;
         self.ui_layout.docks.drawn = None;
         ctx.data_mut(|d| d.remove_temp::<bool>(in_palette_id()));
-        // A drop the style can't take (a palette into Float's canvas) snaps back.
+        move_windows(ctx, &mut state, &moves, whole);
+        // Float has no docking: a palette dropped on its canvas floats where
+        // it was dropped, so dragging a palette by its tab moves it.
+        if canvas_outside(layout) {
+            let pointer = ctx.pointer_latest_pos().unwrap_or(whole.center());
+            float_strays(&mut state, pointer, whole);
+        }
+        // A drop the style can't take snaps back.
         let mut state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
             state
         } else {
@@ -667,6 +682,76 @@ struct Viewer<'a> {
     app: &'a mut Dudel,
     ctx: &'a egui::Context,
     packets: &'a [input::Packet],
+    /// Palettes in floating windows, which get a grip to move them by.
+    floating: Vec<Palette>,
+    /// Floating palettes dragged by their grip this frame, and how far.
+    moves: Vec<(Palette, egui::Vec2)>,
+}
+
+/// Height of the grip along the top of a floating palette.
+const GRIP: f32 = 16.0;
+
+/// Where a floating window was last drawn. egui_dock 0.18 never fills in
+/// its own `WindowState::rect`, so this asks egui for the window's area,
+/// which egui_dock names after the surface.
+fn window_rect(ctx: &egui::Context, surface: egui_dock::SurfaceIndex) -> Option<egui::Rect> {
+    let id = egui::Id::new(format!("window {surface:?}"));
+    ctx.memory(|m| m.area_rect(id))
+}
+
+/// Move the windows whose grip was dragged, keeping them inside `bounds`.
+fn move_windows(
+    ctx: &egui::Context,
+    state: &mut DockState<Palette>,
+    moves: &[(Palette, egui::Vec2)],
+    bounds: egui::Rect,
+) {
+    for &(palette, delta) in moves {
+        let Some((surface, _, _)) = state.find_tab(&palette) else {
+            continue;
+        };
+        let Some(rect) = window_rect(ctx, surface) else {
+            continue;
+        };
+        let Some(window) = state.get_window_state_mut(surface) else {
+            continue;
+        };
+        let mut to = rect.translate(delta);
+        // Keep the grip reachable: never past the bounds' edges.
+        to = to.translate(egui::vec2(
+            (bounds.left() - to.left()).max(0.0) - (to.right() - bounds.right()).max(0.0),
+            (bounds.top() - to.top()).max(0.0) - (to.top() + GRIP * 2.0 - bounds.bottom()).max(0.0),
+        ));
+        window.set_position(to.min);
+    }
+}
+
+/// Palettes dropped into Float's main area (where they would cover the
+/// canvas) become a floating window at the drop point instead.
+fn float_strays(state: &mut DockState<Palette>, pointer: egui::Pos2, bounds: egui::Rect) {
+    let strays: Vec<Palette> = state
+        .iter_all_tabs()
+        .filter(|((surface, _), _)| *surface == egui_dock::SurfaceIndex::main())
+        .map(|(_, tab)| *tab)
+        .filter(|tab| *tab != Palette::Canvas)
+        .collect();
+    if strays.is_empty() {
+        return;
+    }
+    for palette in &strays {
+        if let Some(found) = state.find_tab(palette) {
+            state.remove_tab(found);
+        }
+    }
+    let size = egui::vec2(320.0, (bounds.height() * 0.62).clamp(220.0, 640.0));
+    let at = egui::pos2(
+        (pointer.x - 40.0).clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
+        (pointer.y - 12.0).clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),
+    );
+    let surface = state.add_window(strays);
+    if let Some(window) = state.get_window_state_mut(surface) {
+        window.set_position(at).set_size(size);
+    }
 }
 
 impl TabViewer for Viewer<'_> {
@@ -699,6 +784,32 @@ impl TabViewer for Viewer<'_> {
         let mut scroll = egui::style::ScrollStyle::solid();
         scroll.bar_width = 8.0;
         ui.spacing_mut().scroll = scroll;
+        // A floating palette's tab fills its bar, and dragging the tab pulls
+        // the palette out; the grip below it moves the whole window.
+        if self.floating.contains(tab) {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), GRIP), egui::Sense::drag());
+            let color = if response.hovered() || response.dragged() {
+                ui.visuals().strong_text_color()
+            } else {
+                ui.visuals().weak_text_color()
+            };
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(rect.center(), egui::vec2(40.0, 4.0)),
+                2.0,
+                color,
+            );
+            let response = response
+                .on_hover_cursor(egui::CursorIcon::Grab)
+                .on_hover_text("Drag to move this palette");
+            if response.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                let delta = response.drag_delta();
+                if delta != egui::Vec2::ZERO {
+                    self.moves.push((*tab, delta));
+                }
+            }
+        }
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(6, 4))
             .show(ui, |ui| {
@@ -947,6 +1058,59 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_palette_dropped_on_floats_canvas_floats_where_dropped_and_its_grip_moves_it() {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        // As if a floating Color palette's tab were dropped on the canvas.
+        let mut state: DockState<Palette> = DockState::new(vec![Palette::Color]);
+        float_strays(&mut state, egui::pos2(600.0, 300.0), bounds);
+        assert!(valid(Layout::Float, &state));
+        let (surface, _, _) = state.find_tab(&Palette::Color).unwrap();
+        assert_ne!(surface, egui_dock::SurfaceIndex::main());
+
+        // Lay it out once, then drag its grip.
+        let ctx = egui::Context::default();
+        let frame = |state: &mut DockState<Palette>| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(bounds),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        DockArea::new(state)
+                            .window_bounds(bounds)
+                            .show_inside(ui, &mut Empty);
+                    });
+                },
+            );
+            window_rect(&ctx, surface).unwrap()
+        };
+        frame(&mut state);
+        let before = frame(&mut state);
+        assert!((before.left() - 560.0).abs() < 1.0, "{before:?}");
+        move_windows(
+            &ctx,
+            &mut state,
+            &[(Palette::Color, egui::vec2(-200.0, -50.0))],
+            bounds,
+        );
+        let after = frame(&mut state);
+        assert!(
+            (after.min - before.min - egui::vec2(-200.0, -50.0)).length() < 1.0,
+            "{after:?}"
+        );
+        // Never pushed past the left edge.
+        move_windows(
+            &ctx,
+            &mut state,
+            &[(Palette::Color, egui::vec2(-2000.0, 0.0))],
+            bounds,
+        );
+        let edge = frame(&mut state);
+        assert!(edge.left() >= bounds.left() - 0.5, "{edge:?}");
     }
 
     struct Empty;
