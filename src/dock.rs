@@ -11,9 +11,7 @@ use crate::{
     Dudel, egui, input,
     ui::style::{Active, Layout},
 };
-#[cfg(test)]
-use egui_dock::SurfaceIndex;
-use egui_dock::{AllowedSplits, DockArea, DockState, Node, NodeIndex, TabViewer};
+use egui_dock::{AllowedSplits, DockArea, DockState, Node, NodeIndex, SurfaceIndex, TabViewer};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
