@@ -133,6 +133,11 @@ release.
       timeline, holds, playback modes, background and foreground, onion
       skin, and GIF, PNG frames, sprite sheet and MP4 export. See the
       [animation plan](ANIMATION_PLAN.md) for what is left.
+- [x] Timelapse of pixel art stays sharp: small recordings export and
+      preview enlarged by whole numbers (2026-11-17, owner's report).
+- [x] A lighter pen quick menu: thin bands around an open middle, whole
+      slices as targets, hold-slide-release (2026-11-17, owner: "too
+      intrusive").
 - [ ] The owner's pen pass on pixel art and animation.
 
 ## Installing and updating
