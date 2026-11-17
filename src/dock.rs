@@ -690,11 +690,17 @@ impl Dudel {
         self.ui_layout.docks.drawing = true;
         self.ui_layout.docks.drawn = Some(listing(&state));
         ctx.data_mut(|d| d.insert_temp(in_palette_id(), true));
-        let floating = state
-            .iter_all_tabs()
-            .filter(|((surface, _), _)| *surface != egui_dock::SurfaceIndex::main())
-            .map(|(_, tab)| *tab)
-            .collect();
+        // Floating palettes get a grip to move them by, except in Float,
+        // where the tab bar moves them.
+        let floating = if canvas_outside(layout) {
+            Vec::new()
+        } else {
+            state
+                .iter_all_tabs()
+                .filter(|((surface, _), _)| *surface != egui_dock::SurfaceIndex::main())
+                .map(|(_, tab)| *tab)
+                .collect()
+        };
         let mut viewer = Viewer {
             app: self,
             ctx,
@@ -703,9 +709,10 @@ impl Dudel {
             moves: Vec::new(),
         };
         let area = DockArea::new(&mut state)
-            .id(egui::Id::new("dudel dock"))
+            .id(dock_id())
             .style(style)
-            .draggable_tabs(!locked)
+            // Float has nothing to dock into, so its tabs move their window.
+            .draggable_tabs(!locked && !canvas_outside(layout))
             // Closing is in a tab's right-click menu and the Window menu, so
             // tabs stay uncluttered; a group or a floating palette has its X.
             .show_close_buttons(false)
@@ -726,10 +733,13 @@ impl Dudel {
         } else {
             area.show_inside(ui, &mut viewer);
         }
-        let moves = viewer.moves;
+        let mut moves = viewer.moves;
         self.ui_layout.docks.drawing = false;
         self.ui_layout.docks.drawn = None;
         ctx.data_mut(|d| d.remove_temp::<bool>(in_palette_id()));
+        if canvas_outside(layout) && !locked {
+            moves.extend(tab_drags(ctx, &state));
+        }
         move_windows(ctx, &mut state, &moves, whole);
         // Float has no docking: a palette dropped on its canvas floats where
         // it was dropped, so dragging a palette by its tab moves it.
@@ -798,6 +808,48 @@ const GRIP: f32 = 16.0;
 fn window_rect(ctx: &egui::Context, surface: egui_dock::SurfaceIndex) -> Option<egui::Rect> {
     let id = egui::Id::new(format!("window {surface:?}"));
     ctx.memory(|m| m.area_rect(id))
+}
+
+/// The dock's egui id, which its tabs' ids are made from.
+fn dock_id() -> egui::Id {
+    egui::Id::new("dudel dock")
+}
+
+/// Floating palettes whose tab is being dragged, and by how much this frame.
+/// Used where tabs don't dock (`draggable_tabs` off): egui_dock still claims
+/// the drag on a tab, so the window wouldn't move by itself. The tab's id is
+/// made the way egui_dock 0.18 makes it (`show/leaf.rs`).
+fn tab_drags(ctx: &egui::Context, state: &DockState<Palette>) -> Vec<(Palette, egui::Vec2)> {
+    let delta = ctx.input(|i| i.pointer.delta());
+    let mut moves = Vec::new();
+    let mut leaves: Vec<(SurfaceIndex, NodeIndex)> = Vec::new();
+    for ((surface, node), _) in state.iter_all_tabs() {
+        if surface != SurfaceIndex::main() && !leaves.contains(&(surface, node)) {
+            leaves.push((surface, node));
+        }
+    }
+    for (surface, node) in leaves {
+        let Some(leaf) = state[surface][node].get_leaf() else {
+            continue;
+        };
+        for (index, tab) in leaf.tabs().iter().enumerate() {
+            let id = dock_id()
+                .with((surface, "surface"))
+                .with((node, "node"))
+                .with((index, "tab"));
+            if ctx.is_being_dragged(id) {
+                ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                if delta != egui::Vec2::ZERO {
+                    moves.push((*tab, delta));
+                }
+            } else if ctx.dragged_id().is_none()
+                && ctx.read_response(id).is_some_and(|r| r.hovered())
+            {
+                ctx.set_cursor_icon(egui::CursorIcon::Grab);
+            }
+        }
+    }
+    moves
 }
 
 /// Move the windows whose grip was dragged, keeping them inside `bounds`.
@@ -1213,6 +1265,70 @@ mod tests {
         );
         let edge = frame(&mut state);
         assert!(edge.left() >= bounds.left() - 0.5, "{edge:?}");
+    }
+
+    #[test]
+    fn in_float_dragging_a_palettes_tab_moves_its_window() {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut state = preset(Layout::Float);
+        let surface = state.add_window(vec![Palette::Navigator]);
+        state
+            .get_window_state_mut(surface)
+            .unwrap()
+            .set_position(egui::pos2(600.0, 200.0))
+            .set_size(egui::vec2(320.0, 300.0));
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        let mut frame = |state: &mut DockState<Palette>, events: Vec<egui::Event>| {
+            time += 1.0 / 60.0;
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(bounds),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        DockArea::new(state)
+                            .id(dock_id())
+                            .draggable_tabs(false)
+                            .window_bounds(bounds)
+                            .show_inside(ui, &mut Empty);
+                    });
+                },
+            );
+            let moves = tab_drags(&ctx, state);
+            move_windows(&ctx, state, &moves, bounds);
+            window_rect(&ctx, surface).unwrap()
+        };
+        frame(&mut state, Vec::new());
+        let before = frame(&mut state, Vec::new());
+        // Press on the tab's name, drag it by small steps, let go.
+        let mut at = egui::pos2(before.center().x, before.top() + 12.0);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame(
+            &mut state,
+            vec![egui::Event::PointerMoved(at), button(at, true)],
+        );
+        for _ in 0..20 {
+            at += egui::vec2(-10.0, 5.0);
+            frame(&mut state, vec![egui::Event::PointerMoved(at)]);
+        }
+        frame(&mut state, vec![button(at, false)]);
+        let after = frame(&mut state, Vec::new());
+        let moved = after.min - before.min;
+        // The first few points go to deciding it is a drag.
+        assert!(moved.x < -170.0 && moved.y > 80.0, "{moved:?}");
+        assert!(
+            state.find_tab(&Palette::Navigator).unwrap().0 == surface,
+            "still the same window"
+        );
     }
 
     #[test]

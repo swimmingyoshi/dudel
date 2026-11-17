@@ -108,7 +108,13 @@ to keep a wheel on screen.
 
 A floating palette's tab fills its bar, so a grip along its top moves the
 window (egui_dock 0.18 never records a window's rect; `window_rect` reads
-it from egui). In Float a palette dropped on the canvas floats where it was
+it from egui). Float has nothing to dock into, so there its tabs don't
+undock: dragging a tab moves its window (`tab_drags`, which reads
+egui_dock's tab ids), and there is no grip.
+
+The Navigator palette has zoom and rotation sliders above its view buttons
+(Classic keeps them in the status bar), so Float, which has no status bar,
+has a zoom slider too. In Float a palette dropped on the canvas floats where it was
 dropped rather than snapping back.
 
 egui doesn't keep window positions between sessions, so the dock does:

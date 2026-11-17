@@ -30,7 +30,8 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `d944045` | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
 | `44b8e69` | Slate's tools become a vertical bar at the left edge, as in Classic, with brushes and tool property beside it; Slate's columns start at fixed widths in points |
 | `f52ed21` | Pen fixes and a comfier Float: rail variants open with a tap again, a hold or the side button; floating palettes have a grip to move them, and in Float one dropped on the canvas floats there; Float's color popover from its rail and island |
-| after `f52ed21` | Floating palettes come back where they were left, at their size, after a restart or a workspace; one saved before that is placed like a new palette instead of sitting squeezed to its tab in the top-left corner. Master merged in (the lighter pen quick menu, sharp pixel-art timelapse) |
+| `3fefb4a`, `00610df` | Floating palettes come back where they were left, at their size, after a restart or a workspace; one saved before that is placed like a new palette instead of sitting squeezed to its tab in the top-left corner. Master merged in (the lighter pen quick menu, sharp pixel-art timelapse) |
+| after `d6b3ea8` | In Float, dragging a palette's tab moves its window (no grip there); the Navigator palette gets zoom and rotation sliders |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.

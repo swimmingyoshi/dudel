@@ -47,9 +47,13 @@ impl Dudel {
                     + 2.0 * ui.spacing().button_padding.y,
             )
             .max(30.0);
-        // Zoom and rotation live in the status bar; the navigator keeps one
-        // row of view buttons, or a menu when the area is too short for it.
-        let controls = 10.0 + row_height + 2.0 * ui.spacing().item_spacing.y;
+        // In Classic, zoom and rotation live in the status bar and the
+        // navigator keeps one row of view buttons. As a palette (Float has no
+        // status bar) it also has zoom and rotation sliders, as in CSP. Too
+        // short an area turns the rows into a menu.
+        let palette = crate::dock::in_palette(ui);
+        let rows = if palette { 3.0 } else { 1.0 };
+        let controls = 10.0 + rows * row_height + (rows + 1.0) * ui.spacing().item_spacing.y;
         let compact = maximum_height < 80.0 + controls;
         let height = self
             .navigator_height
@@ -127,10 +131,27 @@ impl Dudel {
             crate::workspace::SplitDrag::None => {}
         }
         if compact {
-            ui.menu_button("View options", |ui| self.navigator_view_controls(ui));
+            ui.menu_button("View options", |ui| {
+                if palette {
+                    self.navigator_sliders(ui);
+                }
+                self.navigator_view_controls(ui)
+            });
         } else {
+            if palette {
+                self.navigator_sliders(ui);
+            }
             self.navigator_view_controls(ui);
         }
+    }
+
+    /// Zoom and rotation, each a slider between two step buttons and a field.
+    fn navigator_sliders(&mut self, ui: &mut egui::Ui) {
+        // Two step buttons, the field and the gaps between them.
+        let beside = 2.0 * 26.0 + ui.spacing().interact_size.x.max(56.0) + 3.0 * 2.0 + 4.0;
+        let slider = (ui.available_width() - beside).max(50.0);
+        self.zoom_controls(ui, slider);
+        self.rotation_controls(ui, slider);
     }
 
     fn navigator_view_controls(&mut self, ui: &mut egui::Ui) {
