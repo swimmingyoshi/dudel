@@ -1317,18 +1317,25 @@ impl Dudel {
                         }
                         p.playing = !p.playing;
                     }
-                    let mut frame = p.frame + 1;
-                    ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(60.0);
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut frame, 1..=*frames)
-                                .suffix(format!(" / {frames}")),
-                        )
-                        .changed()
-                    {
-                        p.frame = frame - 1;
-                        p.playing = false;
-                    }
+                    // The count is laid out first, on the right, and the
+                    // slider takes exactly what is left. Sizing the slider
+                    // from a guess at the count's width made each frame a
+                    // little wider than the window, which grew to fit it,
+                    // frame after frame, once counts reached four digits.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Clear of the window's scroll bar.
+                        ui.add_space(ui.spacing().scroll.bar_width);
+                        ui.label(format!("{} / {frames}", p.frame + 1));
+                        let mut frame = p.frame + 1;
+                        ui.spacing_mut().slider_width = (ui.available_width() - 4.0).max(60.0);
+                        if ui
+                            .add(egui::Slider::new(&mut frame, 1..=*frames).show_value(false))
+                            .changed()
+                        {
+                            p.frame = frame - 1;
+                            p.playing = false;
+                        }
+                    });
                 });
                 ui.add(egui::Slider::new(&mut t.prefs.fps, 1..=30).text("frames per second"))
                     .on_hover_text("Playback speed for the preview and exported timelapse");
@@ -1461,6 +1468,42 @@ enum Action {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_recording_keeps_the_window_width() {
+        // Four-digit counts once made every frame a little wider than the
+        // window, which grew to fit until it reached the edge of the screen.
+        let mut app = Dudel::default();
+        app.sample_timelapse().unwrap();
+        app.recording.frames = 1145;
+        app.timelapse.player.frame = 705;
+        app.timelapse.open = true;
+        let ctx = egui::Context::default();
+        let mut widths = Vec::new();
+        for frame in 0..30 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1920.0, 1080.0),
+                )),
+                time: Some(frame as f64 / 30.0),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                crate::workspace::theme(ctx);
+                app.timelapse_ui(ctx)
+            });
+            widths.push(
+                ctx.memory(|m| m.area_rect(egui::Id::new("Timelapse")))
+                    .unwrap()
+                    .width(),
+            );
+        }
+        let settled = widths[5];
+        assert!(widths[5..].iter().all(|w| *w == settled), "{widths:?}");
+        assert!(settled < 600.0, "{widths:?}");
+        let _ = std::fs::remove_dir_all(app.recording.root.unwrap());
+    }
     fn full_frame_reference(doc: &Document) -> image::RgbImage {
         let image = image::RgbaImage::from_raw(
             doc.width as u32,
