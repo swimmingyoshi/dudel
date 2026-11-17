@@ -562,16 +562,8 @@ fn export_gif(
         for index in 0..frames {
             crate::fill::check_cancel(Some(&control.cancel))?;
             let image = read_frame(root, index)?;
-            let image = if image.width().max(image.height()) > side {
-                let scale = side as f32 / image.width().max(image.height()) as f32;
-                let (w, h) = (
-                    ((image.width() as f32 * scale).round() as u32).max(1),
-                    ((image.height() as f32 * scale).round() as u32).max(1),
-                );
-                image::imageops::resize(&image, w, h, image::imageops::FilterType::Triangle)
-            } else {
-                image
-            };
+            let fit = fit(image.dimensions(), side, false);
+            let image = fitted(image, fit);
             if *size.get_or_insert(image.dimensions()) != image.dimensions() {
                 return Err("Recording frames have different sizes".into());
             }
@@ -664,9 +656,8 @@ fn export_mp4(
     mp4_destination(destination)?;
     let first = read_frame(root, 0)?;
     let dimensions = first.dimensions();
-    let scale = (side as f64 / dimensions.0.max(dimensions.1) as f64).min(1.0);
-    let width = ((dimensions.0 as f64 * scale).round() as u32).max(1);
-    let height = ((dimensions.1 as f64 * scale).round() as u32).max(1);
+    let fit = fit(dimensions, side, true);
+    let (width, height) = fit.size(dimensions);
     drop(first);
     crate::storage::atomic_stream(destination, |file| {
         let mut errors = tempfile::tempfile().map_err(|e| e.to_string())?;
@@ -724,12 +715,7 @@ fn export_mp4(
                     if frame.dimensions() != dimensions {
                         return Err("Recording frames have different sizes".into());
                     }
-                    let frame = image::imageops::resize(
-                        &frame,
-                        width,
-                        height,
-                        image::imageops::FilterType::Triangle,
-                    );
+                    let frame = fitted(frame, fit);
                     let repeats = if index + 1 == frames { 1 + 2 * fps } else { 1 };
                     for _ in 0..repeats {
                         crate::fill::check_cancel(Some(&control.cancel))?;
@@ -774,6 +760,79 @@ fn export_mp4(
         mp4_destination(destination)
     })
 }
+
+/// How a recorded frame becomes an exported one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Fit {
+    /// Already the right size.
+    Keep,
+    /// Longer than the export size: shrunk smoothly to this size.
+    Shrink(u32, u32),
+    /// Small enough to fit twice or more: each pixel becomes a sharp square
+    /// this many pixels wide, so pixel art stays crisp instead of being
+    /// blurred by whatever player scales it up.
+    Grow(u32),
+}
+
+impl Fit {
+    fn size(self, (width, height): (u32, u32)) -> (u32, u32) {
+        match self {
+            Fit::Keep => (width, height),
+            Fit::Shrink(w, h) => (w, h),
+            Fit::Grow(steps) => (width * steps, height * steps),
+        }
+    }
+}
+
+/// How a frame of `dimensions` fits `side`, its longest side's limit. Video
+/// keeps an even number of steps, so that its half-size color samples stay
+/// inside each pixel's square.
+fn fit((width, height): (u32, u32), side: u32, video: bool) -> Fit {
+    let longest = width.max(height).max(1);
+    if longest > side {
+        let scale = side as f64 / longest as f64;
+        return Fit::Shrink(
+            ((width as f64 * scale).round() as u32).max(1),
+            ((height as f64 * scale).round() as u32).max(1),
+        );
+    }
+    let mut steps = (side / longest).min(u32::from(u8::MAX));
+    if video && steps > 2 && steps % 2 == 1 {
+        steps -= 1;
+    }
+    if steps >= 2 {
+        Fit::Grow(steps)
+    } else {
+        Fit::Keep
+    }
+}
+
+fn fitted(image: image::RgbaImage, fit: Fit) -> image::RgbaImage {
+    match fit {
+        Fit::Keep => image,
+        Fit::Shrink(w, h) => {
+            image::imageops::resize(&image, w, h, image::imageops::FilterType::Triangle)
+        }
+        Fit::Grow(steps) => {
+            let (width, height) = image.dimensions();
+            let rgba = crate::export_jobs::upscaled(
+                image.into_raw(),
+                width as usize,
+                height as usize,
+                steps as u8,
+            );
+            image::RgbaImage::from_raw(width * steps, height * steps, rgba)
+                .expect("an upscaled frame has its pixels")
+        }
+    }
+}
+
+/// The preview enlarges small recordings with sharp pixels and shrinks
+/// large ones smoothly.
+const PREVIEW_TEXTURE: egui::TextureOptions = egui::TextureOptions {
+    magnification: egui::TextureFilter::Nearest,
+    ..egui::TextureOptions::LINEAR
+};
 
 fn decode_preview(root: &Path, index: usize) -> Result<egui::ColorImage, String> {
     let image = read_frame(root, index)?;
@@ -1098,13 +1157,10 @@ impl Dudel {
             let (decoded_root, index, worker) = p.decode.take().unwrap();
             if let Ok(Ok(image)) = worker.join() {
                 match &mut p.texture {
-                    Some(texture) => texture.set(image, egui::TextureOptions::LINEAR),
+                    Some(texture) => texture.set(image, PREVIEW_TEXTURE),
                     None => {
-                        p.texture = Some(ctx.load_texture(
-                            "timelapse frame",
-                            image,
-                            egui::TextureOptions::LINEAR,
-                        ))
+                        p.texture =
+                            Some(ctx.load_texture("timelapse frame", image, PREVIEW_TEXTURE))
                     }
                 }
                 p.shown = Some((decoded_root, index));
@@ -1243,6 +1299,9 @@ impl Dudel {
                     // Short windows keep the playback controls in view.
                     let height = (ui.ctx().content_rect().height() * 0.3).clamp(100.0, 240.0);
                     let scale = (width / size.x).min(height / size.y);
+                    // Whole steps when enlarging, so every pixel is as wide
+                    // as the next.
+                    let scale = if scale >= 1.0 { scale.floor() } else { scale };
                     ui.vertical_centered(|ui| {
                         ui.add(egui::Image::new((texture.id(), size * scale)));
                     });
@@ -1353,7 +1412,7 @@ impl Dudel {
         {
             action = Some(Action::Open);
         }
-        ui.small("Records artwork only (no panels, cursor or reference images), up to 1280 px. GIF uses a limited palette.");
+        ui.small("Records artwork only (no panels, cursor or reference images), up to 1280 px. Small canvases, such as pixel art, export enlarged in whole steps so every pixel stays sharp. GIF uses a limited palette.");
         action
     }
 }
@@ -1446,8 +1505,9 @@ mod tests {
         assert!(probe.status.success());
         let value: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
         assert_eq!(value["streams"][0]["codec_name"], "h264");
-        assert_eq!(value["streams"][0]["width"], 8);
-        assert_eq!(value["streams"][0]["height"], 6);
+        // 7 × 5 grows 136 times (137, kept even), sharp and padded to nothing.
+        assert_eq!(value["streams"][0]["width"], 952);
+        assert_eq!(value["streams"][0]["height"], 680);
         let duration: f64 = value["format"]["duration"]
             .as_str()
             .unwrap()
@@ -1702,11 +1762,16 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].delay().numer_denom_ms(), (200, 1));
         assert_eq!(frames[1].delay().numer_denom_ms(), (2100, 1));
-        assert_eq!(frames[0].buffer().dimensions(), (3, 2));
+        // A tiny canvas is enlarged with sharp pixels: 255 steps at most.
+        assert_eq!(frames[0].buffer().dimensions(), (765, 510));
         assert!(frames[0].buffer().get_pixel(0, 0)[0] > 240);
-        assert!(frames[1].buffer().get_pixel(0, 0)[2] > 240);
+        assert!(frames[1].buffer().get_pixel(254, 254)[2] > 240);
         assert!(
-            frames[1].buffer().get_pixel(2, 1)[1] > 240,
+            frames[1].buffer().get_pixel(255, 0)[1] > 240,
+            "the next pixel starts sharp"
+        );
+        assert!(
+            frames[1].buffer().get_pixel(600, 300)[1] > 240,
             "unchanged pixels show through"
         );
         let original = std::fs::read(&gif).unwrap();
@@ -1718,6 +1783,25 @@ mod tests {
         std::fs::write(&protected, b"DUDEL artwork").unwrap();
         assert!(export_gif(root.path(), 3, 10, 960, &protected, &Default::default()).is_err());
         assert_eq!(std::fs::read(protected).unwrap(), b"DUDEL artwork");
+    }
+
+    #[test]
+    fn small_recordings_export_enlarged_with_sharp_pixels() {
+        // Pixel art grows by whole steps up to the export size.
+        assert_eq!(fit((32, 24), 960, false), Fit::Grow(30));
+        assert_eq!(fit((64, 64), 960, true), Fit::Grow(14), "15 kept even");
+        assert_eq!(fit((300, 200), 960, true), Fit::Grow(2));
+        assert_eq!(fit((300, 200), 960, false), Fit::Grow(3));
+        assert_eq!(fit((32, 24), 960, false).size((32, 24)), (960, 720));
+        // Paintings that nearly fit stay as they are; larger ones shrink.
+        assert_eq!(fit((700, 500), 960, false), Fit::Keep);
+        assert_eq!(fit((1280, 640), 960, false), Fit::Shrink(960, 480));
+        let mut image = image::RgbaImage::from_pixel(2, 1, image::Rgba([0, 0, 0, 255]));
+        image.put_pixel(1, 0, image::Rgba([255, 255, 255, 255]));
+        let grown = fitted(image, Fit::Grow(3));
+        assert_eq!(grown.dimensions(), (6, 3));
+        let row: Vec<u8> = (0..6).map(|x| grown.get_pixel(x, 2)[0]).collect();
+        assert_eq!(row, [0, 0, 0, 255, 255, 255], "no blended edge");
     }
 
     #[test]
