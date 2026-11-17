@@ -27,6 +27,11 @@
 - [Brush graph](dev/BRUSH_GRAPH_PLAN.md): how node-based brush behavior is built.
 - [Engineering backlog](dev/ENGINEERING_BACKLOG.md): performance findings,
   refactors and build notes.
+- [Crates](dev/CRATES.md): the engine, the interface kit and the app.
+- [Interface styles](dev/UI_STYLES.md): Classic, Slate, Float and Atelier,
+  and the dockable palettes.
+- [The ui branch](dev/UI_BRANCH.md): what the styles branch holds, what is
+  decided, what is open, and the way forward.
 
 ## Release records
 

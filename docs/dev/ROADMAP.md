@@ -152,6 +152,17 @@ release.
       own key and not only through GitHub and its checksum.
 - [ ] In-place updates on Linux (the check links to the download today).
 
+## Interface styles and palettes (ui branch)
+
+On the `ui` branch since 2026-11-16, not decided for a release: Slate, Float
+and Atelier styles beside Classic, dockable palettes as in Clip Studio Paint,
+a Settings sidebar, and the code split into three crates. What it holds, the
+open questions and a suggested way forward are in [UI_BRANCH.md](UI_BRANCH.md).
+
+- [ ] The owner's pen pass on Slate.
+- [ ] Decide whether to ship, which styles, and the default for new installs.
+- [ ] Before merging: notices for the new packages, user docs, one CI run.
+
 ## Later
 
 These wait for tester feedback or for a reason to do them:
