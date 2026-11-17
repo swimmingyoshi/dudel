@@ -352,7 +352,7 @@ impl Dudel {
                 }
             }
             Item::Theme => {
-                ui.menu_button("Choose or customize a theme", |ui| self.theme_menu(ui));
+                ui.menu_button("Style and colors", |ui| self.theme_menu(ui));
             }
             Item::Extensions => {
                 if ui.button("Manage extensions…").clicked() {

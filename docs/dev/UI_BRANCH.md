@@ -31,7 +31,8 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `44b8e69` | Slate's tools become a vertical bar at the left edge, as in Classic, with brushes and tool property beside it; Slate's columns start at fixed widths in points |
 | `f52ed21` | Pen fixes and a comfier Float: rail variants open with a tap again, a hold or the side button; floating palettes have a grip to move them, and in Float one dropped on the canvas floats there; Float's color popover from its rail and island |
 | `3fefb4a`, `00610df` | Floating palettes come back where they were left, at their size, after a restart or a workspace; one saved before that is placed like a new palette instead of sitting squeezed to its tab in the top-left corner. Master merged in (the lighter pen quick menu, sharp pixel-art timelapse) |
-| after `d6b3ea8` | In Float, dragging a palette's tab moves its window (no grip there); the Navigator palette gets zoom and rotation sliders |
+| `6f00d70` | In Float, dragging a palette's tab moves its window (no grip there); the Navigator palette gets zoom and rotation sliders |
+| after `6f00d70` | View › Theme sorted into Style and Colors, marking only what is on screen; Dudel Dark, Paper, Graphite and saved themes now color Slate, Float and Atelier too, through a palette made from the theme |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.
@@ -39,7 +40,7 @@ Size: 158 files changed against master, most of it files moved into
 ## Trying it
 
 The branch lives in the worktree `artifacts/ui`. Build and run it there with
-`cargo run --profile fast`. Then use View › Theme › Interface style, or
+`cargo run --profile fast`. Then use View › Theme › Style, or
 Settings › Interface, to pick a style. Classic is the default, and existing
 preferences open in Classic.
 

@@ -1,5 +1,5 @@
 //! The app's side of interface styles: applying one, choosing one and
-//! customizing it in Settings or View › Interface style.
+//! customizing it in Settings or View › Theme.
 use crate::{
     Dudel, egui,
     icons::{self, Icon},
@@ -38,16 +38,42 @@ pub fn apply(ctx: &egui::Context, interface: &Interface, theme: &themes::Theme) 
     ctx.set_style(base);
     themes::forget_applied(ctx);
     themes::apply(ctx, theme);
-    if interface.palette.is_some() || interface.custom_metrics() {
+    let effective = Interface {
+        palette: colors(interface, theme),
+        ..interface.clone()
+    };
+    if effective.palette.is_some() || effective.custom_metrics() {
         let mut s = (*ctx.style()).clone();
-        if let Some(palette) = &interface.palette {
+        if let Some(palette) = &effective.palette {
             style::apply_palette(&mut s, palette);
         }
-        style::apply_metrics(&mut s, interface.density, interface.radius);
+        style::apply_metrics(&mut s, effective.density, effective.radius);
         ctx.set_style(s);
     }
-    Active::new(interface, &ctx.style()).store(ctx);
+    Active::new(&effective, &ctx.style()).store(ctx);
     ctx.data_mut(|d| d.insert_temp(id, key));
+}
+
+/// A theme's colors as a whole style palette.
+pub fn theme_palette(theme: &themes::Theme) -> Palette {
+    Palette::from_theme(
+        theme.dark,
+        theme.panel,
+        theme.window,
+        theme.text,
+        theme.accent,
+        theme.canvas_background,
+    )
+}
+
+/// The palette a style is drawn with: its own colors, or the theme's made
+/// into a whole palette, so that Slate, Float and Atelier keep their raised
+/// islands, wells and accent marks in any theme. Classic with the theme's
+/// colors draws exactly as the theme alone does.
+fn colors(interface: &Interface, theme: &themes::Theme) -> Option<Palette> {
+    interface
+        .palette
+        .or_else(|| (interface.layout != Layout::Classic).then(|| theme_palette(theme)))
 }
 
 fn rgb(c: [u8; 3]) -> Color32 {
@@ -63,19 +89,9 @@ fn preset_card(
 ) -> egui::Response {
     let size = vec2(104.0, 84.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let palette = Interface::preset(layout).palette.unwrap_or(Palette {
-        dark: theme.dark,
-        base: theme.panel,
-        panel: theme.panel,
-        raised: theme.window,
-        sunken: style::mix(theme.panel, [0, 0, 0], 0.2),
-        line: style::mix(theme.panel, theme.text, 0.2),
-        text: theme.text,
-        muted: style::mix(theme.text, theme.panel, 0.3),
-        accent: theme.accent,
-        accent_text: [255, 255, 255],
-        canvas: theme.canvas_background,
-    });
+    let palette = Interface::preset(layout)
+        .palette
+        .unwrap_or_else(|| theme_palette(theme));
     let p = ui.painter();
     // Drawn on a 128 by 74 grid, scaled to the card.
     let k = size.x / 128.0;
@@ -183,30 +199,60 @@ impl Dudel {
             .map_or(self.theme.canvas_background, |p| p.canvas)
     }
 
+    /// Switch to another style. Theme colors chosen for one of the palette
+    /// styles carry over to another; otherwise the style brings its own.
     pub(crate) fn choose_interface(&mut self, layout: Layout) {
+        let theme_colors =
+            self.interface.layout != Layout::Classic && self.interface.palette.is_none();
         self.interface.choose_preset(layout);
+        if theme_colors {
+            self.interface.palette = None;
+        }
         self.status = format!("Interface style: {} · {}", layout.name(), layout.hint());
     }
 
-    /// View › Interface style.
-    pub(crate) fn interface_menu(&mut self, ui: &mut egui::Ui) {
-        let current = self.interface.matching_preset();
+    /// Open Settings › Interface, where a style is customized.
+    pub(crate) fn open_interface_settings(&mut self) {
+        self.settings_open = true;
+        self.settings_section = crate::settings_ui::page::INTERFACE;
+        self.settings_search.clear();
+    }
+
+    /// The styles, the one in use marked.
+    pub(crate) fn style_choices(&mut self, ui: &mut egui::Ui) {
         for layout in Layout::ALL {
             if ui
-                .add(egui::Button::new(layout.name()).selected(current == Some(layout)))
+                .add(egui::Button::new(layout.name()).selected(self.interface.layout == layout))
                 .on_hover_text(layout.hint())
                 .clicked()
+                && self.interface.layout != layout
             {
                 self.choose_interface(layout);
                 ui.close();
             }
         }
-        ui.separator();
-        if ui.button("Customize…").clicked() {
-            self.settings_open = true;
-            self.settings_section = crate::settings_ui::page::INTERFACE;
-            self.settings_search.clear();
-            ui.close();
+    }
+
+    /// The style's own colors, when it has them, as one more choice beside
+    /// the themes. Marked while in use.
+    pub(crate) fn own_colors_choice(&mut self, ui: &mut egui::Ui) {
+        let own = Interface::preset(self.interface.layout).palette;
+        let label = match (self.interface.palette, own) {
+            (Some(current), Some(own)) if current == own => {
+                format!("{} colors", self.interface.layout.name())
+            }
+            (Some(_), _) => "Custom colors".to_owned(),
+            (None, Some(_)) => format!("{} colors", self.interface.layout.name()),
+            (None, None) => return,
+        };
+        let using = self.interface.palette.is_some();
+        if ui
+            .add(egui::Button::new(label).selected(using))
+            .on_hover_text("The colors this style was designed with")
+            .clicked()
+            && !using
+        {
+            self.interface.palette = own;
         }
     }
 
@@ -228,7 +274,8 @@ impl Dudel {
                     .small_button(format!("Reset to {}", self.interface.layout.name()))
                     .clicked()
                 {
-                    self.choose_interface(self.interface.layout);
+                    // Everything back as designed, its colors included.
+                    self.interface.choose_preset(self.interface.layout);
                 }
             });
         }
@@ -318,7 +365,11 @@ impl Dudel {
                 });
             }
             None => {
-                ui.menu_button("Choose or customize a theme", |ui| self.theme_menu(ui));
+                ui.menu_button(format!("Theme: {}", self.theme.name), |ui| {
+                    self.theme_choices(ui);
+                    ui.separator();
+                    self.theme_file_actions(ui);
+                });
             }
         }
         if self.interface.layout == Layout::Float {
@@ -375,6 +426,32 @@ mod tests {
             format!("{:?}", run(&Interface::default(), &theme))
         );
         assert_eq!(Active::get(&ctx).layout, Layout::Classic);
+    }
+
+    #[test]
+    fn a_theme_draws_any_style_and_carries_between_palette_styles() {
+        let mut app = Dudel::default();
+        app.choose_interface(Layout::Slate);
+        assert_eq!(app.interface.palette, Some(Palette::slate()));
+        let paper = themes::Theme::presets().remove(1);
+        app.use_theme(paper.clone());
+        assert!(app.interface.palette.is_none());
+        let style = run(&app.interface, &app.theme);
+        assert_eq!(style.visuals.panel_fill, rgb(paper.panel));
+        assert!(!style.visuals.dark_mode);
+        assert_eq!(
+            style.spacing.interact_size.y,
+            Density::Compact.row(),
+            "still Slate"
+        );
+        assert_eq!(app.canvas_background(), paper.canvas_background);
+        // Paper stays when going to another palette style.
+        app.choose_interface(Layout::Float);
+        assert!(app.interface.palette.is_none(), "Paper carries over");
+        // From Classic, a style brings its own colors.
+        app.choose_interface(Layout::Classic);
+        app.choose_interface(Layout::Atelier);
+        assert_eq!(app.interface.palette, Some(Palette::atelier()));
     }
 
     #[test]

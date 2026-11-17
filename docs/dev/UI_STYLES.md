@@ -13,7 +13,20 @@ reachable in every style.
 
 ## Switching and customizing
 
-- **View › Theme › Interface style** switches between the four.
+- **View › Theme** has two groups. **Style** switches between the four.
+  **Colors** offers the style's own colors (Slate colors, Float colors,
+  Atelier colors; Custom colors once edited) and the themes: Dudel Dark,
+  Paper, Graphite and any in the Themes folder. Exactly one of each group
+  is marked, the one on screen. Below them: Edit theme… (or Edit style
+  colors… while the style's own are used), Import theme…, Export theme…
+  and Customize style….
+- A theme works in every style. Slate, Float and Atelier make a whole
+  palette from its five colors (`Palette::from_theme`: title bar, wells and
+  lines derived; the accent darkened or lightened until it reads on the
+  panels, as Paper's pale blue and Graphite's grey would not), so their
+  raised islands and accent marks keep working. Theme colors chosen in one
+  of them carry over to another; coming from Classic, a style brings its
+  own colors. Classic draws a theme exactly as before.
 - **Settings › Interface** shows a preview of each, and lets every part be
   changed on its own: layout, icon look, density, corner radius, and colors
   (the theme's, or the style's own ten colors). Float can put its slider rail

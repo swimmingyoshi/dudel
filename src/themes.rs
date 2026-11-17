@@ -181,6 +181,12 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
     ctx.data_mut(|d| d.insert_temp(id, theme.clone()));
 }
 
+/// A small title over a group of menu items.
+fn menu_heading(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(2.0);
+    ui.label(egui::RichText::new(text).small().weak());
+}
+
 fn write_theme(path: &std::path::Path, theme: &Theme) -> Result<(), String> {
     theme.validate()?;
     let bytes = serde_json::to_vec_pretty(theme).map_err(|e| e.to_string())?;
@@ -421,46 +427,98 @@ impl Dudel {
             ctx.request_repaint();
         }
     }
+    /// View › Theme: the style (layout, icons and spacing), then the colors
+    /// it is drawn in, then editing and sharing colors. Exactly one style
+    /// and one set of colors are marked: the ones on screen.
     pub(crate) fn theme_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("Interface style", |ui| self.interface_menu(ui));
+        menu_heading(ui, "Style");
+        self.style_choices(ui);
         ui.separator();
-        if ui.button("Edit theme...").clicked() {
-            self.begin_theme_editor();
+        menu_heading(ui, "Colors");
+        self.own_colors_choice(ui);
+        self.theme_choices(ui);
+        ui.separator();
+        let own = self.interface.palette.is_some();
+        if ui
+            .button(if own {
+                "Edit style colors…"
+            } else {
+                "Edit theme…"
+            })
+            .on_hover_text(if own {
+                "The style's colors one by one, in Settings › Interface"
+            } else {
+                "Panels, windows, text, selection and the area around the canvas"
+            })
+            .clicked()
+        {
+            if own {
+                self.open_interface_settings();
+            } else {
+                self.begin_theme_editor();
+            }
             ui.close();
         }
-        ui.separator();
+        self.theme_file_actions(ui);
+        if ui
+            .button("Customize style…")
+            .on_hover_text("Icons, density, corners and colors, in Settings › Interface")
+            .clicked()
+        {
+            self.open_interface_settings();
+            ui.close();
+        }
+    }
+
+    /// The built-in themes and those in the Themes folder. Choosing one
+    /// draws the style in its colors; one is marked only while it is used.
+    pub(crate) fn theme_choices(&mut self, ui: &mut egui::Ui) {
+        let in_use =
+            |app: &Self, theme: &Theme| app.interface.palette.is_none() && app.theme == *theme;
         for theme in Theme::presets() {
             if ui
-                .selectable_label(self.theme == theme, &theme.name)
+                .add(egui::Button::new(&theme.name).selected(in_use(self, &theme)))
                 .clicked()
             {
-                self.select_theme(theme);
+                self.use_theme(theme);
                 ui.ctx().request_repaint();
             }
         }
         let saved = self.saved_themes();
         if !saved.is_empty() {
-            ui.separator();
-            ui.label(egui::RichText::new("Themes folder").small().weak());
+            menu_heading(ui, "Themes folder");
             for theme in saved {
                 if ui
-                    .selectable_label(self.theme == theme, &theme.name)
+                    .add(egui::Button::new(&theme.name).selected(in_use(self, &theme)))
                     .clicked()
                 {
-                    self.select_theme(theme);
+                    self.use_theme(theme);
                     ui.ctx().request_repaint();
                 }
             }
         }
-        ui.separator();
-        if ui.button("Import theme...").clicked() {
+    }
+
+    /// Draw the interface in `theme`'s colors, in any style.
+    pub(crate) fn use_theme(&mut self, theme: Theme) {
+        self.select_theme(theme);
+        self.interface.palette = None;
+    }
+
+    /// Import and export of theme files.
+    pub(crate) fn theme_file_actions(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Import theme…").clicked() {
             let dialog = self.dialog_in(
                 crate::locations::Kind::Themes,
                 rfd::AsyncFileDialog::new().add_filter("Dudel theme", &["dudeltheme"]),
             );
             self.ask_open_file(dialog, Self::import_theme_file);
         }
-        if ui.button("Export theme...").clicked() {
+        if ui
+            .button("Export theme…")
+            .on_hover_text("Save the current theme's colors as a file to share")
+            .clicked()
+        {
             let theme = self.theme.clone();
             self.export_theme_file(&theme);
         }
@@ -473,7 +531,7 @@ impl Dudel {
             Ok::<_, String>(theme)
         })();
         match result {
-            Ok(theme) => self.select_theme(theme),
+            Ok(theme) => self.use_theme(theme),
             Err(e) => self.status = format!("Theme: {e}"),
         }
     }

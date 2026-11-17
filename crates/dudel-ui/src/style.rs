@@ -202,6 +202,41 @@ impl Palette {
             canvas: [217, 221, 215],
         }
     }
+    /// A style's colors made from a theme's few: its panels, windows, text,
+    /// selection and the color around the canvas. The rest is derived, and
+    /// the accent is lifted toward the text until it reads as a mark on the
+    /// panels (Graphite's grey selection would otherwise vanish there).
+    pub fn from_theme(
+        dark: bool,
+        panel: [u8; 3],
+        window: [u8; 3],
+        text: [u8; 3],
+        accent: [u8; 3],
+        canvas: [u8; 3],
+    ) -> Self {
+        let black = [0, 0, 0];
+        let accent = (0..=10)
+            .map(|step| mix(accent, text, step as f32 / 10.0))
+            .find(|c| contrast(*c, panel) >= 3.0)
+            .unwrap_or(text);
+        Self {
+            dark,
+            base: mix(panel, black, if dark { 0.25 } else { 0.08 }),
+            panel,
+            raised: window,
+            sunken: mix(panel, black, if dark { 0.3 } else { 0.06 }),
+            line: mix(panel, text, if dark { 0.16 } else { 0.2 }),
+            text,
+            muted: mix(text, panel, 0.3),
+            accent,
+            accent_text: if contrast(accent, [255, 255, 255]) >= contrast(accent, [20, 20, 20]) {
+                [255, 255, 255]
+            } else {
+                [20, 20, 20]
+            },
+            canvas,
+        }
+    }
     /// The named colors, for editing them one by one.
     pub fn entries(&mut self) -> [(&'static str, &mut [u8; 3]); 10] {
         [
@@ -310,6 +345,28 @@ fn rgb(c: [u8; 3]) -> Color32 {
 /// `a` moved toward `b` by `t` (0 keeps `a`, 1 gives `b`).
 pub fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     std::array::from_fn(|i| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t).round() as u8)
+}
+
+/// Relative luminance of an sRGB color, as WCAG defines it.
+fn luminance(c: [u8; 3]) -> f32 {
+    c.into_iter()
+        .zip([0.2126, 0.7152, 0.0722])
+        .map(|(c, weight)| {
+            let v = c as f32 / 255.0;
+            weight
+                * if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+        })
+        .sum()
+}
+
+/// WCAG contrast ratio between two colors, from 1 to 21.
+pub fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
 /// Replace the style's colors with the palette's.
@@ -483,6 +540,40 @@ impl Active {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_theme_makes_a_whole_style_palette_with_a_visible_accent() {
+        // Graphite: a grey selection close to its panels.
+        let panel = [36, 36, 36];
+        let p = Palette::from_theme(
+            true,
+            panel,
+            [52, 52, 52],
+            [225, 225, 225],
+            [94, 101, 108],
+            [28, 31, 39],
+        );
+        assert!(contrast(p.accent, panel) >= 3.0, "{:?}", p.accent);
+        assert!(contrast(p.accent_text, p.accent) >= 3.0);
+        assert!(contrast(p.muted, panel) >= 3.0, "labels stay readable");
+        assert_eq!(
+            (p.panel, p.raised, p.canvas),
+            (panel, [52, 52, 52], [28, 31, 39])
+        );
+        // Paper: light, with dark text on its accent.
+        let panel = [208, 205, 198];
+        let p = Palette::from_theme(
+            false,
+            panel,
+            [222, 218, 209],
+            [43, 43, 42],
+            [143, 169, 189],
+            [28, 31, 39],
+        );
+        assert!(contrast(p.accent, panel) >= 3.0);
+        assert!(contrast(p.accent_text, p.accent) >= 3.0);
+        assert!(!p.dark && p.sunken != p.panel && p.line != p.panel);
+    }
 
     #[test]
     fn presets_are_recognized_and_customizing_one_leaves_it() {

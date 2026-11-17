@@ -262,6 +262,10 @@ pub(crate) fn prepare(
             .find(|l| l.name().eq_ignore_ascii_case(&name))
     {
         app.interface = crate::ui::style::Interface::preset(layout);
+        // With DUDEL_CAPTURE_THEME too, the style is drawn in that theme.
+        if std::env::var("DUDEL_CAPTURE_THEME").is_ok() {
+            app.interface.palette = None;
+        }
         if capture_settings {
             // The Interface page shows the style controls.
             app.settings_section = crate::settings_ui::page::INTERFACE;
