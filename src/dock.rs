@@ -225,7 +225,15 @@ pub(crate) struct DockPrefs {
     /// The `PRESETS` the arrangements were saved under.
     #[serde(default)]
     pub presets: u32,
+    /// Where each floating palette was left, as left, top, width and height
+    /// in points; egui_dock doesn't keep it.
+    #[serde(default)]
+    pub windows: Vec<(Layout, Palette, [f32; 4])>,
 }
+
+/// The smallest a remembered floating palette comes back, so that one left
+/// squeezed to its tab can't stay that way.
+const SMALLEST_WINDOW: egui::Vec2 = egui::vec2(200.0, 160.0);
 
 /// Raised when the starting arrangements change, so arrangements saved
 /// before give way to the new ones once.
@@ -247,6 +255,8 @@ pub(crate) struct Docks {
     last_area: Option<egui::Rect>,
     /// The dock's area held still since last frame.
     settled: bool,
+    /// Where each floating palette was last seen, to put it back there.
+    left: HashMap<(Layout, Palette), egui::Rect>,
     /// Styles whose starting arrangement hasn't had its column widths set.
     unfitted: HashSet<Layout>,
     /// While the dock is drawn its arrangement is out of the map: which
@@ -283,19 +293,49 @@ impl Docks {
             .filter(|_| current)
             .filter_map(|(layout, text)| Some((layout, decode(layout, &text)?)))
             .collect();
+        self.left = prefs
+            .windows
+            .into_iter()
+            .filter(|(_, _, rect)| rect.iter().all(|v| v.is_finite()))
+            .map(|(layout, palette, [x, y, w, h])| {
+                let rect = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
+                ((layout, palette), rect)
+            })
+            .collect();
+        // egui forgets where windows were, so floating palettes are put back
+        // where they were left once the window's size is known.
+        self.unplaced.clear();
+        let layouts: Vec<Layout> = self.states.keys().copied().collect();
+        for layout in layouts {
+            self.queue_floating(layout);
+        }
     }
 
     pub(crate) fn prefs(&self) -> DockPrefs {
+        let order = |layout: &Layout| Layout::ALL.iter().position(|l| l == layout);
         let mut layouts: Vec<_> = self
             .states
             .iter()
             .filter_map(|(layout, state)| Some((*layout, encode(state)?)))
             .collect();
-        layouts.sort_by_key(|(layout, _)| Layout::ALL.iter().position(|l| l == layout));
+        layouts.sort_by_key(|(layout, _)| order(layout));
+        let mut windows: Vec<_> = self
+            .left
+            .iter()
+            .map(|(&(layout, palette), rect)| {
+                (
+                    layout,
+                    palette,
+                    [rect.left(), rect.top(), rect.width(), rect.height()],
+                )
+            })
+            .collect();
+        windows.sort_by_key(|(layout, palette, _)| (order(layout), *palette as usize));
         DockPrefs {
             locked: self.locked,
             layouts,
             presets: PRESETS,
+            windows,
         }
     }
 
@@ -303,7 +343,51 @@ impl Docks {
     pub(crate) fn reset_all(&mut self) {
         self.states.clear();
         self.unplaced.clear();
+        self.left.clear();
         self.locked = false;
+    }
+
+    /// Place every floating window of `layout` again, by its first palette.
+    fn queue_floating(&mut self, layout: Layout) {
+        let Some(state) = self.states.get(&layout) else {
+            return;
+        };
+        let mut windows: Vec<(SurfaceIndex, Palette)> = Vec::new();
+        for ((surface, _), tab) in state.iter_all_tabs() {
+            if surface != SurfaceIndex::main() && !windows.iter().any(|(s, _)| *s == surface) {
+                windows.push((surface, *tab));
+            }
+        }
+        for (_, palette) in windows {
+            if !self.unplaced.contains(&(layout, palette)) {
+                self.unplaced.push((layout, palette));
+            }
+        }
+    }
+
+    /// Note where the floating palettes of `layout` are, as egui drew them:
+    /// the window's corner and the size of what is inside its frame, as
+    /// `set_position` and `set_size` take them.
+    fn remember_windows(
+        &mut self,
+        ctx: &egui::Context,
+        layout: Layout,
+        state: &DockState<Palette>,
+    ) {
+        let frame = egui::Frame::window(&ctx.style()).total_margin().sum();
+        for ((surface, _), tab) in state.iter_all_tabs() {
+            // A window still waiting for its place may show another's rect.
+            if surface == SurfaceIndex::main() || self.unplaced.contains(&(layout, *tab)) {
+                continue;
+            }
+            if let Some(rect) = window_rect(ctx, surface)
+                && rect.is_finite()
+                && rect.is_positive()
+            {
+                let inside = egui::Rect::from_min_size(rect.min, rect.size() - frame);
+                self.left.insert((layout, *tab), inside);
+            }
+        }
     }
 
     /// The arrangement of `layout`, as saved in a workspace.
@@ -315,6 +399,7 @@ impl Docks {
     pub(crate) fn set_arrangement(&mut self, layout: Layout, state: DockState<Palette>) {
         if valid(layout, &state) {
             self.states.insert(layout, state);
+            self.queue_floating(layout);
         }
     }
 
@@ -369,28 +454,43 @@ impl Docks {
             .collect()
     }
 
-    /// Place palettes that just started floating: side by side from the
-    /// right, below Float's islands, in the order they were opened.
+    /// Place palettes that just started floating, or came back from saved
+    /// preferences or a workspace: where they were left, or else side by
+    /// side from the right, below Float's islands, in the order they were
+    /// opened.
     fn place_floating(&mut self, layout: Layout, area: egui::Rect) {
         let settled = self.last_area == Some(area);
         self.last_area = Some(area);
         self.settled = settled;
-        if !settled || self.unplaced.is_empty() {
+        if !settled || !self.unplaced.iter().any(|(at, _)| *at == layout) {
             return;
         }
         let mut placed = 0;
-        let unplaced = std::mem::take(&mut self.unplaced);
-        let state = self.state(layout);
-        for (at, palette) in unplaced {
-            if at != layout {
-                continue;
-            }
+        let (unplaced, others) = std::mem::take(&mut self.unplaced)
+            .into_iter()
+            .partition::<Vec<_>, _>(|(at, _)| *at == layout);
+        // Other styles' palettes wait until their style is shown.
+        self.unplaced = others;
+        self.state(layout);
+        let Some(state) = self.states.get_mut(&layout) else {
+            return;
+        };
+        for (_, palette) in unplaced {
             let Some((surface, _, _)) = state.find_tab(&palette) else {
                 continue;
             };
             let Some(window) = state.get_window_state_mut(surface) else {
                 continue;
             };
+            if let Some(rect) = self.left.get(&(layout, palette)) {
+                let size = rect.size().max(SMALLEST_WINDOW).min(area.size());
+                let at = egui::pos2(
+                    rect.left().clamp(area.left(), area.right() - size.x),
+                    rect.top().clamp(area.top(), area.bottom() - size.y),
+                );
+                window.set_position(at).set_size(size);
+                continue;
+            }
             let width = 320.0;
             let height = (area.height() * 0.62).clamp(220.0, 640.0);
             let column = (placed % 3) as f32;
@@ -657,6 +757,9 @@ impl Dudel {
             } else {
                 self.ui_layout.docks.unfitted.remove(&layout);
             }
+        }
+        if waiting.is_none() {
+            self.ui_layout.docks.remember_windows(ctx, layout, &state);
         }
         *self.ui_layout.docks.state(layout) = waiting.unwrap_or(state);
         for change in std::mem::take(&mut self.ui_layout.docks.pending) {
@@ -953,6 +1056,7 @@ mod tests {
                 (Layout::Atelier, "not an arrangement".into()),
             ],
             presets: PRESETS,
+            windows: Vec::new(),
         }));
         assert!(docks.states.is_empty());
     }
@@ -1111,6 +1215,74 @@ mod tests {
         );
         let edge = frame(&mut state);
         assert!(edge.left() >= bounds.left() - 0.5, "{edge:?}");
+    }
+
+    #[test]
+    fn floating_palettes_come_back_where_they_were_left() {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0));
+        let mut state = preset(Layout::Float);
+        state.add_window(vec![Palette::Color]);
+        let text = encode(&state).unwrap();
+        let saved = |windows| DockPrefs {
+            locked: false,
+            layouts: vec![(Layout::Float, text.clone())],
+            presets: PRESETS,
+            windows,
+        };
+        // A restart: a new egui context that knows no window yet.
+        let restart = |prefs: DockPrefs| {
+            let mut docks = Docks::default();
+            docks.restore(Some(prefs));
+            let ctx = egui::Context::default();
+            for _ in 0..4 {
+                docks.place_floating(Layout::Float, bounds);
+                let mut state = docks.states.remove(&Layout::Float).unwrap();
+                let _ = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(bounds),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            DockArea::new(&mut state)
+                                .window_bounds(bounds)
+                                .show_inside(ui, &mut Empty);
+                        });
+                    },
+                );
+                docks.remember_windows(&ctx, Layout::Float, &state);
+                docks.states.insert(Layout::Float, state);
+            }
+            let (surface, _, _) = docks.states[&Layout::Float]
+                .find_tab(&Palette::Color)
+                .unwrap();
+            (window_rect(&ctx, surface).unwrap(), docks)
+        };
+        // Saved before positions were kept: placed like a new palette, not
+        // squeezed into the top-left corner.
+        let (rect, _) = restart(saved(Vec::new()));
+        assert!(rect.left() > bounds.center().x, "{rect:?}");
+        assert!(rect.height() >= 220.0, "{rect:?}");
+        // Where it was left, at the size it had, and the same again after
+        // another restart: the frame isn't added each time.
+        let left = [100.0, 150.0, 300.0, 400.0];
+        let (rect, docks) = restart(saved(vec![(Layout::Float, Palette::Color, left)]));
+        assert!(
+            (rect.min - egui::pos2(100.0, 150.0)).length() < 1.0,
+            "{rect:?}"
+        );
+        let again = docks.prefs().windows;
+        assert_eq!(again.len(), 1);
+        for (got, wanted) in again[0].2.iter().zip(left) {
+            assert!((got - wanted).abs() < 1.0, "{again:?}");
+        }
+        // One squeezed to its tab comes back at a usable size.
+        let (rect, _) = restart(saved(vec![(
+            Layout::Float,
+            Palette::Color,
+            [0.0, 0.0, 210.0, 24.0],
+        )]));
+        assert!(rect.height() >= SMALLEST_WINDOW.y, "{rect:?}");
     }
 
     struct Empty;

@@ -110,3 +110,9 @@ A floating palette's tab fills its bar, so a grip along its top moves the
 window (egui_dock 0.18 never records a window's rect; `window_rect` reads
 it from egui). In Float a palette dropped on the canvas floats where it was
 dropped rather than snapping back.
+
+egui doesn't keep window positions between sessions, so the dock does:
+each floating palette's corner and inside size are saved with the
+arrangements (`windows` in the palette preferences) and put back once the
+window's size holds still, at least `SMALLEST_WINDOW` and inside the
+window. A palette with no saved place is placed like a newly opened one.
