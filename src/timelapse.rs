@@ -35,6 +35,9 @@ pub struct Prefs {
     pub fps: u32,
     /// Longest side of exported GIFs.
     pub export_side: u32,
+    /// Seconds a long recording is fitted into, final hold included; None
+    /// plays every frame.
+    pub length: Option<u32>,
 }
 impl Default for Prefs {
     fn default() -> Self {
@@ -43,13 +46,39 @@ impl Default for Prefs {
             interval: 5,
             fps: 12,
             export_side: 960,
+            length: None,
         }
     }
+}
+/// Lengths a timelapse can be fitted into.
+const LENGTHS: [(Option<u32>, &str); 4] = [
+    (None, "Full length"),
+    (Some(60), "1 minute"),
+    (Some(30), "30 seconds"),
+    (Some(15), "15 seconds"),
+];
+/// Seconds the finished artwork stays up at the end.
+const HOLD_SECONDS: u32 = 2;
+
+/// The recorded frames a timelapse shows, in order. Fitted into `length`
+/// seconds, it keeps evenly spaced frames, always the first and the last,
+/// and every kept frame is shown as recorded.
+fn chosen(frames: usize, fps: u32, length: Option<u32>) -> Vec<usize> {
+    let room = length.map_or(usize::MAX, |seconds| {
+        (seconds.saturating_sub(HOLD_SECONDS) * fps).max(2) as usize
+    });
+    if frames <= room {
+        return (0..frames).collect();
+    }
+    (0..room).map(|k| k * (frames - 1) / (room - 1)).collect()
 }
 impl Prefs {
     pub(crate) fn sanitized(mut self) -> Self {
         self.interval = self.interval.clamp(2, 60);
         self.fps = self.fps.clamp(1, 30);
+        if !LENGTHS.iter().any(|(length, _)| *length == self.length) {
+            self.length = None;
+        }
         if !EXPORT_SIDES
             .iter()
             .any(|(side, _)| *side == self.export_side)
@@ -128,6 +157,8 @@ pub(crate) struct Recording {
     hash: Option<u64>,
     /// Project path last written to the inventory.
     project: Option<PathBuf>,
+    /// The project the folder's name was last made to follow.
+    named_for: Option<PathBuf>,
     worker: Option<SourceWorker<Result<Captured, String>>>,
     message: String,
 }
@@ -408,20 +439,65 @@ fn new_folder(parent: &Path, name: &str) -> Result<PathBuf, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_secs();
-    let base = format!("{name} {}", date(seconds));
+    claim(parent, &format!("{name} {}", date(seconds)), |path| {
+        std::fs::create_dir(path)
+    })
+}
+
+/// The first of `base`, `base (2)`, `base (3)`… under `parent` that `take`
+/// can claim; a name already in use is passed over.
+fn claim(
+    parent: &Path,
+    base: &str,
+    mut take: impl FnMut(&Path) -> std::io::Result<()>,
+) -> Result<PathBuf, String> {
     for n in 1..1000 {
         let path = parent.join(if n == 1 {
-            base.clone()
+            base.to_string()
         } else {
             format!("{base} ({n})")
         });
-        match std::fs::create_dir(&path) {
+        if path.exists() {
+            continue;
+        }
+        match take(&path) {
             Ok(()) => return Ok(path),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
         }
     }
     Err("Too many timelapse folders with this name today".into())
+}
+
+/// Rename a recording's folder after the project it belongs to, keeping
+/// the date it was started, so "Untitled 2026-11-17 (8)" becomes
+/// "LAVA_BASE 2026-11-17" once the canvas is saved as LAVA_BASE. None when
+/// the name already fits.
+fn follow_project(root: &Path, project: &Path) -> Result<Option<PathBuf>, String> {
+    let stem = project
+        .file_stem()
+        .ok_or("The project has no name")?
+        .to_string_lossy();
+    let name = root
+        .file_name()
+        .ok_or("The recording has no folder")?
+        .to_string_lossy();
+    if name.starts_with(&format!("{stem} ")) {
+        return Ok(None);
+    }
+    let parent = root.parent().ok_or("The recording has no folder")?;
+    let metadata = std::fs::metadata(root).map_err(|e| e.to_string())?;
+    let started = metadata
+        .created()
+        .or_else(|_| metadata.modified())
+        .map_err(|e| e.to_string())?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    claim(parent, &format!("{stem} {}", date(started)), |path| {
+        std::fs::rename(root, path)
+    })
+    .map(Some)
 }
 
 pub(crate) fn gif_destination(path: &Path) -> Result<(), String> {
@@ -541,13 +617,13 @@ fn delta_frame(
 
 fn export_gif(
     root: &Path,
-    frames: usize,
+    frames: &[usize],
     fps: u32,
     side: u32,
     destination: &Path,
     control: &crate::plugins::FilterControl,
 ) -> Result<(), String> {
-    if frames == 0 || !(1..=30).contains(&fps) || !(16..=MAX_SIDE).contains(&side) {
+    if frames.is_empty() || !(1..=30).contains(&fps) || !(16..=MAX_SIDE).contains(&side) {
         return Err("No frames or invalid playback settings".into());
     }
     gif_destination(destination)?;
@@ -559,9 +635,9 @@ fn export_gif(
         // repeated frames only lengthen it.
         let mut pending: Option<gif::Frame> = None;
         let mut size = None;
-        for index in 0..frames {
+        for (index, &frame) in frames.iter().enumerate() {
             crate::fill::check_cancel(Some(&control.cancel))?;
-            let image = read_frame(root, index)?;
+            let image = read_frame(root, frame)?;
             let fit = fit(image.dimensions(), side, false);
             let image = fitted(image, fit);
             if *size.get_or_insert(image.dimensions()) != image.dimensions() {
@@ -597,8 +673,8 @@ fn export_gif(
         crate::fill::check_cancel(Some(&control.cancel))?;
         let mut encoder = encoder.ok_or("No frames")?;
         if let Some(mut last) = pending {
-            // Hold the finished artwork for two seconds.
-            last.delay = last.delay.saturating_add(200);
+            // Hold the finished artwork.
+            last.delay = last.delay.saturating_add(HOLD_SECONDS as u16 * 100);
             encoder.write_frame(&last).map_err(|e| e.to_string())?;
         }
         encoder.into_inner().map_err(|e| e.to_string())?;
@@ -635,7 +711,7 @@ pub(crate) fn mp4_destination(path: &Path) -> Result<(), String> {
 /// Stream bounded decoded frames to an external encoder, publishing only on success.
 fn export_mp4(
     root: &Path,
-    frames: usize,
+    frames: &[usize],
     fps: u32,
     side: u32,
     destination: &Path,
@@ -645,8 +721,8 @@ fn export_mp4(
         io::{Read, Seek, Write},
         process::{Command, Stdio},
     };
-    if frames == 0
-        || frames > MAX_FRAMES
+    if frames.is_empty()
+        || frames.len() > MAX_FRAMES
         || !(1..=30).contains(&fps)
         || !(1..=MAX_SIDE).contains(&side)
     {
@@ -654,7 +730,7 @@ fn export_mp4(
     }
     crate::fill::check_cancel(Some(&control.cancel))?;
     mp4_destination(destination)?;
-    let first = read_frame(root, 0)?;
+    let first = read_frame(root, frames[0])?;
     let dimensions = first.dimensions();
     let fit = fit(dimensions, side, true);
     let (width, height) = fit.size(dimensions);
@@ -709,14 +785,18 @@ fn export_mp4(
         let mut input = child.stdin.take().ok_or("FFmpeg input unavailable")?;
         let result = std::thread::scope(|scope| {
             let writer = scope.spawn(move || -> Result<(), String> {
-                for index in 0..frames {
+                for (index, &recorded) in frames.iter().enumerate() {
                     crate::fill::check_cancel(Some(&control.cancel))?;
-                    let frame = read_frame(root, index)?;
+                    let frame = read_frame(root, recorded)?;
                     if frame.dimensions() != dimensions {
                         return Err("Recording frames have different sizes".into());
                     }
                     let frame = fitted(frame, fit);
-                    let repeats = if index + 1 == frames { 1 + 2 * fps } else { 1 };
+                    let repeats = if index + 1 == frames.len() {
+                        1 + HOLD_SECONDS * fps
+                    } else {
+                        1
+                    };
                     for _ in 0..repeats {
                         crate::fill::check_cancel(Some(&control.cancel))?;
                         input.write_all(frame.as_raw()).map_err(|e| e.to_string())?;
@@ -844,7 +924,8 @@ fn decode_preview(root: &Path, index: usize) -> Result<egui::ColorImage, String>
 }
 
 fn duration_label(frames: usize, fps: u32) -> String {
-    let seconds = frame_time(frames, fps) as f32 / 100.0 + if frames > 0 { 2.0 } else { 0.0 };
+    let seconds =
+        frame_time(frames, fps) as f32 / 100.0 + if frames > 0 { HOLD_SECONDS as f32 } else { 0.0 };
     if seconds >= 60.0 {
         format!("{}:{:02}", seconds as u32 / 60, seconds as u32 % 60)
     } else {
@@ -882,7 +963,9 @@ impl Dudel {
             self.continue_project_timelapse(&path);
         }
     }
-    /// Continue the active recording that belongs to the project at `path`.
+    /// Bring back the latest recording of the project at `path`: one still
+    /// recording continues, and a stopped one is shown, ready to continue,
+    /// so recording again adds to it instead of starting a separate folder.
     fn continue_project_timelapse(&mut self, path: &Path) {
         // Tests never read the user's documents.
         if cfg!(test) && self.locations.library.is_none() {
@@ -901,16 +984,16 @@ impl Dudel {
                 let modified = std::fs::metadata(root.join("recording.json"))
                     .and_then(|m| m.modified())
                     .ok()?;
-                (inventory.active
-                    && inventory.project.as_deref() == Some(path)
+                (inventory.project.as_deref() == Some(path)
                     && [inventory.width, inventory.height] == [self.doc.width, self.doc.height]
+                    && inventory.frames > 0
                     && inventory.frames < MAX_FRAMES)
                     .then_some((modified, root, inventory))
             })
             .max_by_key(|(modified, ..)| *modified);
         if let Some((_, root, inventory)) = found {
             self.recording = Recording {
-                on: true,
+                on: inventory.active,
                 root: Some(root),
                 frames: inventory.frames,
                 bytes: inventory.bytes,
@@ -918,10 +1001,18 @@ impl Dudel {
                 revision: Some(self.revision),
                 hash: inventory.hash,
                 project: inventory.project,
-                message: format!(
-                    "Continuing this project's timelapse ({} frames)",
-                    inventory.frames
-                ),
+                message: if inventory.active {
+                    format!(
+                        "Continuing this project's timelapse ({} frames)",
+                        inventory.frames
+                    )
+                } else {
+                    format!(
+                        "This project's timelapse ({} frames) is stopped; \
+                         Continue recording adds to it",
+                        inventory.frames
+                    )
+                },
                 ..Default::default()
             };
         }
@@ -1006,6 +1097,29 @@ impl Dudel {
         {
             r.project = self.path.clone();
             let _ = r.inventory(r.on).write(root);
+        }
+        // Its folder takes the project's name, once nothing is reading it.
+        let t = &self.timelapse;
+        if r.worker.is_none()
+            && r.frames > 0
+            && r.project.is_some()
+            && r.named_for != r.project
+            && t.export.is_none()
+            && let Some(root) = r.root.clone()
+            && t.opened.as_ref().is_none_or(|(opened, _)| *opened != root)
+            && t.player
+                .decode
+                .as_ref()
+                .is_none_or(|(decoding, ..)| *decoding != root)
+        {
+            r.named_for = r.project.clone();
+            if let Some(project) = &r.project {
+                match follow_project(&root, project) {
+                    Ok(Some(moved)) => r.root = Some(moved),
+                    Ok(None) => {}
+                    Err(e) => r.message = format!("The recording's folder keeps its name: {e}"),
+                }
+            }
         }
         let t = &self.timelapse;
         if r.on || r.worker.is_some() || r.finish || t.export.is_some() {
@@ -1111,15 +1225,16 @@ impl Dudel {
         };
         let t = &mut self.timelapse;
         let (fps, side) = (t.prefs.fps, t.prefs.export_side);
+        let frames = chosen(frames, fps, t.prefs.length);
         t.export_control = Default::default();
-        t.export_frames = frames;
+        t.export_frames = frames.len();
         t.exported = Some(path.clone());
         let control = t.export_control.clone();
         t.export = Some(std::thread::spawn(move || {
             if video {
-                export_mp4(&root, frames, fps, side, &path, &control)
+                export_mp4(&root, &frames, fps, side, &path, &control)
             } else {
-                export_gif(&root, frames, fps, side, &path, &control)
+                export_gif(&root, &frames, fps, side, &path, &control)
             }
         }));
         t.message = "Exporting timelapse in the background…".into();
@@ -1339,11 +1454,41 @@ impl Dudel {
                 });
                 ui.add(egui::Slider::new(&mut t.prefs.fps, 1..=30).text("frames per second"))
                     .on_hover_text("Playback speed for the preview and exported timelapse");
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt("timelapse length")
+                        .selected_text(
+                            LENGTHS
+                                .iter()
+                                .find(|(length, _)| *length == t.prefs.length)
+                                .map_or("", |(_, label)| label),
+                        )
+                        .show_ui(ui, |ui| {
+                            for (length, label) in LENGTHS {
+                                ui.selectable_value(&mut t.prefs.length, length, label);
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "Fit a long session into a set time by keeping evenly spaced \
+                             frames. Each frame keeps its full quality, and a shorter video \
+                             is a smaller file.",
+                        );
+                    ui.label("exported length");
+                });
+                let kept = chosen(*frames, t.prefs.fps, t.prefs.length).len();
+                let length = duration_label(kept, t.prefs.fps);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{} long at this speed, holding the finished artwork for 2 s.",
-                        duration_label(*frames, t.prefs.fps)
-                    ))
+                    egui::RichText::new(if kept < *frames {
+                        format!(
+                            "{length} long: {kept} of the {frames} frames, evenly spaced, \
+                             then the finished artwork for {HOLD_SECONDS} s."
+                        )
+                    } else {
+                        format!(
+                            "{length} long at this speed, holding the finished artwork \
+                             for {HOLD_SECONDS} s."
+                        )
+                    })
                     .weak(),
                 );
                 ui.separator();
@@ -1532,7 +1677,7 @@ mod tests {
             .unwrap();
         }
         let path = dir.path().join("video.mp4");
-        export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).unwrap();
+        export_mp4(dir.path(), &[0, 1, 2], 10, 960, &path, &Default::default()).unwrap();
         let probe = std::process::Command::new("ffprobe")
             .args([
                 "-v",
@@ -1560,11 +1705,11 @@ mod tests {
         let original = std::fs::read(&path).unwrap();
         let control = crate::plugins::FilterControl::default();
         control.cancel.store(true, Ordering::Relaxed);
-        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &control).is_err());
+        assert!(export_mp4(dir.path(), &[0, 1, 2], 10, 960, &path, &control).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), original);
         // A malformed sequence must not publish an otherwise valid partial video.
         write_png(&image::RgbImage::new(9, 5), &frame_path(dir.path(), 1)).unwrap();
-        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).is_err());
+        assert!(export_mp4(dir.path(), &[0, 1, 2], 10, 960, &path, &Default::default()).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), original);
         for index in 0..100 {
             write_png(
@@ -1575,7 +1720,16 @@ mod tests {
         }
         let control = crate::plugins::FilterControl::default();
         std::thread::scope(|scope| {
-            let worker = scope.spawn(|| export_mp4(dir.path(), 100, 10, 960, &path, &control));
+            let worker = scope.spawn(|| {
+                export_mp4(
+                    dir.path(),
+                    &(0..100).collect::<Vec<_>>(),
+                    10,
+                    960,
+                    &path,
+                    &control,
+                )
+            });
             let deadline = Instant::now() + Duration::from_secs(10);
             while control.progress.load(Ordering::Relaxed) == 0 && !worker.is_finished() {
                 assert!(Instant::now() < deadline);
@@ -1586,7 +1740,7 @@ mod tests {
         });
         assert_eq!(std::fs::read(&path).unwrap(), original);
         std::fs::write(&path, b"DUDL source bytes").unwrap();
-        assert!(export_mp4(dir.path(), 3, 10, 960, &path, &Default::default()).is_err());
+        assert!(export_mp4(dir.path(), &[0, 1, 2], 10, 960, &path, &Default::default()).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"DUDL source bytes");
     }
 
@@ -1758,30 +1912,79 @@ mod tests {
         app.revision += 1;
         app.poll_timelapse(&ctx);
         settle(&mut app, &ctx);
-        let root = app.recording.root.clone().unwrap();
-        // Saving names the project in the inventory.
+        let untitled = app.recording.root.clone().unwrap();
+        assert!(
+            untitled
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("Untitled ")
+        );
+        // Saving names the project in the inventory, and the folder takes
+        // the project's name, keeping the date it was started.
         let project = app.locations.library.clone().unwrap().join("art.dudel");
         app.path = Some(project.clone());
         app.poll_timelapse(&ctx);
+        let root = app.recording.root.clone().unwrap();
+        assert!(!untitled.exists());
+        assert_eq!(
+            root.file_name().unwrap().to_string_lossy(),
+            format!(
+                "art {}",
+                &untitled.file_name().unwrap().to_string_lossy()["Untitled ".len()..]
+            )
+        );
         assert_eq!(
             Inventory::read(&root).unwrap().project,
             Some(project.clone())
         );
+        let reopen = |app: &mut Dudel| {
+            app.apply_action(crate::document_actions::Action::New(6, 5, 300.0));
+            assert_ne!(app.recording.root.as_ref(), Some(&root));
+            let document = app.doc.clone();
+            app.apply_action(crate::document_actions::Action::Replace {
+                document: Box::new(document),
+                path: Some(project.clone()),
+                modified: false,
+                status: "Opened",
+            });
+        };
         // Opening another canvas leaves it active; reopening the project continues it.
-        app.apply_action(crate::document_actions::Action::New(6, 5, 300.0));
-        assert_ne!(app.recording.root.as_ref(), Some(&root));
-        let document = app.doc.clone();
-        app.apply_action(crate::document_actions::Action::Replace {
-            document: Box::new(document),
-            path: Some(project),
-            modified: false,
-            status: "Opened",
-        });
+        reopen(&mut app);
         assert!(app.recording.recording());
         assert_eq!(
             (app.recording.root.as_ref(), app.recording.frames),
             (Some(&root), 1)
         );
+        // A stopped recording comes back too, ready to continue, so
+        // recording again adds to it instead of starting a separate folder.
+        app.recording.stop();
+        app.poll_timelapse(&ctx);
+        settle(&mut app, &ctx);
+        assert!(!Inventory::read(&root).unwrap().active);
+        reopen(&mut app);
+        assert!(!app.recording.recording());
+        assert_eq!(
+            (app.recording.root.as_ref(), app.recording.frames),
+            (Some(&root), 1)
+        );
+        app.start_timelapse();
+        assert!(app.recording.recording());
+        assert_eq!(app.recording.root.as_ref(), Some(&root));
+    }
+
+    #[test]
+    fn a_long_recording_fits_a_length_with_evenly_spaced_frames() {
+        assert_eq!(chosen(5, 12, None), [0, 1, 2, 3, 4]);
+        assert_eq!(chosen(5, 12, Some(15)), [0, 1, 2, 3, 4], "short enough");
+        // 15 s at 12 frames per second, less the 2 s hold: 156 frames.
+        let fitted = chosen(1145, 12, Some(15));
+        assert_eq!(fitted.len(), 156);
+        assert_eq!((fitted[0], fitted[155]), (0, 1144));
+        assert!(fitted.windows(2).all(|w| (7..=8).contains(&(w[1] - w[0]))));
+        assert_eq!(duration_label(fitted.len(), 12), "15.0 s");
+        assert_eq!(chosen(7200, 1, Some(15)).len(), 13);
+        assert_eq!(chosen(7200, 30, Some(60)).len(), 1740);
     }
 
     #[test]
@@ -1795,7 +1998,7 @@ mod tests {
             write_png(&image, &frame_path(root.path(), i)).unwrap();
         }
         let gif = root.path().join("test.gif");
-        export_gif(root.path(), 3, 10, 960, &gif, &Default::default()).unwrap();
+        export_gif(root.path(), &[0, 1, 2], 10, 960, &gif, &Default::default()).unwrap();
         let decoder = image::codecs::gif::GifDecoder::new(std::io::BufReader::new(
             std::fs::File::open(&gif).unwrap(),
         ))
@@ -1820,11 +2023,21 @@ mod tests {
         let original = std::fs::read(&gif).unwrap();
         let canceled = crate::plugins::FilterControl::default();
         canceled.cancel.store(true, Ordering::Relaxed);
-        assert!(export_gif(root.path(), 3, 10, 960, &gif, &canceled).is_err());
+        assert!(export_gif(root.path(), &[0, 1, 2], 10, 960, &gif, &canceled).is_err());
         assert_eq!(std::fs::read(&gif).unwrap(), original);
         let protected = root.path().join("art.gif");
         std::fs::write(&protected, b"DUDEL artwork").unwrap();
-        assert!(export_gif(root.path(), 3, 10, 960, &protected, &Default::default()).is_err());
+        assert!(
+            export_gif(
+                root.path(),
+                &[0, 1, 2],
+                10,
+                960,
+                &protected,
+                &Default::default()
+            )
+            .is_err()
+        );
         assert_eq!(std::fs::read(protected).unwrap(), b"DUDEL artwork");
     }
 

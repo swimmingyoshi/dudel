@@ -694,7 +694,7 @@ See [file format support](FORMAT_SUPPORT.md) for the native-version and restrict
 
 ## Timelapse and personalization
 
-Use View > Timelapse to record artwork and export an animated GIF or keep its PNG frames. View > Theme selects or imports a persistent UI palette. Reference rows have separate visibility/lock controls and Move up/down actions. See [creator features](CREATOR_FEATURES.md) for recording limits, reference organization and the new brush presets.
+Use View > Timelapse to record artwork and export an animated GIF or MP4 (fitted into 15 seconds to a minute if you like) or keep its PNG frames. View > Theme selects or imports a persistent UI palette. Reference rows have separate visibility/lock controls and Move up/down actions. See [creator features](CREATOR_FEATURES.md) for recording limits, reference organization and the new brush presets.
 
 ZIP packages from this build also preserve layer masks (including enabled/link
 settings), locks, guides and reference-board placements in the manifest. When
