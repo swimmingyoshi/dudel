@@ -141,6 +141,12 @@ pub enum Edit {
         target: crate::document::LayerId,
         folder_result: Option<crate::document::LayerId>,
     },
+    /// Merge up, merge selected, merge visible, merge visible to a new
+    /// layer, or flatten; a layer it makes gets the identity `id`.
+    Combine {
+        how: crate::folders::Combine,
+        id: crate::document::LayerId,
+    },
     Step(bool),
     StepTarget {
         target: crate::document::LayerId,
@@ -350,6 +356,12 @@ impl Edit {
             {
                 Err("Invalid duplicate identity count".into())
             }
+            Self::Combine {
+                how: crate::folders::Combine::Selected(targets),
+                ..
+            } if targets.is_empty() || targets.len() > crate::document::MAX_ENTRIES => {
+                Err("Invalid merge layer count".into())
+            }
             Self::Property {
                 property: Property::Name(name),
                 ..
@@ -389,7 +401,9 @@ impl Edit {
         match self {
             Self::MaskTransform { .. } => Some("Mask transform"),
             Self::LayerMask { .. } => Some("Layer mask"),
-            Self::Merge | Self::MergeTarget { .. } if masked => Some("Merge"),
+            Self::Merge | Self::MergeTarget { .. } | Self::Combine { .. } if masked => {
+                Some("Merge")
+            }
             Self::CanvasSize(_) | Self::CropCanvas => Some("Canvas bounds"),
             Self::Rotate(turns) if turns % 4 != 0 => Some("Canvas bounds"),
             Self::LassoPaint { settings, .. } => Some(if settings.erase {
@@ -839,6 +853,7 @@ impl Edit {
                     _ => return Err("Merge result does not match the captured layer kind".into()),
                 }
             }
+            Self::Combine { how, id } => doc.combine(how, *id)?,
             Self::Step(up) => {
                 let old = doc.active;
                 doc.step_active(*up)?;

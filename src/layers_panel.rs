@@ -78,6 +78,7 @@ enum RowAction {
     Rename(usize),
     Duplicate(usize),
     Merge(usize),
+    MergeUp(usize),
     Group(usize),
     Ungroup(usize),
     Step(usize, bool),
@@ -369,9 +370,19 @@ impl Dudel {
     pub(crate) fn duplicate_layer(&mut self) {
         self.duplicate_canvas_layer();
     }
-    /// Merge down for layers; flatten for folders.
+    /// Merge down for layers; flatten for folders; with several layers
+    /// selected, merge those.
     pub(crate) fn merge_down(&mut self) {
+        if self.multiple_layers() {
+            self.merge_selected_layers();
+            return;
+        }
         self.merge_canvas_layer();
+    }
+    pub(crate) fn merge_selected_layers(&mut self) {
+        self.sync_layer_selection();
+        let targets = self.layer_selection.ids.clone();
+        self.combine_layers(crate::folders::Combine::Selected(targets));
     }
     pub(crate) fn delete_layer(&mut self) {
         if self.multiple_layers() {
@@ -409,7 +420,8 @@ impl Dudel {
         let layer = &self.doc.layers[active];
         let folder = self.input_is_folder();
         let block = self.doc.block(active);
-        let can_merge = if folder {
+        let merge_selected = self.multiple_layers();
+        let can_merge = if folder || merge_selected {
             true
         } else {
             active > 0
@@ -456,10 +468,12 @@ impl Dudel {
             )
             .on_hover_text(self.command_hint(
                 crate::commands::Action::Merge,
-                if folder {
+                if merge_selected {
+                    "Merge selected layers"
+                } else if folder {
                     "Merge folder into one layer"
                 } else {
-                    "Merge down"
+                    "Merge down; More › Merge has the rest"
                 },
             ))
             .clicked()
@@ -575,9 +589,25 @@ impl Dudel {
         }
     }
 
+    /// Every way of merging layers, for the Layer menu and the More button.
+    pub(crate) fn merge_menu_items(&mut self, ui: &mut egui::Ui) {
+        use crate::commands::Action;
+        for action in [
+            Action::Merge,
+            Action::MergeUp,
+            Action::MergeSelected,
+            Action::MergeVisible,
+            Action::MergeVisibleToNew,
+            Action::Flatten,
+        ] {
+            self.command_menu_item(ui, action);
+        }
+    }
+
     /// Less frequent layer actions, behind the toolbar's More button.
     fn layer_more_menu(&mut self, ui: &mut egui::Ui, target_ready: bool) {
         ui.set_min_width(220.0);
+        ui.menu_button("Merge", |ui| self.merge_menu_items(ui));
         ui.menu_button("Layer mask", |ui| self.mask_menu_items(ui));
         if ui
             .add_enabled(target_ready, egui::Button::new("Layer effects…"))
@@ -812,6 +842,12 @@ impl Dudel {
             }
             return;
         }
+        if let RowAction::MergeUp(index) = action {
+            if self.select_layer_target(index) {
+                self.combine_layers(crate::folders::Combine::Up);
+            }
+            return;
+        }
         if let RowAction::Step(index, up) = action {
             if self.select_layer_target(index) {
                 self.step_canvas_layer(up);
@@ -867,6 +903,10 @@ impl Dudel {
             RowAction::Merge(index) => {
                 self.doc.active = index;
                 self.merge_down();
+            }
+            RowAction::MergeUp(index) => {
+                self.doc.active = index;
+                self.combine_layers(crate::folders::Combine::Up);
             }
             RowAction::Group(index) => {
                 self.doc.active = index;
@@ -1657,12 +1697,29 @@ impl Dudel {
                     *action = Some(RowAction::Duplicate(index));
                     ui.close();
                 }
-                let merge = if folder { "Merge folder" } else { "Merge down" };
+                let selected_rows =
+                    self.multiple_layers() && self.layer_selection.ids.contains(&layer_id);
+                let merge = if selected_rows {
+                    "Merge selected layers"
+                } else if folder {
+                    "Merge folder"
+                } else {
+                    "Merge down"
+                };
                 if ui
                     .add(egui::Button::new(merge).shortcut_text(self.shortcuts.label(crate::commands::Action::Merge)))
                     .clicked()
                 {
                     *action = Some(RowAction::Merge(index));
+                    ui.close();
+                }
+                if !selected_rows
+                    && ui
+                        .add_enabled(self.doc.layer_above(index), egui::Button::new("Merge up"))
+                        .on_hover_text("Into the layer above, which keeps its name and settings")
+                        .clicked()
+                {
+                    *action = Some(RowAction::MergeUp(index));
                     ui.close();
                 }
                 ui.separator();

@@ -138,6 +138,9 @@ release.
 - [x] A lighter pen quick menu: thin bands around an open middle, whole
       slices as targets, hold-slide-release (2026-11-17, owner: "too
       intrusive").
+- [x] Layer › Merge: merge up, merge selected (Ctrl+E with several
+      selected), merge visible, merge visible to new layer and flatten
+      (2026-11-17, owner asked after shading pixel art with the wet brush).
 - [ ] The owner's pen pass on pixel art and animation.
 
 ## Installing and updating

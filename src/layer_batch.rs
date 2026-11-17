@@ -145,6 +145,7 @@ impl Dudel {
                 ] {
                     if ui.button(label).clicked() { ui.close(); self.batch_layers(action); }
                 }
+                if ui.button("Merge selected").clicked() { ui.close(); self.merge_selected_layers(); }
                 ui.separator();
                 ui.small("Folders include their contents. Move/group require the same parent. Painting still uses the active layer.");
             });
@@ -217,6 +218,24 @@ mod tests {
         app.redo();
         app.flush_render_queue();
         assert!(crate::document::same_snapshot(&app.doc, &grouped));
+    }
+
+    #[test]
+    fn merging_with_several_layers_selected_merges_them_as_one_undo_step() {
+        let mut app = Dudel {
+            doc: stack(),
+            ..Default::default()
+        };
+        app.doc.active = 3;
+        let original = app.doc.clone();
+        app.layer_selection.ids = vec![app.doc.layers[1].id, app.doc.layers[3].id];
+        app.execute_command(crate::commands::Action::Merge);
+        assert_eq!(names(&app.doc), ["Layer 0", "Layer 2", "Layer 3"]);
+        assert!(app.layer_selection.ids.is_empty());
+        app.undo();
+        app.flush_render_queue();
+        assert!(crate::document::same_snapshot(&app.doc, &original));
+        assert!(!app.history.can_undo());
     }
 
     #[test]

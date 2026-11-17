@@ -75,7 +75,8 @@ search reveals them. The brighter row remains the active painting target.
 Plain click or **Only active** returns to a single layer.
 
 With several layers selected, **Batch** above the rows offers Show, Hide, Lock,
-Unlock, Move up/down, Group and Delete. Move changes stack order, not pixel
+Unlock, Move up/down, Group, Delete and Merge selected (also **Ctrl+E**, the
+merge button, or the row's right-click menu). Move changes stack order, not pixel
 positions. Move and Group require a shared parent folder and preserve relative
 order. Nonadjacent layers group at the highest selected position. Each successful
 batch is one undo step; rejected or unchanged operations create none.
@@ -89,8 +90,8 @@ Earlier queued drawing settles before a batch is applied.
 Filtering preserves the selection; the count reports selected rows hidden by
 filters or collapsed folders. **Batch acts on the whole selection**, including
 those hidden rows. Multi-layer dragging is disabled; use Move up/down or Group.
-References retain their separate selection controls. Painting, masks, transforms,
-merging and duplication still target the active layer. Selection is session UI
+References retain their separate selection controls. Painting, masks, transforms
+and duplication still target the active layer. Selection is session UI
 state, not part of the saved artwork or undo history.
 
 ## Create and draw
@@ -210,6 +211,33 @@ Use **Ctrl+Shift+N** to add a layer above the current layer: for example, separa
 sketch, ink and color. Select layers in the Layers panel; double-click a name to
 rename it. **Ctrl+J** duplicates the selected layer. Layer opacity and blend mode
 controls sit above the list. A locked layer cannot be painted on.
+
+**Merging layers:** **Layer > Merge** (also **Merge** in the layer toolbar's
+**⋯** menu) has every way of combining layers, each one undo step:
+
+- **Merge down** (**Ctrl+E**): the selected layer goes into the one below,
+  which keeps its name and settings. On a folder it merges the folder into one
+  layer. With several layers selected, Ctrl+E merges those instead.
+- **Merge up**: into the layer above, which keeps its name and settings.
+- **Merge selected layers**: the selected layers, and folders with their
+  contents, become one layer where the topmost of them was.
+- **Merge visible layers**: everything showing becomes one layer where the
+  selected layer is. Hidden layers stay as they are.
+- **Merge visible to new layer**: a new layer on top holds the picture as it
+  shows, and every layer stays, so you can shade or filter the combined
+  picture and still go back to the parts.
+- **Flatten image**: the picture becomes a single layer; hidden layers are
+  left out (the status bar says how many).
+
+Blend modes, opacity, masks, effects and clipping are rendered into the merged
+pixels, so Merge visible and Flatten keep the picture exactly as it looks.
+Merge down and Merge up keep the receiving layer's opacity and blend mode, so
+they match exactly when that layer is Normal at 100%. Locked layers are not
+merged away; unlock them first. With the animation timeline on, every
+top-level layer is a frame, so Merge visible, Merge visible to new layer and
+Flatten wait until it is turned off. Apart from Ctrl+E these have no
+shortcut until you give them one in Settings > Shortcuts.
+
 The blend list has 26 modes in the usual groups (darken, lighten, contrast,
 comparative and color component modes). Hover it and scroll, or press Up/Down,
 to step through modes and judge each one on the canvas.

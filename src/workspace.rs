@@ -649,7 +649,7 @@ impl Dudel {
             self.command_menu_item(ui, crate::commands::Action::Ungroup);
             ui.separator();
             self.command_menu_item(ui, crate::commands::Action::Duplicate);
-            self.command_menu_item(ui, crate::commands::Action::Merge);
+            ui.menu_button("Merge", |ui| self.merge_menu_items(ui));
             if menu_item(
                 ui,
                 if self.multiple_layers() {
