@@ -7,7 +7,7 @@ reachable in every style.
 | Style   | Layout                                                                 | Icons   | Density | Colors              |
 |---------|------------------------------------------------------------------------|---------|---------|---------------------|
 | Classic | Tool rail, tool settings left, color and layers right                  | Classic | Regular | The chosen theme    |
-| Slate   | Tools, brushes and tool property left; color and layers right; status bar | Line | Compact | Graphite and amber  |
+| Slate   | Tool bar at the left edge, brushes and tool property beside it; color and layers right; status bar | Line | Compact | Graphite and amber  |
 | Float   | Canvas fills the window; tool islands, slider rail, popovers           | Duotone | Touch   | Smoked glass, teal  |
 | Atelier | Brush drawer, color tray and layers, timeline below, Draw/Paint/Animate | Solid   | Regular | Stone, ultramarine  |
 
@@ -44,6 +44,12 @@ Layer property and Timeline.
 - Tab still hides every panel; the palettes come back as they were.
 - When a style's starting arrangement changes (`PRESETS` in `src/dock.rs`),
   arrangements saved before give way to it once; named workspaces keep theirs.
+- A starting arrangement's columns get widths in points (`columns` in
+  `src/dock.rs`: Slate's tool bar 72, brushes 280, color and layers 300)
+  once the window's size holds still; the canvas takes the rest. Widths
+  dragged afterwards are kept. A palette group can be made as narrow as
+  56 points, so the Tools palette can be a one-column bar (under 110 points
+  it shows the grouped rail).
 
 Each palette keeps a margin around its contents, and its scroll bar stays in
 view beside the contents whenever there is more to scroll to. Tool property

@@ -13,9 +13,9 @@ use crate::{
 };
 #[cfg(test)]
 use egui_dock::SurfaceIndex;
-use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, TabViewer};
+use egui_dock::{AllowedSplits, DockArea, DockState, Node, NodeIndex, TabViewer};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A palette: one tab of the dock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -85,13 +85,15 @@ pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
     let tree = state.main_surface_mut();
     match layout {
         Layout::Slate => {
-            // As in Clip Studio Paint: tools, brushes and the tool property
-            // down the left; color and layers down the right.
-            let [canvas, tools] = tree.split_left(NodeIndex::root(), 0.21, vec![Palette::Tools]);
-            let [_, brushes] = tree.split_below(tools, 0.21, vec![Palette::Brushes]);
-            tree.split_below(brushes, 0.44, vec![Palette::ToolProperty]);
+            // As in Clip Studio Paint: the tools as a vertical bar at the left
+            // edge, as in Classic, with brushes and the tool property beside
+            // it; color and layers down the right. `COLUMNS` gives the
+            // columns their widths once the window's size is known.
+            let [rest, _] = tree.split_left(NodeIndex::root(), 0.05, vec![Palette::Tools]);
+            let [canvas, brushes] = tree.split_left(rest, 0.2, vec![Palette::Brushes]);
+            tree.split_below(brushes, 0.38, vec![Palette::ToolProperty]);
             let [_, column] =
-                tree.split_right(canvas, 0.71, vec![Palette::Color, Palette::Navigator]);
+                tree.split_right(canvas, 0.72, vec![Palette::Color, Palette::Navigator]);
             tree.split_below(column, 0.4, vec![Palette::Layers, Palette::LayerProperty]);
         }
         Layout::Atelier => {
@@ -117,6 +119,61 @@ fn in_palette_id() -> egui::Id {
 pub(crate) fn in_palette(ui: &egui::Ui) -> bool {
     ui.data(|d| d.get_temp::<bool>(in_palette_id()))
         .unwrap_or(false)
+}
+
+/// The narrowest a palette group may be made, wide enough for a bar of tool
+/// buttons. egui_dock's own limit, 175 points, kept the tools from being a bar.
+const NARROWEST: f32 = 56.0;
+
+/// Columns of a starting arrangement with a width in points rather than a
+/// share of the window: a palette, and the width of the column holding it.
+fn columns(layout: Layout) -> &'static [(Palette, f32)] {
+    match layout {
+        Layout::Slate => &[
+            // Classic's rail (58) and room for the tab's name and close box.
+            (Palette::Tools, 72.0),
+            (Palette::Brushes, 280.0),
+            (Palette::Color, 300.0),
+        ],
+        _ => &[],
+    }
+}
+
+/// Give each of `layout`'s columns its width, from the sizes the dock was
+/// last laid out at. Returns whether anything changed: a column's width
+/// depends on those around it, so this runs until it settles.
+fn fit_columns(layout: Layout, state: &mut DockState<Palette>) -> bool {
+    let mut changed = false;
+    for &(palette, width) in columns(layout) {
+        let Some((surface, mut node, _)) = state.find_tab(&palette) else {
+            continue;
+        };
+        if surface != egui_dock::SurfaceIndex::main() {
+            continue;
+        }
+        let tree = state.main_surface_mut();
+        // The nearest side-by-side split above the palette is its column's edge.
+        while let Some(parent) = node.parent() {
+            if let Node::Horizontal(split) = &mut tree[parent] {
+                let total = split.rect().width();
+                if total.is_finite() && total > width * 1.5 {
+                    let share = width / total;
+                    let fraction = if node == parent.left() {
+                        share
+                    } else {
+                        1.0 - share
+                    };
+                    if (split.fraction - fraction).abs() * total > 0.5 {
+                        split.fraction = fraction;
+                        changed = true;
+                    }
+                }
+                break;
+            }
+            node = parent;
+        }
+    }
+    changed
 }
 
 /// The canvas lives outside the dock: Float.
@@ -172,7 +229,7 @@ pub(crate) struct DockPrefs {
 
 /// Raised when the starting arrangements change, so arrangements saved
 /// before give way to the new ones once.
-const PRESETS: u32 = 1;
+const PRESETS: u32 = 2;
 
 /// The dock of the session: one arrangement per style.
 #[derive(Default)]
@@ -188,6 +245,10 @@ pub(crate) struct Docks {
     /// The dock's area last frame: palettes are placed once it holds still,
     /// not while the window is still opening or being resized.
     last_area: Option<egui::Rect>,
+    /// The dock's area held still since last frame.
+    settled: bool,
+    /// Styles whose starting arrangement hasn't had its column widths set.
+    unfitted: HashSet<Layout>,
     /// While the dock is drawn its arrangement is out of the map: which
     /// palettes are in it, and which are on screen.
     drawn: Option<(Vec<Palette>, Vec<Palette>)>,
@@ -258,7 +319,10 @@ impl Docks {
     }
 
     fn state(&mut self, layout: Layout) -> &mut DockState<Palette> {
-        self.states.entry(layout).or_insert_with(|| preset(layout))
+        self.states.entry(layout).or_insert_with(|| {
+            self.unfitted.insert(layout);
+            preset(layout)
+        })
     }
 
     fn visible(&self, layout: Layout, palette: Palette) -> bool {
@@ -310,6 +374,7 @@ impl Docks {
     fn place_floating(&mut self, layout: Layout, area: egui::Rect) {
         let settled = self.last_area == Some(area);
         self.last_area = Some(area);
+        self.settled = settled;
         if !settled || self.unplaced.is_empty() {
             return;
         }
@@ -348,6 +413,7 @@ impl Docks {
         match change {
             Change::Reset => {
                 self.states.insert(layout, preset(layout));
+                self.unfitted.insert(layout);
             }
             Change::Hide(palette) => {
                 let state = self.state(layout);
@@ -517,6 +583,7 @@ impl Dudel {
             style.tab.focused.outline_color = active.accent;
         }
         style.tab_bar.fill_tab_bar = true;
+        style.separator.extra = NARROWEST;
         // A tab's right-click menu: Close, and Float to pull it out.
         state.translations.tab_context_menu = egui_dock::TabContextMenuTranslations {
             close_button: "Close".into(),
@@ -558,11 +625,24 @@ impl Dudel {
         self.ui_layout.docks.drawn = None;
         ctx.data_mut(|d| d.remove_temp::<bool>(in_palette_id()));
         // A drop the style can't take (a palette into Float's canvas) snaps back.
-        let state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
+        let mut state = if valid(layout, &state) || state.iter_all_tabs().next().is_none() {
             state
         } else {
             before
         };
+        // A starting arrangement gets its column widths once the window's
+        // size holds still, over a few frames, as each column's width
+        // depends on the others.
+        if waiting.is_none()
+            && self.ui_layout.docks.settled
+            && self.ui_layout.docks.unfitted.contains(&layout)
+        {
+            if fit_columns(layout, &mut state) {
+                ctx.request_repaint();
+            } else {
+                self.ui_layout.docks.unfitted.remove(&layout);
+            }
+        }
         *self.ui_layout.docks.state(layout) = waiting.unwrap_or(state);
         for change in std::mem::take(&mut self.ui_layout.docks.pending) {
             self.ui_layout.docks.apply(layout, change);
@@ -784,26 +864,98 @@ mod tests {
     #[test]
     fn slate_keeps_tools_brushes_and_tool_property_down_the_left() {
         let state = preset(Layout::Slate);
-        // The first split puts its new group on the left of the root.
-        let side = |palette| {
+        let under = |palette, ancestor: NodeIndex| {
             let (_, mut node, _) = state.find_tab(&palette).unwrap();
-            while let Some(parent) = node.parent().filter(|p| *p != NodeIndex::root()) {
-                node = parent;
+            loop {
+                if node == ancestor {
+                    return true;
+                }
+                match node.parent() {
+                    Some(parent) => node = parent,
+                    None => return false,
+                }
             }
-            node
         };
-        let left = NodeIndex::root().left();
-        for palette in [Palette::Tools, Palette::Brushes, Palette::ToolProperty] {
-            assert_eq!(side(palette), left, "{palette:?}");
+        // The tools are a bar of their own at the left edge.
+        let bar = NodeIndex::root().left();
+        assert!(under(Palette::Tools, bar));
+        // Brushes and the tool property make the next column, left of the canvas.
+        let rest = NodeIndex::root().right();
+        for palette in [Palette::Brushes, Palette::ToolProperty] {
+            assert!(under(palette, rest.left()), "{palette:?}");
         }
         for palette in [Palette::Canvas, Palette::Color, Palette::Layers] {
-            assert_ne!(side(palette), left, "{palette:?}");
+            assert!(under(palette, rest.right()), "{palette:?}");
         }
         // Each in a group of its own, so all three are on screen at once.
         let shown = listing(&state).1;
         for palette in [Palette::Tools, Palette::Brushes, Palette::ToolProperty] {
             assert!(shown.contains(&palette), "{palette:?}");
         }
+    }
+
+    #[test]
+    fn slate_columns_get_their_widths_in_points_once_laid_out() {
+        let mut state = preset(Layout::Slate);
+        let widths = |state: &DockState<Palette>| {
+            columns(Layout::Slate)
+                .iter()
+                .map(|(palette, _)| {
+                    let (_, node, _) = state.find_tab(palette).unwrap();
+                    let mut column = node;
+                    while let Some(parent) = column.parent() {
+                        if matches!(state.main_surface()[parent], Node::Horizontal(_)) {
+                            break;
+                        }
+                        column = parent;
+                    }
+                    state.main_surface()[column].rect().unwrap().width()
+                })
+                .collect::<Vec<_>>()
+        };
+        for screen in [1280.0, 1920.0] {
+            let area = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(screen, 800.0));
+            let ctx = egui::Context::default();
+            let mut rounds = 0;
+            loop {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(area),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let mut style = egui_dock::Style::from_egui(ui.style());
+                            style.separator.extra = NARROWEST;
+                            DockArea::new(&mut state)
+                                .style(style)
+                                .show_inside(ui, &mut Empty);
+                        });
+                    },
+                );
+                rounds += 1;
+                if !fit_columns(Layout::Slate, &mut state) || rounds > 6 {
+                    break;
+                }
+            }
+            assert!(rounds <= 6, "settles at {screen}");
+            for (width, (palette, wanted)) in widths(&state).into_iter().zip(columns(Layout::Slate))
+            {
+                assert!(
+                    (width - wanted).abs() < 8.0,
+                    "{palette:?} {width} at {screen}"
+                );
+            }
+        }
+    }
+
+    struct Empty;
+    impl TabViewer for Empty {
+        type Tab = Palette;
+        fn title(&mut self, tab: &mut Palette) -> egui::WidgetText {
+            tab.name().into()
+        }
+        fn ui(&mut self, _ui: &mut egui::Ui, _tab: &mut Palette) {}
     }
 
     #[test]

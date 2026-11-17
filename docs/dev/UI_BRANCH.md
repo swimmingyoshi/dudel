@@ -28,6 +28,7 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `3e72e33` | Slate puts Tools, Brushes and Tool property down the left; every palette gets a margin and a scroll bar that stays in view; Tool property has one scroll area |
 | `cfb9287` | These notes |
 | `d944045` | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
+| after `eee5222` | Slate's tools become a vertical bar at the left edge, as in Classic, with brushes and tool property beside it; Slate's columns start at fixed widths in points |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.
@@ -51,8 +52,9 @@ preferences open in Classic.
   palettes.
 - **Brush Studio stays the full brush editor**, in the role of CSP's sub
   tool detail; Tool property shows the everyday settings.
-- **Slate is the CSP-like dark layout** (2026-11-16): tools, brushes and tool
-  property on the left; color, navigator and layers on the right.
+- **Slate is the CSP-like dark layout** (2026-11-16): the tools as a
+  vertical bar at the left edge, as in Classic, with brushes and tool
+  property beside it; color, navigator and layers on the right.
 - **One commit per step** on the branch. Nothing is pushed until the owner
   asks.
 
@@ -154,3 +156,6 @@ A recommendation, not a decision:
   off the window's height.
 - **Changing a starting arrangement.** Raise `PRESETS` in `src/dock.rs`, so
   that arrangements saved under the old presets give way to the new ones.
+  Column widths in points go in `columns`; the test
+  `slate_columns_get_their_widths_in_points_once_laid_out` checks they are
+  reached at 1280 and 1920 points wide.
