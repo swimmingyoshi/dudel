@@ -181,6 +181,42 @@ fn shortcut_editor_captures_conflicts_without_executing_then_rebinds_and_resets(
 }
 
 #[test]
+fn the_layer_menu_merges_visible_layers_and_flattens() {
+    let mut w = Workspace::new();
+    for _ in 0..3 {
+        w.app.new_layer();
+    }
+    finish_jobs(&mut w.app);
+    w.app.doc.layers[1].visible = false;
+    w.settle();
+    w.click(w.text("Layer"));
+    w.settle();
+    w.click(w.text("Merge"));
+    w.settle();
+    w.click(w.text("Merge visible layers"));
+    finish_jobs(&mut w.app);
+    assert_eq!(w.app.doc.layers.len(), 2, "the hidden layer stays");
+    assert!(!w.app.doc.layers[0].visible);
+    w.app.undo();
+    finish_jobs(&mut w.app);
+    assert_eq!(w.app.doc.layers.len(), 4);
+    w.settle();
+    w.click(w.text("Layer"));
+    w.settle();
+    w.click(w.text("Merge"));
+    w.settle();
+    w.click(w.text("Flatten image"));
+    finish_jobs(&mut w.app);
+    assert_eq!(w.app.doc.layers.len(), 1);
+    assert!(w.app.status.contains("1 hidden layer was left out"));
+    assert!(
+        w.app
+            .command_disabled(crate::commands::Action::Flatten)
+            .is_some()
+    );
+}
+
+#[test]
 fn shortcut_custom_tool_taps_holds_and_capture_escape_preserve_canvas_state() {
     use crate::{commands::Action, shortcuts::Chord, tools::Tool};
     let mut w = Workspace::new();

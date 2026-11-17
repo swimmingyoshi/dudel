@@ -5,6 +5,11 @@ use crate::{Dudel, egui, tools::Tool, vector_pick::LineDrag};
 pub(crate) enum Action {
     Search,
     Merge,
+    MergeUp,
+    MergeSelected,
+    MergeVisible,
+    MergeVisibleToNew,
+    Flatten,
     Ungroup,
     CloseTab,
     ZoomIn,
@@ -465,8 +470,43 @@ pub(crate) const COMMANDS: &[Command] = &[
         "layer.merge",
         "Merge down / merge folder",
         "Ctrl+E",
-        "flatten",
+        "flatten combine",
         Action::Merge
+    ),
+    command!(
+        "layer.merge_up",
+        "Merge up",
+        "",
+        "combine into layer above",
+        Action::MergeUp
+    ),
+    command!(
+        "layer.merge_selected",
+        "Merge selected layers",
+        "",
+        "combine multiple several flatten",
+        Action::MergeSelected
+    ),
+    command!(
+        "layer.merge_visible",
+        "Merge visible layers",
+        "",
+        "combine shown flatten",
+        Action::MergeVisible
+    ),
+    command!(
+        "layer.merge_visible_to_new",
+        "Merge visible to new layer",
+        "",
+        "stamp copy merged sample all layers combine",
+        Action::MergeVisibleToNew
+    ),
+    command!(
+        "layer.flatten",
+        "Flatten image",
+        "",
+        "merge all one layer combine",
+        Action::Flatten
     ),
     command!(
         "layer.ungroup",
@@ -575,6 +615,7 @@ impl Dudel {
         match action {
             Action::Merge
                 if !self.input_is_folder()
+                    && !self.multiple_layers()
                     && !self.render_queue.busy()
                     && self.input_layer().is_none_or(|i| {
                         i == 0
@@ -584,6 +625,27 @@ impl Dudel {
             {
                 Some("No layer below to merge with")
             }
+            Action::MergeUp
+                if !self.render_queue.busy()
+                    && self
+                        .input_layer()
+                        .is_none_or(|i| self.input_is_folder() || !self.doc.layer_above(i)) =>
+            {
+                Some("No layer above to merge with")
+            }
+            Action::MergeSelected if !self.multiple_layers() => {
+                Some("Select two or more layers first (Ctrl-click or Shift-click)")
+            }
+            Action::MergeVisible | Action::MergeVisibleToNew | Action::Flatten
+                if self.doc.animation.is_some() =>
+            {
+                Some("Turn off the animation timeline first: each top-level layer is a frame")
+            }
+            Action::MergeVisible if !self.doc.can_merge_visible() => {
+                Some("Fewer than two layers are visible")
+            }
+            Action::MergeVisibleToNew if !self.doc.has_room(1, 1) => Some("Layer limit reached"),
+            Action::Flatten if self.doc.layers.len() < 2 => Some("There is only one layer"),
             Action::Ungroup if !self.input_is_folder() => Some("Select a folder first"),
             Action::Undo if !self.history.can_undo() && !self.render_queue.busy() => {
                 Some("Nothing to undo")
@@ -643,6 +705,11 @@ impl Dudel {
         match action {
             Action::Search => self.open_command_search(),
             Action::Merge => self.merge_down(),
+            Action::MergeUp => self.combine_layers(crate::folders::Combine::Up),
+            Action::MergeSelected => self.merge_selected_layers(),
+            Action::MergeVisible => self.combine_layers(crate::folders::Combine::Visible),
+            Action::MergeVisibleToNew => self.combine_layers(crate::folders::Combine::VisibleToNew),
+            Action::Flatten => self.combine_layers(crate::folders::Combine::Flatten),
             Action::Ungroup => self.ungroup_folder(),
             Action::CloseTab => self.close_tab(self.tabs.active),
             Action::ZoomIn => self.step_zoom(1.25),

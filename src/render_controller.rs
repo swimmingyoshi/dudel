@@ -241,6 +241,50 @@ impl Dudel {
             self.logical_layer = Some(active);
         }
     }
+    /// Merge up, merge selected, merge visible, merge visible to a new layer
+    /// or flatten, as one undo step.
+    pub(crate) fn combine_layers(&mut self, how: crate::folders::Combine) {
+        use crate::folders::Combine;
+        self.finish_layer_rename(true);
+        self.close_input_gestures();
+        // Settle earlier painting first: these read the whole settled stack.
+        self.flush_render_queue();
+        let left_out = if how == Combine::Flatten {
+            (0..self.doc.layers.len())
+                .filter(|&i| !self.doc.layers[i].folder && !self.doc.shown(i))
+                .count()
+        } else {
+            0
+        };
+        let changed = match &how {
+            Combine::Up => "Merged into the layer above",
+            Combine::Selected(_) => "Selected layers merged into one",
+            Combine::Visible => "Visible layers merged into one",
+            Combine::VisibleToNew => "What is visible was copied to a new layer",
+            Combine::Flatten => "Flattened into one layer",
+        };
+        let previous = self.input_target();
+        if self.dispatch_document_edit(
+            crate::document_edits::Edit::Combine {
+                how,
+                id: crate::document::LayerId::new(),
+            },
+            changed,
+            "Layers unchanged",
+        ) && left_out > 0
+        {
+            self.status = format!(
+                "Flattened into one layer; {left_out} hidden layer{} left out (Undo brings {} back)",
+                if left_out == 1 { " was" } else { "s were" },
+                if left_out == 1 { "it" } else { "them" },
+            );
+        }
+        if self.input_target() != previous {
+            self.mask_focus = None;
+            self.last_stroke_end = None;
+        }
+        self.layer_selection = Default::default();
+    }
     pub(crate) fn duplicate_canvas_layer(&mut self) {
         self.finish_layer_rename(true);
         self.close_input_gestures();
