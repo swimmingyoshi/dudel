@@ -341,10 +341,11 @@ input methods, and Hebrew and Arabic read right to left. Each text layer keeps
 one font and size. PSD export writes text as pixels.
 
 **Pen quick menu:** press the pen's side button (or right-click) on the canvas
-for a ring under the tip: your starred brushes around the outside, recent colors
-inside them and four commands in the middle. Star brushes in the brush library to
-add them; choose the commands in Settings > Drawing. Tap anything to use it, or
-tap outside or press Esc to close.
+for a ring around the tip: your starred brushes on the outer band, recent colors
+inside them and four commands around the open middle, which leaves the canvas
+under the tip in view. Star brushes in the brush library to add them; choose the
+commands in Settings > Drawing. Tap anything to use it, or hold the side button,
+slide onto it and let go. Tap outside or press Esc to close.
 
 **Masks:** the mask button in the layer toolbar (a frame around a dot) adds one in
 a click: it shows everything, or only the selection when there is one, and you paint

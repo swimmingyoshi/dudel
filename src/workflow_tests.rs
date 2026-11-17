@@ -3784,14 +3784,38 @@ fn a_press_that_closes_the_ring_never_paints() {
 }
 
 #[test]
+fn holding_the_side_button_sliding_and_letting_go_picks_from_the_ring() {
+    let mut w = Workspace::new();
+    w.app.brushes[1].favorite = true;
+    w.app.brushes[2].favorite = true;
+    let center = w.app.canvas_area.center();
+    let side = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Secondary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    w.frame(vec![egui::Event::PointerMoved(center), side(center, true)]);
+    w.settle();
+    assert!(w.app.quick_menu.is_some(), "the press opens it");
+    let name = w.app.brushes[2].name.clone();
+    let on = w.text(&name);
+    w.frame(vec![egui::Event::PointerMoved(on)]);
+    w.frame(vec![side(on, false)]);
+    w.settle();
+    assert_eq!(w.app.selected_brush, 2, "letting go on a brush picks it");
+    assert!(w.app.quick_menu.is_none());
+}
+
+#[test]
 fn the_ring_picks_a_recent_color_and_stays_shut_while_typing() {
     let mut w = Workspace::new();
     w.app.recent_colors = vec![[200, 30, 30], [30, 200, 30]];
     let center = w.app.canvas_area.center();
     w.side_button(center);
     let menu = w.app.quick_menu.unwrap();
-    // The first recent color sits at the top of the inner ring.
-    w.click(menu.center - egui::vec2(0.0, 86.0));
+    // The first recent color sits at the top of the middle band.
+    w.click(menu.center - egui::vec2(0.0, crate::quick_menu::COLOR_RING));
     w.settle();
     assert_eq!(w.app.color, [200, 30, 30]);
     assert!(w.app.quick_menu.is_none());
