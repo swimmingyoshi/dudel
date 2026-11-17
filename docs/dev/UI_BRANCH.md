@@ -27,7 +27,7 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `f96d74a` | Backlog notes: the split's pixel proof and rebuild times |
 | `3e72e33` | Slate puts Tools, Brushes and Tool property down the left; every palette gets a margin and a scroll bar that stays in view; Tool property has one scroll area |
 | `cfb9287` | These notes |
-| (next) | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
+| `d944045` | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.
