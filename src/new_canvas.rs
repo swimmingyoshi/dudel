@@ -223,13 +223,22 @@ impl Dudel {
         let enter=ctx.input(|i|i.events.iter().any(|e|matches!(e,egui::Event::Key{key:egui::Key::Enter,pressed:true,repeat:false,modifiers,..} if modifiers.is_none())));
         let (mut create, mut cancel) = (false, false);
         let mut changed_option = false;
-        let response = egui::Modal::new(egui::Id::new("new canvas form")).show(ctx, |ui| {
-            ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, 440.0));
+        let id = egui::Id::new("new canvas form");
+        let room = crate::dialogs::dialog_body_room(ctx, id, 120.0);
+        // Touch-sized buttons take more room, so the dialog may be wider and
+        // keep its presets on fewer rows.
+        let touch = crate::ui::style::Active::get(ctx).density == crate::ui::style::Density::Touch;
+        let widest = if touch { 560.0 } else { 440.0 };
+        let mut body = 0.0;
+        let response = egui::Modal::new(id).show(ctx, |ui| {
+            ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, widest));
             cancel |= crate::dialogs::dialog_title(ui, "New canvas");
             ui.label("Choose a starting size, then make it yours.");
-            egui::ScrollArea::vertical()
+            // When the window is too short for every field, the scroll bar shows.
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+            body = egui::ScrollArea::vertical()
                 .id_salt("new canvas fields")
-                .max_height((ctx.content_rect().height() - 144.0).max(80.0))
+                .max_height(room)
                 .show(ui, |ui| {
                     let form = &mut self.new_canvas_form;
                     group(ui, "Presets");
@@ -344,12 +353,24 @@ impl Dudel {
                         });
                     }
                     ui.add_space(6.0);
+                    // A column as wide as the widest label, so larger text
+                    // keeps the fields lined up.
+                    let column = ["Width (px)", "Height (px)", "DPI"]
+                        .into_iter()
+                        .map(|label| {
+                            egui::WidgetText::from(label)
+                                .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Body)
+                                .size()
+                                .x
+                                + 12.0
+                        })
+                        .fold(88.0_f32, f32::max);
                     for (label, id, height) in [
                         ("Width (px)", "new canvas width", false),
                         ("Height (px)", "new canvas height", true),
                     ] {
                         ui.horizontal(|ui| {
-                            ui.add_sized([88.0, 32.0], egui::Label::new(label));
+                            ui.add_sized([column, 32.0], egui::Label::new(label));
                             let value = if height { &mut form.height } else { &mut form.width };
                             let edit = ui.add(
                                 egui::TextEdit::singleline(value)
@@ -367,7 +388,7 @@ impl Dudel {
                         });
                     }
                     ui.horizontal(|ui| {
-                        ui.add_sized([88.0,32.0], egui::Label::new("DPI"));
+                        ui.add_sized([column, 32.0], egui::Label::new("DPI"));
                         ui.add(egui::TextEdit::singleline(&mut form.dpi).char_limit(16).desired_width(120.0));
                         if let (Ok([width, height]), Ok(dpi)) = (form.dimensions(), form.resolution()) {
                             let (w, h) = (width as f64 / dpi, height as f64 / dpi);
@@ -400,7 +421,9 @@ impl Dudel {
                     if let Some(error) = &self.new_canvas_form.feedback {
                         ui.colored_label(ui.visuals().error_fg_color, error);
                     }
-                });
+                })
+                .inner_rect
+                .height();
             let dimensions = self.new_canvas_form.dimensions();
             if let Err(error) = dimensions {
                 ui.colored_label(ui.visuals().error_fg_color, error);
@@ -417,6 +440,7 @@ impl Dudel {
                 cancel |= button.clicked() || (enter && button.has_focus());
             });
         });
+        crate::dialogs::measure_dialog(ctx, id, response.response.rect.height(), body);
         if cancel || response.should_close() {
             self.cancel_pending_tab_change();
             self.new_canvas = false;

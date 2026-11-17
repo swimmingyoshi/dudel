@@ -345,6 +345,9 @@ fn bounded_menu(
         // long menu scroll even on a tall window.
         let room =
             (ui.ctx().content_rect().bottom() - ui.next_widget_position().y - 12.0).max(120.0);
+        // A menu cut off at the window's edge shows its scroll bar, so the
+        // items below are not missed.
+        ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
         let scroll = egui::ScrollArea::vertical()
             .max_height(room)
             .min_scrolled_height(room);

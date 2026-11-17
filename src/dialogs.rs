@@ -69,6 +69,33 @@ fn close_button(ui: &mut egui::Ui) -> egui::Response {
     response.on_hover_text("Close (Esc)")
 }
 
+/// Room left between a dialog and the window's top and bottom edges.
+const DIALOG_MARGIN: f32 = 24.0;
+
+/// The height a dialog's scrolling body may take so the whole dialog fits in
+/// the window. The rest of the dialog (title, buttons, frame) keeps the room
+/// it took when last shown, measured by [`measure_dialog`]; `guess` stands
+/// in until then. A fixed guess alone was too small for larger interface
+/// sizes, and the buttons ended up below the window.
+pub(crate) fn dialog_body_room(ctx: &egui::Context, id: egui::Id, guess: f32) -> f32 {
+    let rest = ctx
+        .data(|d| d.get_temp::<f32>(id.with("dialog rest")))
+        .unwrap_or(guess);
+    (ctx.content_rect().height() - DIALOG_MARGIN - rest).max(80.0)
+}
+
+/// Remember how much of a dialog `whole` tall is not its scrolling body
+/// `body` tall, for [`dialog_body_room`].
+pub(crate) fn measure_dialog(ctx: &egui::Context, id: egui::Id, whole: f32, body: f32) {
+    let id = id.with("dialog rest");
+    let rest = whole - body;
+    let known = ctx.data(|d| d.get_temp::<f32>(id));
+    if known.is_none_or(|known| (known - rest).abs() > 0.5) {
+        ctx.data_mut(|d| d.insert_temp(id, rest));
+        ctx.request_repaint();
+    }
+}
+
 /// The button row at the bottom of a dialog, at the right: add the main
 /// action first and Cancel last, so Tab visits them in reading order.
 pub(crate) fn dialog_buttons<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
@@ -284,6 +311,35 @@ impl Dudel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_dialog_body_leaves_room_for_the_rest_of_the_dialog_as_measured() {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            let id = egui::Id::new("test dialog");
+            // Before the dialog was shown, the guess holds the rest's room.
+            assert_eq!(
+                dialog_body_room(ctx, id, 100.0),
+                600.0 - DIALOG_MARGIN - 100.0
+            );
+            // Larger text made the title and buttons 200 tall.
+            measure_dialog(ctx, id, 500.0, 300.0);
+            assert_eq!(
+                dialog_body_room(ctx, id, 100.0),
+                600.0 - DIALOG_MARGIN - 200.0
+            );
+            // However short the window, the body keeps a usable height.
+            measure_dialog(ctx, id, 1000.0, 300.0);
+            assert_eq!(dialog_body_room(ctx, id, 100.0), 80.0);
+        });
+    }
+
     #[test]
     fn a_question_runs_its_reply_once_answered_and_holds_others() {
         let ctx = egui::Context::default();

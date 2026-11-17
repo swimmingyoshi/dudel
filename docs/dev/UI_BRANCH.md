@@ -26,7 +26,8 @@ the fixed arrangement stays as Classic, and the new styles are opt-in.
 | `78ff482` | Palettes don't repeat each other (Tool property without a second brush list when Brushes is open; Layers without its controls when Layer property is open) |
 | `f96d74a` | Backlog notes: the split's pixel proof and rebuild times |
 | `3e72e33` | Slate puts Tools, Brushes and Tool property down the left; every palette gets a margin and a scroll bar that stays in view; Tool property has one scroll area |
-| (this file) | These notes |
+| `cfb9287` | These notes |
+| (next) | Dialogs and menus fit the window at any interface size: New canvas and Canvas size measure their title and buttons and scroll the rest, with a visible scroll bar; New canvas is wider with touch-sized buttons and its labels line up; a menu cut off at the window's edge shows its scroll bar |
 
 Size: 158 files changed against master, most of it files moved into
 `crates/dudel-core`.
@@ -145,5 +146,11 @@ A recommendation, not a decision:
   such as `horizontal` to `horizontal_wrapped`, moves labels by a pixel, so
   palette-only layout goes through a check like `choice_row` in
   `src/tool_panel.rs`.
+- **Screen sizes.** Check dialogs and menus at 1366×768, at 1920×1080
+  with 150% scaling (the capture's fifth argument, `1.5`), and at
+  1280×800, in every style. Float's touch sizing is the tallest. A dialog
+  that scrolls takes its height from `dialogs::dialog_body_room` and
+  reports itself with `measure_dialog`, rather than taking a fixed amount
+  off the window's height.
 - **Changing a starting arrangement.** Raise `PRESETS` in `src/dock.rs`, so
   that arrangements saved under the old presets give way to the new ones.

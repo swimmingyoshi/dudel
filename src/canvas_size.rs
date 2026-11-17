@@ -78,11 +78,16 @@ impl crate::Dudel {
         };
         let mut apply = false;
         let mut cancel = false;
-        let response = egui::Modal::new(egui::Id::new("canvas size")).show(ctx, |ui| {
+        let id = egui::Id::new("canvas size");
+        let room = crate::dialogs::dialog_body_room(ctx, id, 72.0);
+        let mut body = 0.0;
+        let response = egui::Modal::new(id).show(ctx, |ui| {
             ui.set_width(400.0);
             cancel |= crate::dialogs::dialog_title(ui, "Canvas size");
-            egui::ScrollArea::vertical().id_salt("canvas size controls")
-                .max_height((ctx.content_rect().height() - 96.0).max(80.0))
+            // When the window is too short for every field, the scroll bar shows.
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+            body = egui::ScrollArea::vertical().id_salt("canvas size controls")
+                .max_height(room)
                 .show(ui, |ui| {
             ui.label(format!("Current: {} × {} px", self.doc.width, self.doc.height));
             ui.horizontal(|ui| {
@@ -121,7 +126,7 @@ impl crate::Dudel {
             });
             ui.small("Blue: new canvas · outline: current canvas");
             ui.label("Changes canvas bounds on every layer without scaling the artwork. Added space is transparent. Pixels outside the new bounds are removed; Undo restores them.");
-            });
+            }).inner_rect.height();
             let valid = settings.validate();
             if let Err(error) = &valid { ui.colored_label(ui.visuals().error_fg_color, error); }
             crate::dialogs::dialog_buttons(ui, |ui| {
@@ -129,6 +134,7 @@ impl crate::Dudel {
                 cancel |= ui.button("Cancel").clicked();
             });
         });
+        crate::dialogs::measure_dialog(ctx, id, response.response.rect.height(), body);
         if apply {
             self.canvas_resize = None;
             self.dispatch_canvas_size(crate::document_edits::Edit::CanvasSize(settings));
