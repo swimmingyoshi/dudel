@@ -9,7 +9,7 @@ reachable in every style.
 | Classic | Tool rail, tool settings left, color and layers right                  | Classic | Regular | The chosen theme    |
 | Slate   | Tool bar at the left edge, brushes and tool property beside it; color and layers right; status bar | Line | Compact | Graphite and amber  |
 | Float   | Canvas fills the window; tool islands, slider rail, popovers           | Duotone | Touch   | Smoked glass, teal  |
-| Atelier | Brush drawer, color tray and layers, timeline below, Draw/Paint/Animate | Solid   | Regular | Stone, ultramarine  |
+| Atelier | Tool bar at the left edge, brush drawer above tool property; navigator, color and layers right; Draw/Paint/Animate | Solid   | Regular | Stone, ultramarine  |
 
 ## Switching and customizing
 
@@ -63,6 +63,14 @@ Layer property and Timeline.
   dragged afterwards are kept. A palette group can be made as narrow as
   56 points, so the Tools palette can be a one-column bar (under 110 points
   it shows the grouped rail).
+
+Tabs are as wide as their names (in Float, where a tab moves its floating
+palette, they fill the bar). The canvas's tab names the project and what a
+stroke edits ("Apple • › Artwork · Layer 1"); the strip above the canvas
+appears only when it has something to act on: a locked layer, a selection,
+a mask or reference to switch back from. The Navigator palette's preview
+fills the room above its controls; a short palette leaves out the zoom and
+rotation sliders, which the status bar also has.
 
 Each palette keeps a margin around its contents, and its scroll bar stays in
 view beside the contents whenever there is more to scroll to. Tool property

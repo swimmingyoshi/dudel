@@ -95,13 +95,15 @@ pub(crate) fn preset(layout: Layout) -> DockState<Palette> {
             tree.split_below(column, 0.4, vec![Palette::Layers, Palette::LayerProperty]);
         }
         Layout::Atelier => {
-            // Brushes and the tool grid on the left; tool property and color
-            // above the layers on the right.
-            let [canvas, drawer] = tree.split_left(NodeIndex::root(), 0.19, vec![Palette::Brushes]);
-            tree.split_below(drawer, 0.66, vec![Palette::Tools, Palette::Navigator]);
-            let [_, tray] =
-                tree.split_right(canvas, 0.71, vec![Palette::ToolProperty, Palette::Color]);
-            tree.split_below(tray, 0.48, vec![Palette::Layers, Palette::LayerProperty]);
+            // The tools as a bar at the left edge, as in Slate, with the brush
+            // drawer above the tool property beside it; down the right the
+            // navigator, the color tray and the layers.
+            let [rest, _] = tree.split_left(NodeIndex::root(), 0.05, vec![Palette::Tools]);
+            let [canvas, drawer] = tree.split_left(rest, 0.2, vec![Palette::Brushes]);
+            tree.split_below(drawer, 0.45, vec![Palette::ToolProperty]);
+            let [_, column] = tree.split_right(canvas, 0.75, vec![Palette::Navigator]);
+            let [_, lower] = tree.split_below(column, 0.33, vec![Palette::Color]);
+            tree.split_below(lower, 0.45, vec![Palette::Layers, Palette::LayerProperty]);
         }
         Layout::Float | Layout::Classic => {}
     }
@@ -132,6 +134,11 @@ fn columns(layout: Layout) -> &'static [(Palette, f32)] {
             (Palette::Tools, 72.0),
             (Palette::Brushes, 280.0),
             (Palette::Color, 300.0),
+        ],
+        Layout::Atelier => &[
+            (Palette::Tools, 72.0),
+            (Palette::Brushes, 280.0),
+            (Palette::Navigator, 300.0),
         ],
         _ => &[],
     }
@@ -235,7 +242,7 @@ const SMALLEST_WINDOW: egui::Vec2 = egui::vec2(200.0, 160.0);
 
 /// Raised when the starting arrangements change, so arrangements saved
 /// before give way to the new ones once.
-const PRESETS: u32 = 2;
+const PRESETS: u32 = 3;
 
 /// The dock of the session: one arrangement per style.
 #[derive(Default)]
@@ -680,7 +687,9 @@ impl Dudel {
             style.tab.active.outline_color = active.accent;
             style.tab.focused.outline_color = active.accent;
         }
-        style.tab_bar.fill_tab_bar = true;
+        // Tabs as wide as their names, as in CSP. In Float a tab is how a
+        // floating palette is moved, so there it fills its bar.
+        style.tab_bar.fill_tab_bar = canvas_outside(layout);
         style.separator.extra = NARROWEST;
         // A tab's right-click menu: Close, and Float to pull it out.
         state.translations.tab_context_menu = egui_dock::TabContextMenuTranslations {
@@ -775,10 +784,15 @@ impl Dudel {
         }
     }
 
-    /// The canvas with the strip naming what a stroke edits.
+    /// The canvas. A docked canvas's tab names what a stroke edits, so the
+    /// strip above it only appears when it has something to act on (a locked
+    /// layer, a selection, a mask); Float, without a tab, keeps the strip.
     fn canvas_tab_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, packets: &[input::Packet]) {
-        egui::TopBottomPanel::top("editing target")
-            .show_inside(ui, |ui| self.editing_target_ui(ui));
+        let tabbed = !canvas_outside(self.interface.layout);
+        if !tabbed || self.editing_target_has_actions() {
+            egui::TopBottomPanel::top("editing target")
+                .show_inside(ui, |ui| self.editing_target_strip(ui, !tabbed));
+        }
         let rect = ui.available_rect_before_wrap();
         ui.painter().rect_filled(
             rect,
@@ -913,13 +927,10 @@ impl TabViewer for Viewer<'_> {
     fn title(&mut self, tab: &mut Palette) -> egui::WidgetText {
         match tab {
             Palette::Canvas => {
+                // The project, then what a stroke edits: "Apple • › Artwork · Layer 1".
                 let (name, modified) = self.app.tab_title(self.app.tabs.active);
-                if modified {
-                    format!("{name} •")
-                } else {
-                    name
-                }
-                .into()
+                let marker = if modified { " •" } else { "" };
+                format!("{name}{marker}  ›  {}", self.app.editing_target_title()).into()
             }
             Palette::Color => self.app.color_tab_name().into(),
             _ => tab.name().into(),
@@ -1160,10 +1171,16 @@ mod tests {
     }
 
     #[test]
-    fn slate_columns_get_their_widths_in_points_once_laid_out() {
-        let mut state = preset(Layout::Slate);
+    fn starting_columns_get_their_widths_in_points_once_laid_out() {
+        for layout in [Layout::Slate, Layout::Atelier] {
+            columns_reach_their_widths(layout);
+        }
+    }
+
+    fn columns_reach_their_widths(layout: Layout) {
+        let mut state = preset(layout);
         let widths = |state: &DockState<Palette>| {
-            columns(Layout::Slate)
+            columns(layout)
                 .iter()
                 .map(|(palette, _)| {
                     let (_, node, _) = state.find_tab(palette).unwrap();
@@ -1199,16 +1216,15 @@ mod tests {
                     },
                 );
                 rounds += 1;
-                if !fit_columns(Layout::Slate, &mut state) || rounds > 6 {
+                if !fit_columns(layout, &mut state) || rounds > 6 {
                     break;
                 }
             }
-            assert!(rounds <= 6, "settles at {screen}");
-            for (width, (palette, wanted)) in widths(&state).into_iter().zip(columns(Layout::Slate))
-            {
+            assert!(rounds <= 6, "{layout:?} settles at {screen}");
+            for (width, (palette, wanted)) in widths(&state).into_iter().zip(columns(layout)) {
                 assert!(
                     (width - wanted).abs() < 8.0,
-                    "{palette:?} {width} at {screen}"
+                    "{layout:?}: {palette:?} {width} at {screen}"
                 );
             }
         }

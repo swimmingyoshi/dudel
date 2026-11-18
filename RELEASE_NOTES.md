@@ -69,8 +69,11 @@ Pixel art tools and frame-by-frame animation.
   interface as before, still the default), **Slate** (a compact dark layout:
   the tool bar at the left edge, brushes and tool property beside it, color
   and layers on the right), **Float** (the canvas fills the window, with tool
-  islands, a slider rail and touch-sized controls) and **Atelier** (a brush
-  drawer, color tray and timeline, with Draw, Paint and Animate modes).
+  islands, a slider rail and touch-sized controls) and **Atelier** (light
+  colors, the tool bar and brush drawer on the left, navigator, color and
+  layers on the right, with Draw, Paint and Animate modes). Palette tabs
+  are as wide as their names, and the canvas's tab names the layer being
+  painted.
   Existing preferences open in Classic.
 - **Palettes:** in Slate, Float and Atelier every panel is a palette, as in
   Clip Studio Paint and Photoshop. Drag a tab onto another group to join it,

@@ -220,23 +220,22 @@ impl Dudel {
         }
     }
 
-    pub(crate) fn editing_target_ui(&mut self, ui: &mut egui::Ui) {
+    /// What a stroke edits, as "Artwork · Layer 1".
+    pub(crate) fn editing_target_title(&self) -> String {
         let reference = self.reference_layers.active.is_some();
         let raster = self.input_stroke_target().is_raster();
-        let text = self
-            .input_layer()
-            .is_some_and(|i| self.doc.layers[i].text.is_some());
         let target = if reference {
             "Reference"
         } else if !raster {
             "Mask"
-        } else if self
-            .input_layer()
-            .is_some_and(|i| self.doc.layers[i].vector.is_some())
-        {
-            "Vector artwork"
-        } else if text {
-            "Text"
+        } else if let Some(layer) = self.input_layer().map(|i| &self.doc.layers[i]) {
+            if layer.vector.is_some() {
+                "Vector artwork"
+            } else if layer.text.is_some() {
+                "Text"
+            } else {
+                "Artwork"
+            }
         } else {
             "Artwork"
         };
@@ -250,10 +249,44 @@ impl Dudel {
             self.input_layer().map(|i| self.doc.layers[i].name.as_str())
         }
         .unwrap_or("Pending layer");
-        let title = format!("{target} · {name}");
+        format!("{target} · {name}")
+    }
+
+    /// The strip has something to act on besides its title: a way back to
+    /// the artwork, Rasterize, a warning, or an active selection.
+    pub(crate) fn editing_target_has_actions(&self) -> bool {
+        let reference = self.reference_layers.active.is_some();
+        let raster = self.input_stroke_target().is_raster();
+        let text = self
+            .input_layer()
+            .is_some_and(|i| self.doc.layers[i].text.is_some());
+        reference
+            || !raster
+            || text
+            || self.editing_feedback().is_some()
+            || self.doc.selection.is_some()
+            || self.doc.selection_mask.is_some()
+    }
+
+    /// The strip above the canvas.
+    pub(crate) fn editing_target_ui(&mut self, ui: &mut egui::Ui) {
+        self.editing_target_strip(ui, true);
+    }
+
+    /// The strip, leaving the title out (`with_title` false) where the
+    /// canvas's tab already names the target.
+    pub(crate) fn editing_target_strip(&mut self, ui: &mut egui::Ui, with_title: bool) {
+        let reference = self.reference_layers.active.is_some();
+        let raster = self.input_stroke_target().is_raster();
+        let text = self
+            .input_layer()
+            .is_some_and(|i| self.doc.layers[i].text.is_some());
+        let title = self.editing_target_title();
         ui.horizontal_wrapped(|ui| {
-            ui.add(egui::Label::new(&title).truncate())
-                .on_hover_text(&title);
+            if with_title {
+                ui.add(egui::Label::new(&title).truncate())
+                    .on_hover_text(&title);
+            }
             if (reference || !raster) && ui.small_button("Switch to artwork").clicked() {
                 self.deselect_reference();
                 self.focus_current_mask(false);

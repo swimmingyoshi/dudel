@@ -45,7 +45,7 @@ impl Layout {
                 "Canvas first: tools on floating islands, sliders on a side rail, panels as popovers"
             }
             Layout::Atelier => {
-                "Painting and animation: a brush drawer, a color tray and a timeline below"
+                "Light and roomy: tools and the brush drawer on the left, navigator, color and layers on the right; Draw, Paint and Animate modes"
             }
         }
     }

@@ -52,14 +52,23 @@ impl Dudel {
         // status bar) it also has zoom and rotation sliders, as in CSP. Too
         // short an area turns the rows into a menu.
         let palette = crate::dock::in_palette(ui);
-        let rows = if palette { 3.0 } else { 1.0 };
-        let controls = 10.0 + rows * row_height + (rows + 1.0) * ui.spacing().item_spacing.y;
+        let controls_of =
+            |rows: f32| 10.0 + rows * row_height + (rows + 1.0) * ui.spacing().item_spacing.y;
+        // A short palette gives up the sliders before the preview: the status
+        // bar has zoom and rotation too.
+        let sliders = palette && maximum_height >= 160.0 + controls_of(3.0);
+        let controls = controls_of(if sliders { 3.0 } else { 1.0 });
         let compact = maximum_height < 80.0 + controls;
-        let height = self
-            .navigator_height
-            .unwrap_or(((width - MARGIN) / aspect + MARGIN).min(280.0))
-            .clamp(80.0, 600.0)
-            .min((maximum_height - controls).max(if compact { 36.0 } else { 80.0 }));
+        let height = if palette && !compact {
+            // A palette is sized by its group: the preview takes all the
+            // room above the controls, as in CSP.
+            (maximum_height - controls - 4.0).max(80.0)
+        } else {
+            self.navigator_height
+                .unwrap_or(((width - MARGIN) / aspect + MARGIN).min(280.0))
+                .clamp(80.0, 600.0)
+                .min((maximum_height - controls).max(if compact { 36.0 } else { 80.0 }))
+        };
         let (frame, response) =
             ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
         // Fit the whole canvas inside the frame, whichever side limits it.
@@ -123,12 +132,17 @@ impl Dudel {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
         response.on_hover_text("Click or drag to move the view");
-        match crate::workspace::split_handle(ui) {
-            crate::workspace::SplitDrag::Reset => self.navigator_height = None,
-            crate::workspace::SplitDrag::By(delta) => {
-                self.navigator_height = Some((height + delta).clamp(80.0, 600.0))
+        // A palette is resized by its edges; Classic's panel has a handle.
+        if !palette {
+            match crate::workspace::split_handle(ui) {
+                crate::workspace::SplitDrag::Reset => self.navigator_height = None,
+                crate::workspace::SplitDrag::By(delta) => {
+                    self.navigator_height = Some((height + delta).clamp(80.0, 600.0))
+                }
+                crate::workspace::SplitDrag::None => {}
             }
-            crate::workspace::SplitDrag::None => {}
+        } else {
+            ui.add_space(4.0);
         }
         if compact {
             ui.menu_button("View options", |ui| {
@@ -138,7 +152,7 @@ impl Dudel {
                 self.navigator_view_controls(ui)
             });
         } else {
-            if palette {
+            if sliders {
                 self.navigator_sliders(ui);
             }
             self.navigator_view_controls(ui);

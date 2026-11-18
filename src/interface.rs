@@ -137,33 +137,28 @@ pub(crate) fn preset_card(
             p.rect_filled(at(38.0, 63.0, 52.0, 8.0), 4.0, rgb(palette.raised));
         }
         Layout::Atelier => {
+            // Tool bar, brush drawer over tool property, and the right
+            // column: navigator, color, layers.
             fill(at(0.0, 0.0, 128.0, 9.0), palette.panel);
-            fill(at(0.0, 9.0, 30.0, 49.0), palette.panel);
-            fill(at(98.0, 9.0, 30.0, 49.0), palette.panel);
-            fill(at(0.0, 58.0, 128.0, 16.0), palette.panel);
-            for y in [14.0, 22.0, 30.0] {
+            fill(at(0.0, 10.0, 7.0, 64.0), palette.panel);
+            fill(at(8.0, 10.0, 26.0, 30.0), palette.panel);
+            fill(at(8.0, 41.0, 26.0, 33.0), palette.panel);
+            fill(at(98.0, 10.0, 30.0, 18.0), palette.panel);
+            fill(at(98.0, 29.0, 30.0, 18.0), palette.panel);
+            fill(at(98.0, 48.0, 30.0, 26.0), palette.panel);
+            for y in [16.0, 24.0, 32.0] {
                 p.line_segment(
-                    [pt(4.0, y + 2.0), pt(26.0, y)],
+                    [pt(11.0, y + 2.0), pt(31.0, y)],
                     Stroke::new(
                         2.0_f32,
-                        accent.gamma_multiply(if y == 14.0 { 1.0 } else { 0.5 }),
+                        accent.gamma_multiply(if y == 16.0 { 1.0 } else { 0.5 }),
                     ),
                 );
             }
-            for x in 0..8 {
-                p.rect_filled(
-                    at(6.0 + x as f32 * 14.0, 61.0, 11.0, 9.0),
-                    1.0,
-                    Color32::from_gray(245),
-                );
-            }
-            p.rect_stroke(
-                at(48.0, 61.0, 11.0, 9.0),
-                1.0,
-                Stroke::new(1.5_f32, accent),
-                egui::StrokeKind::Outside,
-            );
-            page(at(40.0, 14.0, 48.0, 38.0));
+            p.circle_filled(pt(3.5, 15.0), 2.5 * k, accent);
+            p.rect_filled(at(104.0, 13.0, 18.0, 12.0), 1.0, Color32::from_gray(245));
+            p.circle_stroke(pt(113.0, 38.0), 6.0 * k, Stroke::new(2.0_f32, accent));
+            page(at(46.0, 18.0, 40.0, 46.0));
         }
     }
     let ring = if chosen {

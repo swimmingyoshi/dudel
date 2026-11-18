@@ -176,5 +176,5 @@ A recommendation, not a decision:
 - **Changing a starting arrangement.** Raise `PRESETS` in `src/dock.rs`, so
   that arrangements saved under the old presets give way to the new ones.
   Column widths in points go in `columns`; the test
-  `slate_columns_get_their_widths_in_points_once_laid_out` checks they are
+  `starting_columns_get_their_widths_in_points_once_laid_out` checks they are
   reached at 1280 and 1920 points wide.

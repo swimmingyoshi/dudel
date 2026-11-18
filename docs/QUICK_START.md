@@ -709,9 +709,10 @@ Theme > Style** offers three more, as a preview:
 - **Float**: the canvas fills the window. Tools sit in floating islands, the
   brush size and opacity on a slider rail, and every control is sized for a
   finger or pen.
-- **Atelier**: a brush drawer, a color tray and layers, with the timeline
-  below. Its **Draw**, **Paint** and **Animate** buttons bring the palettes
-  for each forward.
+- **Atelier**: light colors. The tools are a bar at the left edge with the
+  brush drawer and tool property beside them; the navigator, color and
+  layers are on the right. Its **Draw**, **Paint** and **Animate** buttons
+  bring the palettes for each forward.
 
 In these styles every panel is a palette that you can move:
 
