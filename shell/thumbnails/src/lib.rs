@@ -1,6 +1,6 @@
 //! Windows Explorer thumbnails for .dudel projects. Explorer hands the file
 //! as a stream; only its header is read, where Dudel stores a small preview
-//! (see src/file_preview.rs). Layers are never decoded here. Preview dimensions
+//! (see crates/dudel-core/src/file_preview.rs). Layers are never decoded here. Preview dimensions
 //! are capped before pixel decoding, with an additional decoder allocation budget.
 //!
 //! `regsvr32 dudel_thumbnails.dll` registers it for the current user (no
@@ -8,7 +8,7 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-#[path = "../../../src/file_preview_header.rs"]
+#[path = "../../../crates/dudel-core/src/file_preview_header.rs"]
 mod header;
 
 use std::{
