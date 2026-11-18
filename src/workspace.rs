@@ -870,6 +870,10 @@ impl Dudel {
             if menu_item(ui, "Welcome screen", "", true) {
                 self.welcome_open = true;
             }
+            if menu_item(ui, "First-time setup…", "", true) {
+                self.welcome_open = false;
+                self.first_run.start();
+            }
             if menu_item(ui, "Quick start guide", "", true) {
                 ui.ctx()
                     .open_url(egui::OpenUrl::new_tab(crate::welcome::GUIDE));
@@ -1952,6 +1956,7 @@ impl Dudel {
         self.shortcuts_ui(ctx);
         self.about_ui(ctx);
         self.welcome_ui(ctx);
+        self.first_run_ui(ctx);
         self.setup_ui(ctx);
         self.extension_manager_ui(ctx);
         self.import_report_ui(ctx);

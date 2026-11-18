@@ -39,6 +39,9 @@ pub(crate) const MODES: &[&str] = &[
     "--capture-file-menu",
     "--capture-fill",
     "--capture-filter",
+    "--capture-first-run",
+    "--capture-first-run-look",
+    "--capture-first-run-pen",
     "--capture-gradient",
     "--capture-install",
     "--capture-large-canvas",
@@ -814,6 +817,16 @@ pub(crate) fn prepare(
     }
     if capture_install {
         app.setup_capture_fixture(capture_updates);
+    }
+    if let Some(page) = match mode {
+        "--capture-first-run" => Some(crate::first_run::Page::Folder),
+        "--capture-first-run-look" => Some(crate::first_run::Page::Look),
+        "--capture-first-run-pen" => Some(crate::first_run::Page::Pen),
+        _ => None,
+    } {
+        app.first_run.start();
+        app.first_run.page = page;
+        app.setup.can_install = true;
     }
     if capture_welcome {
         app.welcome_open = true;

@@ -60,6 +60,12 @@ preferences open in Classic.
 - **Slate is the CSP-like dark layout** (2026-11-16): the tools as a
   vertical bar at the left edge, as in Classic, with brushes and tool
   property beside it; color, navigator and layers on the right.
+- **Keep all four styles** (2026-11-18); they are refined later. The themes
+  work well enough for now and get a closer review later.
+- **New installs choose their look** (2026-11-18): a first-time setup
+  (`src/first_run.rs`) asks for the Dudel folder, the style and colors, and
+  the control size, then opens the welcome window. Classic stays selected
+  unless the artist picks another. This settles open questions 2 and 3.
 - **One commit per step** on the branch. Nothing is pushed until the owner
   asks.
 

@@ -5038,6 +5038,42 @@ fn view_menu_saves_and_switches_named_workspaces() {
     assert_eq!(ui.app.status, "Workspace “Painting”");
 }
 
+#[test]
+fn first_time_setup_walks_its_pages_and_ends_in_the_welcome_window() {
+    use crate::first_run::Page;
+    use crate::ui::style::{Density, Layout};
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.app.show_welcome = false;
+    ui.app.first_run.start();
+    ui.settle();
+    ui.click(ui.text("Next"));
+    assert_eq!(ui.app.first_run.page, Page::Look);
+    // Choosing a style shows it at once, behind the window.
+    ui.click(ui.text("Slate"));
+    assert_eq!(ui.app.interface.layout, Layout::Slate);
+    ui.click(ui.text("Next"));
+    assert_eq!(ui.app.first_run.page, Page::Pen);
+    ui.click(ui.text("Touch"));
+    assert_eq!(ui.app.interface.density, Density::Touch);
+    ui.click(ui.text("Back"));
+    assert_eq!(ui.app.first_run.page, Page::Look);
+    ui.click(ui.text("Next"));
+    ui.click(ui.text("Start drawing"));
+    assert!(!ui.app.first_run.open);
+    // Finishing leads to a canvas even when the welcome window is off.
+    assert!(ui.app.welcome_open);
+    assert_eq!(ui.app.interface.density, Density::Touch);
+
+    // Skipping keeps the defaults and honours the welcome preference.
+    let mut ui = Workspace::sized([1280.0, 800.0]);
+    ui.app.show_welcome = false;
+    ui.app.first_run.start();
+    ui.settle();
+    ui.click(ui.text("Skip setup"));
+    assert!(!ui.app.first_run.open && !ui.app.welcome_open);
+    assert_eq!(ui.app.interface.layout, Layout::Classic);
+}
+
 impl Workspace {
     /// Press at `from`, move to `to` in steps, release: a mouse drag.
     fn mouse_drag(&mut self, from: egui::Pos2, to: egui::Pos2) {

@@ -1474,7 +1474,7 @@ mod tests {
         close_ready heap_compact_pending last_close_prompt_frame extensions \
         extension_errors extension_manager extension_panels show_transparency \
         color_height recovery_candidates recovery_window dialogs tabs tip_cursor \
-        pending_opens welcome_open show_welcome setup";
+        pending_opens welcome_open show_welcome setup first_run";
 
     #[test]
     fn every_app_field_travels_with_its_tab_or_is_listed_as_shared() {

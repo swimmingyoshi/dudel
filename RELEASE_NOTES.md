@@ -57,6 +57,13 @@ Pixel art tools and frame-by-frame animation.
 - **Palette files:** palette import reads Lospec `.hex` lists and GIMP `.gpl`
   palettes.
 
+**First-time setup**
+- On a new install, Dudel first asks where to keep art (Documents\Dudel or a
+  chosen folder), which style and colors to use (shown live behind the
+  window), the control size, and offers a pen test and, for a portable copy,
+  Install on this PC. It ends in the welcome window. Existing preferences
+  skip it; **Help > First-time setup** runs it again.
+
 **Workspace styles (preview)**
 - **Four styles:** **View > Theme > Style** switches between Classic (the
   interface as before, still the default), **Slate** (a compact dark layout:

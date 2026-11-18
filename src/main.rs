@@ -49,6 +49,7 @@ mod export_options;
 mod extension_api;
 mod extensions;
 mod fill;
+mod first_run;
 #[cfg(feature = "allocation-profile")]
 mod gpu_profile;
 mod gradient_tool;
@@ -535,6 +536,8 @@ struct Dudel {
     show_welcome: bool,
     /// The Updates and Install windows.
     setup: setup_ui::Setup,
+    /// First-time setup: folder, look and pen.
+    first_run: first_run::FirstRun,
 }
 
 impl Default for Dudel {
@@ -810,6 +813,7 @@ impl Default for Dudel {
             welcome_open: false,
             show_welcome: true,
             setup: Default::default(),
+            first_run: Default::default(),
         }
     }
 }
@@ -1559,6 +1563,12 @@ fn run() -> eframe::Result {
                 }
                 Ok(Box::new(app))
             } else {
+                // No saved preferences (and none damaged): Dudel's first start here.
+                let first_start = settings_issue.is_none()
+                    && cc
+                        .storage
+                        .and_then(|s| s.get_string(preferences::KEY))
+                        .is_none();
                 let mut app = Dudel::load_preferences(cc.storage);
                 app.settings_store = settings_handle;
                 if let Some(issue) = settings_issue {
@@ -1568,6 +1578,12 @@ fn run() -> eframe::Result {
                 app.display_active = display_settings::active_description(cc);
                 // Recovery asks first; the welcome window can wait for Help.
                 app.welcome_open = app.show_welcome && !app.recovery_window;
+                // Setup comes first and ends in the welcome window; a file
+                // opened with Dudel is not kept waiting behind it.
+                if first_start && open_files.is_empty() && !app.recovery_window {
+                    app.first_run.start();
+                    app.welcome_open = false;
+                }
                 if !open_files.is_empty() {
                     app.pending_opens = open_files;
                     app.welcome_open = false;

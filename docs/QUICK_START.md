@@ -3,7 +3,13 @@
 Dudel is a drawing application for pen tablets on Windows. Save editable work as
 a `.dudel` project and export PNG copies when you want to share the image.
 
-When Dudel starts, the welcome window offers a new canvas, **Open…** and your
+The first time Dudel starts, a short setup asks three things: where to keep
+your art (a Dudel folder in Documents, or one you choose), which look to use
+(the style and its colors, shown live behind the window), and the size of the
+controls, with a button to test your pen. Every choice can be changed later,
+and **Help > First-time setup** runs it again.
+
+After that, when Dudel starts, the welcome window offers a new canvas, **Open…** and your
 recent projects, with the keys worth learning first. Untick *Show this window
 when Dudel starts* to skip it; **Help > Welcome screen** brings it back. The
 **Help** menu also links to this guide and to the problem report form.

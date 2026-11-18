@@ -121,7 +121,7 @@ impl Locations {
     }
 }
 
-fn default_library() -> PathBuf {
+pub(crate) fn default_library() -> PathBuf {
     directories::UserDirs::new()
         .and_then(|dirs| {
             dirs.document_dir()

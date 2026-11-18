@@ -81,7 +81,7 @@ fn rgb(c: [u8; 3]) -> Color32 {
 }
 
 /// A small picture of a style's layout in its colors.
-fn preset_card(
+pub(crate) fn preset_card(
     ui: &mut egui::Ui,
     layout: Layout,
     chosen: bool,

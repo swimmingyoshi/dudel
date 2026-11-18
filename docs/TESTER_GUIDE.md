@@ -32,6 +32,10 @@ run `./dudel`. Pen pressure needs a Wayland session.
 
 ## The test
 
+The first time Dudel opens, it asks where to keep your art, which look you
+like and how large the controls should be. Pick whatever suits you; every
+choice can be changed later.
+
 1. **Check your pen (2 minutes).** Open **View > Tablet input**, then draw light
    to heavy strokes. On Windows, your tablet driver needs Windows Ink turned on.
    Does the line get thicker and darker as you press? Does the eraser end erase?
