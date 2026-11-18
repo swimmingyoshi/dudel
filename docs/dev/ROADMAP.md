@@ -160,16 +160,23 @@ release.
       own key and not only through GitHub and its checksum.
 - [ ] In-place updates on Linux (the check links to the download today).
 
-## Interface styles and palettes (ui branch)
+## Interface styles and palettes
 
-On the `ui` branch since 2026-11-16, not decided for a release: Slate, Float
-and Atelier styles beside Classic, dockable palettes as in Clip Studio Paint,
-a Settings sidebar, and the code split into three crates. What it holds, the
-open questions and a suggested way forward are in [UI_BRANCH.md](UI_BRANCH.md).
+Merged into master on 2026-11-18: Slate, Float and Atelier styles beside
+Classic, dockable palettes as in Clip Studio Paint, a Settings sidebar, and
+the code split into three crates. What it holds and the questions still open
+are in [UI_BRANCH.md](UI_BRANCH.md).
 
+- [x] Ship it, keeping all four styles (owner, 2026-11-18); Classic stays
+      the default.
+- [x] Notices for the new packages, user docs, CI (2026-11-18).
+- [x] First-time setup on new installs: Dudel folder, style and colors,
+      control size, pen test, Install (2026-11-18).
+- [ ] A design pass on windows and dialogs: setup, welcome, Settings and
+      the like feel plain (owner, 2026-11-18: "good for now"). Headers,
+      illustrations or previews, spacing and hierarchy, in every style.
+- [ ] Refine Float and Atelier; review the themes in every style.
 - [ ] The owner's pen pass on Slate.
-- [ ] Decide whether to ship, which styles, and the default for new installs.
-- [ ] Before merging: notices for the new packages, user docs, one CI run.
 
 ## Later
 
