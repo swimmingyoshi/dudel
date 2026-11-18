@@ -46,6 +46,11 @@ run `./dudel`. Pen pressure needs a Wayland session.
 5. **Optional: bring in your own work (5 minutes).** Press `Ctrl+O` and open a
    *copy* of a `.psd` or Clip Studio `.clip` file. Does it look right? Are the
    layers still there?
+6. **Optional: try another layout (5 minutes).** Open **View > Theme > Style**
+   and pick **Slate**, **Float** or **Atelier**. Drag a panel's tab somewhere
+   else, then use the **Window** menu to bring back one you closed. Is the
+   layout comfortable with your pen? Classic is one click away in the same
+   menu.
 
 ## Tell us how it went
 

@@ -57,6 +57,30 @@ Pixel art tools and frame-by-frame animation.
 - **Palette files:** palette import reads Lospec `.hex` lists and GIMP `.gpl`
   palettes.
 
+**Workspace styles (preview)**
+- **Four styles:** **View > Theme > Style** switches between Classic (the
+  interface as before, still the default), **Slate** (a compact dark layout:
+  the tool bar at the left edge, brushes and tool property beside it, color
+  and layers on the right), **Float** (the canvas fills the window, with tool
+  islands, a slider rail and touch-sized controls) and **Atelier** (a brush
+  drawer, color tray and timeline, with Draw, Paint and Animate modes).
+  Existing preferences open in Classic.
+- **Palettes:** in Slate, Float and Atelier every panel is a palette, as in
+  Clip Studio Paint and Photoshop. Drag a tab onto another group to join it,
+  onto an edge to split the area, or off to float it inside the window.
+  The new **Window** menu opens and closes each palette, and has **Lock
+  palettes** (no dragging, closing or floating, for a pen) and **Reset to
+  the arrangement**. Each style remembers your changes, and **View >
+  Workspaces** saves the style with its arrangement.
+- **Colors:** the themes (Dudel Dark, Paper, Graphite and your own) color
+  every style; each style also has its own colors. **Settings > Interface**
+  changes layout, icons, density, corners and colors one by one.
+- **Settings window:** categories down the side, a search over every
+  setting, and **Reset this page**.
+- **Dialogs fit the window:** New canvas and Canvas size scroll when the
+  window is small or the interface is large, and a menu cut off at the
+  window's edge shows its scroll bar.
+
 ## 0.5.0 (2026-11-13)
 
 Dudel can install itself and update itself, and large wet, smudge and thick

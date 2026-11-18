@@ -692,6 +692,44 @@ Build/run instructions are in the [README](../README.md); planned work is in the
 
 See [file format support](FORMAT_SUPPORT.md) for the native-version and restricted CSP import matrix.
 
+## Arrange the workspace
+
+Dudel opens in **Classic**, the fixed layout described above. **View >
+Theme > Style** offers three more, as a preview:
+
+- **Slate**: compact and dark. The tools are a bar at the left edge with
+  brushes and tool property beside them; color, navigator and layers are on
+  the right.
+- **Float**: the canvas fills the window. Tools sit in floating islands, the
+  brush size and opacity on a slider rail, and every control is sized for a
+  finger or pen.
+- **Atelier**: a brush drawer, a color tray and layers, with the timeline
+  below. Its **Draw**, **Paint** and **Animate** buttons bring the palettes
+  for each forward.
+
+In these styles every panel is a palette that you can move:
+
+- Drag a palette's tab onto another group to join it, onto the edge of a
+  group or of the canvas to split that area, or away to let it float inside
+  the window. Right-click a tab for **Close** and **Float**.
+- **Window** lists every palette; check one to open it and uncheck it to
+  close it. **Lock palettes** stops tabs from being dragged, closed or
+  floated by accident with a pen. **Reset to the … arrangement** brings back
+  the style's starting layout.
+- Each style remembers your changes. **View > Workspaces** saves the style
+  and its arrangement under a name, so you can keep one for sketching and
+  another for painting.
+- **Tab** still hides every panel, and the palettes come back as they were.
+
+**View > Theme > Colors** picks the style's own colors or a theme (Dudel
+Dark, Paper, Graphite, or one you saved). **Settings > Interface** changes
+the layout, icon look, density, corner radius and colors one at a time;
+Float can put its slider rail on the right for left-handed drawing.
+
+The **Settings** window lists its categories down the side and has a search
+box that finds any setting. **Reset this page…** returns one category to its
+defaults.
+
 ## Timelapse and personalization
 
 Use View > Timelapse to record artwork and export an animated GIF or MP4 (fitted into 15 seconds to a minute if you like) or keep its PNG frames. View > Theme selects or imports a persistent UI palette. Reference rows have separate visibility/lock controls and Move up/down actions. See [creator features](CREATOR_FEATURES.md) for recording limits, reference organization and the new brush presets.

@@ -1,7 +1,8 @@
 # The ui branch
 
-Updated 2026-11-16. Branch `ui`, eight commits on master `cd47b0a`; not
-merged, and nothing is decided yet about shipping it. These notes record what
+Merged into master on 2026-11-18, with Classic as the default and the other
+styles described as a preview in the user docs. The open questions below
+are still open. These notes record what
 the branch holds, what was decided along the way, what is still open, and a
 suggested way forward. How the styles and palettes behave is in
 [UI_STYLES.md](UI_STYLES.md); the crate layout is in [CRATES.md](CRATES.md).
@@ -93,15 +94,19 @@ as a whole.
 
 ## Before it can be merged
 
-- **License notices.** The palettes bring four new packages: `egui_dock`,
-  plus `duplicate`, `heck` and `proc-macro2-diagnostics`, which are used
-  only while building. All are MIT or Apache-2.0. Their notices must go into
-  the notice set: run packaging, review what the fixed-revision collector
-  finds for them, and freeze it as described in
-  `scripts/upstream-notices/README.md`.
-- **One CI run.** The branch has only been verified locally: 1,479 tests,
-  and Clippy clean with and without the diagnostic features. The Linux
-  build and packaging have not run on it. CI runs on pull requests and on
+- **License notices.** Done (2026-11-18). The palettes bring four new
+  packages: `egui_dock`, plus `duplicate`, `heck` and
+  `proc-macro2-diagnostics`, which are used only while building. All are
+  MIT or Apache-2.0, and each ships its own license files, which packaging
+  copies from the vendored crate; nothing needed freezing in
+  `scripts/upstream-notices`. `check_release_notices.py` already skips
+  Dudel's own crates.
+- **One CI run.** Before the merge (2026-11-18) the branch passed
+  `Verify.ps1 -Mode Full -SkipReleaseBuild` locally (1,499 tests, Clippy
+  with and without features, the thumbnail DLL, the Python checks) and
+  Clippy for Linux through `cargo-zigbuild clippy`. That run found the
+  thumbnail DLL still reading `src/file_preview_header.rs`, which the split
+  had moved; fixed. Packaging has not run on it. CI runs on pull requests and on
   master, so one pull request run (or the run when it reaches master)
   covers both.
 - **Keeping up with master.** The split moves about a hundred files, so
@@ -109,9 +114,9 @@ as a whole.
   `crates/dudel-core`. The longer the branch waits, the more of that there
   is. Merge master into the branch whenever master moves, rather than all
   at once at the end.
-- **User docs.** QUICK_START and TESTER_GUIDE need the styles, the Window
-  menu, Lock palettes and the new Settings layout; the release notes need
-  the same.
+- **User docs.** Done (2026-11-18): QUICK_START has "Arrange the
+  workspace", TESTER_GUIDE an optional layout step, and the release notes a
+  "Workspace styles (preview)" block.
 - **Engine rebuild time.** After an edit in the engine, the test build is
   slower than before the split (101 s against 57 s), because the app's tests
   are rebuilt too. `cargo test -p dudel-core` avoids this while working on
