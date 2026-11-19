@@ -176,7 +176,8 @@ are in [UI_BRANCH.md](UI_BRANCH.md).
       the like feel plain (owner, 2026-11-18: "good for now"). Headers,
       illustrations or previews, spacing and hierarchy, in every style.
 - [ ] Refine Float and Atelier; review the themes in every style.
-- [ ] The owner's pen pass on Slate.
+- [x] The owner's pen pass: "everything works fine on tablet"
+      (2026-11-18). The `ui` branch was then deleted.
 
 ## Later
 

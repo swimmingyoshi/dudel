@@ -40,8 +40,8 @@ Size: 158 files changed against master, most of it files moved into
 
 ## Trying it
 
-The branch lives in the worktree `artifacts/ui`. Build and run it there with
-`cargo run --profile fast`. Then use View › Theme › Style, or
+The branch was merged and deleted on 2026-11-18; everything below is on
+master. Build and run it with `cargo run --profile fast`. Then use View › Theme › Style, or
 Settings › Interface, to pick a style. Classic is the default, and existing
 preferences open in Classic.
 
