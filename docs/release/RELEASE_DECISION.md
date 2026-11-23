@@ -1,8 +1,46 @@
-# Windows 0.5 release decision — 2026-11-13
+# Windows 0.6 release decision — 2026-11-23
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.6.0 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-23 to create the new release. The
+earlier decisions that follow remain the record for the evidence carried over.
+
+**Application source:** commit `aef2d28`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`DFE47597...0A94819C` and DLL `F49F958A...D5228CB9`, and release packaging refuses
+different bytes.
+
+**What changed since 0.5.0** (see [release notes](../../RELEASE_NOTES.md)):
+pixel art tools; frame-by-frame animation; three workspace styles with movable
+palettes beside Classic; first-time setup; Layer > Merge; timelapse changes and
+a lighter pen quick menu. The code is split into three crates.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full -SkipReleaseBuild` on `aef2d28`: 1,502
+  tests (27 ignored), nine diagnostic-feature tests, three DLL tests,
+  formatting, Clippy, the Python tests and the public-tree check. Packaging
+  made the release builds.
+- Candidate `dudel-0.6.0-candidate-20261123-211722-525`: `Package.ps1` ran end
+  to end, with 0 public-tree problems in the package and its source ZIP. The
+  packaged executable started and captured its welcome window.
+- The owner used the workspace styles on the tablet, 2026-11-18: "everything
+  works fine on tablet".
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.6.0` tag is made; the tag is the record that they did.
+
+**Not run on this build:** an update from the published 0.5.0, an offline
+rebuild of the source ZIP, an owner pen pass recorded for pixel art and
+animation, the private CSP corpus comparison, the resource and two-hour
+studies, and a launch of the Linux build.
+
+**Known limits** are listed under "Limits in 0.6.0" and "Known limits" in
+the release notes.
+
+# Windows 0.5 release decision — 2026-11-13
 
 **Release preparation for 0.5.0 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-13 to make the release. The

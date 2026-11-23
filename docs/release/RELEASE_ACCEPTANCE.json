@@ -1,20 +1,20 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-11-13",
+  "decision_date": "2026-11-23",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 pre-release for outside testers, with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at commit 929d4ab; later commits change documents only, and the v0.5.0 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "0.5.0: Install on this PC and updates from inside Dudel (only when asked, checksum-checked, undone if a file cannot be placed), projects opened from File Explorer, wet, smudge, blur and thick paint dabs across processor cores, large wet brushes and the palette knife keeping up with the pen, tips that turn with the stroke starting turned, no display flicker around a large brush, a wet stroke and its drying as one undo step, pure black mixing as a pigment, and Water, Pigment, Thickness, Paper texture and Granulation outputs for brush graphs. Project and file formats are unchanged from 0.4.0. The painting function and main.rs were broken up with byte-identical output. Evidence: local Verify Full, both packaging gates, an offline rebuild of the source archive and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.4.0 binaries: dudel.exe D18964FD...069242B5, dudel_thumbnails.dll DE919FF4...1CF7BA34.",
+  "application_source": "this repository's source at commit aef2d28; later commits change documents only, and the v0.6.0 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.6.0: pixel art tools, frame-by-frame animation with layers as frames, Slate, Float and Atelier workspace styles with dockable palettes (preview; Classic stays the default), first-time setup, a Settings sidebar with search, Layer > Merge, timelapse length and sharp pixel art timelapses, and a lighter pen quick menu. The code is split into three crates. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.5.0 binaries: dudel.exe 9671660F...D3D23589, dudel_thumbnails.dll C36C876C...F4A15F51.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "9671660F9705FD19CB71DDB351AAE0ED712DF0DE6711DA4FBB20AB50D3D23589"
+      "sha256": "DFE47597F994258E63739F07898F873D70E391DB882AB3EE55F6245E0A94819C"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "C36C876CBA63589F253F08B519D614A98EC9418613BAA780782E8685F4A15F51"
+      "sha256": "F49F958A1966695258254E5D1A1294DC6B64C4446985FDCBF35FB278D5228CB9"
     }
   ]
 }
