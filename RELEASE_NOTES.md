@@ -4,11 +4,14 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.6.0 (2026-11-23)
 
-Pixel art tools and frame-by-frame animation.
+Pixel art tools, frame-by-frame animation and three new workspace styles with
+movable palettes. Projects from 0.5.0 open unchanged, and Classic stays the
+default style.
 
-**Animation**
+### Animation
+
 - **Frames are layers:** **Canvas > Animation timeline** turns a project
   into an animation in which each top-level layer or folder is a frame,
   bottom first, as in Procreate's Animation Assist. A folder makes a frame
@@ -33,7 +36,8 @@ Pixel art tools and frame-by-frame animation.
   columns, or an MP4 video through FFmpeg, scaled up by a whole number for
   pixel art if wanted.
 
-**Pixel art**
+### Pixel art
+
 - **Pixel pencil:** a new built-in preset in the Pencil tool. Any brush can
   paint pixel art with **Pixel art** in its settings: whole pixels with no
   soft edge, a dab on every pixel the stroke crosses, and one-pixel lines
@@ -57,14 +61,16 @@ Pixel art tools and frame-by-frame animation.
 - **Palette files:** palette import reads Lospec `.hex` lists and GIMP `.gpl`
   palettes.
 
-**First-time setup**
+### First-time setup
+
 - On a new install, Dudel first asks where to keep art (Documents\Dudel or a
   chosen folder), which style and colors to use (shown live behind the
   window), the control size, and offers a pen test and, for a portable copy,
   Install on this PC. It ends in the welcome window. Existing preferences
   skip it; **Help > First-time setup** runs it again.
 
-**Workspace styles (preview)**
+### Workspace styles (preview)
+
 - **Four styles:** **View > Theme > Style** switches between Classic (the
   interface as before, still the default), **Slate** (a compact dark layout:
   the tool bar at the left edge, brushes and tool property beside it, color
@@ -90,6 +96,31 @@ Pixel art tools and frame-by-frame animation.
 - **Dialogs fit the window:** New canvas and Canvas size scroll when the
   window is small or the interface is large, and a menu cut off at the
   window's edge shows its scroll bar.
+
+### Layers, timelapse and the pen menu
+
+- **Layer > Merge:** merge up, merge the selected layers (**Ctrl+E** with
+  several selected), merge visible, merge visible to a new layer, and flatten.
+  Each is one undo step.
+- **Sharp pixel art timelapses:** recordings of small canvases preview and
+  export enlarged by whole numbers.
+- **Timelapse length:** an export can be fitted into one minute, 30 seconds
+  or 15 seconds.
+- **Recordings follow their project:** a recording takes the saved project's
+  name, and reopening a project brings back its latest recording.
+- **Lighter pen quick menu:** thin bands around an open middle, so the canvas
+  stays in view. Hold the side button, slide onto an item and let go to pick
+  it, or tap it.
+
+### Limits in 0.6.0
+
+- Updating from 0.5.0 with **Help > Check for updates** is the first update
+  between two published releases, and has not been tried on one yet. If it
+  fails, extract the new ZIP and choose **Install on this PC**.
+- The new workspace styles are a preview: their arrangements may change.
+- Using two versions of Dudel on one account shares settings, and an older
+  version may drop the settings it does not know. Run one copy at a time.
+- MP4 export needs FFmpeg.
 
 ## 0.5.0 (2026-11-13)
 

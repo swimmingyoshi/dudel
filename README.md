@@ -47,6 +47,12 @@ built for illustrating on a pen display or tablet.
 - On watercolor and thick paint, colors **mix like paint**: blue and yellow
   make green.
 
+**Pixel art and animation**
+- A **pixel pencil** with pixel-perfect lines, a pixel grid, small-canvas presets,
+  wrap-around painting for seamless tiles, palette limits and sharp scaled export.
+- **Frame-by-frame animation** with layers as frames: timeline, holds, onion skin,
+  playback, and GIF, PNG, sprite sheet or MP4 export (MP4 needs FFmpeg).
+
 **Layers and editing**
 - Raster layers, **vector layers**, folders, clipping, blend modes and nondestructive **layer masks**.
 - Vector lines stay editable: pick them, then move, reshape, scale, rotate, smooth
@@ -65,6 +71,8 @@ built for illustrating on a pen display or tablet.
   colors and your chosen commands under the tip.
 - **Command search** (`Ctrl+K`), custom keyboard shortcuts and named
   **workspaces** for your panel arrangements.
+- Four **workspace styles** (Classic, and Slate, Float and Atelier as a preview);
+  the new ones have palettes you can dock, float and close.
 
 **Your work stays safe**
 - Editable `.dudel` projects with atomic saves, cancelable background saves and
@@ -89,6 +97,8 @@ built for illustrating on a pen display or tablet.
 | **Layer masks**: paint, fill, lasso and transform masks without touching pixels | **Free transform**: numeric fields, flips, quality and mirror-pair editing |
 | ![Reference boards grouped in a folder beside the layer list](docs/images/reference-boards.png) | ![The timelapse window with playback and GIF export](docs/images/timelapse.png) |
 | **References**: organize study images into boards; they never print or export | **Timelapse**: record a canvas and export a GIF or its PNG frames |
+| ![Pixel art on a small canvas with the pixel grid](docs/images/pixel-art.png) | ![The animation timeline with onion skin](docs/images/animation.png) |
+| **Pixel art**: whole-pixel brushes, grid and seamless tiles | **Animation**: layers as frames, with a timeline and onion skin |
 
 ## Download and install
 

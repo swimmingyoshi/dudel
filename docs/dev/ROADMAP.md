@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-13, with the 0.5.0 pre-release. This replaces the earlier plan
+Updated 2026-11-23, with 0.6.0. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -115,7 +115,7 @@ The canvas as a surface that paint reacts to, in stages:
 - [x] Code structure and builds: the painting function and `main.rs` broken
       up, a `fast` build profile, shorter CI.
 - [ ] Update from one published release to the next, tried on an installed
-      and a portable copy (possible once 0.5.0 is published).
+      and a portable copy (possible once 0.6.0 is published).
 
 ## 0.6: pixel art and animation
 
