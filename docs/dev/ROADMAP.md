@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-23, with 0.6.1. This replaces the earlier plan
+Updated 2026-11-23, with 0.6.2. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction

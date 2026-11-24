@@ -4,10 +4,15 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.6.2 (2026-11-23)
+
+A fix for restarting after an update. Projects and file formats are unchanged
+from 0.6.1.
 
 - **Restart now** after an update (and after Install on this PC) reopens
-  Dudel also when nothing is unsaved. Before, it only closed.
+  Dudel also when nothing is unsaved. Before, it only closed. The version being replaced does the
+  restart, so updating from 0.6.1 or earlier to this one can still need
+  opening Dudel again by hand.
 
 ## 0.6.1 (2026-11-23)
 
