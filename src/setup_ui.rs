@@ -110,7 +110,7 @@ impl Dudel {
 
     /// Hand a requested restart over once closing is certain, and forget
     /// it when the artist cancels the close.
-    fn track_relaunch(&mut self, frame: u64) {
+    pub(crate) fn track_relaunch(&mut self, frame: u64) {
         let Some((program, asked)) = &self.setup.relaunch else {
             return;
         };
@@ -480,6 +480,15 @@ mod tests {
         app.request_replace(Action::Close);
         app.answer_unsaved(UnsavedChoice::Discard);
         app.track_relaunch(31);
+        assert_eq!(requested(), Some(PathBuf::from("new-dudel")));
+        // With nothing unsaved, closing is certain as soon as it is asked
+        // for, so the same frame must hand the restart over.
+        let mut app = Dudel::default();
+        app.setup.relaunch = Some(("new-dudel".into(), 40));
+        app.track_relaunch(41);
+        app.request_replace(Action::Close);
+        assert!(app.close_ready);
+        app.track_relaunch(41);
         assert_eq!(requested(), Some(PathBuf::from("new-dudel")));
     }
 }

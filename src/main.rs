@@ -1392,6 +1392,9 @@ impl eframe::App for Dudel {
         self.unsaved_dialog(ctx);
         self.dialogs_ui(ctx);
         self.poll_dialogs(ctx);
+        // With nothing unsaved, this is the last frame: a restart asked for
+        // must be handed over now.
+        self.track_relaunch(ctx.cumulative_frame_nr());
         self.close_viewport_if_ready(ctx);
         self.performance.frame_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
         self.performance.frames.record(self.performance.frame_ms);

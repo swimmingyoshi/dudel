@@ -116,8 +116,9 @@ The canvas as a surface that paint reacts to, in stages:
       up, a `fast` build profile, shorter CI.
 - [x] Update from one published release to the next: 0.5.0's update code
       against the published 0.6.0, on a portable copy in use (2026-11-23).
-- [ ] The same clicked through in the window, with the restart, on an
-      installed copy.
+- [x] The same clicked through in the window on an installed copy: 0.6.0 to
+      0.6.1 in Windows Sandbox (2026-11-23). The restart did not reopen Dudel;
+      fixed after 0.6.1 and checked there the same way.
 
 ## 0.6: pixel art and animation
 

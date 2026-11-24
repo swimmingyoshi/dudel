@@ -4,6 +4,11 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+- **Restart now** after an update (and after Install on this PC) reopens
+  Dudel also when nothing is unsaved. Before, it only closed.
+
 ## 0.6.1 (2026-11-23)
 
 MP4 export without FFmpeg on Windows, and timelapses that stay with their
