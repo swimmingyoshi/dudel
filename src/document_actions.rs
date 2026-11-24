@@ -139,6 +139,7 @@ impl Dudel {
         if matches!(action, Action::New(..)) {
             self.new_canvas = false;
         }
+        self.settle_timelapse();
         self.retire_indexed_session();
         self.cancel_gestures();
         self.cancel_load();

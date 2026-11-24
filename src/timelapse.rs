@@ -213,6 +213,22 @@ impl Recording {
         }
         self.message = message;
     }
+    /// Count the frame being written, waiting for it.
+    fn join_frame(&mut self) {
+        let Some(worker) = self.worker.take() else {
+            return;
+        };
+        match worker.join() {
+            Ok(Ok(Captured::Written { bytes, hash })) => {
+                self.frames += 1;
+                self.bytes += bytes;
+                self.hash = Some(hash);
+            }
+            Ok(Ok(Captured::Same)) => {}
+            Ok(Err(e)) => self.end(format!("Recording stopped: {e}")),
+            Err(_) => self.end("Recording stopped: frame worker failed".into()),
+        }
+    }
     /// The canvas is being replaced. An active recording stays active on
     /// disk, so reopening its project continues it; a requested stop is
     /// recorded first.
@@ -931,20 +947,57 @@ impl Dudel {
         }
     }
 
+    /// The canvas is about to be replaced or closed, perhaps in the same
+    /// step that saved it under its first name: its recording must know the
+    /// project before it is let go, or reopening the project starts another.
+    pub(crate) fn settle_timelapse(&mut self) {
+        if self.path.is_some() && self.recording.project != self.path {
+            self.recording.join_frame();
+            self.claim_timelapse();
+        }
+    }
+
+    fn claim_timelapse(&mut self) {
+        let r = &mut self.recording;
+        // Saving as a new path moves the recording to that project.
+        if r.worker.is_none()
+            && r.frames > 0
+            && r.project != self.path
+            && let Some(root) = &r.root
+        {
+            r.project = self.path.clone();
+            let _ = r.inventory(r.on).write(root);
+        }
+        // Its folder takes the project's name, once nothing is reading it.
+        let t = &self.timelapse;
+        if r.worker.is_none()
+            && r.frames > 0
+            && r.project.is_some()
+            && r.named_for != r.project
+            && t.export.is_none()
+            && let Some(root) = r.root.clone()
+            && t.opened.as_ref().is_none_or(|(opened, _)| *opened != root)
+            && t.player
+                .decode
+                .as_ref()
+                .is_none_or(|(decoding, ..)| *decoding != root)
+        {
+            r.named_for = r.project.clone();
+            if let Some(project) = &r.project {
+                match follow_project(&root, project) {
+                    Ok(Some(moved)) => r.root = Some(moved),
+                    Ok(None) => {}
+                    Err(e) => r.message = format!("The recording's folder keeps its name: {e}"),
+                }
+            }
+        }
+    }
+
     pub(crate) fn poll_timelapse(&mut self, ctx: &egui::Context) {
         let interval = self.timelapse.prefs.interval;
         let r = &mut self.recording;
         if r.worker.as_ref().is_some_and(|w| w.is_finished()) {
-            match r.worker.take().unwrap().join() {
-                Ok(Ok(Captured::Written { bytes, hash })) => {
-                    r.frames += 1;
-                    r.bytes += bytes;
-                    r.hash = Some(hash);
-                }
-                Ok(Ok(Captured::Same)) => {}
-                Ok(Err(e)) => r.end(format!("Recording stopped: {e}")),
-                Err(_) => r.end("Recording stopped: frame worker failed".into()),
-            }
+            r.join_frame();
         }
         if (r.on || r.finish) && r.dimensions != [self.doc.width, self.doc.height] {
             r.end("Recording stopped because the canvas size changed; its frames are kept".into());
@@ -1002,38 +1055,8 @@ impl Dudel {
                 }
             }
         }
-        // Saving as a new path moves the recording to that project.
-        if r.worker.is_none()
-            && r.frames > 0
-            && r.project != self.path
-            && let Some(root) = &r.root
-        {
-            r.project = self.path.clone();
-            let _ = r.inventory(r.on).write(root);
-        }
-        // Its folder takes the project's name, once nothing is reading it.
-        let t = &self.timelapse;
-        if r.worker.is_none()
-            && r.frames > 0
-            && r.project.is_some()
-            && r.named_for != r.project
-            && t.export.is_none()
-            && let Some(root) = r.root.clone()
-            && t.opened.as_ref().is_none_or(|(opened, _)| *opened != root)
-            && t.player
-                .decode
-                .as_ref()
-                .is_none_or(|(decoding, ..)| *decoding != root)
-        {
-            r.named_for = r.project.clone();
-            if let Some(project) = &r.project {
-                match follow_project(&root, project) {
-                    Ok(Some(moved)) => r.root = Some(moved),
-                    Ok(None) => {}
-                    Err(e) => r.message = format!("The recording's folder keeps its name: {e}"),
-                }
-            }
-        }
+        self.claim_timelapse();
+        let r = &self.recording;
         let t = &self.timelapse;
         if r.on || r.worker.is_some() || r.finish || t.export.is_some() {
             ctx.request_repaint_after(Duration::from_millis(
@@ -1882,6 +1905,62 @@ mod tests {
         app.start_timelapse();
         assert!(app.recording.recording());
         assert_eq!(app.recording.root.as_ref(), Some(&root));
+    }
+
+    /// Saving on the way to another canvas, out of a tab or out of Dudel
+    /// leaves no frame in which to notice the project's name.
+    #[test]
+    fn saving_on_the_way_out_keeps_the_recording_with_its_project() {
+        use crate::document_actions::Action;
+        for frame_in_flight in [false, true] {
+            for leave in [
+                (|| Action::New(6, 5, 300.0)) as fn() -> Action,
+                || Action::CloseTab,
+                || Action::Close,
+            ] {
+                let mut app = Dudel::default();
+                let library = library(&mut app);
+                let ctx = egui::Context::default();
+                app.apply_action(Action::New(6, 5, 300.0));
+                app.start_timelapse();
+                app.doc.layers[0].pixels = [200, 10, 10, 255].repeat(30).into();
+                app.revision += 1;
+                app.poll_timelapse(&ctx);
+                if !frame_in_flight {
+                    settle(&mut app, &ctx);
+                }
+                let document = app.doc.clone();
+                let project = library.path().join("art.dudel");
+                app.modified = true;
+                app.save_to(project.clone(), Some(leave()));
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while app.save_job.is_some() || app.pending_action.is_some() {
+                    assert!(Instant::now() < deadline, "save did not finish");
+                    std::thread::sleep(Duration::from_millis(1));
+                    app.poll_save(&ctx);
+                }
+                // As the next start of Dudel would open it.
+                let mut app = Dudel::default();
+                app.locations.library = Some(library.path().to_owned());
+                app.apply_action(Action::Replace {
+                    document: Box::new(document),
+                    path: Some(project.clone()),
+                    modified: false,
+                    status: "Opened",
+                });
+                assert!(app.recording.recording(), "in flight: {frame_in_flight}");
+                assert_eq!(app.recording.frames, 1);
+                let folders: Vec<_> =
+                    std::fs::read_dir(app.locations.get(crate::locations::Kind::Timelapses))
+                        .unwrap()
+                        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                        .collect();
+                assert!(
+                    folders.len() == 1 && folders[0].starts_with("art "),
+                    "{folders:?}"
+                );
+            }
+        }
     }
 
     #[test]

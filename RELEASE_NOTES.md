@@ -11,6 +11,9 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   when Windows cannot encode a video (a very large one, or an N edition
   without Microsoft's Media Feature Pack) and it is installed. Videos under 64
   pixels on a side are enlarged by a whole number. Linux still needs FFmpeg.
+- **Timelapses stay with their project:** saving a canvas for the first time
+  while starting a new canvas, closing its tab or quitting left its recording
+  as "Untitled", and reopening the project started a second one.
 - **About Dudel** names the commit the program was built from.
 - **Building from source:** a build not made by the packaging scripts is a
   development build. It keeps its own settings, recovery copies and

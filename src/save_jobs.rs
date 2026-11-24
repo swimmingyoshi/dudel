@@ -86,7 +86,11 @@ impl Dudel {
             }
         }
     }
-    fn save_to(&mut self, path: PathBuf, action: Option<crate::document_actions::Action>) {
+    pub(crate) fn save_to(
+        &mut self,
+        path: PathBuf,
+        action: Option<crate::document_actions::Action>,
+    ) {
         // A different tab owns its on-disk baseline, even when it has no edits.
         // Reject before settling gestures or attaching a destructive continuation.
         if let Some(index) = self.tab_with_path(&path)
