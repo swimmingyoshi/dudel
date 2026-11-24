@@ -4,7 +4,10 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.6.1 (2026-11-23)
+
+MP4 export without FFmpeg on Windows, and timelapses that stay with their
+project. Projects and file formats are unchanged from 0.6.0.
 
 - **MP4 without FFmpeg:** on Windows, timelapses and animations export to MP4
   with Windows' own encoder; nothing needs installing. FFmpeg is used only
@@ -20,6 +23,14 @@ release is a portable ZIP: extract it and run `dudel.exe` (see the
   extensions (starting from a copy of the installed Dudel's) and cannot
   install itself. Set `DUDEL_PACKAGED=1` while building to make an ordinary
   Dudel.
+
+### Limits in 0.6.1
+
+- MP4 files were 1.5 to 1.9 times as large as FFmpeg's in two test
+  recordings, at slightly lower measured quality.
+- A never-saved canvas brought back by crash recovery starts a new timelapse,
+  and recordings split by earlier versions are not rejoined.
+- MP4 export has not been tried on an N edition of Windows.
 
 ## 0.6.0 (2026-11-23)
 

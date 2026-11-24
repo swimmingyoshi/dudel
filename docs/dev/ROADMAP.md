@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-23, with 0.6.0. This replaces the earlier plan
+Updated 2026-11-23, with 0.6.1. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -150,6 +150,8 @@ release.
 - [x] MP4 export on Windows without FFmpeg (`src/video.rs`).
 - [x] Development builds apart from the installed copy
       (`crates/dudel-core/src/identity.rs`); the commit in About.
+- [x] A first save on the way out of a canvas keeps its timelapse with the
+      project (owner's report).
 - [ ] A local release list for development builds, to click through an
       update before publishing one.
 

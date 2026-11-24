@@ -222,8 +222,8 @@ exactly; details are in the [quick start](docs/QUICK_START.md#if-the-line-lags-b
 - Paint-like color mixing is an approximation of real pigments and happens on
   watercolor and thick paint layers only.
 - Windows x64 is the supported platform; Linux builds are experimental.
-- MP4 export needs FFmpeg in 0.6.0 and earlier, and on Linux. Later Windows
-  versions use Windows' own encoder.
+- MP4 export needs FFmpeg in 0.6.0 and earlier, and on Linux. Since 0.6.1,
+  Windows versions use Windows' own encoder.
 
 See [release notes](RELEASE_NOTES.md#known-limits) for the full list.
 
