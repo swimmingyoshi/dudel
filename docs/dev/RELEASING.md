@@ -17,7 +17,8 @@ hosted CI once on the final candidate.
 2. **Verify.** Run `.\scripts\Verify.ps1 -Mode Full` on the frozen source.
    See [testing](TESTING.md).
 3. **Candidate package.** Run `.\scripts\Package.ps1`. It builds both binaries
-   with path remapping, the source ZIP and the third-party notices, and refuses
+   with path remapping and `DUDEL_PACKAGED` set (any other build is a
+   development build and never ships), the source ZIP and the third-party notices, and refuses
    personal paths.
 4. **Accept the binaries.** Record the executable and DLL SHA-256 values in
    [RELEASE_ACCEPTANCE.json](../release/RELEASE_ACCEPTANCE.json), and note the

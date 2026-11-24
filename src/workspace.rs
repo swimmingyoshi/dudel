@@ -408,6 +408,7 @@ impl Dudel {
             .show(ctx, |ui| {
                 ui.heading("Dudel");
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.small(crate::development::origin());
                 ui.label("A native illustration application.");
                 ui.separator();
                 ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));

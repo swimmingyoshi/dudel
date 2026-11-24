@@ -1,5 +1,5 @@
 //! Exporting an animation: an animated GIF, numbered PNG frames, a sprite
-//! sheet, or an MP4 video through FFmpeg. Each frame is the document as the
+//! sheet, or an MP4 video. Each frame is the document as the
 //! canvas shows it while playing (`animation::frame_view`), without the
 //! onion skin, composited like Export image and optionally scaled up by a
 //! whole number for pixel art. Runs as a background export job.
@@ -52,7 +52,7 @@ impl Format {
                  engines. Holds are not repeated."
             }
             Self::Mp4 => {
-                "A video for sharing. Needs FFmpeg with libx264 on PATH. Holds repeat \
+                "A video for sharing. Holds repeat \
                  frames; see-through areas become white."
             }
         }
@@ -285,87 +285,14 @@ fn write_mp4(
     animation: &Animation,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
-    use std::io::{Read, Seek, Write};
-    use std::process::{Command, Stdio};
-    crate::timelapse::mp4_destination(path)?;
-    let order = sequence(frames, animation);
-    crate::storage::atomic_stream(path, |file| {
-        let mut errors = tempfile::tempfile().map_err(|e| e.to_string())?;
-        let mut command = Command::new("ffmpeg");
-        command
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-nostdin",
-                "-f",
-                "rawvideo",
-                "-pixel_format",
-                "rgba",
-                "-video_size",
-                &format!("{}x{}", size[0], size[1]),
-                "-framerate",
-                &animation.fps.to_string(),
-                "-i",
-                "pipe:0",
-                "-an",
-                "-vf",
-                "pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=white",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "medium",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+frag_keyframe+empty_moov",
-                "-f",
-                "mp4",
-                "pipe:1",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::from(file.try_clone().map_err(|e| e.to_string())?))
-            .stderr(Stdio::from(errors.try_clone().map_err(|e| e.to_string())?));
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
-        let mut child = command.spawn().map_err(|e| {
-            format!("Could not start FFmpeg. Install FFmpeg with libx264 and add it to PATH: {e}")
-        })?;
-        let mut input = child.stdin.take().ok_or("FFmpeg input unavailable")?;
-        let written = (|| -> Result<(), String> {
-            for &index in &order {
-                for _ in 0..frames[index].hold {
-                    crate::fill::check_cancel(Some(cancel))?;
-                    input
-                        .write_all(&pictures[index])
-                        .map_err(|e| e.to_string())?;
-                }
+    crate::video::write(path, size, animation.fps.into(), cancel, |sink| {
+        for index in sequence(frames, animation) {
+            for _ in 0..frames[index].hold {
+                sink(&pictures[index])?;
             }
-            Ok(())
-        })();
-        drop(input);
-        if written.is_err() {
-            let _ = child.kill();
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        written?;
-        if !status.success() {
-            errors.rewind().map_err(|e| e.to_string())?;
-            let mut message = String::new();
-            errors
-                .take(8192)
-                .read_to_string(&mut message)
-                .map_err(|e| e.to_string())?;
-            return Err(format!("FFmpeg failed: {message}"));
         }
         Ok(())
-    })?;
-    crate::timelapse::mp4_destination(path)
+    })
 }
 
 /// Write the animation in `doc` to `path` as `settings` ask.
@@ -631,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires ffmpeg with libx264 and ffprobe on PATH"]
+    #[ignore = "requires ffprobe on PATH"]
     fn mp4_export_repeats_frames_for_their_holds() {
         let dir = tempfile::tempdir().unwrap();
         let mut doc = walk();
@@ -663,7 +590,9 @@ mod tests {
             .output()
             .unwrap();
         let text = String::from_utf8_lossy(&probe.stdout);
-        // 48 × 32 pixels; holds 1 + 2 + 1 = 4 video frames.
-        assert_eq!(text.trim(), "48,32,4");
+        // 48 × 32 pixels, which Windows' encoder needs doubled; holds
+        // 1 + 2 + 1 = 4 video frames.
+        let expected = if cfg!(windows) { "96,64,4" } else { "48,32,4" };
+        assert_eq!(text.trim(), expected);
     }
 }

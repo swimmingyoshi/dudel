@@ -134,7 +134,7 @@ pub(crate) fn default_library() -> PathBuf {
 
 /// Settings, recovery snapshots and extensions.
 pub fn app_data() -> Option<PathBuf> {
-    directories::ProjectDirs::from("org", "Dudel", "Dudel").map(|d| d.data_local_dir().to_owned())
+    crate::identity::project_dirs().map(|d| d.data_local_dir().to_owned())
 }
 
 /// Total bytes of regular files under `path`, bounded so a huge tree

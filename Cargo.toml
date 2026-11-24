@@ -37,6 +37,7 @@ windows-sys = "0.61"
 
 [package]
 name = "dudel"
+build = "src/build.rs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -91,8 +92,8 @@ raw-window-handle = "0.6"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Input_Pointer", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_Performance", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_Globalization"] }
 
 # Already built for egui's accessibility layer. Shortcuts, the per-user
-# registry and HTTPS for the installer and the update check.
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WinHttp", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell"] }
+# registry and HTTPS for the installer and the update check; the video encoder.
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Media_MediaFoundation", "Win32_Networking_WinHttp", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_UI_Shell"] }
 
 # Debug builds and tests keep line numbers for backtraces and nothing else,
 # and no debug information for dependencies: the symbol file is 250 MB, not

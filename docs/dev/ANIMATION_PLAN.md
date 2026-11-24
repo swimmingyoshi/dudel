@@ -25,7 +25,7 @@ format and its own save, undo and recovery paths.
 - Exports (`src/animation_export.rs`) run as background export jobs: GIF
   (exact palettes up to 255 colors, else NeuQuant; background disposal;
   holds as delays that keep time), numbered PNG frames, sprite sheets, and
-  MP4 through FFmpeg. Ping-pong exports come back without repeating ends.
+  MP4 (`src/video.rs`). Ping-pong exports come back without repeating ends.
 
 - Playback (`src/animation_cache.rs`) shows each frame as one picture
   rendered at its on-screen size (`Document::composite_reduced`) by a

@@ -708,7 +708,7 @@ pub(crate) fn mp4_destination(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Stream bounded decoded frames to an external encoder, publishing only on success.
+/// Stream bounded decoded frames to the video encoder, publishing only on success.
 fn export_mp4(
     root: &Path,
     frames: &[usize],
@@ -717,10 +717,6 @@ fn export_mp4(
     destination: &Path,
     control: &crate::plugins::FilterControl,
 ) -> Result<(), String> {
-    use std::{
-        io::{Read, Seek, Write},
-        process::{Command, Stdio},
-    };
     if frames.is_empty()
         || frames.len() > MAX_FRAMES
         || !(1..=30).contains(&fps)
@@ -735,109 +731,26 @@ fn export_mp4(
     let fit = fit(dimensions, side, true);
     let (width, height) = fit.size(dimensions);
     drop(first);
-    crate::storage::atomic_stream(destination, |file| {
-        let mut errors = tempfile::tempfile().map_err(|e| e.to_string())?;
-        let mut command = Command::new("ffmpeg");
-        command
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-nostdin",
-                "-f",
-                "rawvideo",
-                "-pixel_format",
-                "rgba",
-                "-video_size",
-                &format!("{width}x{height}"),
-                "-framerate",
-                &fps.to_string(),
-                "-i",
-                "pipe:0",
-                "-an",
-                "-vf",
-                "pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=white",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "medium",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+frag_keyframe+empty_moov",
-                "-f",
-                "mp4",
-                "pipe:1",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::from(file.try_clone().map_err(|e| e.to_string())?))
-            .stderr(Stdio::from(errors.try_clone().map_err(|e| e.to_string())?));
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
-        let mut child = command.spawn().map_err(|e| {
-            format!("Could not start FFmpeg. Install FFmpeg with libx264 and add it to PATH: {e}")
-        })?;
-        let mut input = child.stdin.take().ok_or("FFmpeg input unavailable")?;
-        let result = std::thread::scope(|scope| {
-            let writer = scope.spawn(move || -> Result<(), String> {
-                for (index, &recorded) in frames.iter().enumerate() {
-                    crate::fill::check_cancel(Some(&control.cancel))?;
-                    let frame = read_frame(root, recorded)?;
-                    if frame.dimensions() != dimensions {
-                        return Err("Recording frames have different sizes".into());
-                    }
-                    let frame = fitted(frame, fit);
-                    let repeats = if index + 1 == frames.len() {
-                        1 + HOLD_SECONDS * fps
-                    } else {
-                        1
-                    };
-                    for _ in 0..repeats {
-                        crate::fill::check_cancel(Some(&control.cancel))?;
-                        input.write_all(frame.as_raw()).map_err(|e| e.to_string())?;
-                    }
-                    control.progress.store(index + 1, Ordering::Relaxed);
-                }
-                Ok(())
-            });
-            let status = loop {
-                if control.cancel.load(Ordering::Relaxed) {
-                    let _ = child.kill();
-                }
-                match child.try_wait() {
-                    Ok(Some(status)) => break Ok(status),
-                    Ok(None) => std::thread::sleep(Duration::from_millis(30)),
-                    Err(e) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        break Err(e.to_string());
-                    }
-                }
-            };
-            let written = writer
-                .join()
-                .map_err(|_| "Video frame worker failed".to_string())?;
+    let size = [width as usize, height as usize];
+    crate::video::write(destination, size, fps, &control.cancel, |sink| {
+        for (index, &recorded) in frames.iter().enumerate() {
             crate::fill::check_cancel(Some(&control.cancel))?;
-            let status = status?;
-            if !status.success() {
-                errors.rewind().map_err(|e| e.to_string())?;
-                let mut message = String::new();
-                errors
-                    .take(8192)
-                    .read_to_string(&mut message)
-                    .map_err(|e| e.to_string())?;
-                return Err(format!("FFmpeg failed: {message}"));
+            let frame = read_frame(root, recorded)?;
+            if frame.dimensions() != dimensions {
+                return Err("Recording frames have different sizes".into());
             }
-            written
-        });
-        result?;
-        crate::fill::check_cancel(Some(&control.cancel))?;
-        mp4_destination(destination)
+            let frame = fitted(frame, fit);
+            let repeats = if index + 1 == frames.len() {
+                1 + HOLD_SECONDS * fps
+            } else {
+                1
+            };
+            for _ in 0..repeats {
+                sink(frame.as_raw())?;
+            }
+            control.progress.store(index + 1, Ordering::Relaxed);
+        }
+        Ok(())
     })
 }
 
@@ -1514,9 +1427,7 @@ impl Dudel {
                     }
                     if ui
                         .add_enabled(!busy, egui::Button::new("Export MP4\u{2026}"))
-                        .on_hover_text(
-                            "H.264 video; requires FFmpeg with libx264 installed on PATH",
-                        )
+                        .on_hover_text("H.264 video for sharing")
                         .clicked()
                     {
                         action = Some(Action::Export(true));
@@ -1666,7 +1577,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires ffmpeg with libx264 and ffprobe on PATH"]
+    #[ignore = "requires ffprobe on PATH"]
     fn mp4_export_dimensions_duration_and_cancellation() {
         let dir = tempfile::tempdir().unwrap();
         for index in 0..3 {

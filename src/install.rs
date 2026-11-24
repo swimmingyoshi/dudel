@@ -451,20 +451,20 @@ mod windows_only {
     /// the installed program. An existing installation is replaced, also
     /// while it runs.
     pub(crate) fn install(options: Options) -> Result<PathBuf, String> {
+        if crate::identity::DEVELOPMENT {
+            return Err(
+                "This is a development build. Install a package made by scripts/Package.ps1."
+                    .into(),
+            );
+        }
         let source = program_folder().ok_or("Dudel's own folder is unknown")?;
         let target = target().ok_or("The programs folder is unknown")?;
         if same_folder(&source, &target) {
             return Err("This is already the installed Dudel".into());
         }
-        // A development build has no list: the program and its thumbnail
-        // library are all there is.
-        let files = listed_files(&source).unwrap_or_else(|| {
-            [PROGRAM, THUMBNAILS]
-                .into_iter()
-                .filter(|file| source.join(file).is_file())
-                .map(str::to_owned)
-                .collect()
-        });
+        let files = listed_files(&source).ok_or(
+            "This copy is not a whole package. Extract the downloaded ZIP and install from there.",
+        )?;
         if !files.iter().any(|file| file == PROGRAM) {
             return Err(format!("{PROGRAM} is not part of this copy"));
         }

@@ -39,6 +39,7 @@ pub mod folders;
 pub mod gradient_tool;
 pub mod guides;
 pub mod history_pixels;
+pub mod identity;
 pub mod image_paste;
 pub mod import_report;
 pub mod indexed_commit;

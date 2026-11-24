@@ -37,7 +37,7 @@ def linux_building(build):
             f'Tested compiler: `{build["rustc"]}`. Install Rust, a C compiler and pkg-config, plus the Wayland, '
             "xkbcommon and X11 development libraries listed in `.github/workflows/linux.yml`. Extract the complete "
             "archive, including `.cargo` and `vendor`, then run from this folder:\n\n```sh\n"
-            "cargo build --release --locked --offline --bin dudel\n./target/release/dudel\n```\n\n"
+            "export DUDEL_PACKAGED=1\ncargo build --release --locked --offline --bin dudel\n./target/release/dudel\n```\n\n"
             "Dependencies are vendored with their original sources/licenses, so Cargo does not need the network "
             "after the compiler and libraries are installed. A plain build needs the glibc of the machine that "
             f'built it. The packaged binary was linked with cargo-zigbuild for `{build["target"]}` so it also runs '
@@ -156,7 +156,7 @@ def bundle(repository, destination, binary, metadata_path):
         "This source is available to build without paying for a prebuilt executable.\n\n"
         f'Tested compiler: `{build["rustc"]}`. Install Rust and the Windows Visual Studio C++ '
         "build tools/Windows SDK. Extract the complete archive, including `.cargo` and `vendor`, "
-        "then run from this folder:\n\n```powershell\ncargo build --release --locked --offline --bin dudel\n"
+        "then run from this folder:\n\n```powershell\n$env:DUDEL_PACKAGED = '1'\ncargo build --release --locked --offline --bin dudel\n"
         "cargo build --release --locked --offline --manifest-path shell/thumbnails/Cargo.toml\n"
         "Copy-Item shell/thumbnails/target/release/dudel_thumbnails.dll target/release/\n"
         ".\\target\\release\\dudel.exe\n```\n\n"
@@ -165,6 +165,7 @@ def bundle(repository, destination, binary, metadata_path):
         "so the executable runs without the Visual C++ redistributable; keep it when building. "
         "`SOURCE_BUILD.json` records matching binary/source "
         "identities. Different toolchains, SDKs and build environments can change binary bytes.\n\n"
+        "`DUDEL_PACKAGED` makes the ordinary Dudel; without it the build keeps its own settings. "
         "Run these commands from the extracted root so both workspaces use its vendored configuration. "
         "With a custom CARGO_TARGET_DIR, both artifacts instead appear in that target's release folder.\n\n"
         "Development checks: `cargo test --locked --offline`; full Windows/Python checks, including the DLL: `./scripts/Verify.ps1 -Mode Full`. "

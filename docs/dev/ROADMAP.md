@@ -114,8 +114,10 @@ The canvas as a surface that paint reacts to, in stages:
 - [x] Brush graph outputs for the material settings.
 - [x] Code structure and builds: the painting function and `main.rs` broken
       up, a `fast` build profile, shorter CI.
-- [ ] Update from one published release to the next, tried on an installed
-      and a portable copy (possible once 0.6.0 is published).
+- [x] Update from one published release to the next: 0.5.0's update code
+      against the published 0.6.0, on a portable copy in use (2026-11-23).
+- [ ] The same clicked through in the window, with the restart, on an
+      installed copy.
 
 ## 0.6: pixel art and animation
 
@@ -141,7 +143,15 @@ release.
 - [x] Layer › Merge: merge up, merge selected (Ctrl+E with several
       selected), merge visible, merge visible to new layer and flatten
       (2026-11-17, owner asked after shading pixel art with the wet brush).
-- [ ] The owner's pen pass on pixel art and animation.
+- [x] The owner's pen pass on pixel art and animation (2026-11-23).
+
+## 0.6.1
+
+- [x] MP4 export on Windows without FFmpeg (`src/video.rs`).
+- [x] Development builds apart from the installed copy
+      (`crates/dudel-core/src/identity.rs`); the commit in About.
+- [ ] A local release list for development builds, to click through an
+      update before publishing one.
 
 ## Installing and updating
 

@@ -65,8 +65,7 @@ impl Default for DisplaySettings {
 
 impl DisplaySettings {
     fn path() -> Option<PathBuf> {
-        directories::ProjectDirs::from("org", "Dudel", "Dudel")
-            .map(|dirs| dirs.data_local_dir().join("display.json"))
+        crate::identity::project_dirs().map(|dirs| dirs.data_local_dir().join("display.json"))
     }
     /// Saved settings, or defaults when missing or unreadable.
     pub fn load() -> Self {

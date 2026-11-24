@@ -4,6 +4,20 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+- **MP4 without FFmpeg:** on Windows, timelapses and animations export to MP4
+  with Windows' own encoder; nothing needs installing. FFmpeg is used only
+  when Windows cannot encode a video (a very large one, or an N edition
+  without Microsoft's Media Feature Pack) and it is installed. Videos under 64
+  pixels on a side are enlarged by a whole number. Linux still needs FFmpeg.
+- **About Dudel** names the commit the program was built from.
+- **Building from source:** a build not made by the packaging scripts is a
+  development build. It keeps its own settings, recovery copies and
+  extensions (starting from a copy of the installed Dudel's) and cannot
+  install itself. Set `DUDEL_PACKAGED=1` while building to make an ordinary
+  Dudel.
+
 ## 0.6.0 (2026-11-23)
 
 Pixel art tools, frame-by-frame animation and three new workspace styles with
@@ -114,9 +128,10 @@ default style.
 
 ### Limits in 0.6.0
 
-- Updating from 0.5.0 with **Help > Check for updates** is the first update
-  between two published releases, and has not been tried on one yet. If it
-  fails, extract the new ZIP and choose **Install on this PC**.
+- Updating from 0.5.0: its update code was run against the published 0.6.0
+  and replaced a portable copy correctly. Clicking through the window and
+  restarting has not been tried. If it fails, extract the new ZIP and choose
+  **Install on this PC**.
 - The new workspace styles are a preview: their arrangements may change.
 - Using two versions of Dudel on one account shares settings, and an older
   version may drop the settings it does not know. Run one copy at a time.

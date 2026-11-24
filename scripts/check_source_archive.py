@@ -74,7 +74,7 @@ def check(archive, output):
                 raise ValueError("Source archive does not carry the recorded Cargo build settings")
         record("building", members=len(entries), source=str(source),
                expected_candidate_executable_sha256=build["executable_sha256"])
-        environment = dict(os.environ, CARGO_TARGET_DIR=str(output / "build"))
+        environment = dict(os.environ, CARGO_TARGET_DIR=str(output / "build"), DUDEL_PACKAGED="1")
         command = ["cargo", "build", "--locked", "--offline", "--release", "--bin", "dudel"]
         with (output / "build.log").open("wb") as log:
             subprocess.run(command, cwd=source, env=environment, stdout=log, stderr=log, check=True)

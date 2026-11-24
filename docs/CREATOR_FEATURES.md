@@ -40,7 +40,8 @@ changed, so export is fast and files stay small; repeated frames just lengthen
 the previous one. Export shows progress, can be canceled, and never replaces a
 file that is not a GIF. GIF has a limited palette; **Export MP4** writes
 full-color H.264 video at the selected size and speed, including the final hold.
-MP4 requires FFmpeg with libx264 on PATH. Video export supports progress and
+On Windows, MP4 uses Windows' own encoder; on Linux it needs FFmpeg with libx264
+on PATH. Video export supports progress and
 cancellation, and odd pixel dimensions are padded with white to even dimensions.
 **Show frames** opens the numbered PNG frames for a video editor.
 **Open an earlier recording…** plays and exports any recording folder.

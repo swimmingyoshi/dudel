@@ -181,8 +181,7 @@ pub struct Installed {
 }
 
 fn directory() -> Result<PathBuf, String> {
-    let dirs = directories::ProjectDirs::from("org", "Dudel", "Dudel")
-        .ok_or("Local application directory unavailable")?;
+    let dirs = crate::identity::project_dirs().ok_or("Local application directory unavailable")?;
     let path = dirs.data_local_dir().join("extensions");
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     Ok(path)

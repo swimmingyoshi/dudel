@@ -51,7 +51,7 @@ built for illustrating on a pen display or tablet.
 - A **pixel pencil** with pixel-perfect lines, a pixel grid, small-canvas presets,
   wrap-around painting for seamless tiles, palette limits and sharp scaled export.
 - **Frame-by-frame animation** with layers as frames: timeline, holds, onion skin,
-  playback, and GIF, PNG, sprite sheet or MP4 export (MP4 needs FFmpeg).
+  playback, and GIF, PNG, sprite sheet or MP4 export.
 
 **Layers and editing**
 - Raster layers, **vector layers**, folders, clipping, blend modes and nondestructive **layer masks**.
@@ -79,7 +79,7 @@ built for illustrating on a pen display or tablet.
   recovery copies; undo/redo throughout.
 - Tabs for several projects, a separate preview window, reference images and
   boards that never become part of the artwork.
-- Per-canvas **timelapse** recording that plays back in the app and exports as GIF or MP4 (FFmpeg required)
+- Per-canvas **timelapse** recording that plays back in the app and exports as GIF, MP4
   or PNG frames; portable UI themes.
 - PNG import/export; one **Export image** window for PNG, JPEG, lossless WebP,
   BMP and GIF with a preview and *Export again*; layered PSD export and SVG export
@@ -132,8 +132,8 @@ downloading the new ZIP.
 
 The Visual C++ runtime is built in; nothing else needs installing. Keep
 `dudel_thumbnails.dll` beside `dudel.exe` for optional `.dudel` thumbnails in File
-Explorer. Artwork goes to `Documents\Dudel`; settings and recovery snapshots stay
-in `%LOCALAPPDATA%\Dudel`. To remove a portable copy, delete its folder; remove
+Explorer. Artwork goes to `Documents\Dudel`; settings stay in
+`%APPDATA%\Dudel — Drawing Studio`, recovery snapshots in `%LOCALAPPDATA%\Dudel`. To remove a portable copy, delete its folder; remove
 an installed copy from **Windows Settings > Apps**. Your projects stay.
 
 Each release also publishes a matching **source ZIP** with vendored dependencies
@@ -222,6 +222,8 @@ exactly; details are in the [quick start](docs/QUICK_START.md#if-the-line-lags-b
 - Paint-like color mixing is an approximation of real pigments and happens on
   watercolor and thick paint layers only.
 - Windows x64 is the supported platform; Linux builds are experimental.
+- MP4 export needs FFmpeg in 0.6.0 and earlier, and on Linux. Later Windows
+  versions use Windows' own encoder.
 
 See [release notes](RELEASE_NOTES.md#known-limits) for the full list.
 
@@ -237,6 +239,11 @@ cargo build --locked --release --bin dudel
 
 While working on a change, `cargo run --profile fast` builds with the same
 optimization but rebuilds in seconds.
+
+A build you make is a **development build**: it keeps its own settings, recovery
+copies and extensions, apart from an installed Dudel's (it starts with a copy of
+them), and cannot install itself. To build an ordinary Dudel for your own use, set
+the environment variable `DUDEL_PACKAGED` to `1` first.
 
 Development checks (Python 3.11+ is required for the script's extra checks):
 

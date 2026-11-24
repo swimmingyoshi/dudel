@@ -4,6 +4,7 @@ param([switch]$IncludeSymbols, [switch]$Release)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path $PSScriptRoot -Parent
 Push-Location -LiteralPath $repository
+$packagedBefore = $env:DUDEL_PACKAGED
 try {
     function Invoke-Native {
         param([string]$Program, [string[]]$Arguments)
@@ -39,6 +40,8 @@ try {
     if (@($remapping.Keys | Where-Object { $_ -match "'" }).Count) { throw 'Build paths cannot contain apostrophes.' }
     $remapFlags = @($remapping.Keys | ForEach-Object { "'--remap-path-prefix=$_=$($remapping[$_])'" }) -join ', '
     $buildConfig = @('--config', "target.x86_64-pc-windows-msvc.rustflags=[$remapFlags]")
+    # Compiled in: this is the real Dudel, not a development build (crates/dudel-core/src/identity.rs).
+    $env:DUDEL_PACKAGED = '1'
     $before = Get-SourceIdentity
     Invoke-Native cargo (@('build', '--locked', '--release') + $buildConfig)
     # Explorer thumbnails for .dudel files; its own workspace and lockfile.
@@ -170,5 +173,6 @@ try {
     if ($Release) { Write-Output 'Prepared release; publication has not been performed.' }
     else { Write-Output 'Development candidate; consult the release decision and evidence before publication.' }
 } finally {
+    $env:DUDEL_PACKAGED = $packagedBefore
     Pop-Location
 }

@@ -37,6 +37,7 @@ mod clipboard_files;
 #[cfg(windows)]
 mod clipboard_shortcuts;
 mod color_wheel;
+mod development;
 mod dialogs;
 mod display_settings;
 mod display_workers;
@@ -158,6 +159,7 @@ use dudel_ui as ui;
 mod update;
 mod vector_layer;
 mod vector_pick;
+mod video;
 #[cfg(target_os = "linux")]
 mod wayland_pen;
 mod welcome;
@@ -1492,8 +1494,9 @@ fn run() -> eframe::Result {
     let mut settings_session = if isolated {
         None
     } else {
-        let directory = eframe::storage_dir("Dudel \u{2014} Drawing Studio")
+        let directory = eframe::storage_dir(identity::SETTINGS)
             .ok_or_else(|| startup_error("Settings directory is unavailable".into()))?;
+        development::seed(&directory.join("app.ron"));
         Some(settings_store::Session::open(directory.join("app.ron")).map_err(startup_error)?)
     };
     let capture_directory = if isolated {
@@ -1588,7 +1591,8 @@ fn run() -> eframe::Result {
                     app.pending_opens = open_files;
                     app.welcome_open = false;
                 }
-                app.setup.can_install = cfg!(windows) && !install::running_installed();
+                app.setup.can_install =
+                    cfg!(windows) && !identity::DEVELOPMENT && !install::running_installed();
                 app.experimental_indexed_storage = experimental_indexed_storage;
                 #[cfg(any(windows, target_os = "linux"))]
                 app.input.attach(cc);
@@ -1604,7 +1608,7 @@ fn run() -> eframe::Result {
     let title = if native_session {
         "Dudel — Isolated native diagnostic"
     } else {
-        "Dudel — Drawing Studio"
+        identity::SETTINGS
     };
     let mut result = eframe::run_native(title, display.native_options(base()), creator(display));
     if result.is_err() && display.renderer != display_settings::Renderer::OpenGl {

@@ -80,7 +80,8 @@ def package(glibc):
     flags = ", ".join(f"'--remap-path-prefix={path}={target}'" for path, target in remapping.items())
     before = source_identity()
     subprocess.run(["cargo", "zigbuild", "--locked", "--release", "--bin", "dudel", "--target", f"{TARGET}.{glibc}",
-                    "--config", f"target.{TARGET}.rustflags=[{flags}]"], cwd=REPOSITORY, check=True)
+                    "--config", f"target.{TARGET}.rustflags=[{flags}]"], cwd=REPOSITORY, check=True,
+                   env=dict(os.environ, DUDEL_PACKAGED="1"))
     after = source_identity()
     if before != after or sha(cargo_config_path) != cargo_config_before:
         raise SystemExit("Source changed during build; rerun against a stable workspace.")
