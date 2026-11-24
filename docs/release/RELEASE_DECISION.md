@@ -1,8 +1,45 @@
-# Windows 0.6.1 release decision — 2026-11-23
+# Windows 0.6.2 release decision — 2026-11-23
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.6.2 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-23. The earlier decisions that
+follow remain the record for the evidence carried over.
+
+**Application source:** commit `be2ef23`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`C4CDF172...880D6A49` and DLL `7F40782A...B25824DF`, and release packaging refuses
+different bytes.
+
+**What changed since 0.6.1** (see [release notes](../../RELEASE_NOTES.md)):
+Restart now reopens Dudel when nothing is unsaved.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full -SkipReleaseBuild` on `be2ef23`: the full
+  suite with the diagnostic-feature and DLL tests, formatting, Clippy, the
+  Python tests and the public-tree check. Packaging made the release builds.
+- Candidate `dudel-0.6.2-candidate-20261124-050128-888`: `Package.ps1` ran end
+  to end, with 0 public-tree problems in the package and its source ZIP. The
+  package matches its file list, and its executable started.
+- Windows Sandbox, driven through the windows themselves: the published 0.6.0
+  installed, updated to the published 0.6.1 and uninstalled cleanly, but Restart
+  now did not reopen it. A 0.6.0 with this change updated and reopened as 0.6.1.
+- The owner confirmed the MP4 export and the timelapse fix of 0.6.1.
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.6.2` tag is made; the tag is the record that they did.
+
+**Not run on this build:** an update to it (possible once published), the
+restart from an installed 0.6.2 (needs a later release), an N edition of
+Windows, an offline rebuild of the source ZIP, the private CSP corpus
+comparison, the resource and two-hour studies, and a launch of the Linux build.
+
+**Known limits** are listed under "Limits in 0.6.1" and "Known limits" in
+the release notes.
+
+# Windows 0.6.1 release decision — 2026-11-23
 
 **Release preparation for 0.6.1 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-23. The earlier decisions that
