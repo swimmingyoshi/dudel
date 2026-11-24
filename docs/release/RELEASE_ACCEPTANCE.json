@@ -1,20 +1,20 @@
 {
-  "version": "0.6.0",
+  "version": "0.6.1",
   "status": "ready_for_publication",
   "decision_date": "2026-11-23",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 pre-release for outside testers, with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at commit aef2d28; later commits change documents only, and the v0.6.0 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "0.6.0: pixel art tools, frame-by-frame animation with layers as frames, Slate, Float and Atelier workspace styles with dockable palettes (preview; Classic stays the default), first-time setup, a Settings sidebar with search, Layer > Merge, timelapse length and sharp pixel art timelapses, and a lighter pen quick menu. The code is split into three crates. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.5.0 binaries: dudel.exe 9671660F...D3D23589, dudel_thumbnails.dll C36C876C...F4A15F51.",
+  "application_source": "this repository's source at commit b869dc1; later commits change documents only, and the v0.6.1 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.6.1: MP4 export on Windows through Media Foundation with FFmpeg as the fallback, a first save on the way out of a canvas keeping its timelapse with the project, development builds apart from the installed copy, and the commit in About. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.6.0 binaries: dudel.exe DFE47597...0A94819C, dudel_thumbnails.dll F49F958A...D5228CB9.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "DFE47597F994258E63739F07898F873D70E391DB882AB3EE55F6245E0A94819C"
+      "sha256": "97852B79A68A8F44D68F02DD4ECE23FE60F804D6755547188F461394BEFE3981"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "F49F958A1966695258254E5D1A1294DC6B64C4446985FDCBF35FB278D5228CB9"
+      "sha256": "BD947B1CD3169CB48BABE8997C03D0B099290741F618C1A15973552F7D29A3FE"
     }
   ]
 }

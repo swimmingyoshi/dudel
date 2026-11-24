@@ -1,8 +1,51 @@
-# Windows 0.6 release decision — 2026-11-23
+# Windows 0.6.1 release decision — 2026-11-23
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.6.1 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-23. The earlier decisions that
+follow remain the record for the evidence carried over.
+
+**Application source:** commit `b869dc1`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`97852B79...BEFE3981` and DLL `BD947B1C...7D29A3FE`, and release packaging refuses
+different bytes.
+
+**What changed since 0.6.0** (see [release notes](../../RELEASE_NOTES.md)): MP4
+export without FFmpeg on Windows; timelapses that stay with a project first
+saved on the way out of its canvas; development builds that keep their own
+settings; the commit in About.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full -SkipReleaseBuild` on `b869dc1`: 1,507
+  tests (28 ignored), nine diagnostic-feature tests, three DLL tests,
+  formatting, Clippy, the Python tests and the public-tree check. Packaging
+  made the release builds.
+- Candidate `dudel-0.6.1-candidate-20261124-023940-292`: `Package.ps1` ran end
+  to end, with 0 public-tree problems in the package and its source ZIP. The
+  package matches its file list, carries no development identity, does not
+  link Media Foundation (it is loaded on use), and its executable started.
+- Windows' encoder against x264 on a 1,161-frame and a 69-frame recording:
+  within 1.7 dB, files 1.5 to 1.9 times as large, exact frame times. The owner
+  exported a timelapse from a development build on 2026-11-23; the file decodes
+  in full.
+- The update code of 0.5.0 replaced a portable copy with the published 0.6.0.
+- The owner tried pixel art and animation with a pen (2026-11-23).
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.6.1` tag is made; the tag is the record that they did.
+
+**Not run on this build:** the update from 0.6.0 through the window, an owner's
+trial of the timelapse fix or of animation MP4 export, an N edition of Windows,
+an offline rebuild of the source ZIP, the private CSP corpus comparison, the
+resource and two-hour studies, and a launch of the Linux build.
+
+**Known limits** are listed under "Limits in 0.6.1" and "Known limits" in
+the release notes.
+
+# Windows 0.6 release decision — 2026-11-23
 
 **Release preparation for 0.6.0 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-23 to create the new release. The
