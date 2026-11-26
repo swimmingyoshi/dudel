@@ -1,0 +1,12 @@
+{
+    // Old release folders under artifacts/ hold about 232,000 .rs files of
+    // packaged sources; rust-analyzer would load them all (10+ GB).
+    "rust-analyzer.files.exclude": ["artifacts", "research", "benchmarks"],
+    "files.watcherExclude": {
+        "**/artifacts/**": true,
+        "**/target/**": true
+    },
+    "search.exclude": {
+        "**/artifacts/**": true
+    }
+}
