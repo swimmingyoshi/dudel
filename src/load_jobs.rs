@@ -24,6 +24,8 @@ pub struct LoadJob {
     revision: u64,
     cancel: Arc<AtomicBool>,
     notes: Arc<std::sync::Mutex<(Vec<String>, Vec<String>)>>,
+    /// For a recovery snapshot, the project it was a copy of.
+    original: Arc<std::sync::Mutex<Option<PathBuf>>>,
 }
 impl Dudel {
     pub(crate) fn load_document(&mut self, path: PathBuf, png: bool) {
@@ -72,6 +74,8 @@ impl Dudel {
         let worker_path = path.clone();
         let notes = Arc::new(std::sync::Mutex::new((Vec::new(), Vec::new())));
         let worker_notes = notes.clone();
+        let original = Arc::new(std::sync::Mutex::new(None));
+        let worker_original = original.clone();
         let worker = std::thread::spawn(move || {
             if worker_cancel.load(Ordering::Relaxed) {
                 return Err("Load canceled".into());
@@ -99,9 +103,12 @@ impl Dudel {
                 LoadKind::Indexed => crate::indexed_commit::load_document(&worker_path, &|| {
                     worker_cancel.load(Ordering::Relaxed)
                 }),
-                LoadKind::Recovery => {
-                    storage::read_recovery(&worker_path).map(|snapshot| snapshot.document)
-                }
+                LoadKind::Recovery => storage::read_recovery(&worker_path).map(|snapshot| {
+                    if let Ok(mut original) = worker_original.lock() {
+                        *original = snapshot.original_path;
+                    }
+                    snapshot.document
+                }),
             }
         });
         self.load_job = Some(LoadJob {
@@ -111,6 +118,7 @@ impl Dudel {
             revision: self.revision,
             cancel,
             notes,
+            original,
         });
         self.status = "Opening document in background…".into();
     }
@@ -194,7 +202,13 @@ impl Dudel {
                 let (notes, details) = job.notes.lock().map(|n| n.clone()).unwrap_or_default();
                 self.import_report = crate::import_report::ImportReport::new(notes, details);
             }
+            if job.kind == LoadKind::Recovery {
+                let original = job.original.lock().ok().and_then(|o| o.clone());
+                self.recording.restoring = Some((job.path.clone(), original));
+            }
             self.commit_load(job.path, job.kind, job.revision, canceled, result);
+            // Used by the replacement if it happened, never by a later one.
+            self.recording.restoring = None;
             self.settle_tab_after_load();
         }
         if self.load_job.is_some() {

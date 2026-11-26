@@ -22,6 +22,9 @@ what changed after an update. Projects and file formats are unchanged from
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
   small windows can be dragged by their title. They open centered each time.
 
+- **Timelapses survive recovery:** restoring a recovery backup continues the
+  canvas's timelapse instead of starting without it. For a canvas that was
+  never saved, this works for recordings made from this version on.
 - **Fewer crashes:** a part of the window laid out at an impossible position
   closed Dudel when the pen passed over it. Dudel now repairs it and writes a
   problem report instead of closing.

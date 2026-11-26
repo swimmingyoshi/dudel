@@ -110,6 +110,10 @@ struct Inventory {
     /// Hash of the last frame, so a continued recording skips a repeat.
     #[serde(default)]
     hash: Option<u64>,
+    /// The recovery snapshot the canvas was last backed up to, so restoring
+    /// that snapshot continues this recording, also for a canvas never saved.
+    #[serde(default)]
+    snapshot: Option<PathBuf>,
 }
 impl Inventory {
     fn read(root: &Path) -> Result<Self, String> {
@@ -159,6 +163,11 @@ pub(crate) struct Recording {
     project: Option<PathBuf>,
     /// The project the folder's name was last made to follow.
     named_for: Option<PathBuf>,
+    /// The canvas's recovery snapshot, written to the inventory.
+    snapshot: Option<PathBuf>,
+    /// Set while a recovery snapshot replaces the canvas: the snapshot and
+    /// the project it was a copy of. Its recording is continued.
+    pub(crate) restoring: Option<(PathBuf, Option<PathBuf>)>,
     worker: Option<SourceWorker<Result<Captured, String>>>,
     message: String,
 }
@@ -177,6 +186,7 @@ impl Recording {
             project: self.project.clone(),
             active,
             hash: self.hash,
+            snapshot: self.snapshot.clone(),
         }
     }
     /// Record the canvas as it changes. A fresh canvas waits for its first
@@ -884,18 +894,29 @@ impl Dudel {
     }
     /// The canvas is being replaced by a new or opened one.
     pub(crate) fn timelapse_document_changed(&mut self, fresh_canvas: bool) {
+        let restoring = self.recording.restoring.take();
         self.recording.detach();
         if fresh_canvas && self.timelapse.prefs.record_new {
             self.recording
                 .begin([self.doc.width, self.doc.height], Some(self.revision));
         } else if let Some(path) = self.path.clone() {
-            self.continue_project_timelapse(&path);
+            self.continue_timelapse(|inventory| inventory.project.as_deref() == Some(&*path));
+        } else if let Some((snapshot, original)) = restoring.filter(|_| !fresh_canvas) {
+            // The recording the snapshot was taken beside, else the latest
+            // of the project it was a copy of.
+            self.continue_timelapse(|inventory| inventory.snapshot.as_ref() == Some(&snapshot));
+            if self.recording.root.is_none()
+                && let Some(original) = original
+            {
+                self.continue_timelapse(|inventory| inventory.project.as_ref() == Some(&original));
+            }
         }
     }
-    /// Bring back the latest recording of the project at `path`: one still
-    /// recording continues, and a stopped one is shown, ready to continue,
-    /// so recording again adds to it instead of starting a separate folder.
-    fn continue_project_timelapse(&mut self, path: &Path) {
+    /// Bring back the latest recording that `belongs` (to the project
+    /// opened, or to the recovery snapshot restored): one still recording
+    /// continues, and a stopped one is shown, ready to continue, so
+    /// recording again adds to it instead of starting a separate folder.
+    fn continue_timelapse(&mut self, belongs: impl Fn(&Inventory) -> bool) {
         // Tests never read the user's documents.
         if cfg!(test) && self.locations.library.is_none() {
             return;
@@ -913,7 +934,7 @@ impl Dudel {
                 let modified = std::fs::metadata(root.join("recording.json"))
                     .and_then(|m| m.modified())
                     .ok()?;
-                (inventory.project.as_deref() == Some(path)
+                (belongs(&inventory)
                     && [inventory.width, inventory.height] == [self.doc.width, self.doc.height]
                     && inventory.frames > 0
                     && inventory.frames < MAX_FRAMES)
@@ -929,7 +950,9 @@ impl Dudel {
                 dimensions: [inventory.width, inventory.height],
                 revision: Some(self.revision),
                 hash: inventory.hash,
+                named_for: inventory.project.clone(),
                 project: inventory.project,
+                snapshot: inventory.snapshot,
                 message: if inventory.active {
                     format!(
                         "Continuing this project's timelapse ({} frames)",
@@ -959,9 +982,11 @@ impl Dudel {
 
     fn claim_timelapse(&mut self) {
         let r = &mut self.recording;
-        // Saving as a new path moves the recording to that project.
+        // Saving as a new path moves the recording to that project. A
+        // restored copy has no path yet and keeps the project it belongs to.
         if r.worker.is_none()
             && r.frames > 0
+            && self.path.is_some()
             && r.project != self.path
             && let Some(root) = &r.root
         {
@@ -1034,7 +1059,10 @@ impl Dudel {
                 }
             }
             if due && let Some(root) = r.root.clone() {
-                r.project = self.path.clone();
+                if self.path.is_some() {
+                    r.project = self.path.clone();
+                }
+                r.snapshot = self.recovery_path.clone();
                 let inventory = r.inventory(r.on);
                 let ctx = ctx.clone();
                 r.worker = Some(SourceWorker::spawn(self.doc.clone(), move |doc| {
@@ -1827,6 +1855,106 @@ mod tests {
         let inventory = Inventory::read(&root).unwrap();
         assert_eq!((inventory.frames, inventory.active), (2, false));
         assert_eq!([inventory.width, inventory.height], [4, 4]);
+    }
+
+    /// Restoring a recovery snapshot (after a crash, or a backup chosen in
+    /// Recover artwork) continues the canvas's recording instead of losing
+    /// it: by the snapshot for a canvas never saved, by the project for a
+    /// copy of a saved one, which keeps its project until saved again.
+    #[test]
+    fn restoring_a_recovery_snapshot_continues_its_timelapse() {
+        let ctx = egui::Context::default();
+        let library = tempfile::tempdir().unwrap();
+        let snapshots = tempfile::tempdir().unwrap();
+        let restore = |snapshot: &Path, original: Option<PathBuf>, doc: &Document| {
+            crate::storage::save_recovery(
+                snapshot,
+                &crate::storage::Recovery {
+                    document: doc.clone(),
+                    original_path: original,
+                },
+            )
+            .unwrap();
+            // Another session, as after a crash.
+            let mut app = Dudel::default();
+            app.locations.library = Some(library.path().to_owned());
+            app.recovery_path = Some(snapshots.path().join("session-later.gz"));
+            app.load_recovery(snapshot.to_owned());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while app.load_job.is_some() {
+                assert!(Instant::now() < deadline, "the snapshot did not load");
+                std::thread::sleep(Duration::from_millis(1));
+                app.poll_load(&ctx);
+            }
+            assert!(app.path.is_none() && app.recording.restoring.is_none());
+            app
+        };
+        let record = |path: Option<PathBuf>, snapshot: &Path| {
+            let mut app = Dudel {
+                doc: Document::new(6, 5),
+                path,
+                recovery_path: Some(snapshot.to_owned()),
+                ..Default::default()
+            };
+            app.locations.library = Some(library.path().to_owned());
+            app.start_timelapse();
+            app.doc.layers[0].pixels = [200, 10, 10, 255].repeat(30).into();
+            app.revision += 1;
+            app.poll_timelapse(&ctx);
+            settle(&mut app, &ctx);
+            app
+        };
+
+        // A canvas never saved.
+        let snapshot = snapshots.path().join("session-1.gz");
+        let painted = record(None, &snapshot);
+        let root = painted.recording.root.clone().unwrap();
+        assert_eq!(
+            Inventory::read(&root).unwrap().snapshot,
+            Some(snapshot.clone())
+        );
+        let mut app = restore(&snapshot, None, &painted.doc);
+        assert_eq!(
+            (
+                app.recording.root.as_ref(),
+                app.recording.frames,
+                app.recording.recording()
+            ),
+            (Some(&root), 1, true)
+        );
+        // Its next frame names the new session's snapshot, so a second
+        // crash comes back to it too.
+        app.doc.layers[0].pixels = [10, 200, 10, 255].repeat(30).into();
+        app.revision += 1;
+        app.poll_timelapse(&ctx);
+        settle(&mut app, &ctx);
+        let inventory = Inventory::read(&root).unwrap();
+        assert_eq!(inventory.frames, 2);
+        assert_eq!(inventory.snapshot, app.recovery_path.clone());
+
+        // A copy of a saved project, backed up under an older session.
+        let project = library.path().join("art.dudel");
+        let painted = record(
+            Some(project.clone()),
+            &snapshots.path().join("session-2.gz"),
+        );
+        let root = painted.recording.root.clone().unwrap();
+        let mut app = restore(
+            &snapshots.path().join("session-3.gz"),
+            Some(project.clone()),
+            &painted.doc,
+        );
+        assert_eq!(app.recording.root.as_ref(), Some(&root));
+        app.doc.layers[0].pixels = [10, 10, 200, 255].repeat(30).into();
+        app.revision += 1;
+        app.poll_timelapse(&ctx);
+        settle(&mut app, &ctx);
+        assert_eq!(Inventory::read(&root).unwrap().project, Some(project));
+
+        // A snapshot from before this change, of a canvas never saved,
+        // still opens; it just has no recording to continue.
+        let app = restore(&snapshots.path().join("session-4.gz"), None, &painted.doc);
+        assert!(app.recording.root.is_none());
     }
 
     #[test]
