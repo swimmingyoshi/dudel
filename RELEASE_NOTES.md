@@ -25,6 +25,9 @@ what changed after an update. Projects and file formats are unchanged from
 - **Timelapses survive recovery:** restoring a recovery backup continues the
   canvas's timelapse instead of starting without it. For a canvas that was
   never saved, this works for recordings made from this version on.
+  **Continue on this canvas**, after opening an earlier recording in the
+  Timelapse window, picks up any recording of the canvas's size by hand,
+  such as one lost in a crash before this version.
 - **Minimizing:** minimizing Dudel squeezed the palette columns, which stayed
   squeezed after restoring, and could close Dudel at the next pen stroke. The
   window now keeps its layout while minimized. An arrangement already squeezed

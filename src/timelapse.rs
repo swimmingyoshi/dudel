@@ -189,6 +189,22 @@ impl Recording {
             snapshot: self.snapshot.clone(),
         }
     }
+    /// A recording read back from its folder.
+    fn from_disk(root: PathBuf, inventory: Inventory, revision: Option<u64>) -> Self {
+        Recording {
+            on: inventory.active,
+            root: Some(root),
+            frames: inventory.frames,
+            bytes: inventory.bytes,
+            dimensions: [inventory.width, inventory.height],
+            revision,
+            hash: inventory.hash,
+            named_for: inventory.project.clone(),
+            project: inventory.project,
+            snapshot: inventory.snapshot,
+            ..Default::default()
+        }
+    }
     /// Record the canvas as it changes. A fresh canvas waits for its first
     /// change, so an unused canvas leaves no folder behind.
     fn begin(&mut self, dimensions: [usize; 2], revision: Option<u64>) {
@@ -942,32 +958,66 @@ impl Dudel {
             })
             .max_by_key(|(modified, ..)| *modified);
         if let Some((_, root, inventory)) = found {
-            self.recording = Recording {
-                on: inventory.active,
-                root: Some(root),
-                frames: inventory.frames,
-                bytes: inventory.bytes,
-                dimensions: [inventory.width, inventory.height],
-                revision: Some(self.revision),
-                hash: inventory.hash,
-                named_for: inventory.project.clone(),
-                project: inventory.project,
-                snapshot: inventory.snapshot,
-                message: if inventory.active {
-                    format!(
-                        "Continuing this project's timelapse ({} frames)",
-                        inventory.frames
-                    )
-                } else {
-                    format!(
-                        "This project's timelapse ({} frames) is stopped; \
-                         Continue recording adds to it",
-                        inventory.frames
-                    )
-                },
-                ..Default::default()
+            let message = if inventory.active {
+                format!(
+                    "Continuing this project's timelapse ({} frames)",
+                    inventory.frames
+                )
+            } else {
+                format!(
+                    "This project's timelapse ({} frames) is stopped; \
+                     Continue recording adds to it",
+                    inventory.frames
+                )
             };
+            self.recording = Recording::from_disk(root, inventory, Some(self.revision));
+            self.recording.message = message;
         }
+    }
+
+    /// Make the recording opened in the window this canvas's, and keep
+    /// recording into it: for a timelapse that lost its canvas, as after a
+    /// crash before restoring could find it. The canvas's own recording, if
+    /// it has frames, stays on disk as a recording of its own.
+    pub(crate) fn continue_opened_timelapse(&mut self) -> Result<(), String> {
+        let (root, _) = self
+            .timelapse
+            .opened
+            .clone()
+            .ok_or("Open a recording first")?;
+        let inventory = Inventory::read(&root)?;
+        let canvas = [self.doc.width, self.doc.height];
+        if [inventory.width, inventory.height] != canvas {
+            return Err(format!(
+                "That recording is {} x {} px and this canvas {} x {} px; \
+                 only a recording of the same size can continue on it",
+                inventory.width, inventory.height, canvas[0], canvas[1]
+            ));
+        }
+        if inventory.frames >= MAX_FRAMES {
+            return Err("That recording is full".into());
+        }
+        if self.timelapse.export.is_some() {
+            return Err("Wait for the export to finish".into());
+        }
+        if self.recording.root.as_ref() != Some(&root) {
+            self.recording.join_frame();
+            if let Some(own) = &self.recording.root {
+                let _ = self.recording.inventory(false).write(own);
+            }
+            let frames = inventory.frames;
+            // No revision: the canvas as it is now is the next frame.
+            self.recording = Recording::from_disk(root.clone(), inventory, None);
+            self.recording.snapshot = self.recovery_path.clone();
+            self.recording.message = format!(
+                "Continuing \u{201c}{}\u{201d} ({frames} frames) on this canvas",
+                root.file_name().unwrap_or_default().to_string_lossy()
+            );
+        }
+        self.recording.resume();
+        self.timelapse.opened = None;
+        self.timelapse.player = Player::default();
+        Ok(())
     }
 
     /// The canvas is about to be replaced or closed, perhaps in the same
@@ -1355,6 +1405,7 @@ impl Dudel {
         ui.separator();
 
         let t = &mut self.timelapse;
+        let mut continue_opened = false;
         ui.horizontal(|ui| {
             ui.strong(if t.opened.is_some() {
                 "Opened recording"
@@ -1365,7 +1416,26 @@ impl Dudel {
                 t.opened = None;
                 t.player = Player::default();
             }
+            if t.opened.is_some()
+                && ui
+                    .small_button("Continue on this canvas")
+                    .on_hover_text(
+                        "Record this canvas into the opened recording, as if it had never \
+                         stopped. It must be the same size as the canvas.",
+                    )
+                    .clicked()
+            {
+                continue_opened = true;
+            }
         });
+        if continue_opened {
+            if let Err(e) = self.continue_opened_timelapse() {
+                self.timelapse.message = e;
+            }
+            // The opened recording is now this canvas's; it shows next frame.
+            return action;
+        }
+        let t = &mut self.timelapse;
         match source {
             None => {
                 ui.label(egui::RichText::new("Frames appear here as you paint. Start recording above, or open an earlier recording.").weak());
@@ -1855,6 +1925,71 @@ mod tests {
         let inventory = Inventory::read(&root).unwrap();
         assert_eq!((inventory.frames, inventory.active), (2, false));
         assert_eq!([inventory.width, inventory.height], [4, 4]);
+    }
+
+    /// A recording that lost its canvas (a crash before restoring could
+    /// find it) is opened in the window and continued on the canvas; the
+    /// canvas's own recording is kept, stopped.
+    #[test]
+    fn an_opened_recording_continues_on_a_canvas_of_its_size() {
+        let ctx = egui::Context::default();
+        let library = tempfile::tempdir().unwrap();
+        let paint = |app: &mut Dudel, value: u8| {
+            app.doc.layers[0].pixels = [value, 10, 10, 255].repeat(30).into();
+            app.revision += 1;
+            app.poll_timelapse(&ctx);
+            settle(app, &ctx);
+        };
+        let session = || {
+            let mut app = Dudel {
+                doc: Document::new(6, 5),
+                ..Default::default()
+            };
+            app.locations.library = Some(library.path().to_owned());
+            app
+        };
+        let mut lost = session();
+        lost.start_timelapse();
+        paint(&mut lost, 200);
+        let root = lost.recording.root.clone().unwrap();
+        drop(lost);
+
+        let mut app = session();
+        app.start_timelapse();
+        paint(&mut app, 150);
+        let own = app.recording.root.clone().unwrap();
+        assert_ne!(own, root);
+        app.timelapse.opened = Some((root.clone(), 1));
+        app.continue_opened_timelapse().unwrap();
+        assert!(app.timelapse.opened.is_none() && app.recording.recording());
+        assert_eq!(
+            (app.recording.root.as_ref(), app.recording.frames),
+            (Some(&root), 1)
+        );
+        let kept = Inventory::read(&own).unwrap();
+        assert_eq!((kept.frames, kept.active), (1, false));
+        // The canvas as it is now is the next frame, without a change first.
+        app.poll_timelapse(&ctx);
+        settle(&mut app, &ctx);
+        assert_eq!(app.recording.frames, 2);
+        app.recording.last = Some(Instant::now() - Duration::from_secs(60));
+        paint(&mut app, 100);
+        assert_eq!(Inventory::read(&root).unwrap().frames, 3);
+
+        // Only a recording of the canvas's size continues on it.
+        let mut other = Dudel {
+            doc: Document::new(7, 5),
+            ..Default::default()
+        };
+        other.locations.library = Some(library.path().to_owned());
+        other.timelapse.opened = Some((root.clone(), 3));
+        assert!(
+            other
+                .continue_opened_timelapse()
+                .unwrap_err()
+                .contains("same size")
+        );
+        assert!(other.recording.root.is_none());
     }
 
     /// Restoring a recovery snapshot (after a crash, or a backup chosen in

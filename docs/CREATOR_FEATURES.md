@@ -45,6 +45,12 @@ on PATH. Video export supports progress and
 cancellation, and odd pixel dimensions are padded with white to even dimensions.
 **Show frames** opens the numbered PNG frames for a video editor.
 **Open an earlier recording…** plays and exports any recording folder.
+**Continue on this canvas** then records the open canvas into that recording,
+for example one whose canvas was lost in a crash before it was saved. The
+recording must be the same size as the canvas; a recording the canvas had
+already started is kept as a recording of its own.
+
+Restoring a recovery backup continues its canvas's timelapse by itself.
 
 See [export options](EXPORT_OPTIONS.md) for image formats and encoder setup,
 and the [animation plan](dev/ANIMATION_PLAN.md) for future editable timelines.
