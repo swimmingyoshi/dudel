@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-24, after 0.6.2. This replaces the earlier plan
+Updated 2026-11-26, after 0.6.2. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -172,11 +172,19 @@ planned as 0.6.3 ship with it.
       100,000-triangle model with a 2048 px texture: 15 ms at 800 × 800, 30 ms
       with smooth edges; 980,000 triangles take 79 and 90 ms.
 - [x] Dialogs that can be dragged out of the way (owner's report).
+- [x] An application icon (below).
+- [ ] **Liquify** (owner, 2026-11-26): a brush that pushes, twirls, pinches
+      and swells pixels, as in Procreate and Clip Studio Paint.
 - [ ] The owner's pen pass on 3D models.
 - [ ] The design pass on windows and dialogs (below).
 
 0.8: 3D layers (editable camera, saved in the project). Painting directly on
 the model is decided after that; posable figures are not planned.
+
+**Releases (owner, 2026-11-26):** as much as possible goes into one release;
+finished work is pushed to master between releases instead of becoming a
+release of its own. Patch releases only for lost work, crashes or broken
+updates. 0.8 and 0.9 come before 1.0.
 
 ## Installing and updating
 
