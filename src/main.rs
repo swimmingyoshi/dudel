@@ -1198,6 +1198,24 @@ impl Dudel {
     }
 }
 
+/// While minimized, Windows reports the window as 0 x 0. Laid out at that
+/// size, palettes were squeezed for good and some widgets placed at NaN,
+/// which closed Dudel on the next pen move (2026-11-26). The window is
+/// hidden then, so it is laid out at its last real size instead.
+fn keep_window_size(ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    let id = egui::Id::new("last window size");
+    match raw_input.screen_rect {
+        Some(rect) if rect.width() >= 200.0 && rect.height() >= 150.0 && !rect.any_nan() => {
+            ctx.data_mut(|d| d.insert_temp(id, rect));
+        }
+        _ => {
+            if let Some(last) = ctx.data(|d| d.get_temp::<egui::Rect>(id)) {
+                raw_input.screen_rect = Some(last);
+            }
+        }
+    }
+}
+
 impl eframe::App for Dudel {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         if (self.capture.is_some() && self.settings_store.is_none())
@@ -1223,6 +1241,7 @@ impl eframe::App for Dudel {
         std::time::Duration::from_secs(5)
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        keep_window_size(ctx, raw_input);
         if self.capture.as_ref().is_some_and(|c| c.session.is_some()) {
             raw_input.events.clear();
             raw_input.modifiers = Default::default();

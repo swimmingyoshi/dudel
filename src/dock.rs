@@ -236,6 +236,9 @@ pub(crate) struct DockPrefs {
     pub windows: Vec<(Layout, Palette, [f32; 4])>,
 }
 
+/// Below this the dock isn't drawn at all, and its arrangement waits.
+const SMALLEST_DOCK: egui::Vec2 = egui::vec2(320.0, 200.0);
+
 /// The smallest a remembered floating palette comes back, so that one left
 /// squeezed to its tab can't stay that way.
 const SMALLEST_WINDOW: egui::Vec2 = egui::vec2(200.0, 160.0);
@@ -247,7 +250,7 @@ const PRESETS: u32 = 3;
 /// The dock of the session: one arrangement per style.
 #[derive(Default)]
 pub(crate) struct Docks {
-    states: HashMap<Layout, DockState<Palette>>,
+    pub(crate) states: HashMap<Layout, DockState<Palette>>,
     pub(crate) locked: bool,
     /// Changes asked for while the dock is being drawn.
     pending: Vec<Change>,
@@ -662,6 +665,13 @@ impl Dudel {
     ) {
         let layout = self.interface.layout;
         let whole = ui.max_rect();
+        // A minimized window is laid out at 0 x 0. egui_dock would squeeze
+        // every column to fit and keep the squeezed widths, and lay widgets
+        // out at NaN, which closed Dudel on the next pen move (2026-11-26).
+        // The window can't be made this small otherwise (960 x 640 at least).
+        if !(whole.width() >= SMALLEST_DOCK.x && whole.height() >= SMALLEST_DOCK.y) {
+            return;
+        }
         if canvas_outside(layout) {
             self.canvas_tab_ui(ctx, ui, packets);
         }

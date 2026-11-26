@@ -1635,6 +1635,71 @@ fn brush_studio_compact_creation_revert_and_sections_fit_after_viewport_resize()
         assert_actions(&w);
     }
 }
+#[test]
+fn minimizing_and_restoring_keeps_the_layout_and_lays_nothing_out_at_nan() {
+    use dudel_ui::style::Layout;
+    for layout in [
+        Layout::Classic,
+        Layout::Slate,
+        Layout::Float,
+        Layout::Atelier,
+    ] {
+        let mut w = Workspace::sized([1920.0, 1080.0]);
+        w.app.interface.layout = layout;
+        for _ in 0..12 {
+            w.frame(vec![]);
+        }
+        let columns = |w: &Workspace| {
+            w.app
+                .ui_layout
+                .docks
+                .states
+                .get(&layout)
+                .map(|state| {
+                    state
+                        .main_surface()
+                        .iter()
+                        .filter_map(|node| match node {
+                            egui_dock::Node::Horizontal(split)
+                            | egui_dock::Node::Vertical(split) => Some(split.fraction),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let broken = |w: &Workspace| {
+            w.ctx.viewport(|v| {
+                v.prev_pass
+                    .widgets
+                    .layers()
+                    .flat_map(|(_, rects)| rects.iter())
+                    .filter(|r| r.rect.any_nan() || r.interact_rect.any_nan())
+                    .count()
+            })
+        };
+        let before = columns(&w);
+        // Windows reports 0 x 0 while minimized.
+        w.size = [0.0, 0.0];
+        for _ in 0..4 {
+            w.frame(vec![]);
+            assert_eq!(broken(&w), 0, "{layout:?} while minimized");
+        }
+        w.size = [1920.0, 1080.0];
+        for _ in 0..4 {
+            w.frame(vec![]);
+            assert_eq!(broken(&w), 0, "{layout:?} after restoring");
+        }
+        let after = columns(&w);
+        assert_eq!(before.len(), after.len(), "{layout:?}");
+        for (a, b) in before.iter().zip(&after) {
+            assert!(
+                (a - b).abs() < 0.002,
+                "{layout:?}: {before:?} became {after:?}"
+            );
+        }
+    }
+}
 impl Workspace {
     fn new() -> Self {
         Self::sized([960.0, 700.0])

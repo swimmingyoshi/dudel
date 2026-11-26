@@ -25,9 +25,13 @@ what changed after an update. Projects and file formats are unchanged from
 - **Timelapses survive recovery:** restoring a recovery backup continues the
   canvas's timelapse instead of starting without it. For a canvas that was
   never saved, this works for recordings made from this version on.
-- **Fewer crashes:** a part of the window laid out at an impossible position
-  closed Dudel when the pen passed over it. Dudel now repairs it and writes a
-  problem report instead of closing.
+- **Minimizing:** minimizing Dudel squeezed the palette columns, which stayed
+  squeezed after restoring, and could close Dudel at the next pen stroke. The
+  window now keeps its layout while minimized. An arrangement already squeezed
+  comes back with **Window > Reset to the … arrangement**.
+- **Fewer crashes:** should any part of the window still be laid out at an
+  impossible position, Dudel repairs it and writes a problem report instead
+  of closing.
 
 - **What's new:** the first start after an update lists what changed in every
   version since the one you had, so skipped versions are not missed. **Help >
