@@ -295,6 +295,69 @@ pub struct Timelapse {
     export_control: crate::plugins::FilterControl,
     exported: Option<PathBuf>,
     message: String,
+    /// The newest recordings in the Timelapses folder, and when they were read.
+    listed: Option<(Instant, Vec<Listed>)>,
+}
+
+/// A recording in the window's list.
+#[derive(Clone)]
+struct Listed {
+    root: PathBuf,
+    name: String,
+    frames: usize,
+    size: [usize; 2],
+    modified: std::time::SystemTime,
+}
+
+/// Recordings the window lists.
+const LISTED: usize = 6;
+
+impl Timelapse {
+    /// The newest recordings in `folder`, read again every few seconds.
+    fn recordings(&mut self, folder: &Path) -> Vec<Listed> {
+        if let Some((read, listed)) = &self.listed
+            && read.elapsed() < Duration::from_secs(3)
+        {
+            return listed.clone();
+        }
+        let mut listed: Vec<Listed> = std::fs::read_dir(folder)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .take(2000)
+            .filter_map(|entry| {
+                let root = entry.path();
+                let inventory = Inventory::read(&root).ok()?;
+                let modified = std::fs::metadata(root.join("recording.json"))
+                    .and_then(|m| m.modified())
+                    .ok()?;
+                let name = root.file_name()?.to_string_lossy().into_owned();
+                (inventory.frames > 0).then_some(Listed {
+                    name,
+                    root,
+                    frames: inventory.frames,
+                    size: [inventory.width, inventory.height],
+                    modified,
+                })
+            })
+            .collect();
+        listed.sort_by_key(|l| std::cmp::Reverse(l.modified));
+        listed.truncate(LISTED);
+        self.listed = Some((Instant::now(), listed.clone()));
+        listed
+    }
+}
+
+/// How long ago `time` was, in words: "just now", "5 min ago", "3 days ago".
+fn ago(time: std::time::SystemTime) -> String {
+    let seconds = time.elapsed().map_or(0, |e| e.as_secs());
+    match seconds {
+        0..60 => "just now".into(),
+        60..3600 => format!("{} min ago", seconds / 60),
+        3600..86_400 => format!("{} h ago", seconds / 3600),
+        86_400..172_800 => "yesterday".into(),
+        _ => format!("{} days ago", seconds / 86_400),
+    }
 }
 
 type Decode = std::thread::JoinHandle<Result<egui::ColorImage, String>>;
@@ -1226,6 +1289,22 @@ impl Dudel {
                     app.start_timelapse_export(path, video)
                 });
             }
+            Some(Action::View(root, frames)) => {
+                self.timelapse.opened = Some((root, frames));
+                self.timelapse.player = Player::default();
+            }
+            Some(Action::Back) => {
+                self.timelapse.opened = None;
+                self.timelapse.player = Player::default();
+            }
+            Some(Action::Continue(root, frames)) => {
+                self.timelapse.opened = Some((root, frames));
+                self.timelapse.player = Player::default();
+                if let Err(e) = self.continue_opened_timelapse() {
+                    self.timelapse.message = e;
+                }
+                self.timelapse.listed = None;
+            }
             None => {}
         }
     }
@@ -1319,6 +1398,9 @@ impl Dudel {
     ) -> Option<Action> {
         let mut action = None;
         let busy = self.timelapse.export.is_some();
+        let fps = self.timelapse.prefs.fps;
+
+        // Recording: what is happening, and the one thing to do next.
         let r = &self.recording;
         let state = if r.on {
             if r.paused { "Paused" } else { "Recording" }
@@ -1330,27 +1412,32 @@ impl Dudel {
             "Not recording"
         };
         let continues = r.root.is_some() && r.dimensions == [self.doc.width, self.doc.height];
+        ui.label(crate::workspace::section_title("THIS CANVAS"));
         ui.horizontal(|ui| {
             let r = &self.recording;
-            if r.on && !r.paused {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                ui.painter().circle_filled(
-                    rect.center(),
-                    5.0,
-                    egui::Color32::from_rgb(220, 60, 60),
-                );
-            }
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+            let dot = if r.on && !r.paused {
+                egui::Color32::from_rgb(220, 60, 60)
+            } else {
+                ui.visuals().weak_text_color()
+            };
+            ui.painter().circle_filled(rect.center(), 5.0, dot);
             ui.strong(state);
             if r.frames > 0 {
-                ui.label(format!(
-                    "{} frames · {}",
-                    r.frames,
-                    crate::locations::human_bytes(r.bytes)
-                ));
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} frames · {} · {}",
+                        r.frames,
+                        duration_label(r.frames, fps),
+                        crate::locations::human_bytes(r.bytes)
+                    ))
+                    .weak(),
+                );
             }
         });
         ui.horizontal(|ui| {
+            let primary =
+                |ui: &mut egui::Ui, text: &str| ui.add(crate::workspace::primary_button(ui, text));
             let r = &mut self.recording;
             if r.on {
                 let label = if r.paused { "Resume" } else { "Pause" };
@@ -1363,12 +1450,16 @@ impl Dudel {
                 {
                     r.paused = !r.paused;
                 }
-                if ui.button("Stop").clicked() {
+                if ui
+                    .button("Stop")
+                    .on_hover_text("The frames are kept; Continue recording adds to them later")
+                    .clicked()
+                {
                     r.stop();
                 }
             } else if !r.finish && r.worker.is_none() {
                 if continues {
-                    if ui.button("Continue recording").clicked() {
+                    if primary(ui, "Continue recording").clicked() {
                         self.start_timelapse();
                     }
                     if ui
@@ -1379,8 +1470,7 @@ impl Dudel {
                         self.recording.root = None;
                         self.start_timelapse();
                     }
-                } else if ui
-                    .button("Record this canvas")
+                } else if primary(ui, "Record this canvas")
                     .on_hover_text("Frames are captured as the artwork changes")
                     .clicked()
                 {
@@ -1392,53 +1482,56 @@ impl Dudel {
             ui.label(egui::RichText::new(&self.recording.message).weak());
         }
         let prefs = &mut self.timelapse.prefs;
-        egui::CollapsingHeader::new("Recording options")
-            .id_salt("timelapse recording options")
-            .show(ui, |ui| {
-                ui.add(
-                    egui::Slider::new(&mut prefs.interval, 2..=60).text("seconds between frames"),
-                )
+        egui::CollapsingHeader::new(format!(
+            "Options: a frame every {} s at most",
+            prefs.interval
+        ))
+        .id_salt("timelapse recording options")
+        .show(ui, |ui| {
+            ui.add(egui::Slider::new(&mut prefs.interval, 2..=60).text("seconds between frames"))
                 .on_hover_text("Unchanged artwork is never captured twice, so breaks are skipped");
-                ui.checkbox(&mut prefs.record_new, "Record new canvases automatically")
-                    .on_hover_text("Also offered when you create a canvas");
-            });
+            ui.checkbox(&mut prefs.record_new, "Record new canvases automatically")
+                .on_hover_text("Also offered when you create a canvas");
+        });
         ui.separator();
 
+        // Preview: the recording shown, this canvas's or one opened.
         let t = &mut self.timelapse;
-        let mut continue_opened = false;
-        ui.horizontal(|ui| {
-            ui.strong(if t.opened.is_some() {
-                "Opened recording"
-            } else {
-                "Playback"
-            });
-            if t.opened.is_some() && ui.small_button("Back to this canvas").clicked() {
-                t.opened = None;
-                t.player = Player::default();
+        ui.horizontal(|ui| match &t.opened {
+            Some((root, _)) => {
+                ui.label(crate::workspace::section_title("VIEWING"));
+                ui.strong(root.file_name().unwrap_or_default().to_string_lossy());
             }
-            if t.opened.is_some()
-                && ui
-                    .small_button("Continue on this canvas")
-                    .on_hover_text(
-                        "Record this canvas into the opened recording, as if it had never \
-                         stopped. It must be the same size as the canvas.",
-                    )
-                    .clicked()
-            {
-                continue_opened = true;
+            None => {
+                ui.label(crate::workspace::section_title("PREVIEW"));
             }
         });
-        if continue_opened {
-            if let Err(e) = self.continue_opened_timelapse() {
-                self.timelapse.message = e;
-            }
-            // The opened recording is now this canvas's; it shows next frame.
-            return action;
+        if let Some((root, frames)) = t.opened.clone() {
+            ui.horizontal(|ui| {
+                if ui.button("Back to this canvas").clicked() {
+                    action = Some(Action::Back);
+                }
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Continue it here"))
+                    .on_hover_text(
+                        "Record this canvas into the recording you are viewing, as if it had \
+                         never stopped. It must be the same size as the canvas.",
+                    )
+                    .clicked()
+                {
+                    action = Some(Action::Continue(root, frames));
+                }
+            });
         }
-        let t = &mut self.timelapse;
         match source {
             None => {
-                ui.label(egui::RichText::new("Frames appear here as you paint. Start recording above, or open an earlier recording.").weak());
+                ui.label(
+                    egui::RichText::new(
+                        "Frames appear here as you paint. Record this canvas, or view one of \
+                         your recordings below.",
+                    )
+                    .weak(),
+                );
             }
             Some((root, frames)) => {
                 let p = &mut t.player;
@@ -1449,22 +1542,36 @@ impl Dudel {
                     let height = (ui.ctx().content_rect().height() * 0.3).clamp(100.0, 240.0);
                     let scale = (width / size.x).min(height / size.y);
                     // Whole steps when enlarging, so every pixel is as wide
-                    // as the next.
+                    // as the next. A picture with no size is not shown: 0 x
+                    // infinity would lay the rows after it out at NaN.
                     let scale = if scale >= 1.0 { scale.floor() } else { scale };
-                    ui.vertical_centered(|ui| {
-                        ui.add(egui::Image::new((texture.id(), size * scale)));
-                    });
+                    if scale.is_finite() && scale > 0.0 {
+                        ui.vertical_centered(|ui| {
+                            ui.add(egui::Image::new((texture.id(), size * scale)));
+                        });
+                    }
                 } else {
                     ui.add_space(4.0);
                     ui.spinner();
                 }
                 ui.horizontal(|ui| {
+                    if ui.button("⏮").on_hover_text("First frame").clicked() {
+                        p.frame = 0;
+                        p.playing = false;
+                    }
                     let label = if p.playing { "Pause" } else { "Play" };
-                    if ui.button(label).clicked() {
+                    if ui
+                        .add(egui::Button::new(label).min_size(egui::vec2(52.0, 0.0)))
+                        .clicked()
+                    {
                         if !p.playing && p.frame + 1 >= *frames {
                             p.frame = 0;
                         }
                         p.playing = !p.playing;
+                    }
+                    if ui.button("⏭").on_hover_text("Last frame").clicked() {
+                        p.frame = frames.saturating_sub(1);
+                        p.playing = false;
                     }
                     // The count is laid out first, on the right, and the
                     // slider takes exactly what is left. Sizing the slider
@@ -1486,48 +1593,59 @@ impl Dudel {
                         }
                     });
                 });
-                ui.add(egui::Slider::new(&mut t.prefs.fps, 1..=30).text("frames per second"))
-                    .on_hover_text("Playback speed for the preview and exported timelapse");
-                ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt("timelapse length")
-                        .selected_text(
-                            LENGTHS
-                                .iter()
-                                .find(|(length, _)| *length == t.prefs.length)
-                                .map_or("", |(_, label)| label),
+                egui::Grid::new("timelapse timing")
+                    .num_columns(2)
+                    .spacing([12.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Speed");
+                        ui.add(
+                            egui::Slider::new(&mut t.prefs.fps, 1..=30).suffix(" frames a second"),
                         )
-                        .show_ui(ui, |ui| {
-                            for (length, label) in LENGTHS {
-                                ui.selectable_value(&mut t.prefs.length, length, label);
-                            }
-                        })
-                        .response
-                        .on_hover_text(
-                            "Fit a long session into a set time by keeping evenly spaced \
-                             frames. Each frame keeps its full quality, and a shorter video \
-                             is a smaller file.",
-                        );
-                    ui.label("exported length");
-                });
+                        .on_hover_text("Playback speed for the preview and exported timelapse");
+                        ui.end_row();
+                        ui.label("Length");
+                        egui::ComboBox::from_id_salt("timelapse length")
+                            .selected_text(
+                                LENGTHS
+                                    .iter()
+                                    .find(|(length, _)| *length == t.prefs.length)
+                                    .map_or("", |(_, label)| label),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (length, label) in LENGTHS {
+                                    ui.selectable_value(&mut t.prefs.length, length, label);
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "Fit a long session into a set time by keeping evenly spaced \
+                                 frames. Each frame keeps its full quality, and a shorter video \
+                                 is a smaller file.",
+                            );
+                        ui.end_row();
+                    });
                 let kept = chosen(*frames, t.prefs.fps, t.prefs.length).len();
                 let length = duration_label(kept, t.prefs.fps);
                 ui.label(
                     egui::RichText::new(if kept < *frames {
                         format!(
-                            "{length} long: {kept} of the {frames} frames, evenly spaced, \
-                             then the finished artwork for {HOLD_SECONDS} s."
+                            "The video is {length}: {kept} of the {frames} frames, evenly \
+                             spaced, then the finished artwork for {HOLD_SECONDS} s."
                         )
                     } else {
                         format!(
-                            "{length} long at this speed, holding the finished artwork \
-                             for {HOLD_SECONDS} s."
+                            "The video is {length}, ending on the finished artwork for \
+                             {HOLD_SECONDS} s."
                         )
                     })
                     .weak(),
                 );
                 ui.separator();
-                ui.strong("Export");
+
+                // Export.
+                ui.label(crate::workspace::section_title("EXPORT"));
                 ui.horizontal(|ui| {
+                    ui.label("Size");
                     egui::ComboBox::from_id_salt("timelapse gif size")
                         .selected_text(
                             EXPORT_SIDES
@@ -1540,22 +1658,28 @@ impl Dudel {
                                 ui.selectable_value(&mut t.prefs.export_side, side, label);
                             }
                         });
+                });
+                ui.horizontal_wrapped(|ui| {
                     if ui
-                        .add_enabled(!busy, egui::Button::new("Export GIF…"))
-                        .clicked()
-                    {
-                        action = Some(Action::Export(false));
-                    }
-                    if ui
-                        .add_enabled(!busy, egui::Button::new("Export MP4\u{2026}"))
-                        .on_hover_text("H.264 video for sharing")
+                        .add_enabled(
+                            !busy,
+                            crate::workspace::primary_button(ui, "Export video (MP4)…"),
+                        )
+                        .on_hover_text("Full-color H.264 video, for sharing")
                         .clicked()
                     {
                         action = Some(Action::Export(true));
                     }
                     if ui
-                        .button("Show frames")
-                        .on_hover_text("PNG frames, for full-color video in a video editor")
+                        .add_enabled(!busy, egui::Button::new("Export GIF…"))
+                        .on_hover_text("Plays anywhere, with a limited palette")
+                        .clicked()
+                    {
+                        action = Some(Action::Export(false));
+                    }
+                    if ui
+                        .button("Frames folder")
+                        .on_hover_text("The PNG frames, for a video editor")
                         .clicked()
                         && let Err(e) = crate::locations::reveal(root)
                     {
@@ -1577,7 +1701,7 @@ impl Dudel {
                 }
             }
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if !t.message.is_empty() {
                 ui.label(&t.message);
             }
@@ -1590,13 +1714,82 @@ impl Dudel {
             }
         });
         ui.separator();
-        if ui
-            .add_enabled(!busy, egui::Button::new("Open an earlier recording…"))
-            .clicked()
-        {
-            action = Some(Action::Open);
+
+        // Your recordings: the newest, to view or to continue here.
+        let folder = self.locations.get(crate::locations::Kind::Timelapses);
+        let listed = self.timelapse.recordings(&folder);
+        let canvas = [self.doc.width, self.doc.height];
+        let own = self.recording.root.clone();
+        let viewing = self.timelapse.opened.as_ref().map(|(root, _)| root.clone());
+        ui.label(crate::workspace::section_title("YOUR RECORDINGS"));
+        if listed.is_empty() {
+            ui.label(egui::RichText::new("None yet.").weak());
         }
-        ui.small("Records artwork only (no panels, cursor or reference images), up to 1280 px. Small canvases, such as pixel art, export enlarged in whole steps so every pixel stays sharp. GIF uses a limited palette.");
+        for item in listed.iter() {
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    let name = egui::RichText::new(&item.name);
+                    ui.label(if Some(&item.root) == own.as_ref() {
+                        name.strong()
+                    } else {
+                        name
+                    });
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} frames · {} x {} px · {}",
+                            item.frames,
+                            item.size[0],
+                            item.size[1],
+                            ago(item.modified)
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(ui.spacing().scroll.bar_width);
+                    if Some(&item.root) == own.as_ref() {
+                        ui.label(egui::RichText::new("This canvas").weak());
+                        return;
+                    }
+                    if item.size == canvas
+                        && ui
+                            .add_enabled(!busy, egui::Button::new("Continue here"))
+                            .on_hover_text(
+                                "Record this canvas into this recording, as after a crash \
+                                 that lost it",
+                            )
+                            .clicked()
+                    {
+                        action = Some(Action::Continue(item.root.clone(), item.frames));
+                    }
+                    if viewing.as_ref() != Some(&item.root)
+                        && ui.add_enabled(!busy, egui::Button::new("View")).clicked()
+                    {
+                        action = Some(Action::View(item.root.clone(), item.frames));
+                    }
+                });
+            });
+        }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!busy, egui::Button::new("Open another…"))
+                .on_hover_text("A recording folder anywhere on this PC")
+                .clicked()
+            {
+                action = Some(Action::Open);
+            }
+            if ui.button("Show the folder").clicked()
+                && let Err(e) = crate::locations::reveal(&folder)
+            {
+                self.timelapse.message = e;
+            }
+            ui.label(egui::RichText::new("ⓘ").weak()).on_hover_text(
+                "Records the artwork only (no panels, cursor or reference images), up to \
+                 1280 px. Small canvases, such as pixel art, export enlarged in whole steps \
+                 so every pixel stays sharp. GIF uses a limited palette.",
+            );
+        });
         action
     }
 }
@@ -1640,6 +1833,12 @@ impl Dudel {
 enum Action {
     Open,
     Export(bool),
+    /// Show a recording from the list.
+    View(PathBuf, usize),
+    /// Back from a recording being viewed to this canvas's.
+    Back,
+    /// Make a recording this canvas's and keep recording into it.
+    Continue(PathBuf, usize),
 }
 
 #[cfg(test)]
@@ -1925,6 +2124,42 @@ mod tests {
         let inventory = Inventory::read(&root).unwrap();
         assert_eq!((inventory.frames, inventory.active), (2, false));
         assert_eq!([inventory.width, inventory.height], [4, 4]);
+    }
+
+    /// The window lists the newest recordings with frames, newest first,
+    /// and leaves out empty and unreadable folders.
+    #[test]
+    fn the_window_lists_the_newest_recordings() {
+        let folder = tempfile::tempdir().unwrap();
+        let inventory = |frames| Inventory {
+            format: "dudel-timelapse".into(),
+            version: 1,
+            frames,
+            bytes: 10,
+            width: 6,
+            height: 5,
+            project: None,
+            active: false,
+            hash: None,
+            snapshot: None,
+        };
+        for (name, frames) in [("old", 3), ("empty", 0), ("new", 7)] {
+            let root = folder.path().join(name);
+            std::fs::create_dir(&root).unwrap();
+            inventory(frames).write(&root).unwrap();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::fs::create_dir(folder.path().join("not a recording")).unwrap();
+        let mut timelapse = Timelapse::default();
+        let listed = timelapse.recordings(folder.path());
+        let names: Vec<_> = listed.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["new", "old"]);
+        assert_eq!((listed[0].frames, listed[0].size), (7, [6, 5]));
+        assert_eq!(ago(std::time::SystemTime::now()), "just now");
+        assert_eq!(
+            ago(std::time::SystemTime::now() - Duration::from_secs(3 * 86_400)),
+            "3 days ago"
+        );
     }
 
     /// A recording that lost its canvas (a crash before restoring could

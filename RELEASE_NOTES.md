@@ -22,6 +22,9 @@ what changed after an update. Projects and file formats are unchanged from
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
   small windows can be dragged by their title. They open centered each time.
 
+- **A clearer Timelapse window:** what is being recorded and the next step
+  first, labelled speed and length, MP4 as the main export, and a list of
+  your recent recordings to view or to continue on the canvas.
 - **Timelapses survive recovery:** restoring a recovery backup continues the
   canvas's timelapse instead of starting without it. For a canvas that was
   never saved, this works for recordings made from this version on.
