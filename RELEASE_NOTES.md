@@ -22,6 +22,10 @@ what changed after an update. Projects and file formats are unchanged from
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
   small windows can be dragged by their title. They open centered each time.
 
+- **Fewer crashes:** a part of the window laid out at an impossible position
+  closed Dudel when the pen passed over it. Dudel now repairs it and writes a
+  problem report instead of closing.
+
 - **What's new:** the first start after an update lists what changed in every
   version since the one you had, so skipped versions are not missed. **Help >
   What's new** shows it any time, for every version, without a connection.

@@ -166,6 +166,7 @@ mod wayland_pen;
 mod welcome;
 mod wet;
 mod whats_new;
+mod widget_guard;
 mod window_chrome;
 #[cfg(test)]
 mod workflow_tests;
@@ -1407,6 +1408,8 @@ impl eframe::App for Dudel {
         // must be handed over now.
         self.track_relaunch(ctx.cumulative_frame_nr());
         self.close_viewport_if_ready(ctx);
+        // Last, after every widget of the frame is laid out.
+        widget_guard::repair(ctx);
         self.performance.frame_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
         self.performance.frames.record(self.performance.frame_ms);
         self.trace_live_frame(frame_start);

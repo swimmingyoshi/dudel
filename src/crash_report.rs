@@ -70,6 +70,13 @@ fn describe(info: &std::panic::PanicHookInfo<'_>) -> String {
     text
 }
 
+/// Save a report of a problem Dudel recovered from. Never panics.
+pub(crate) fn note(text: &str) {
+    if let Some(folder) = folder() {
+        let _ = write_report(&folder, text);
+    }
+}
+
 /// Save `text` as a new report and trim old ones. Never panics.
 fn write_report(folder: &Path, text: &str) -> Option<PathBuf> {
     std::fs::create_dir_all(folder).ok()?;
