@@ -1533,6 +1533,10 @@ fn run() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             // Wayland app_id / X11 WM_CLASS, so compositors and launchers can match the window.
             .with_app_id("dudel")
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("app_icon/dudel.png"))
+                    .expect("the built-in icon is a PNG"),
+            )
             .with_decorations(false)
             .with_inner_size(if isolated {
                 [width, height]

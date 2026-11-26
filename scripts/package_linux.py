@@ -109,6 +109,7 @@ def package(glibc):
     shutil.copy2(linux / "RELEASE_README.md", stage / "README.md")
     shutil.copy2(linux / "dudel.desktop", stage)
     shutil.copy2(linux / "install.sh", stage)
+    shutil.copy2(REPOSITORY / "src" / "app_icon" / "dudel.png", stage)
     for document in DOCUMENTS:
         # Keep repository paths so links between documents still work.
         (stage / document).parent.mkdir(parents=True, exist_ok=True)

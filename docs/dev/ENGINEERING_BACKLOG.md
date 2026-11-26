@@ -618,7 +618,6 @@ The build output had grown to about 77 GB:
 Tracked in [ROADMAP.md](ROADMAP.md) where they are features; listed here so
 they are not lost:
 
-- An application icon: shortcuts and `.dudel` files show the generic one.
 - Signed update records.
 - In-place updates on Linux.
 - Nobody has yet used the 0.4 painting features with a pen in a planned

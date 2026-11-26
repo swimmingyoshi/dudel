@@ -17,6 +17,8 @@ what changed after an update. Projects and file formats are unchanged from
 - **Texture preview:** **Show this canvas on the model** shows the canvas as
   the model's texture and updates while you paint; **Show the layout on the
   canvas** draws the model's UV layout over it.
+- **An icon:** Dudel's window, shortcuts and `.dudel` files have an icon of
+  their own. Windows may show the old one until it refreshes its icon cache.
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
   small windows can be dragged by their title. They open centered each time.
 

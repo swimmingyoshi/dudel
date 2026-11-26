@@ -189,8 +189,8 @@ the model is decided after that; posable figures are not planned.
       the running copy file by file, undoing everything if a file cannot be
       placed. Details in [DISTRIBUTION.md](../DISTRIBUTION.md#installing-and-updating).
 - [x] `dudel.exe PROJECT...` opens projects, as File Explorer starts it.
-- [ ] An application icon (needs artwork): shortcuts and `.dudel` files show
-      the generic program icon until then.
+- [x] An application icon, a placeholder the owner chose (2026-11-25):
+      `src/app_icon`, with a bolder drawing for 32 px and smaller.
 - [ ] Signed update records, so an update is trusted through the project's
       own key and not only through GitHub and its checksum.
 - [ ] In-place updates on Linux (the check links to the download today).

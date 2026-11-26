@@ -98,7 +98,7 @@ text-only paste. On Linux `take_paste` is hard-wired to `false`.
 ### 4. Packaging and CI
 
 - [x] `.desktop` file (`StartupWMClass=dudel`) and per-user `install.sh`.
-- [ ] Dudel icon; the launcher uses the generic `applications-graphics` until one exists.
+- [x] Dudel icon, installed for the launcher by `install.sh`.
 - [ ] `.dudel` file association; Dudel has no command-line option to open a project yet.
 - [x] Linux release archive: `scripts/package_linux.py` makes the tarball (AppImage or Flatpak later).
 - [x] `scripts/verify.sh` equivalent of `Verify.ps1`; hosted baseline passes on `aca86c0`.
