@@ -4,6 +4,40 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
+## Unreleased
+
+3D models to draw from and to preview textures on, and a window that shows
+what changed after an update. Projects and file formats are unchanged from
+0.6.2.
+
+- **3D models:** **View > 3D model** opens a GLB or OBJ file to turn, light and
+  draw from. **Place as layer** draws the view on a new layer, and
+  **Perspective ruler** sets a ruler to it, so strokes follow the model's
+  perspective.
+- **Texture preview:** **Show this canvas on the model** shows the canvas as
+  the model's texture and updates while you paint; **Show the layout on the
+  canvas** draws the model's UV layout over it.
+- **Movable dialogs:** Welcome, Updates, What's new, questions and the other
+  small windows can be dragged by their title. They open centered each time.
+
+- **What's new:** the first start after an update lists what changed in every
+  version since the one you had, so skipped versions are not missed. **Help >
+  What's new** shows it any time, for every version, without a connection.
+- **Check for updates** shows the notes of every version you would skip, not
+  only the newest, and formats them.
+
+### Limits of 3D models
+
+- FBX, `.gltf` with separate files, compressed (Draco, meshopt) models, poses
+  and animations are not read. Only the first texture layout is used.
+- Painting happens on the canvas, not on the model itself. The model is not
+  saved with the project.
+
+### For developers
+
+- A development build can click through an update from a
+  local folder before anything is published.
+
 ## 0.6.2 (2026-11-23)
 
 A fix for restarting after an update. Projects and file formats are unchanged
@@ -28,6 +62,9 @@ project. Projects and file formats are unchanged from 0.6.0.
   while starting a new canvas, closing its tab or quitting left its recording
   as "Untitled", and reopening the project started a second one.
 - **About Dudel** names the commit the program was built from.
+
+### For developers
+
 - **Building from source:** a build not made by the packaging scripts is a
   development build. It keeps its own settings, recovery copies and
   extensions (starting from a copy of the installed Dudel's) and cannot
@@ -47,6 +84,18 @@ project. Projects and file formats are unchanged from 0.6.0.
 Pixel art tools, frame-by-frame animation and three new workspace styles with
 movable palettes. Projects from 0.5.0 open unchanged, and Classic stays the
 default style.
+
+### Highlights
+
+- **Animation:** layers become frames on a timeline with holds and onion skin;
+  export as GIF, PNG frames, a sprite sheet or MP4.
+- **Pixel art:** the Pixel pencil, a pixel grid, pixel art canvas sizes,
+  wrap-around painting for seamless tiles, and sharp scaled export.
+- **Four workspace styles (preview):** Classic, Slate, Float and Atelier, in
+  **View > Theme > Style**, with palettes that dock, float and close.
+- **Layer > Merge:** merge up, selected or visible, or flatten.
+- **First-time setup**, a searchable Settings window, timelapses that follow
+  their project, and a lighter pen quick menu.
 
 ### Animation
 
@@ -167,6 +216,15 @@ Dudel can install itself and update itself, and large wet, smudge and thick
 paint brushes keep up with the pen. Projects and file formats are unchanged
 from 0.4.0.
 
+### Highlights
+
+- **Install on this PC** from the portable copy, and update from inside Dudel
+  with **Help > Check for updates**.
+- **Large wet, smudge, blur and palette knife brushes** keep up with the pen.
+- **One undo** takes back a wet stroke and its drying.
+- **Brush graphs** reach water, pigment, thickness, paper texture and
+  granulation.
+
 ### Installing and updating
 
 - **Install on this PC:** the welcome window and the Help menu offer to install
@@ -237,6 +295,19 @@ node-based brush graph with its own Studio tab, and a canvas that behaves
 like a material, with paper, wet paint, and watercolor, dry media and thick
 paint layers whose colors mix like paint. Projects from 0.3.0 open unchanged;
 projects that use material layers need 0.4.0.
+
+### Highlights
+
+- **Gradients and filters:** the Fill tool's Gradient mode, Gaussian blur,
+  Sharpen, Add noise, and every adjustment applied directly.
+- **Smudge, blur and wet brushes**, with clear water and a palette knife.
+- **Paper and material layers:** Watercolor, Dry media and Thick paint, with
+  colors that mix like paint.
+- **Brush graphs:** wire pen inputs into a brush's settings, in Brush Studio's
+  own tab.
+- **Named workspaces** and brushes shared as single files.
+
+### All changes
 
 - **Gradients:** the Fill tool has a Gradient mode (tap **G** again). Drag
   across the canvas for a linear, radial, angle, reflected or diamond gradient

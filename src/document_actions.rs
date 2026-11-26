@@ -77,7 +77,7 @@ impl Dudel {
         let mut choice = None;
         let name = self.tab_title(self.tabs.active).0;
         let response =
-            eframe::egui::Modal::new(eframe::egui::Id::new("unsaved painting")).show(ctx, |ui| {
+            crate::dialogs::modal(ctx, eframe::egui::Id::new("unsaved painting")).show(ctx, |ui| {
                 ui.set_width(360.0);
                 if crate::dialogs::dialog_title(ui, "Save your painting?") {
                     choice = Some(UnsavedChoice::Cancel);

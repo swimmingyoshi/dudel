@@ -43,7 +43,9 @@ pub(crate) struct Package {
 pub(crate) struct Release {
     pub version: String,
     pub page: String,
-    pub notes: String,
+    /// The release page's text of every version after this copy's, newest
+    /// first: (version, Markdown).
+    pub notes: Vec<(String, String)>,
     /// The package for this platform, when the release has one.
     pub package: Option<Package>,
 }
@@ -85,16 +87,23 @@ pub(crate) fn newest(listing: &str, current: &str) -> Result<Option<Release>, St
     let listed: Vec<Listed> = serde_json::from_str(listing)
         .map_err(|e| format!("The release list could not be read: {e}"))?;
     let downloads = format!("{REPOSITORY}/releases/download/");
-    let Some((found, release)) = listed
+    let mut newer: Vec<(Version, Listed)> = listed
         .into_iter()
         .filter(|release| !release.draft)
         .filter_map(|release| Some((version(&release.tag_name)?, release)))
         .filter(|(found, _)| *found > current)
-        .max_by_key(|(found, _)| *found)
-    else {
+        .collect();
+    newer.sort_by_key(|(found, _)| std::cmp::Reverse(*found));
+    let number = |found: Version| format!("{}.{}.{}", found[0], found[1], found[2]);
+    let notes = newer
+        .iter_mut()
+        .filter_map(|(found, release)| Some((number(*found), release.body.take()?)))
+        .filter(|(_, body)| !body.trim().is_empty())
+        .collect();
+    let Some((found, release)) = newer.into_iter().next() else {
         return Ok(None);
     };
-    let number = format!("{}.{}.{}", found[0], found[1], found[2]);
+    let number = number(found);
     let name = format!("dudel-{number}-{PACKAGE}");
     // Only files of this repository's own releases are ever downloaded.
     let ours = |asset: &&Asset| asset.browser_download_url.starts_with(&downloads);
@@ -125,7 +134,7 @@ pub(crate) fn newest(listing: &str, current: &str) -> Result<Option<Release>, St
         } else {
             crate::welcome::RELEASES.to_owned()
         },
-        notes: release.body.unwrap_or_default(),
+        notes,
         version: number,
         package,
     }))
@@ -308,10 +317,55 @@ pub(crate) fn unpack(archive: &Path, version: &str, folder: &Path) -> Result<(),
     }
 }
 
+/// HTTPS GET; see [`fetch_remote`]. A development build started with
+/// `DUDEL_RELEASES=FOLDER` reads from that folder instead, so an update can
+/// be clicked through before anything is published: `releases.json` is the
+/// release list and every other file is found by its name. All checks on
+/// what is read stay the same. Packaged builds never look at the variable.
+fn fetch(
+    url: &str,
+    limit: u64,
+    sink: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    if crate::identity::DEVELOPMENT
+        && let Some(folder) = std::env::var_os("DUDEL_RELEASES")
+    {
+        let name = if url == listing_url() {
+            "releases.json"
+        } else {
+            url.rsplit('/').next().unwrap_or_default()
+        };
+        return fetch_local(&Path::new(&folder).join(name), limit, sink);
+    }
+    fetch_remote(url, limit, sink)
+}
+
+fn fetch_local(
+    path: &Path,
+    limit: u64,
+    mut sink: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    let failed = |e: std::io::Error| format!("Could not read {}: {e}", path.display());
+    let mut file = std::fs::File::open(path).map_err(failed)?;
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let read = file.read(&mut buffer).map_err(failed)?;
+        if read == 0 {
+            return Ok(());
+        }
+        total += read as u64;
+        if total > limit {
+            return Err(format!("{} is larger than expected", path.display()));
+        }
+        sink(&buffer[..read])?;
+    }
+}
+
 /// HTTPS GET through Windows' own HTTP stack, which follows the system's
 /// proxy settings and never downgrades a redirect to plain HTTP.
 #[cfg(windows)]
-fn fetch(
+fn fetch_remote(
     url: &str,
     limit: u64,
     mut sink: impl FnMut(&[u8]) -> Result<(), String>,
@@ -414,7 +468,7 @@ fn fetch(
 
 /// HTTPS GET with the system's `curl`, which every common Linux desktop has.
 #[cfg(not(windows))]
-fn fetch(
+fn fetch_remote(
     url: &str,
     limit: u64,
     mut sink: impl FnMut(&[u8]) -> Result<(), String>,
@@ -535,7 +589,14 @@ mod tests {
         ]);
         let release = newest(&listing, "0.4.0").unwrap().unwrap();
         assert_eq!(release.version, "0.10.0");
-        assert_eq!(release.notes, "Notes for v0.10.0");
+        // What every version in between changed, newest first, drafts out.
+        assert_eq!(
+            release.notes,
+            [
+                ("0.10.0".to_owned(), "Notes for v0.10.0".to_owned()),
+                ("0.9.0".to_owned(), "Notes for v0.9.0".to_owned()),
+            ]
+        );
         assert!(release.page.ends_with("/releases/tag/v0.10.0"));
         let package = release.package.unwrap();
         assert_eq!(package.url, url);
@@ -663,6 +724,22 @@ mod tests {
         // Not an archive at all.
         std::fs::write(&archive, "not a zip").unwrap();
         assert!(unpack(&archive, "9.9.9", &folder).is_err());
+    }
+
+    #[test]
+    fn a_local_release_folder_is_read_within_the_same_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("releases.json");
+        std::fs::write(&path, "[]").unwrap();
+        let mut read = Vec::new();
+        let mut sink = |bytes: &[u8]| {
+            read.extend_from_slice(bytes);
+            Ok(())
+        };
+        fetch_local(&path, 2, &mut sink).unwrap();
+        assert!(fetch_local(&path, 1, &mut sink).is_err());
+        assert!(fetch_local(&root.path().join("missing"), 9, &mut sink).is_err());
+        assert_eq!(read, b"[]");
     }
 
     /// Talks to GitHub; run by hand with `--ignored`.

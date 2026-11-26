@@ -179,11 +179,10 @@ impl Dudel {
         let mut install = None;
         let mut restart = false;
         let mut close = false;
-        egui::Window::new("Updates")
+        crate::dialogs::centered(ctx, "Updates", egui::Window::new("Updates"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .min_width(420.0)
             .max_width(420.0)
             .show(ctx, |ui| {
@@ -206,16 +205,26 @@ impl Dudel {
                     Updates::Available(release) => {
                         ui.strong(format!("Dudel {} is available", release.version));
                         ui.label(format!("You have version {have}."));
-                        if !release.notes.trim().is_empty() {
+                        if !release.notes.is_empty() {
                             ui.add_space(6.0);
                             egui::Frame::group(ui.style()).show(ui, |ui| {
                                 egui::ScrollArea::vertical()
-                                    .max_height(180.0)
+                                    .max_height(260.0)
                                     .auto_shrink([false, true])
                                     .show(ui, |ui| {
-                                        let notes: String =
-                                            release.notes.chars().take(4000).collect();
-                                        ui.add(egui::Label::new(notes).wrap());
+                                        for (index, (version, body)) in
+                                            release.notes.iter().enumerate()
+                                        {
+                                            if index > 0 {
+                                                ui.add_space(6.0);
+                                                ui.separator();
+                                            }
+                                            ui.heading(version);
+                                            crate::whats_new::show_blocks(
+                                                ui,
+                                                &crate::whats_new::published(body, index == 0),
+                                            );
+                                        }
                                     });
                             });
                         }
@@ -330,11 +339,10 @@ impl Dudel {
         let mut start = false;
         let mut close = false;
         let mut switch = None;
-        egui::Window::new("Install Dudel")
+        crate::dialogs::centered(ctx, "Install Dudel", egui::Window::new("Install Dudel"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .min_width(440.0)
             .max_width(440.0)
             .show(ctx, |ui| {
@@ -426,12 +434,18 @@ impl Dudel {
             self.setup.updates = Updates::Available(Release {
                 version: "9.9.0".into(),
                 page: crate::welcome::RELEASES.into(),
-                notes: "Painting essentials: gradients, filters, smudge and blur brushes.
-
-- Canvas materials
-- Brush graphs
-- Installing and updating from inside Dudel"
-                    .into(),
+                notes: vec![
+                    (
+                        "9.9.0".into(),
+                        "Painting essentials.\n\n## What's new\n\n- **Canvas materials:** paper and wet paint\n- **Brush graphs**"
+                            .into(),
+                    ),
+                    (
+                        "9.8.0".into(),
+                        "## What's new\n\n- **Installing** and updating from inside Dudel"
+                            .into(),
+                    ),
+                ],
                 package: Some(update::Package {
                     url: String::new(),
                     size: 17 << 20,

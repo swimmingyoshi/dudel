@@ -88,6 +88,7 @@ mod mask_fill_tests;
 mod mask_stroke_tests;
 mod mask_transform;
 mod mask_transform_benchmark;
+mod model_view;
 mod native_frame_log;
 #[cfg(windows)]
 mod native_pen;
@@ -164,6 +165,7 @@ mod video;
 mod wayland_pen;
 mod welcome;
 mod wet;
+mod whats_new;
 mod window_chrome;
 #[cfg(test)]
 mod workflow_tests;
@@ -513,6 +515,8 @@ struct Dudel {
     import_report: import_report::ImportReport,
     extension_panels: std::collections::BTreeSet<String>,
     references: references::References,
+    /// The 3D model window.
+    model_view: model_view::ModelView,
     /// Images placed on the canvas to draw from; saved with the project.
     reference_layers: reference_layers::State,
     /// View > Show transparency: checkerboard instead of white paper.
@@ -540,6 +544,8 @@ struct Dudel {
     setup: setup_ui::Setup,
     /// First-time setup: folder, look and pen.
     first_run: first_run::FirstRun,
+    /// What changed since the version last used here.
+    whats_new: whats_new::WhatsNew,
 }
 
 impl Default for Dudel {
@@ -801,6 +807,7 @@ impl Default for Dudel {
             import_report: Default::default(),
             extension_panels: Default::default(),
             references: references::References::default(),
+            model_view: Default::default(),
             reference_layers: Default::default(),
             show_transparency: false,
             color_height: None,
@@ -816,6 +823,7 @@ impl Default for Dudel {
             show_welcome: true,
             setup: Default::default(),
             first_run: Default::default(),
+            whats_new: Default::default(),
         }
     }
 }
@@ -988,6 +996,7 @@ impl Dudel {
         self.export_settings = p.export.sanitized();
         self.quick_menu_prefs = p.quick_menu.sanitized();
         self.show_welcome = p.welcome;
+        self.whats_new.seen = p.seen_version;
         self.set_show_transparency(p.show_transparency);
         self.lasso = p.tools.lasso;
         self.gradient = p.tools.gradient.clone();
@@ -1054,6 +1063,7 @@ impl Dudel {
             export: self.export_settings,
             quick_menu: self.quick_menu_prefs.clone(),
             welcome: self.show_welcome,
+            seen_version: self.whats_new.seen.clone(),
             show_transparency: self.show_transparency,
             tools: preferences::ToolPrefs {
                 lasso: self.lasso,
@@ -1336,6 +1346,7 @@ impl eframe::App for Dudel {
         self.workspace(ctx);
         self.canvas_after_tool_change(ctx, &packets, previous_tool);
         self.float_overlays(ctx);
+        self.windows_above_islands(ctx);
         self.track_guide_changes();
         if !self.stroking
             && !self.render_queue.busy()
@@ -1575,6 +1586,7 @@ fn run() -> eframe::Result {
                         .storage
                         .and_then(|s| s.get_string(preferences::KEY))
                         .is_none();
+                let settings_damaged = settings_issue.is_some();
                 let mut app = Dudel::load_preferences(cc.storage);
                 app.settings_store = settings_handle;
                 if let Some(issue) = settings_issue {
@@ -1590,6 +1602,8 @@ fn run() -> eframe::Result {
                     app.first_run.start();
                     app.welcome_open = false;
                 }
+                let hold = settings_damaged || app.recovery_window || !open_files.is_empty();
+                app.start_whats_new(first_start, hold);
                 if !open_files.is_empty() {
                     app.pending_opens = open_files;
                     app.welcome_open = false;

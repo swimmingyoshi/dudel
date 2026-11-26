@@ -103,6 +103,7 @@ pub(crate) enum Dropped {
     Brushes(PathBuf),
     Palette(PathBuf),
     Theme(PathBuf),
+    Model(PathBuf),
     Unsupported(PathBuf),
 }
 pub(crate) fn classify(path: PathBuf) -> Dropped {
@@ -113,6 +114,8 @@ pub(crate) fn classify(path: PathBuf) -> Dropped {
         Some("dudelbrushes" | "dudelbrush") => Dropped::Brushes(path),
         Some("dudelpalette") => Dropped::Palette(path),
         Some("dudeltheme") => Dropped::Theme(path),
+        // The last two open the window, which says what to use instead.
+        Some("glb" | "obj" | "gltf" | "fbx") => Dropped::Model(path),
         _ => Dropped::Unsupported(path),
     }
 }
@@ -219,6 +222,7 @@ impl Dudel {
                 Dropped::Brushes(path) => self.import_brush_pack(path),
                 Dropped::Palette(path) => self.import_palette(path),
                 Dropped::Theme(path) => self.import_theme_file(path),
+                Dropped::Model(path) => self.open_model(path),
                 Dropped::Unsupported(path) => unsupported.push(file_name(&path)),
             }
         }

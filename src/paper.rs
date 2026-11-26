@@ -108,7 +108,7 @@ impl Dudel {
             return;
         };
         let (mut apply, mut cancel) = (false, false);
-        let response = egui::Modal::new(egui::Id::new("paper dialog")).show(ctx, |ui| {
+        let response = crate::dialogs::modal(ctx, egui::Id::new("paper dialog")).show(ctx, |ui| {
             ui.set_width(PREVIEW[0] as f32 + 16.0);
             cancel |= crate::dialogs::dialog_title(ui, "Paper");
             if form

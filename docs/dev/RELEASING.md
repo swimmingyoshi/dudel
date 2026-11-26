@@ -12,6 +12,9 @@ hosted CI once on the final candidate.
 1. **Version and notes.** Set the version in `Cargo.toml` (and run a build so
    `Cargo.lock` follows). Move the *Unreleased* entries in
    [RELEASE_NOTES.md](../../RELEASE_NOTES.md) under the new version and date;
+   the What's new window shows this file, so start with a short introduction
+   and give a long section `### Highlights` (a test fails if the version has
+   no notes). Finish the notes before the candidate: they are compiled in;
    update the [quick start](../QUICK_START.md) and
    [format support](../FORMAT_SUPPORT.md) where behavior changed.
 2. **Verify.** Run `.\scripts\Verify.ps1 -Mode Full` on the frozen source.

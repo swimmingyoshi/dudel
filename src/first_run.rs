@@ -62,10 +62,9 @@ impl Dudel {
         let page = self.first_run.page;
         let mut skip = false;
         let mut finish = false;
-        egui::Window::new("Set up Dudel")
+        crate::dialogs::centered(ctx, "Set up Dudel", egui::Window::new("Set up Dudel"))
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .min_width(WIDTH)
             .max_width(WIDTH)
             .show(ctx, |ui| {

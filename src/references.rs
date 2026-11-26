@@ -92,6 +92,7 @@ impl Dudel {
                     self.references.active = self.references.active.min(self.references.images.len().saturating_sub(1));
                 }
             });
+            if ui.link("Use a 3D model…").clicked() { self.model_view.open = true; }
             if self.references.images.is_empty() { ui.label("Add a visual reference to keep beside your painting. Up to four PNGs per session; references are separate from the project."); return; }
             egui::ComboBox::from_id_salt("reference chooser").selected_text(&self.references.images[self.references.active].name).show_ui(ui, |ui| {
                 for (index, image) in self.references.images.iter().enumerate() {

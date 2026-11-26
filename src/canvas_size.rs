@@ -81,7 +81,7 @@ impl crate::Dudel {
         let id = egui::Id::new("canvas size");
         let room = crate::dialogs::dialog_body_room(ctx, id, 72.0);
         let mut body = 0.0;
-        let response = egui::Modal::new(id).show(ctx, |ui| {
+        let response = crate::dialogs::modal(ctx, id).show(ctx, |ui| {
             ui.set_width(400.0);
             cancel |= crate::dialogs::dialog_title(ui, "Canvas size");
             // When the window is too short for every field, the scroll bar shows.

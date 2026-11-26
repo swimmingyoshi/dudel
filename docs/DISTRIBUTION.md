@@ -96,6 +96,10 @@ Releases stay portable ZIPs. Two features inside Dudel build on them
   that is published (pre-releases count, drafts do not) and, on Windows,
   downloads that release's package. `dudel --check-update` prints the same
   answer for scripts and support.
+- **What's new** (`src/whats_new.rs`) opens on the first start after an update
+  and shows every version since the last one used, from the `RELEASE_NOTES.md`
+  compiled into the program. Settings saved by 0.6.2 or earlier do not record a
+  version, so they get everything from 0.6.0 on.
 
 `Package.ps1` writes `FILES.json`, the list of every file in the package.
 Installing and updating touch exactly the listed files, so a copy extracted

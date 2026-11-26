@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-23, with 0.6.2. This replaces the earlier plan
+Updated 2026-11-24, after 0.6.2. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -153,8 +153,30 @@ release.
       (`crates/dudel-core/src/identity.rs`); the commit in About.
 - [x] A first save on the way out of a canvas keeps its timelapse with the
       project (owner's report).
-- [ ] A local release list for development builds, to click through an
-      update before publishing one.
+- [x] A local release list for development builds, to click through an
+      update before publishing one (`scripts/local_release.py`, 2026-11-24).
+
+## 0.7: 3D references and texture preview
+
+Agreed 2026-11-24, for illustrators and game artists alike. The items first
+planned as 0.6.3 ship with it.
+
+- [x] What's new after an update, covering every skipped version, and their
+      notes in the Updates window (2026-11-24).
+- [x] A model (GLB, OBJ; FBX later) in its own window: orbit, light,
+      **Place as layer** (`src/model_view.rs`, 2026-11-24).
+- [x] Perspective rulers set from the model's camera.
+- [x] Live texture preview: the canvas is the model's texture and updates
+      while painting, with a UV wireframe over the canvas.
+- [x] First, a CPU renderer in `dudel-core` (`mesh_render.rs`). Measured on a
+      100,000-triangle model with a 2048 px texture: 15 ms at 800 × 800, 30 ms
+      with smooth edges; 980,000 triangles take 79 and 90 ms.
+- [x] Dialogs that can be dragged out of the way (owner's report).
+- [ ] The owner's pen pass on 3D models.
+- [ ] The design pass on windows and dialogs (below).
+
+0.8: 3D layers (editable camera, saved in the project). Painting directly on
+the model is decided after that; posable figures are not planned.
 
 ## Installing and updating
 

@@ -216,35 +216,36 @@ impl Dudel {
             .map(|c| self.shortcuts.changed(action, Some(vec![c])));
         let mut apply = false;
         let mut cancel = false;
-        let response = egui::Modal::new(egui::Id::new("assign shortcut")).show(ctx, |ui| {
-            ui.set_width((ctx.content_rect().width() - 48.0).clamp(220.0, 400.0));
-            cancel |= crate::dialogs::dialog_title(ui, "Assign shortcut");
-            ui.label(crate::commands::get(action).label);
-            ui.label(
-                self.shortcut_editor
-                    .candidate
-                    .map_or_else(|| "Press the keys you want to use".into(), Chord::label),
-            );
-            if let Some(Err(error)) = &proposed {
-                ui.colored_label(ui.visuals().warn_fg_color, error);
-            }
-            if !self.shortcut_editor.capture_error.is_empty() {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    &self.shortcut_editor.capture_error,
+        let response =
+            crate::dialogs::modal(ctx, egui::Id::new("assign shortcut")).show(ctx, |ui| {
+                ui.set_width((ctx.content_rect().width() - 48.0).clamp(220.0, 400.0));
+                cancel |= crate::dialogs::dialog_title(ui, "Assign shortcut");
+                ui.label(crate::commands::get(action).label);
+                ui.label(
+                    self.shortcut_editor
+                        .candidate
+                        .map_or_else(|| "Press the keys you want to use".into(), Chord::label),
                 );
-            }
-            ui.small("Apply replaces this command's current shortcuts. Escape cancels.");
-            crate::dialogs::dialog_buttons(ui, |ui| {
-                apply = ui
-                    .add_enabled(
-                        matches!(proposed, Some(Ok(_))),
-                        crate::workspace::primary_button(ui, "Apply shortcut"),
-                    )
-                    .clicked();
-                cancel |= ui.button("Cancel").clicked();
+                if let Some(Err(error)) = &proposed {
+                    ui.colored_label(ui.visuals().warn_fg_color, error);
+                }
+                if !self.shortcut_editor.capture_error.is_empty() {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        &self.shortcut_editor.capture_error,
+                    );
+                }
+                ui.small("Apply replaces this command's current shortcuts. Escape cancels.");
+                crate::dialogs::dialog_buttons(ui, |ui| {
+                    apply = ui
+                        .add_enabled(
+                            matches!(proposed, Some(Ok(_))),
+                            crate::workspace::primary_button(ui, "Apply shortcut"),
+                        )
+                        .clicked();
+                    cancel |= ui.button("Cancel").clicked();
+                });
             });
-        });
         if apply && let Some(Ok(next)) = proposed {
             self.apply_shortcuts(next);
             self.shortcut_editor.message = "Shortcut saved".into();

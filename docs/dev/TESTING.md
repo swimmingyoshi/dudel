@@ -226,3 +226,11 @@ of 9), optimized dependencies in debug builds (the suite is 5% faster, the
 first build much slower), and a lightly optimized debug build (one edit took
 4.5 minutes to rebuild). `scripts/Clean.ps1` lists what can be deleted from
 the build folders and removes it with `-Apply`.
+
+## Trying an update locally
+
+`cargo build --profile fast`, then `python scripts/local_release.py`, and start
+the copy it made with the variables it prints. **Help > Check for updates** then
+reads a release list on this PC (`DUDEL_RELEASES`, development builds only);
+`--wrong-checksum` makes the download fail its check. `DUDEL_UPDATED_FROM=0.6.0`
+opens the What's new window as after updating from that version.

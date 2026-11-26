@@ -1288,16 +1288,17 @@ impl Dudel {
         let mut apply = false;
         let mut cancel = false;
         let id = egui::Id::new("raster adjustment");
-        let area = egui::Modal::default_area(id).fade_in(false);
-        let area = match corner {
-            Some(corner) => area.anchor(
+        let mut modal = match corner {
+            Some(corner) => crate::dialogs::modal_at(
+                ctx,
+                id,
                 egui::Align2::RIGHT_TOP,
                 corner - ctx.content_rect().right_top(),
             ),
-            None => area,
+            None => crate::dialogs::modal(ctx, id),
         };
-        let response = egui::Modal::new(id)
-            .area(area)
+        modal.area = modal.area.fade_in(false);
+        let response = modal
             .backdrop_color(egui::Color32::TRANSPARENT)
             .show(ctx, |ui| {
             ui.set_width(360.0);

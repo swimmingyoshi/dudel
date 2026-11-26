@@ -381,17 +381,18 @@ impl Dudel {
         };
         let (mut apply, mut cancel) = (false, false);
         let canvas = self.canvas_area;
-        let mut modal = egui::Modal::new(egui::Id::new("material dialog"))
-            .backdrop_color(egui::Color32::TRANSPARENT);
-        if canvas.width() >= 640.0 && canvas.height() >= 360.0 {
-            modal = modal.area(
-                egui::Modal::default_area(egui::Id::new("material dialog")).anchor(
-                    egui::Align2::RIGHT_TOP,
-                    canvas.right_top().to_vec2() - ctx.content_rect().right_top().to_vec2()
-                        + egui::vec2(-12.0, 12.0),
-                ),
-            );
+        let id = egui::Id::new("material dialog");
+        let modal = if canvas.width() >= 640.0 && canvas.height() >= 360.0 {
+            crate::dialogs::modal_at(
+                ctx,
+                id,
+                egui::Align2::RIGHT_TOP,
+                canvas.right_top() - ctx.content_rect().right_top() + egui::vec2(-12.0, 12.0),
+            )
+        } else {
+            crate::dialogs::modal(ctx, id)
         }
+        .backdrop_color(egui::Color32::TRANSPARENT);
         let response = modal.show(ctx, |ui| {
             ui.set_width(PREVIEW[0] as f32 + 16.0);
             cancel |= crate::dialogs::dialog_title(ui, "Layer material");

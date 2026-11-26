@@ -80,95 +80,99 @@ impl Dudel {
         let mut close = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         let reset_scroll = self.command_search.focus;
         let mut query_id = None;
-        let response = egui::Modal::new(egui::Id::new("command search")).show(ctx, |ui| {
-            ui.set_width((ctx.content_rect().width() - 48.0).clamp(220.0, 500.0));
-            ui.horizontal(|ui| {
-                ui.heading("Find a command");
-                if ui.small_button("Close").clicked() {
-                    close = true;
-                }
-            });
-            let (up, down, enter) = ui.input_mut(|i| {
-                (
-                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
-                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
-                    i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
-                )
-            });
-            let query = ui.add(
-                egui::TextEdit::singleline(&mut self.command_search.query)
-                    .id_salt("command query")
-                    .hint_text("Search commands, tools or shortcuts…")
-                    .char_limit(256)
-                    .desired_width(f32::INFINITY),
-            );
-            query_id = Some(query.id);
-            if self.command_search.focus {
-                query.request_focus();
-                self.command_search.focus = false;
-            }
-            if query.changed() {
-                self.command_search.selected = 0;
-            }
-            let matches = results(&self.command_search.query, &self.shortcuts);
-            self.command_search.selected = self
-                .command_search
-                .selected
-                .min(matches.len().saturating_sub(1));
-            if !matches.is_empty() {
-                if down {
-                    self.command_search.selected =
-                        (self.command_search.selected + 1) % matches.len();
-                }
-                if up {
-                    self.command_search.selected =
-                        (self.command_search.selected + matches.len() - 1) % matches.len();
-                }
-                if enter
-                    && self
-                        .command_disabled(COMMANDS[matches[self.command_search.selected]].action)
-                        .is_none()
-                {
-                    run = Some(matches[self.command_search.selected]);
-                }
-            }
-            egui::ScrollArea::vertical()
-                .id_salt("command results")
-                .max_height((ctx.content_rect().height() - 210.0).clamp(80.0, 360.0))
-                .show(ui, |ui| {
-                    if matches.is_empty() {
-                        ui.label("No matching commands. Try a tool name or action.");
-                    }
-                    for (row, &index) in matches.iter().enumerate() {
-                        let command = &COMMANDS[index];
-                        let reason = self.command_disabled(command.action);
-                        let selected = self.command_search.selected == row;
-                        let response = ui.add_enabled(
-                            reason.is_none(),
-                            egui::Button::new(command.label)
-                                .selected(selected)
-                                .right_text(self.shortcuts.label(command.action))
-                                .min_size(egui::vec2(ui.available_width(), 28.0)),
-                        );
-                        if selected && (up || down || query.changed() || reset_scroll) {
-                            response.scroll_to_me(None);
-                        }
-                        if response.clicked() {
-                            run = Some(index);
-                        }
-                        if let Some(reason) = reason {
-                            response.on_disabled_hover_text(reason);
-                            if selected {
-                                ui.small(reason);
-                            }
-                        }
+        let response =
+            crate::dialogs::modal(ctx, egui::Id::new("command search")).show(ctx, |ui| {
+                ui.set_width((ctx.content_rect().width() - 48.0).clamp(220.0, 500.0));
+                crate::dialogs::drag_handle(ui);
+                ui.horizontal(|ui| {
+                    ui.heading("Find a command");
+                    if ui.small_button("Close").clicked() {
+                        close = true;
                     }
                 });
-            ui.small("Up / Down to choose · Enter to run · Esc to close");
-            if run.is_some() || close {
-                query.surrender_focus();
-            }
-        });
+                let (up, down, enter) = ui.input_mut(|i| {
+                    (
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                    )
+                });
+                let query = ui.add(
+                    egui::TextEdit::singleline(&mut self.command_search.query)
+                        .id_salt("command query")
+                        .hint_text("Search commands, tools or shortcuts…")
+                        .char_limit(256)
+                        .desired_width(f32::INFINITY),
+                );
+                query_id = Some(query.id);
+                if self.command_search.focus {
+                    query.request_focus();
+                    self.command_search.focus = false;
+                }
+                if query.changed() {
+                    self.command_search.selected = 0;
+                }
+                let matches = results(&self.command_search.query, &self.shortcuts);
+                self.command_search.selected = self
+                    .command_search
+                    .selected
+                    .min(matches.len().saturating_sub(1));
+                if !matches.is_empty() {
+                    if down {
+                        self.command_search.selected =
+                            (self.command_search.selected + 1) % matches.len();
+                    }
+                    if up {
+                        self.command_search.selected =
+                            (self.command_search.selected + matches.len() - 1) % matches.len();
+                    }
+                    if enter
+                        && self
+                            .command_disabled(
+                                COMMANDS[matches[self.command_search.selected]].action,
+                            )
+                            .is_none()
+                    {
+                        run = Some(matches[self.command_search.selected]);
+                    }
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("command results")
+                    .max_height((ctx.content_rect().height() - 210.0).clamp(80.0, 360.0))
+                    .show(ui, |ui| {
+                        if matches.is_empty() {
+                            ui.label("No matching commands. Try a tool name or action.");
+                        }
+                        for (row, &index) in matches.iter().enumerate() {
+                            let command = &COMMANDS[index];
+                            let reason = self.command_disabled(command.action);
+                            let selected = self.command_search.selected == row;
+                            let response = ui.add_enabled(
+                                reason.is_none(),
+                                egui::Button::new(command.label)
+                                    .selected(selected)
+                                    .right_text(self.shortcuts.label(command.action))
+                                    .min_size(egui::vec2(ui.available_width(), 28.0)),
+                            );
+                            if selected && (up || down || query.changed() || reset_scroll) {
+                                response.scroll_to_me(None);
+                            }
+                            if response.clicked() {
+                                run = Some(index);
+                            }
+                            if let Some(reason) = reason {
+                                response.on_disabled_hover_text(reason);
+                                if selected {
+                                    ui.small(reason);
+                                }
+                            }
+                        }
+                    });
+                ui.small("Up / Down to choose · Enter to run · Esc to close");
+                if run.is_some() || close {
+                    query.surrender_focus();
+                }
+            });
         if response.should_close() || close {
             self.command_search.open = false;
             if let Some(id) = query_id {

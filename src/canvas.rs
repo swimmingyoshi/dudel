@@ -687,6 +687,7 @@ impl Dudel {
             || self.input_settings
             || self.recovery_window
             || self.welcome_open
+            || self.whats_new.open
             || self.adjustment.is_some()
             || self.adjustment_ticket.is_some()
             || self.canvas_resize.is_some();
@@ -1484,6 +1485,7 @@ impl Dudel {
         self.texture
             .set_viewport(self.canvas_area, self.view(self.canvas_area));
         self.preview.note_damage(self.dirty, &self.dirty_region);
+        self.model_view.note_damage(self.dirty, &self.dirty_region);
         let scene = self.reference_layers.display_document(&self.doc);
         let mask_view = self.mask_view_document();
         let base = mask_view.as_ref().or(scene.as_ref()).unwrap_or(&self.doc);
@@ -1749,6 +1751,7 @@ impl Dudel {
             &self.guide_lines,
             self.guide_drag.map(|drag| drag.index),
         );
+        self.paint_model_layout(&painter, *view);
         crate::rulers::paint(
             &painter,
             view,

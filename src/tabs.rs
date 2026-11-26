@@ -209,6 +209,7 @@ project_session! {
     load_job: Option<crate::load_jobs::LoadJob>,
     pending_action: Option<crate::document_actions::Action>,
     references: crate::references::References,
+    model_view: crate::model_view::ModelView,
     reference_layers: crate::reference_layers::State,
     vector_pick: crate::vector_pick::Pick,
     text_edit: Option<crate::text_tool::Editing>,
@@ -318,6 +319,7 @@ impl Dudel {
             add_texture(texture);
         }
         self.references.visit_textures(&mut add_texture);
+        self.model_view.visit_textures(&mut add_texture);
         self.reference_layers.visit_textures(&mut add_texture);
         for session in self.tabs.list.iter().filter_map(|tab| tab.session.as_ref()) {
             registry.add_document(&session.doc);
@@ -331,6 +333,7 @@ impl Dudel {
                 add_texture(texture);
             }
             session.references.visit_textures(&mut add_texture);
+            session.model_view.visit_textures(&mut add_texture);
             session.reference_layers.visit_textures(&mut add_texture);
         }
         memory.tracked_cpu_bytes = registry.live_bytes() + registry.additional_bytes();
@@ -1474,7 +1477,7 @@ mod tests {
         close_ready heap_compact_pending last_close_prompt_frame extensions \
         extension_errors extension_manager extension_panels show_transparency \
         color_height recovery_candidates recovery_window dialogs tabs tip_cursor \
-        pending_opens welcome_open show_welcome setup first_run";
+        pending_opens welcome_open show_welcome setup first_run whats_new";
 
     #[test]
     fn every_app_field_travels_with_its_tab_or_is_listed_as_shared() {

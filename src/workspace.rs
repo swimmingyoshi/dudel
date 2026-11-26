@@ -853,6 +853,9 @@ impl Dudel {
             if menu_item(ui, "References…", "", true) {
                 self.references.open = true;
             }
+            if menu_item(ui, "3D model…", "", true) {
+                self.model_view.open = true;
+            }
             if menu_item(
                 ui,
                 "Recover artwork…",
@@ -870,6 +873,9 @@ impl Dudel {
         bounded_menu(ui, "Help", |ui| {
             if menu_item(ui, "Welcome screen", "", true) {
                 self.welcome_open = true;
+            }
+            if menu_item(ui, "What's new", "", true) {
+                self.open_whats_new();
             }
             if menu_item(ui, "First-time setup…", "", true) {
                 self.welcome_open = false;
@@ -1957,6 +1963,7 @@ impl Dudel {
         self.shortcuts_ui(ctx);
         self.about_ui(ctx);
         self.welcome_ui(ctx);
+        self.whats_new_ui(ctx);
         self.first_run_ui(ctx);
         self.setup_ui(ctx);
         self.extension_manager_ui(ctx);
@@ -1964,6 +1971,7 @@ impl Dudel {
         self.extension_panels_ui(ctx);
         self.settings_ui(ctx);
         self.references_ui(ctx);
+        self.model_view_ui(ctx);
         let mut input_settings = self.input_settings;
         egui::Window::new("Tablet input")
             .open(&mut input_settings)

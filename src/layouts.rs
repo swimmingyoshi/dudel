@@ -60,6 +60,9 @@ fn mode_palettes(mode: Mode) -> &'static [Palette] {
     }
 }
 
+/// Float's islands, as [`Dudel::windows_above_islands`] knows them.
+const ISLANDS: [&str; 4] = ["left", "right", "rail", "context"];
+
 impl Dudel {
     /// Controls show as scrub fields instead of sliders.
     pub(crate) fn scrub_fields(&self) -> bool {
@@ -560,6 +563,40 @@ impl Dudel {
         response.response.rect
     }
 
+    /// Windows stay above Float's islands, which would cover a title bar and
+    /// with it the only way to move the window: a pressed island rises like
+    /// any area, and a window that opens with it can start below.
+    pub(crate) fn windows_above_islands(&self, ctx: &egui::Context) {
+        if self.interface.layout != Layout::Float {
+            return;
+        }
+        let islands = ISLANDS.map(|id| egui::Id::new(("float island", id)));
+        let raised: Vec<egui::LayerId> = ctx.memory(|memory| {
+            let order: Vec<egui::LayerId> = memory
+                .layer_ids()
+                .filter(|layer| layer.order == egui::Order::Middle)
+                .filter(|layer| memory.areas().is_visible(layer))
+                .collect();
+            let island = |layer: &egui::LayerId| islands.contains(&layer.id);
+            let highest = order.iter().rposition(island);
+            let lowest = order.iter().position(|layer| !island(layer));
+            // Only when the order is wrong: raising a layer counts as showing
+            // it, so doing it every frame would keep closed windows around.
+            match (highest, lowest) {
+                (Some(highest), Some(lowest)) if lowest < highest => {
+                    order.into_iter().filter(|layer| !island(layer)).collect()
+                }
+                _ => Vec::new(),
+            }
+        });
+        if !raised.is_empty() {
+            for layer in raised {
+                ctx.move_to_top(layer);
+            }
+            ctx.request_repaint();
+        }
+    }
+
     /// Float's islands, drawn over the canvas after it is laid out.
     pub(crate) fn float_overlays(&mut self, ctx: &egui::Context) {
         if self.interface.layout != Layout::Float || self.studio_tab_shown() {
@@ -816,6 +853,54 @@ impl Dudel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_stays_above_islands_and_is_gone_once_closed() {
+        let mut app = Dudel::default();
+        app.interface.layout = Layout::Float;
+        let ctx = egui::Context::default();
+        let window = egui::LayerId::new(egui::Order::Middle, egui::Id::new("a window"));
+        let frame = |open: bool, press: bool| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                if open {
+                    egui::Window::new("a window").show(ctx, |ui| ui.label("x"));
+                }
+                for id in ISLANDS {
+                    Dudel::island(ctx, id, Pos2::ZERO, Align2::LEFT_TOP, false, |ui| {
+                        ui.label("island");
+                    });
+                }
+                if press {
+                    ctx.move_to_top(egui::LayerId::new(
+                        egui::Order::Middle,
+                        egui::Id::new(("float island", ISLANDS[0])),
+                    ));
+                }
+                app.windows_above_islands(ctx);
+            });
+            (
+                ctx.memory(|m| m.layer_ids().filter(|l| l.order == window.order).last()),
+                ctx.memory(|m| m.areas().is_visible(&window)),
+            )
+        };
+        for _ in 0..3 {
+            frame(true, false);
+        }
+        assert_eq!(frame(true, false), (Some(window), true));
+        frame(true, true);
+        frame(true, false);
+        assert_eq!(frame(true, false).0, Some(window));
+        // Closing it while an island rises leaves nothing behind.
+        frame(false, true);
+        for _ in 0..4 {
+            frame(false, false);
+        }
+        assert!(!frame(false, false).1);
+    }
     use crate::ui::style::Interface;
 
     /// A rail button for `item` at a known place, run for one frame with

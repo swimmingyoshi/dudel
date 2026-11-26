@@ -56,6 +56,9 @@ pub struct Preferences {
     /// Open the welcome window at startup.
     #[serde(default = "default_welcome")]
     pub welcome: bool,
+    /// The newest version whose changes were shown; empty before 0.6.3.
+    #[serde(default)]
+    pub seen_version: String,
     /// Show transparent canvas areas as a checkerboard instead of white paper.
     #[serde(default)]
     pub show_transparency: bool,
@@ -277,10 +280,12 @@ mod tests {
             },
             workspaces: vec![],
             studio_as_tab: false,
+            seen_version: "0.6.3".into(),
             brush_author: String::new(),
             brush_license: String::new(),
         };
         let restored = Preferences::decode(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(restored.seen_version, p.seen_version);
         assert_eq!(restored.theme, p.theme);
         assert_eq!(restored.interface, p.interface);
         assert_eq!(restored.brushes[0].size, 42.0);

@@ -2,7 +2,7 @@
 
 Use `.dudel` for editable projects, PNG for sharing flattened artwork and PSD
 for taking layers to Photoshop, Live2D and other editors.
-This describes Windows 0.2.0. See [release notes](../RELEASE_NOTES.md) for its
+This describes the current version. See [release notes](../RELEASE_NOTES.md) for its
 changes and [the release decision](release/RELEASE_DECISION.md) for packaged-build evidence.
 
 | Format | Open/import | Save/export | What is retained |

@@ -20,10 +20,24 @@ C++ redistributable is not required.
 Dudel runs from its folder as it is. To have it in the Start menu and open
 `.dudel` projects with a double-click, choose **Install on this PC** in the
 welcome window or the **Help** menu; it needs no administrator rights, and
-**Windows Settings > Apps** removes it again. **Help > Check for updates** looks
-for a newer version and can install it over the copy you are running. That
+**Windows Settings > Apps** removes it again. **Help > What's new** lists
+what changed in each version (it also opens by itself after an update), and
+**Help > Check for updates** looks for a newer version and can install it over the copy you are running. That
 check is the only time Dudel connects to the internet, and it happens only
 when you ask.
+
+## Draw from a 3D model
+
+Open **View > 3D model**, or drop a `.glb` or `.obj` file on the window. Drag to
+turn the model; **Move** and **Light** change what dragging does (the middle and
+right buttons do the same), and Zoom or the wheel brings it nearer. The picture
+has the canvas's shape: **Place as layer** draws exactly that on a new layer.
+**Perspective ruler** makes strokes follow the model's perspective; press it
+again after turning the model to move the ruler.
+
+To paint a texture, turn on **Show this canvas on the model**. The model updates
+as you paint, and **Show the layout on the canvas** shows where each part of it
+is. Choose a material if the canvas is the texture of only one.
 
 ## Find actions and keep track of your target
 

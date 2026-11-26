@@ -172,7 +172,7 @@ impl Dudel {
         };
         let mut cancel = false;
         let mut export = false;
-        let response = egui::Modal::new(egui::Id::new("export brush")).show(ctx, |ui| {
+        let response = crate::dialogs::modal(ctx, egui::Id::new("export brush")).show(ctx, |ui| {
             ui.set_width(380.0);
             cancel |= crate::dialogs::dialog_title(ui, "Export brush");
             ui.label(egui::RichText::new(&self.brush.name).strong());
@@ -270,7 +270,7 @@ impl Dudel {
         let count = pending.pack.brushes.len();
         let mut add = false;
         let mut cancel = false;
-        let response = egui::Modal::new(egui::Id::new("import brush")).show(ctx, |ui| {
+        let response = crate::dialogs::modal(ctx, egui::Id::new("import brush")).show(ctx, |ui| {
             ui.set_width(380.0);
             cancel |= crate::dialogs::dialog_title(
                 ui,

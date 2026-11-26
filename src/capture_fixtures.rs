@@ -62,6 +62,7 @@ pub(crate) const MODES: &[&str] = &[
     "--capture-mask-target-transform",
     "--capture-material",
     "--capture-mirror-pair",
+    "--capture-model",
     "--capture-new-canvas",
     "--capture-new-canvas-invalid",
     "--capture-new-canvas-presets",
@@ -88,6 +89,7 @@ pub(crate) const MODES: &[&str] = &[
     "--capture-updates",
     "--capture-view-menu",
     "--capture-welcome",
+    "--capture-whats-new",
     "--capture-workflow",
 ];
 
@@ -827,6 +829,12 @@ pub(crate) fn prepare(
         app.first_run.start();
         app.first_run.page = page;
         app.setup.can_install = true;
+    }
+    if mode == "--capture-model" {
+        app.model_capture_fixture();
+    }
+    if mode == "--capture-whats-new" {
+        app.whats_new_capture_fixture([0, 6, 0]);
     }
     if capture_welcome {
         app.welcome_open = true;

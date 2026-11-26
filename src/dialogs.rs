@@ -40,9 +40,11 @@ struct Confirm {
 
 /// Every Dudel dialog shares one look: a title row with a close button,
 /// the content, then the buttons at the bottom right with the main action
-/// highlighted and Cancel last. The close button and Esc both cancel.
+/// highlighted and Cancel last. The close button and Esc both cancel. The
+/// title row moves a dialog made with [`modal`].
 pub(crate) fn dialog_title(ui: &mut egui::Ui, title: &str) -> bool {
     let mut close = false;
+    drag_handle(ui);
     ui.horizontal(|ui| {
         ui.heading(title);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -51,6 +53,96 @@ pub(crate) fn dialog_title(ui: &mut egui::Ui, title: &str) -> bool {
     });
     ui.add_space(4.0);
     close
+}
+
+/// How far a dialog has been dragged, and the frame it was last shown in.
+type Moved = (egui::Vec2, u64);
+
+/// Whether the dialog `id` is opening: it was not shown in the last frame.
+/// Every dialog opens where it belongs, wherever it was dragged before.
+fn opening(ctx: &egui::Context, last: Option<u64>) -> bool {
+    last.is_none_or(|last| ctx.cumulative_frame_nr() > last + 1)
+}
+
+/// A modal dialog in the middle of the window that its title row can drag
+/// out of the way. A plain `egui::Modal` cannot be moved.
+pub(crate) fn modal(ctx: &egui::Context, id: egui::Id) -> egui::Modal {
+    modal_at(ctx, id, egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+}
+
+/// [`modal`] that opens `offset` away from the window's `align` corner.
+pub(crate) fn modal_at(
+    ctx: &egui::Context,
+    id: egui::Id,
+    align: egui::Align2,
+    offset: egui::Vec2,
+) -> egui::Modal {
+    let key = id.with("dialog moved");
+    let (mut moved, last) = ctx
+        .data(|d| d.get_temp::<Moved>(key))
+        .map_or((egui::Vec2::ZERO, None), |(moved, last)| {
+            (moved, Some(last))
+        });
+    if opening(ctx, last) {
+        moved = egui::Vec2::ZERO;
+    } else if moved != egui::Vec2::ZERO
+        && let Some(rect) = ctx.memory(|m| m.area_rect(id))
+    {
+        // Kept inside the window, so dragging back answers at once.
+        let window = ctx.content_rect();
+        let base = align.align_size_within_rect(rect.size(), window).min + offset;
+        let room = (window.max - rect.size()).max(window.min);
+        moved = (base + moved).clamp(window.min, room) - base;
+    }
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(key, (moved, frame)));
+    egui::Modal::new(id).area(egui::Modal::default_area(id).anchor(align, offset + moved))
+}
+
+/// Makes the row about to be added drag the dialog it is in. Call it before
+/// the row, so the row's own buttons stay on top.
+pub(crate) fn drag_handle(ui: &mut egui::Ui) {
+    let id = ui.layer_id().id;
+    let height = ui
+        .text_style_height(&egui::TextStyle::Heading)
+        .max(ui.spacing().interact_size.y)
+        .max(22.0);
+    let mut row = ui.available_rect_before_wrap();
+    row.max.y = row.min.y + height;
+    let response = ui
+        .interact(row, id.with("dialog drag"), egui::Sense::DRAG)
+        .on_hover_cursor(egui::CursorIcon::Grab);
+    let delta = response.drag_delta();
+    if delta != egui::Vec2::ZERO {
+        ui.data_mut(|d| {
+            // Only dialogs made with `modal` have an entry.
+            let key = id.with("dialog moved");
+            if let Some((moved, frame)) = d.get_temp::<Moved>(key) {
+                d.insert_temp(key, (moved + delta, frame));
+            }
+        });
+        ui.ctx().request_repaint();
+    }
+}
+
+/// `window`, opening in the middle of the app and movable from there.
+/// (`Window::anchor` would hold it in place.)
+pub(crate) fn centered<'a>(
+    ctx: &egui::Context,
+    id: &str,
+    window: egui::Window<'a>,
+) -> egui::Window<'a> {
+    let id = egui::Id::new(id);
+    let key = id.with("window shown");
+    let last = ctx.data(|d| d.get_temp::<u64>(key));
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(key, frame));
+    let window = window.id(id).pivot(egui::Align2::CENTER_CENTER);
+    if opening(ctx, last) {
+        window.current_pos(ctx.content_rect().center())
+    } else {
+        window
+    }
 }
 
 fn close_button(ui: &mut egui::Ui) -> egui::Response {
@@ -277,7 +369,7 @@ impl Dudel {
             return;
         };
         let mut answer = None;
-        let response = egui::Modal::new(egui::Id::new("confirm dialog")).show(ctx, |ui| {
+        let response = modal(ctx, egui::Id::new("confirm dialog")).show(ctx, |ui| {
             ui.set_width(360.0);
             if dialog_title(ui, &confirm.title) {
                 answer = Some(false);
@@ -372,5 +464,109 @@ mod tests {
         let confirm = app.dialogs.confirm.take().unwrap();
         (confirm.then)(&mut app);
         assert_eq!(app.status, "confirmed");
+    }
+
+    fn drag(ctx: &egui::Context, from: egui::Pos2, to: egui::Pos2, show: &dyn Fn(&egui::Context)) {
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let middle = from.lerp(to, 0.5);
+        for events in [
+            vec![egui::Event::PointerMoved(from)],
+            vec![button(from, true)],
+            vec![egui::Event::PointerMoved(middle)],
+            vec![egui::Event::PointerMoved(to)],
+            vec![button(to, false)],
+            vec![],
+        ] {
+            frame(ctx, events, show);
+        }
+    }
+
+    fn frame(ctx: &egui::Context, events: Vec<egui::Event>, show: &dyn Fn(&egui::Context)) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1000.0, 800.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| show(ctx));
+    }
+
+    #[test]
+    fn a_dialog_is_moved_by_its_title_stays_in_the_window_and_reopens_centered() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("movable");
+        let show = |ctx: &egui::Context| {
+            modal(ctx, id).show(ctx, |ui| {
+                ui.set_width(300.0);
+                dialog_title(ui, "Title");
+                ui.label("Body");
+            });
+        };
+        let rect = || ctx.memory(|m| m.area_rect(id)).unwrap();
+        for _ in 0..4 {
+            frame(&ctx, vec![], &show);
+        }
+        let start = rect();
+        assert!((start.center() - egui::pos2(500.0, 400.0)).length() < 2.0);
+        let grip = start.min + egui::vec2(120.0, 16.0);
+        drag(&ctx, grip, grip + egui::vec2(150.0, 100.0), &show);
+        let moved = rect().min - start.min;
+        assert!(
+            (moved - egui::vec2(150.0, 100.0)).length() < 2.0,
+            "{moved:?}"
+        );
+        // Past the edge it stops there, and comes straight back.
+        let grip = rect().min + egui::vec2(120.0, 16.0);
+        drag(&ctx, grip, egui::pos2(2000.0, 16.0), &show);
+        assert!(rect().max.x <= 1000.5, "{:?}", rect());
+        let before = rect();
+        let grip = before.min + egui::vec2(120.0, 16.0);
+        drag(&ctx, grip, grip - egui::vec2(60.0, 0.0), &show);
+        assert!((before.min.x - rect().min.x - 60.0).abs() < 2.0);
+        // Closed and opened again.
+        for _ in 0..3 {
+            frame(&ctx, vec![], &|_| {});
+        }
+        for _ in 0..3 {
+            frame(&ctx, vec![], &show);
+        }
+        assert!((rect().min - start.min).length() < 2.0);
+    }
+
+    #[test]
+    fn a_centered_window_opens_in_the_middle_and_can_be_moved() {
+        let ctx = egui::Context::default();
+        let show = |ctx: &egui::Context| {
+            centered(ctx, "centered", egui::Window::new("Centered"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| ui.set_width(300.0));
+        };
+        let rect = || {
+            ctx.memory(|m| m.area_rect(egui::Id::new("centered")))
+                .unwrap()
+        };
+        for _ in 0..4 {
+            frame(&ctx, vec![], &show);
+        }
+        let start = rect();
+        assert!((start.center() - egui::pos2(500.0, 400.0)).length() < 2.0);
+        let grip = start.min + egui::vec2(40.0, 14.0);
+        drag(&ctx, grip, grip + egui::vec2(150.0, 100.0), &show);
+        assert!((rect().min - start.min - egui::vec2(150.0, 100.0)).length() < 2.0);
+        for _ in 0..3 {
+            frame(&ctx, vec![], &|_| {});
+        }
+        for _ in 0..3 {
+            frame(&ctx, vec![], &show);
+        }
+        assert!((rect().center() - egui::pos2(500.0, 400.0)).length() < 2.0);
     }
 }

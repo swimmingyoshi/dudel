@@ -52,11 +52,10 @@ impl Dudel {
         let mut close = false;
         let mut command = None;
         let mut chosen = None;
-        egui::Window::new("Welcome to Dudel")
+        crate::dialogs::centered(ctx, "Welcome to Dudel", egui::Window::new("Welcome to Dudel"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .min_width(560.0)
             .max_width(560.0)
             .show(ctx, |ui| {

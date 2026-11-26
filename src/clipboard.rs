@@ -32,10 +32,13 @@ pub(crate) enum Action {
 pub(crate) enum PasteSource {
     Clipboard,
     File(std::path::PathBuf),
+    /// A picture made here, and its layer's name.
+    Raster(Raster, String),
 }
 /// A pasted image as read, before it is decoded or placed.
 pub(crate) enum PasteInput {
     Raster(Raster),
+    Named(Raster, String),
     File(std::path::PathBuf),
 }
 pub(crate) struct PasteJob {
@@ -630,6 +633,7 @@ impl Dudel {
         {
             let input = match source {
                 PasteSource::File(path) => Ok(PasteInput::File(path)),
+                PasteSource::Raster(raster, name) => Ok(PasteInput::Named(raster, name)),
                 PasteSource::Clipboard => self
                     .clipboard_backend()
                     .and_then(|io| io.read())
@@ -754,6 +758,7 @@ impl Dudel {
         let worker = std::thread::spawn(move || {
             let (raster, name) = match image {
                 PasteInput::Raster(raster) => (raster, "Pasted image".to_owned()),
+                PasteInput::Named(raster, name) => (raster, name),
                 PasteInput::File(path) => {
                     let name = path
                         .file_stem()

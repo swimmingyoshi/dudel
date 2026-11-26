@@ -230,7 +230,7 @@ impl Dudel {
         let touch = crate::ui::style::Active::get(ctx).density == crate::ui::style::Density::Touch;
         let widest = if touch { 560.0 } else { 440.0 };
         let mut body = 0.0;
-        let response = egui::Modal::new(id).show(ctx, |ui| {
+        let response = crate::dialogs::modal(ctx, id).show(ctx, |ui| {
             ui.set_width((ctx.content_rect().width() - 48.0).clamp(240.0, widest));
             cancel |= crate::dialogs::dialog_title(ui, "New canvas");
             ui.label("Choose a starting size, then make it yours.");
