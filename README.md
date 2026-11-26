@@ -240,6 +240,13 @@ cargo build --locked --release --bin dudel
 While working on a change, `cargo run --profile fast` builds with the same
 optimization but rebuilds in seconds.
 
+**Disk space:** the release build takes about 1.5 GB, and with a development
+build and the test suite about 6 GB (measured 2026-11-26). Cargo never removes
+old build output itself, so the `target` folder grows over months of updates
+to Rust or to the build settings. `cargo clean` frees it at any time; the next
+build just takes longer. On Windows, `.\scripts\Clean.ps1` lists only the caches
+that rebuild quickly, and `-Apply` removes them.
+
 A build you make is a **development build**: it keeps its own settings, recovery
 copies and extensions, apart from an installed Dudel's (it starts with a copy of
 them), and cannot install itself. To build an ordinary Dudel for your own use, set

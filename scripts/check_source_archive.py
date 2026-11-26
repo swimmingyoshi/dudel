@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path, PurePosixPath
 import stat
 import subprocess
@@ -17,7 +18,7 @@ def sha(path):
         return hashlib.file_digest(stream, "sha256").hexdigest().upper()
 
 
-def check(archive, output):
+def check(archive, output, keep=False):
     archive, output = archive.resolve(), output.resolve()
     if not output.is_relative_to(REPOSITORY / "target" / "qa"):
         raise ValueError("Rebuild evidence must be inside this repository's target/qa")
@@ -111,11 +112,19 @@ def check(archive, output):
     except BaseException as error:
         record("failed", error=str(error))
         raise
+    # The record and build.log are the evidence. The extracted sources and the
+    # rebuild (about 2.5 GB) stay only when asked for; after a failure they
+    # are kept for debugging.
+    if not keep:
+        for folder in (output / "extracted", output / "build"):
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--keep", action="store_true",
+                        help="keep the extracted sources and the rebuild after a pass")
     args = parser.parse_args()
-    check(args.archive, args.output)
+    check(args.archive, args.output, args.keep)
