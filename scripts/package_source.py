@@ -192,6 +192,15 @@ def bundle(repository, destination, binary, metadata_path):
         "BUILDING.md, the exact Cargo.lock, local source modifications and vendored dependency sources.\n",
         encoding="utf-8")
     bundle_docs(repository, binary)
+    # Only the ZIP is published and checked from here on. The staging folder
+    # holds every vendored crate's source (about 680 MB, 18,000 .rs files);
+    # left in the repository it piled up release after release, and editors
+    # indexing the repository loaded all of it.
+    with zipfile.ZipFile(archive) as zipped:
+        bad = zipped.testzip()
+    if bad:
+        raise ValueError(f"Source archive CRC failure at {bad}")
+    shutil.rmtree(destination)
     return {"archive": str(archive), "sha256": checksum, "dependencies": len(entries), "manual_review": missing}
 
 
