@@ -5,6 +5,7 @@
 //! that encodes only what changed between frames.
 use crate::{Dudel, document::Document, egui, snapshot_memory::SourceWorker};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
     sync::atomic::Ordering,
@@ -297,7 +298,17 @@ pub struct Timelapse {
     message: String,
     /// The newest recordings in the Timelapses folder, and when they were read.
     listed: Option<(Instant, Vec<Listed>)>,
+    /// Small pictures of each listed recording's last frame, and its frame count then.
+    thumbs: HashMap<PathBuf, (usize, egui::TextureHandle)>,
+    /// Last frames being decoded for `thumbs`.
+    thumbs_job: Option<ThumbJob>,
 }
+
+type ThumbJob = std::thread::JoinHandle<Vec<(PathBuf, usize, Result<egui::ColorImage, String>)>>;
+
+/// Longest side of a recording's thumbnail: pixels decoded, and points shown.
+const THUMB_PIXELS: u32 = 128;
+const THUMB_SIZE: f32 = 64.0;
 
 /// A recording in the window's list.
 #[derive(Clone)]
@@ -346,6 +357,72 @@ impl Timelapse {
         self.listed = Some((Instant::now(), listed.clone()));
         listed
     }
+
+    /// Takes finished thumbnails and starts decoding any that are missing or out of date.
+    fn poll_thumbnails(&mut self, ctx: &egui::Context, listed: &[Listed]) {
+        if self
+            .thumbs_job
+            .as_ref()
+            .is_some_and(|job| job.is_finished())
+            && let Ok(done) = self.thumbs_job.take().unwrap().join()
+        {
+            for (root, frames, image) in done {
+                if let Ok(image) = image {
+                    let texture = ctx.load_texture("recording thumbnail", image, PREVIEW_TEXTURE);
+                    self.thumbs.insert(root, (frames, texture));
+                }
+            }
+        }
+        self.thumbs
+            .retain(|root, _| listed.iter().any(|l| &l.root == root));
+        if self.thumbs_job.is_some() {
+            return;
+        }
+        let wanted: Vec<(PathBuf, usize)> = listed
+            .iter()
+            .filter(|l| {
+                self.thumbs
+                    .get(&l.root)
+                    .is_none_or(|(frames, _)| *frames != l.frames)
+            })
+            .map(|l| (l.root.clone(), l.frames))
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        let ctx = ctx.clone();
+        self.thumbs_job = Some(std::thread::spawn(move || {
+            let done = wanted
+                .into_iter()
+                .map(|(root, frames)| {
+                    let image = decode_thumbnail(&root, frames - 1);
+                    (root, frames, image)
+                })
+                .collect();
+            ctx.request_repaint();
+            done
+        }));
+    }
+}
+
+/// A recording's frame `index`, shrunk to fit `THUMB_PIXELS`.
+fn decode_thumbnail(root: &Path, index: usize) -> Result<egui::ColorImage, String> {
+    let image = read_frame(root, index)?;
+    let (w, h) = image.dimensions();
+    let scale = (THUMB_PIXELS as f32 / w.max(h) as f32).min(1.0);
+    let size = (
+        ((w as f32 * scale).round() as u32).max(1),
+        ((h as f32 * scale).round() as u32).max(1),
+    );
+    let image = if size == (w, h) {
+        image
+    } else {
+        image::imageops::thumbnail(&image, size.0, size.1)
+    };
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    ))
 }
 
 /// How long ago `time` was, in words: "just now", "5 min ago", "3 days ago".
@@ -1725,51 +1802,83 @@ impl Dudel {
         if listed.is_empty() {
             ui.label(egui::RichText::new("None yet.").weak());
         }
+        self.timelapse.poll_thumbnails(ui.ctx(), &listed);
         for item in listed.iter() {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    let name = egui::RichText::new(&item.name);
-                    ui.label(if Some(&item.root) == own.as_ref() {
-                        name.strong()
-                    } else {
-                        name
+            let mine = Some(&item.root) == own.as_ref();
+            let shown = viewing.as_ref() == Some(&item.root);
+            let fill = if mine || shown {
+                ui.visuals().selection.bg_fill.gamma_multiply(0.3)
+            } else {
+                ui.visuals().faint_bg_color
+            };
+            egui::Frame::new()
+                .fill(fill)
+                .corner_radius(egui::CornerRadius::same(6))
+                .inner_margin(egui::Margin::same(6))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        // The last frame, fitted into a square.
+                        let (square, _) = ui.allocate_exact_size(
+                            egui::vec2(THUMB_SIZE, THUMB_SIZE),
+                            egui::Sense::hover(),
+                        );
+                        let painter = ui.painter();
+                        painter.rect_filled(square, 4.0, ui.visuals().extreme_bg_color);
+                        if let Some((_, texture)) = self.timelapse.thumbs.get(&item.root) {
+                            let [w, h] = texture.size().map(|s| s as f32);
+                            let fit = THUMB_SIZE / w.max(h).max(1.0);
+                            let rect = egui::Rect::from_center_size(
+                                square.center(),
+                                egui::vec2(w * fit, h * fit),
+                            );
+                            painter.image(
+                                texture.id(),
+                                rect,
+                                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                                egui::Color32::WHITE,
+                            );
+                        }
+                        ui.add_space(6.0);
+                        ui.vertical(|ui| {
+                            ui.add_space(4.0);
+                            let name = egui::RichText::new(&item.name);
+                            ui.label(if mine { name.strong() } else { name });
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} frames · {} × {} px",
+                                    item.frames, item.size[0], item.size[1],
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            ui.label(egui::RichText::new(ago(item.modified)).small().weak());
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if mine {
+                                ui.label(egui::RichText::new("This canvas").weak());
+                                return;
+                            }
+                            if item.size == canvas
+                                && ui
+                                    .add_enabled(!busy, egui::Button::new("Continue here"))
+                                    .on_hover_text(
+                                        "Record this canvas into this recording, as after a \
+                                         crash that lost it",
+                                    )
+                                    .clicked()
+                            {
+                                action = Some(Action::Continue(item.root.clone(), item.frames));
+                            }
+                            if shown {
+                                ui.label(egui::RichText::new("Showing").weak());
+                            } else if ui.add_enabled(!busy, egui::Button::new("View")).clicked() {
+                                action = Some(Action::View(item.root.clone(), item.frames));
+                            }
+                        });
                     });
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} frames · {} x {} px · {}",
-                            item.frames,
-                            item.size[0],
-                            item.size[1],
-                            ago(item.modified)
-                        ))
-                        .small()
-                        .weak(),
-                    );
                 });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(ui.spacing().scroll.bar_width);
-                    if Some(&item.root) == own.as_ref() {
-                        ui.label(egui::RichText::new("This canvas").weak());
-                        return;
-                    }
-                    if item.size == canvas
-                        && ui
-                            .add_enabled(!busy, egui::Button::new("Continue here"))
-                            .on_hover_text(
-                                "Record this canvas into this recording, as after a crash \
-                                 that lost it",
-                            )
-                            .clicked()
-                    {
-                        action = Some(Action::Continue(item.root.clone(), item.frames));
-                    }
-                    if viewing.as_ref() != Some(&item.root)
-                        && ui.add_enabled(!busy, egui::Button::new("View")).clicked()
-                    {
-                        action = Some(Action::View(item.root.clone(), item.frames));
-                    }
-                });
-            });
+            ui.add_space(4.0);
         }
         ui.horizontal(|ui| {
             if ui

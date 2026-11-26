@@ -29,7 +29,15 @@ const SETTLE: Duration = Duration::from_millis(350);
 const INTERVAL: Duration = Duration::from_millis(90);
 /// More layout lines than this are drawn once as a picture instead.
 const MAX_LINES: usize = 3000;
-const LAYOUT_COLOR: [u8; 4] = [0, 190, 255, 190];
+/// The layout's color until one is chosen, and the quick choices.
+const LAYOUT_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 143, 191, 190);
+const LAYOUT_COLORS: [(&str, [u8; 3]); 5] = [
+    ("Blue", [0, 190, 255]),
+    ("Magenta", [255, 40, 200]),
+    ("Yellow", [255, 220, 0]),
+    ("Black", [0, 0, 0]),
+    ("White", [255, 255, 255]),
+];
 
 /// What dragging on the model does.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -91,6 +99,10 @@ pub(crate) struct ModelView {
     /// Keep whole pixels; by the canvas size until chosen.
     sharp: Option<bool>,
     show_layout: bool,
+    /// The layout lines' color, when chosen.
+    layout_color: Option<egui::Color32>,
+    /// Keep a perspective ruler matched to the view.
+    follow_ruler: bool,
     /// Counts canvas changes, for the texture.
     stamp: u64,
     changed: Option<Instant>,
@@ -191,7 +203,8 @@ fn make_layout(mesh: &Mesh, key: LayoutKey) -> Layout {
     let picture = (edges.len() > MAX_LINES).then(|| {
         let step = step(key.1, FINE);
         let size = key.1.map(|side| side.div_ceil(step).max(1));
-        (size, mesh_render::draw_layout(&edges, size, LAYOUT_COLOR))
+        // White, tinted to the chosen color when drawn.
+        (size, mesh_render::draw_layout(&edges, size, [255; 4]))
     });
     Layout {
         key,
@@ -413,12 +426,12 @@ impl Dudel {
         let Some(layout) = &model.layout else {
             return;
         };
+        let color = model.layout_color.unwrap_or(LAYOUT_COLOR);
         if let Some(texture) = &layout.texture {
-            crate::animation_cache::paint(painter, view, texture);
+            crate::animation_cache::paint_tinted(painter, view, texture, color);
             return;
         }
-        let [r, g, b, a] = LAYOUT_COLOR;
-        let stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_unmultiplied(r, g, b, a));
+        let stroke = egui::Stroke::new(1.0_f32, color);
         let size = [self.doc.width as f32, self.doc.height as f32];
         let clip = painter.clip_rect();
         for edge in &layout.edges {
@@ -457,30 +470,67 @@ impl Dudel {
         self.status = "Drawing the model…".into();
     }
 
-    /// A perspective ruler for drawing in the model's perspective.
-    fn ruler_from_model(&mut self) {
+    /// Where the ruler made from the model is, while it is unchanged.
+    fn model_ruler_index(&self) -> Option<usize> {
+        let last = self.model_view.ruler?;
+        self.rulers.iter().position(|r| *r == last)
+    }
+
+    /// Turns the ruler that follows the model's view on or off.
+    fn set_model_ruler(&mut self, on: bool) {
+        if on {
+            if self.rulers.len() >= crate::rulers::MAX_RULERS {
+                self.status = format!("At most {} rulers", crate::rulers::MAX_RULERS);
+                return;
+            }
+            self.model_view.follow_ruler = true;
+            self.model_view.ruler = None;
+            self.follow_model_ruler();
+            if self.model_view.ruler.is_some() {
+                self.snapping = true;
+                self.status = "Strokes now follow the model's perspective".into();
+            }
+        } else {
+            if let Some(index) = self.model_ruler_index() {
+                self.remove_ruler(index);
+            }
+            self.model_view.follow_ruler = false;
+            self.model_view.ruler = None;
+            self.status = "Perspective ruler removed".into();
+        }
+    }
+
+    /// Keeps the model's ruler matched to its view while it follows it.
+    fn follow_model_ruler(&mut self) {
+        if !self.model_view.follow_ruler {
+            return;
+        }
+        let made = self.model_view.ruler.is_some();
+        let index = self.model_ruler_index();
+        if made && index.is_none() {
+            // Moved by hand or removed: it is the artist's ruler now.
+            self.model_view.follow_ruler = false;
+            self.model_view.ruler = None;
+            return;
+        }
         let Some(ruler) = self
             .model_view
             .camera
             .ruler([self.doc.width, self.doc.height])
             .filter(Ruler::usable)
         else {
-            self.status = "This view has no vanishing points".into();
+            if !made {
+                self.model_view.follow_ruler = false;
+                self.status = "This view has no vanishing points".into();
+            }
             return;
         };
-        // The last one made here moves, unless it was changed since.
-        let last = self.model_view.ruler;
-        if let Some(index) = last.and_then(|last| self.rulers.iter().position(|r| *r == last)) {
-            self.rulers[index] = ruler;
-        } else if self.rulers.len() < crate::rulers::MAX_RULERS {
-            self.push_ruler(ruler);
-        } else {
-            self.status = format!("At most {} rulers", crate::rulers::MAX_RULERS);
-            return;
+        match index {
+            Some(index) if self.rulers[index] != ruler => self.rulers[index] = ruler,
+            Some(_) => return,
+            None => self.push_ruler(ruler),
         }
         self.model_view.ruler = Some(ruler);
-        self.snapping = true;
-        self.status = "Perspective ruler set from the model's view".into();
     }
 
     pub(crate) fn model_view_ui(&mut self, ctx: &egui::Context) {
@@ -491,7 +541,7 @@ impl Dudel {
         let mut open = true;
         let mut ask = false;
         let mut place = false;
-        let mut ruler = false;
+        let mut ruler = None;
         let canvas = [self.doc.width, self.doc.height];
         let mut picture = None;
         egui::Window::new("3D model")
@@ -524,14 +574,17 @@ impl Dudel {
                 };
                 let mesh = model.mesh.clone();
                 ui.horizontal_wrapped(|ui| {
+                    ui.label("Dragging");
                     for (drag, label, hint) in [
-                        (Drag::Turn, "Turn", "Drag to turn the model"),
-                        (Drag::Move, "Move", "Drag to move the model (or use the middle button)"),
-                        (Drag::Light, "Light", "Drag to move the light (or use the right button)"),
+                        (Drag::Turn, "turns the model", "Dragging on the picture turns the model around"),
+                        (Drag::Move, "moves the model", "Dragging on the picture slides the model; the middle button always does"),
+                        (Drag::Light, "moves the light", "Dragging on the picture moves where the light comes from; the right button always does"),
                     ] {
                         ui.selectable_value(&mut view.drag, drag, label).on_hover_text(hint);
                     }
-                    ui.separator();
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("View from");
                     let quarter = std::f32::consts::FRAC_PI_2;
                     for (label, yaw, pitch) in [
                         ("Front", 0.0, 0.0),
@@ -600,6 +653,24 @@ impl Dudel {
                     ui.horizontal_wrapped(|ui| {
                         ui.checkbox(&mut view.show_layout, "Show the layout on the canvas")
                             .on_hover_text("The model's UV layout as lines over the canvas; never part of the artwork");
+                        if view.show_layout {
+                            let current = view.layout_color.unwrap_or(LAYOUT_COLOR);
+                            for (name, [r, g, b]) in LAYOUT_COLORS {
+                                let color = egui::Color32::from_rgba_unmultiplied(r, g, b, current.a());
+                                let chosen = current == color;
+                                let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                                ui.painter().rect_filled(rect.shrink(2.0), 3.0, egui::Color32::from_rgb(r, g, b));
+                                let outline = if chosen { ui.visuals().selection.stroke } else { ui.visuals().widgets.inactive.bg_stroke };
+                                ui.painter().rect_stroke(rect.shrink(1.0), 4.0, outline, egui::StrokeKind::Inside);
+                                if response.on_hover_text(format!("{name} lines")).clicked() {
+                                    view.layout_color = Some(color);
+                                }
+                            }
+                            let mut color = current;
+                            if ui.color_edit_button_srgba(&mut color).on_hover_text("Any color and how strong the lines are").changed() {
+                                view.layout_color = Some(color);
+                            }
+                        }
                         if mesh.materials.len() > 1 && (view.paint || view.show_layout) {
                             let name = |m: Option<u16>| {
                                 m.and_then(|m| mesh.materials.get(m as usize))
@@ -622,10 +693,19 @@ impl Dudel {
                         .add_enabled(view.place.is_none(), egui::Button::new("Place as layer"))
                         .on_hover_text("Draws this view on a new layer, framed as here")
                         .clicked();
-                    ruler = ui
-                        .add_enabled(!view.camera.flat, egui::Button::new("Perspective ruler"))
-                        .on_hover_text("Sets a perspective ruler to this view, so strokes follow the model's perspective")
-                        .clicked();
+                    let mut follow = view.follow_ruler;
+                    if ui
+                        .add_enabled(!view.camera.flat, egui::Checkbox::new(&mut follow, "Draw in its perspective"))
+                        .on_hover_text(
+                            "A perspective ruler that matches this view while it is on, so lines \
+                             you draw around the model (a floor, a room, a building) share its \
+                             vanishing points. Turn it off to remove the ruler.",
+                        )
+                        .on_disabled_hover_text("Needs perspective: turn off No perspective")
+                        .changed()
+                    {
+                        ruler = Some(follow);
+                    }
                 });
                 // The picture has the canvas's shape: it shows exactly what
                 // Place as layer draws.
@@ -673,6 +753,13 @@ impl Dudel {
                         view.camera.zoom(factor);
                     }
                 }
+                ui.painter().text(
+                    rect.left_bottom() + egui::vec2(6.0, -6.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    "Middle button: move · right button: light · scroll or pinch: zoom",
+                    egui::FontId::proportional(11.0),
+                    ui.visuals().weak_text_color(),
+                );
                 picture = Some((size, response.dragged()));
             });
         self.model_view.open = open;
@@ -686,8 +773,10 @@ impl Dudel {
         if place {
             self.place_model();
         }
-        if ruler {
-            self.ruler_from_model();
+        if let Some(on) = ruler {
+            self.set_model_ruler(on);
+        } else if self.model_view.open {
+            self.follow_model_ruler();
         }
     }
 
@@ -698,7 +787,7 @@ impl Dudel {
         self.model_view.paint = true;
         self.model_view.show_layout = true;
         self.model_view.camera.yaw = std::f32::consts::PI;
-        self.ruler_from_model();
+        self.set_model_ruler(true);
     }
 }
 
@@ -820,21 +909,32 @@ mod tests {
     }
 
     #[test]
-    fn the_ruler_follows_the_view_without_piling_up() {
+    fn the_ruler_follows_the_view_and_switches_off() {
         let mut app = with_ball();
-        app.ruler_from_model();
+        app.set_model_ruler(true);
         assert_eq!(app.rulers.len(), 1);
-        assert!(app.snapping);
+        assert!(app.snapping && app.model_view.follow_ruler);
+        let first = app.rulers[0];
         app.model_view.camera.yaw += 0.3;
-        app.ruler_from_model();
+        app.follow_model_ruler();
         assert_eq!(app.rulers.len(), 1);
-        // One the artist moved is theirs now.
+        assert!(app.rulers[0] != first, "it follows the view");
+        // Off removes it.
+        app.set_model_ruler(false);
+        assert!(app.rulers.is_empty() && !app.model_view.follow_ruler);
+        // One the artist moved is theirs now: it stays, and stops following.
+        app.set_model_ruler(true);
         app.rulers[0].set_handle(0, [7.0, 7.0]);
-        app.ruler_from_model();
-        assert_eq!(app.rulers.len(), 2);
+        let moved = app.rulers[0];
+        app.model_view.camera.yaw += 0.3;
+        app.follow_model_ruler();
+        assert_eq!(app.rulers, vec![moved]);
+        assert!(!app.model_view.follow_ruler);
+        // A view without perspective has no ruler to make.
         app.model_view.camera.flat = true;
-        app.ruler_from_model();
-        assert_eq!(app.rulers.len(), 2);
+        app.set_model_ruler(true);
+        assert_eq!(app.rulers.len(), 1);
+        assert!(!app.model_view.follow_ruler);
     }
 
     #[test]

@@ -141,6 +141,17 @@ impl Dudel {
             }
         });
         self.palette_current_color_ui(ui);
+        eframe::egui::CollapsingHeader::new("Color sphere")
+            .id_salt("color sphere")
+            .show(ui, |ui| {
+                let size = (ui.available_width() * 0.8).clamp(100.0, largest * 0.8);
+                ui.vertical_centered(|ui| {
+                    if let Some(shade) = self.color_sphere.ui(ui, self.color, size) {
+                        self.color = shade;
+                    }
+                });
+                self.color_sphere.options_ui(ui);
+            });
         self.palette_swatches_ui(ui);
     }
 

@@ -161,6 +161,16 @@ pub(crate) fn paint(
     view: crate::view::View,
     texture: &egui::TextureHandle,
 ) {
+    paint_tinted(painter, view, texture, egui::Color32::WHITE);
+}
+
+/// `paint`, with each pixel multiplied by `tint`.
+pub(crate) fn paint_tinted(
+    painter: &egui::Painter,
+    view: crate::view::View,
+    texture: &egui::TextureHandle,
+    tint: egui::Color32,
+) {
     let corners = view.corners();
     let mut mesh = egui::Mesh::with_texture(texture.id());
     for (corner, uv) in corners.iter().zip([
@@ -172,7 +182,7 @@ pub(crate) fn paint(
         mesh.vertices.push(egui::epaint::Vertex {
             pos: *corner,
             uv,
-            color: egui::Color32::WHITE,
+            color: tint,
         });
     }
     mesh.indices.extend([0, 1, 2, 0, 2, 3]);

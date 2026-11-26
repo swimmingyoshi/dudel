@@ -11,12 +11,16 @@ what changed after an update. Projects and file formats are unchanged from
 0.6.2.
 
 - **3D models:** **View > 3D model** opens a GLB or OBJ file to turn, light and
-  draw from. **Place as layer** draws the view on a new layer, and
-  **Perspective ruler** sets a ruler to it, so strokes follow the model's
-  perspective.
+  draw from. **Place as layer** draws the view on a new layer, and **Draw in
+  its perspective** keeps a perspective ruler matched to the view, so lines
+  around the model share its vanishing points; turning it off removes the
+  ruler.
 - **Texture preview:** **Show this canvas on the model** shows the canvas as
   the model's texture and updates while you paint; **Show the layout on the
-  canvas** draws the model's UV layout over it.
+  canvas** draws the model's UV layout over it, in a color you choose.
+- **Color sphere:** under the color wheel, the current color on a lit ball.
+  Click or drag on it to pick a shade, from the highlight to the core shadow,
+  with warm light and cool shadows or plain light.
 - **An icon:** Dudel's window, shortcuts and `.dudel` files have an icon of
   their own. Windows may show the old one until it refreshes its icon cache.
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
@@ -24,7 +28,8 @@ what changed after an update. Projects and file formats are unchanged from
 
 - **A clearer Timelapse window:** what is being recorded and the next step
   first, labelled speed and length, MP4 as the main export, and a list of
-  your recent recordings to view or to continue on the canvas.
+  your recent recordings, each with a picture of its last frame, to view or
+  to continue on the canvas.
 - **Timelapses survive recovery:** restoring a recovery backup continues the
   canvas's timelapse instead of starting without it. For a canvas that was
   never saved, this works for recordings made from this version on.

@@ -36,6 +36,7 @@ mod clipboard;
 mod clipboard_files;
 #[cfg(windows)]
 mod clipboard_shortcuts;
+mod color_sphere;
 mod color_wheel;
 mod development;
 mod dialogs;
@@ -282,6 +283,7 @@ struct Dudel {
     mirror: bool,
     secondary: [u8; 3],
     hsv: [f32; 3],
+    color_sphere: color_sphere::Sphere,
     hex_input: String,
     recent_colors: Vec<[u8; 3]>,
     last_stroke_end: Option<stroke::Sample>,
@@ -638,6 +640,7 @@ impl Default for Dudel {
             mirror: false,
             secondary: [255, 255, 255],
             hsv: color_wheel::rgb_to_hsv([38, 44, 59]),
+            color_sphere: Default::default(),
             hex_input: String::new(),
             recent_colors: vec![],
             last_stroke_end: None,
