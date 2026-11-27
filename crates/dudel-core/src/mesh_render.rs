@@ -135,6 +135,8 @@ pub struct Look {
     pub paint: Option<Paint>,
     /// Plain light gray instead of the model's colors and textures.
     pub clay: bool,
+    /// Dim every material but this one.
+    pub focus: Option<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,6 +144,20 @@ pub struct Paint {
     pub texture: Arc<Texture>,
     /// Only on this material; on all without one.
     pub material: Option<u16>,
+    /// Materials with a texture of their own instead.
+    pub parts: Vec<(u16, Arc<Texture>)>,
+}
+
+impl Paint {
+    fn on(&self, material: u16) -> Option<&Texture> {
+        match self.parts.iter().find(|(m, _)| *m == material) {
+            Some((_, texture)) => Some(texture),
+            None => self
+                .material
+                .is_none_or(|m| m == material)
+                .then_some(&*self.texture),
+        }
+    }
 }
 
 impl Default for Look {
@@ -152,6 +168,7 @@ impl Default for Look {
             sharp: false,
             paint: None,
             clay: false,
+            focus: None,
         }
     }
 }
@@ -200,17 +217,22 @@ struct Scene<'a> {
 
 impl Scene<'_> {
     fn texture(&self, material: u16) -> Option<&Texture> {
-        match &self.look.paint {
-            Some(paint) if paint.material.is_none_or(|m| m == material) => Some(&paint.texture),
-            _ if self.look.clay => None,
-            _ => self.mesh.materials[material as usize].texture.as_deref(),
+        match self.look.paint.as_ref().and_then(|p| p.on(material)) {
+            Some(texture) => Some(texture),
+            None if self.look.clay => None,
+            None => self.mesh.materials[material as usize].texture.as_deref(),
         }
     }
     fn color(&self, material: u16) -> [f32; 3] {
-        match &self.look.paint {
-            Some(paint) if paint.material.is_none_or(|m| m == material) => [255.0; 3],
-            _ if self.look.clay => [205.0; 3],
-            _ => self.mesh.materials[material as usize].color.map(f32::from),
+        let color = match self.look.paint.as_ref().and_then(|p| p.on(material)) {
+            Some(_) => [255.0; 3],
+            None if self.look.clay => [205.0; 3],
+            None => self.mesh.materials[material as usize].color.map(f32::from),
+        };
+        // Other parts step back while one is being worked on.
+        match self.look.focus {
+            Some(focus) if focus != material => color.map(|c| c * 0.35),
+            _ => color,
         }
     }
     fn pieces(&self, range: std::ops::Range<usize>) -> Vec<Piece> {
@@ -663,6 +685,7 @@ mod tests {
             paint: Some(Paint {
                 texture: Arc::new(Texture::new([2, 2], texels.concat()).unwrap()),
                 material: Some(1),
+                parts: Vec::new(),
             }),
             ..colors()
         };
@@ -672,6 +695,27 @@ mod tests {
         assert_eq!(at(&image, 64, 16, 47), [0, 0, 255, 255]);
         assert_eq!(at(&image, 64, 47, 47), [255; 4]);
         assert_eq!(at(&image, 64, 32, 32), [255, 0, 0, 255], "other material");
+    }
+
+    #[test]
+    fn a_material_with_its_own_texture_wears_it_and_focus_dims_the_rest() {
+        let blue = Arc::new(Texture::new([1, 1], vec![0, 0, 255, 255]).unwrap());
+        let green = Arc::new(Texture::new([1, 1], vec![0, 255, 0, 255]).unwrap());
+        let mut look = Look {
+            paint: Some(Paint {
+                texture: blue,
+                material: None,
+                parts: vec![(0, green)],
+            }),
+            ..colors()
+        };
+        let image = draw(&squares(), &front(), &look, [64, 64], 1);
+        assert_eq!(at(&image, 64, 32, 32), [0, 255, 0, 255], "its own");
+        assert_eq!(at(&image, 64, 16, 16), [0, 0, 255, 255], "the shared one");
+        look.focus = Some(1);
+        let image = draw(&squares(), &front(), &look, [64, 64], 1);
+        assert!(at(&image, 64, 32, 32)[1] < 100, "dimmed");
+        assert_eq!(at(&image, 64, 16, 16), [0, 0, 255, 255], "in focus");
     }
 
     #[test]
@@ -758,6 +802,7 @@ mod tests {
                 paint: Some(Paint {
                     texture: Arc::new(texture),
                     material: None,
+                    parts: Vec::new(),
                 }),
                 ..Look::default()
             };

@@ -354,6 +354,32 @@ impl Document {
         self.validate_structure()
     }
 
+    /// New folders named `names` at the top of the stack, each holding an
+    /// empty layer; the topmost folder's layer becomes active.
+    pub fn add_named_folders(&mut self, names: &[String]) -> Result<(), String> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        if self.animation.is_some() {
+            return Err(
+                "With the animation timeline on, each top-level layer is a frame;                  turn the timeline off to add folders at the top"
+                    .into(),
+            );
+        }
+        if !self.has_room(names.len(), names.len() * 2) {
+            return Err("The layer stack is full".into());
+        }
+        for name in names {
+            self.add_layer();
+            let mut layer = self.layers.pop().unwrap();
+            layer.depth = 1;
+            self.layers.push(layer);
+            self.layers.push(Layer::new_folder(name.clone()));
+        }
+        self.active = self.layers.len() - 2;
+        self.validate_structure()
+    }
+
     /// Put the active entry (and its contents) into a new folder.
     pub fn group_active(&mut self) -> Result<(), String> {
         if !self.has_room(0, 1) {
@@ -825,5 +851,24 @@ mod tests {
         assert!(restored.layers[3].folder && restored.layers[3].collapsed);
         assert!(restored.layers[3].pixels.is_empty());
         assert_eq!(restored.layers[1].pixels, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn named_folders_go_on_top_each_with_a_layer_to_paint_on() {
+        let mut doc = Document::new(8, 8);
+        doc.add_named_folders(&["Body".into(), "Eyes".into()])
+            .unwrap();
+        let names: Vec<_> = doc
+            .layers
+            .iter()
+            .map(|l| (l.name.as_str(), l.folder, l.depth))
+            .collect();
+        assert_eq!(
+            names[1..].iter().map(|n| (n.1, n.2)).collect::<Vec<_>>(),
+            [(false, 1), (true, 0), (false, 1), (true, 0)]
+        );
+        assert_eq!((names[2].0, names[4].0), ("Body", "Eyes"));
+        assert_eq!(doc.active, 3);
+        assert!(!doc.layers[doc.active].folder);
     }
 }

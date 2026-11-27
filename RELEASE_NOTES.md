@@ -18,6 +18,11 @@ what changed after an update. Projects and file formats are unchanged from
 - **Texture preview:** **Show this canvas on the model** shows the canvas as
   the model's texture and updates while you paint; **Show the layout on the
   canvas** draws the model's UV layout over it, in a color you choose.
+- **Parts and folders:** for a model with several materials, **Make folders
+  for the parts** adds a folder for each part, named after it. A folder
+  named after a part paints only that part, and layers outside the parts'
+  folders paint them all. While you paint in a part's folder, the other
+  parts are dimmed and only its layout is shown.
 - **Color sphere:** under the color wheel, the current color on a lit ball.
   Click or drag on it to pick a shade, from the highlight to the core shadow,
   with warm light and cool shadows or plain light.

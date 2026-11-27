@@ -58,6 +58,8 @@ struct ViewKey {
     light: [f32; 2],
     sharp: bool,
     clay: bool,
+    /// The material dimmed around, while its folder is being painted.
+    focus: Option<u16>,
     /// The canvas as a texture, on this material or on all.
     paint: Option<(TextureKey, Option<u16>)>,
     size: [usize; 2],
@@ -67,7 +69,46 @@ struct ViewKey {
 struct Drawn {
     key: ViewKey,
     rgba: Vec<u8>,
-    texture: Option<(TextureKey, Arc<Texture>)>,
+    texture: Option<(TextureKey, Arc<Painted>)>,
+}
+
+/// The canvas as the model's textures: one for every part, and one for each
+/// part with a folder of its own.
+struct Painted {
+    base: Arc<Texture>,
+    parts: Vec<(u16, Arc<Texture>)>,
+}
+
+/// A material's name for its folder: its own, or its number.
+fn part_name(mesh: &Mesh, material: u16) -> String {
+    let name = mesh.materials[material as usize].name.trim();
+    if name.is_empty() {
+        format!("Part {}", material + 1)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Each material with a folder of its name, and the folder's index; the
+/// topmost folder when several share it.
+fn part_folders(doc: &Document, mesh: &Mesh) -> Vec<(u16, usize)> {
+    (0..mesh.materials.len() as u16)
+        .filter_map(|material| {
+            let name = part_name(mesh, material);
+            doc.layers
+                .iter()
+                .rposition(|l| l.folder && l.name.trim().eq_ignore_ascii_case(&name))
+                .map(|index| (material, index))
+        })
+        .collect()
+}
+
+/// The folders in `links`, each once.
+fn folders(links: &[(u16, usize)]) -> Vec<usize> {
+    let mut folders: Vec<usize> = links.iter().map(|(_, folder)| *folder).collect();
+    folders.sort_unstable();
+    folders.dedup();
+    folders
 }
 
 type Edges = Vec<[[f32; 2]; 2]>;
@@ -107,8 +148,15 @@ pub(crate) struct ModelView {
     stamp: u64,
     changed: Option<Instant>,
     textured: Option<Instant>,
-    texture: Option<(TextureKey, Arc<Texture>)>,
+    texture: Option<(TextureKey, Arc<Painted>)>,
     picture: Option<(ViewKey, egui::TextureHandle)>,
+    /// Materials with folders of their own, and what they were made from.
+    links: Vec<(u16, usize)>,
+    links_hash: u64,
+    /// The material whose folder holds the active layer.
+    focus: Option<u16>,
+    /// Do not dim the other parts while one is painted.
+    no_highlight: bool,
     load: Option<(String, Handle<Result<Mesh, String>>)>,
     draw: Option<Handle<Result<Drawn, String>>>,
     layout: Option<Layout>,
@@ -141,24 +189,48 @@ fn step(canvas: [usize; 2], most: usize) -> usize {
 fn draw(
     mesh: &Mesh,
     key: ViewKey,
-    canvas: Option<Document>,
-    mut texture: Option<(TextureKey, Arc<Texture>)>,
+    canvas: Option<(Document, Vec<(u16, usize)>)>,
+    mut texture: Option<(TextureKey, Arc<Painted>)>,
 ) -> Result<Drawn, String> {
-    if let (Some(doc), Some((wanted, _))) = (canvas, key.paint) {
-        let (rgba, size) = doc.composite_reduced(wanted.1, false, || Ok(()))?;
-        let made = Texture::new(size, rgba).ok_or("The canvas could not be shown")?;
-        texture = Some((wanted, Arc::new(made)));
+    if let (Some((doc, links)), Some((wanted, _))) = (canvas, key.paint) {
+        // The canvas without these folders.
+        let without = |hidden: &[usize]| -> Result<Arc<Texture>, String> {
+            let mut doc = doc.clone();
+            for &index in hidden {
+                if let Some(layer) = doc.layers.get_mut(index) {
+                    layer.visible = false;
+                }
+            }
+            let (rgba, size) = doc.composite_reduced(wanted.1, false, || Ok(()))?;
+            let made = Texture::new(size, rgba).ok_or("The canvas could not be shown")?;
+            Ok(Arc::new(made))
+        };
+        // Every part wears the layers outside the parts' folders; a part
+        // with a folder wears its own folder too, and no other.
+        let all = folders(&links);
+        let base = without(&all)?;
+        let mut parts = Vec::new();
+        for &folder in &all {
+            let others: Vec<usize> = all.iter().copied().filter(|f| *f != folder).collect();
+            let worn = without(&others)?;
+            for (material, _) in links.iter().filter(|(_, f)| *f == folder) {
+                parts.push((*material, worn.clone()));
+            }
+        }
+        texture = Some((wanted, Arc::new(Painted { base, parts })));
     }
     let look = Look {
         shading: key.shading,
         light: key.light,
         sharp: key.sharp,
         clay: key.clay,
+        focus: key.focus,
         paint: key.paint.and_then(|(_, material)| {
-            let (_, texture) = texture.as_ref()?;
+            let (_, painted) = texture.as_ref()?;
             Some(Paint {
-                texture: texture.clone(),
+                texture: painted.base.clone(),
                 material,
+                parts: painted.parts.clone(),
             })
         }),
     };
@@ -253,10 +325,24 @@ impl ModelView {
     fn sharp(&self, canvas: [usize; 2]) -> bool {
         self.sharp.unwrap_or(canvas[0].max(canvas[1]) <= 256)
     }
+    /// Changes to the canvas or to which folders belong to which parts.
+    fn texture_stamp(&self) -> u64 {
+        self.stamp ^ self.links_hash.rotate_left(17)
+    }
+    /// Longest side of the textures when idle: smaller as there are more,
+    /// so they take about the memory one would.
+    fn fine(&self) -> usize {
+        let textures = folders(&self.links).len() + 1;
+        ((FINE as f32 / (textures as f32).sqrt()) as usize).max(QUICK)
+    }
+    fn focus(&self) -> Option<u16> {
+        self.focus.filter(|_| !self.no_highlight)
+    }
     fn key(&self, canvas: [usize; 2], size: [usize; 2], moving: bool) -> ViewKey {
         let busy = self.changed.is_some_and(|at| at.elapsed() < SETTLE);
         let paint = self.paint.then(|| {
-            let wanted = (self.stamp, step(canvas, if busy { QUICK } else { FINE }));
+            let side = if busy { QUICK } else { self.fine() };
+            let wanted = (self.texture_stamp(), step(canvas, side));
             let recent = self.textured.is_some_and(|at| at.elapsed() < INTERVAL);
             let shown = match &self.texture {
                 Some((shown, _)) if recent || (shown.0 == wanted.0 && shown.1 <= wanted.1) => {
@@ -272,6 +358,7 @@ impl ModelView {
             light: self.look.light,
             sharp: self.sharp(canvas),
             clay: self.look.clay,
+            focus: self.focus(),
             paint,
             size,
             samples: if moving || (busy && self.paint) { 1 } else { 2 },
@@ -372,7 +459,66 @@ impl Dudel {
     }
 
     /// Start what is wanted and not being made yet.
+    /// Which folders belong to which parts, and which part is being painted.
+    fn update_part_folders(&mut self) {
+        let Some(model) = &self.model_view.model else {
+            return;
+        };
+        let links = part_folders(&self.doc, &model.mesh);
+        let mut hasher = std::hash::DefaultHasher::new();
+        for (material, folder) in &links {
+            std::hash::Hash::hash(
+                &(material, folder, self.doc.layers[*folder].id),
+                &mut hasher,
+            );
+        }
+        let mut at = (self.doc.active < self.doc.layers.len()).then_some(self.doc.active);
+        let focus = loop {
+            let Some(index) = at else { break None };
+            if let Some((material, _)) = links.iter().find(|(_, folder)| *folder == index) {
+                break Some(*material);
+            }
+            at = self.doc.parent(index);
+        };
+        let view = &mut self.model_view;
+        view.links_hash = std::hash::Hasher::finish(&hasher);
+        view.links = links;
+        view.focus = focus;
+    }
+
+    /// Folders at the top for the parts that have none.
+    fn make_part_folders(&mut self) {
+        let Some(model) = &self.model_view.model else {
+            return;
+        };
+        let mesh = model.mesh.clone();
+        let linked = part_folders(&self.doc, &mesh);
+        let mut names: Vec<String> = (0..mesh.materials.len() as u16)
+            .filter(|m| !linked.iter().any(|(linked, _)| linked == m))
+            .map(|m| part_name(&mesh, m))
+            .collect();
+        // Parts sharing a name share a folder.
+        let mut seen = std::collections::HashSet::new();
+        names.retain(|name| seen.insert(name.to_lowercase()));
+        // The first part ends on top.
+        names.reverse();
+        if names.is_empty() {
+            self.status = "Every part has a folder".into();
+            return;
+        }
+        if self.render_queue.busy() {
+            self.status = "Wait for the canvas to finish, then make the folders".into();
+            return;
+        }
+        self.dispatch_document_edit(
+            crate::document_edits::Edit::NewFolders(names),
+            "Folders made for the model's parts",
+            "No folders made",
+        );
+    }
+
     fn pump_model(&mut self, ctx: &egui::Context, size: [usize; 2], moving: bool) {
+        self.update_part_folders();
         let canvas = [self.doc.width, self.doc.height];
         let view = &mut self.model_view;
         let Some(model) = &view.model else {
@@ -386,7 +532,7 @@ impl Dudel {
             let fresh = key.paint.is_some_and(|(wanted, _)| {
                 texture.as_ref().is_none_or(|(have, _)| *have != wanted)
             });
-            let doc = fresh.then(|| self.doc.clone());
+            let doc = fresh.then(|| (self.doc.clone(), view.links.clone()));
             let repaint = ctx.clone();
             view.draw = Some(background::spawn(move || {
                 let drawn = draw(&mesh, key, doc, texture);
@@ -401,7 +547,8 @@ impl Dudel {
     }
 
     fn pump_layout(&mut self, ctx: &egui::Context) {
-        let key = (self.model_view.material, [self.doc.width, self.doc.height]);
+        let part = self.model_view.focus().or(self.model_view.material);
+        let key = (part, [self.doc.width, self.doc.height]);
         let view = &mut self.model_view;
         if view.show_layout
             && view.layout_job.is_none()
@@ -460,9 +607,11 @@ impl Dudel {
             1
         };
         if let Some((wanted, _)) = &mut key.paint {
-            *wanted = (view.stamp, step(canvas, FINE));
+            *wanted = (view.texture_stamp(), step(canvas, view.fine()));
         }
-        let doc = key.paint.map(|_| self.doc.clone());
+        // Placed as it looks, without one part dimmed.
+        key.focus = None;
+        let doc = key.paint.map(|_| (self.doc.clone(), view.links.clone()));
         view.place = Some(background::spawn(move || {
             let drawn = draw(&mesh, key, doc, None)?;
             cut(&drawn.rgba, canvas).ok_or_else(|| "The model is out of view".into())
@@ -542,6 +691,8 @@ impl Dudel {
         let mut ask = false;
         let mut place = false;
         let mut ruler = None;
+        let mut make_folders = false;
+        let mut go_to = None;
         let canvas = [self.doc.width, self.doc.height];
         let mut picture = None;
         egui::Window::new("3D model")
@@ -688,6 +839,69 @@ impl Dudel {
                         }
                     });
                 });
+                if mesh.has_uv && mesh.materials.len() > 1 {
+                    egui::CollapsingHeader::new(format!("Parts ({})", mesh.materials.len()))
+                        .id_salt("model parts")
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(
+                                    "A folder named after a part paints only that part; layers outside \
+                                     the parts' folders paint them all.",
+                                )
+                                .small()
+                                .weak(),
+                            );
+                            for material in 0..mesh.materials.len() as u16 {
+                                let folder = view.links.iter().find(|(m, _)| *m == material).map(|(_, f)| *f);
+                                ui.horizontal(|ui| {
+                                    let name = part_name(&mesh, material);
+                                    let painting = view.focus == Some(material);
+                                    let text = egui::RichText::new(&name);
+                                    ui.label(if painting { text.strong() } else { text });
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        match folder {
+                                            Some(_) if painting => {
+                                                ui.weak("Painting");
+                                            }
+                                            Some(folder) => {
+                                                if ui
+                                                    .small_button("Paint it")
+                                                    .on_hover_text("Select its folder in the Layers panel")
+                                                    .clicked()
+                                                {
+                                                    go_to = Some(folder);
+                                                }
+                                            }
+                                            None => {
+                                                ui.weak("No folder");
+                                            }
+                                        }
+                                    });
+                                });
+                            }
+                            ui.horizontal_wrapped(|ui| {
+                                let missing = view.links.len() < mesh.materials.len();
+                                make_folders = ui
+                                    .add_enabled(missing, egui::Button::new("Make folders for the parts"))
+                                    .on_hover_text(
+                                        "A folder for each part without one, at the top of the layers, \
+                                         each with a layer to paint on",
+                                    )
+                                    .clicked();
+                                let mut highlight = !view.no_highlight;
+                                if ui
+                                    .checkbox(&mut highlight, "Dim the other parts")
+                                    .on_hover_text(
+                                        "While a part's folder is selected, the other parts are dimmed \
+                                         and only its layout is shown",
+                                    )
+                                    .changed()
+                                {
+                                    view.no_highlight = !highlight;
+                                }
+                            });
+                        });
+                }
                 ui.horizontal_wrapped(|ui| {
                     place = ui
                         .add_enabled(view.place.is_none(), egui::Button::new("Place as layer"))
@@ -773,6 +987,12 @@ impl Dudel {
         if place {
             self.place_model();
         }
+        if make_folders {
+            self.make_part_folders();
+        }
+        if let Some(folder) = go_to {
+            self.select_layer_target(folder);
+        }
         if let Some(on) = ruler {
             self.set_model_ruler(on);
         } else if self.model_view.open {
@@ -828,7 +1048,7 @@ mod tests {
         }
         let shown = |app: &Dudel| {
             let (_, texture) = app.model_view.texture.as_ref().unwrap();
-            texture.size()
+            texture.base.size()
         };
         assert_eq!(shown(&app), [64, 64]);
         let before = app.model_view.texture.clone().unwrap();
@@ -847,9 +1067,108 @@ mod tests {
             frame(&mut app, &ctx);
         }
         let after = app.model_view.texture.clone().unwrap();
-        assert!(before.0 != after.0 && before.1 != after.1);
+        assert!(before.0 != after.0 && !Arc::ptr_eq(&before.1, &after.1));
         // With nothing to do, nothing is drawn again.
         assert!(app.model_view.draw.is_none());
+    }
+
+    /// A ball in two parts: the left half "Body", the right "Eyes".
+    fn with_parts() -> Dudel {
+        let mut app = Dudel::default();
+        app.model_view.wait = true;
+        let mut mesh = mesh::sphere(12);
+        mesh.materials[0].name = "Body".into();
+        mesh.materials.push(mesh::Material::plain(""));
+        for (index, triangle) in mesh.triangles.clone().iter().enumerate() {
+            if mesh.vertices[triangle[0] as usize].at[0] > 0.0 {
+                mesh.material[index] = 1;
+            }
+        }
+        app.model_view.show("ball.glb".into(), mesh);
+        app.doc = Document::new(32, 32);
+        app
+    }
+
+    #[test]
+    fn each_part_wears_its_own_folder_and_every_part_the_rest() {
+        let mut app = with_parts();
+        let ctx = egui::Context::default();
+        app.make_part_folders();
+        let names: Vec<_> = app
+            .doc
+            .layers
+            .iter()
+            .filter(|l| l.folder)
+            .map(|l| l.name.clone())
+            .collect();
+        assert_eq!(names, ["Part 2", "Body"], "the first part on top");
+        // Making them again makes none.
+        let layers = app.doc.layers.len();
+        app.make_part_folders();
+        assert_eq!(app.doc.layers.len(), layers);
+        // Red in Body's folder, blue in the unnamed part's, green outside.
+        let fill = |app: &mut Dudel, index: usize, color: [u8; 4]| {
+            let mut pixels = app.doc.layers[index].pixels.writer();
+            for at in 0..32 * 16 {
+                pixels.rgba_mut(at).copy_from_slice(&color);
+            }
+        };
+        let folder =
+            |app: &Dudel, name: &str| app.doc.layers.iter().position(|l| l.name == name).unwrap();
+        let body = folder(&app, "Body");
+        let other = folder(&app, "Part 2");
+        fill(&mut app, body - 1, [255, 0, 0, 255]);
+        fill(&mut app, other - 1, [0, 0, 255, 255]);
+        fill(&mut app, 0, [0, 0, 0, 0]);
+        {
+            let mut writer = app.doc.layers[0].pixels.writer();
+            for at in 32 * 16..32 * 32 {
+                writer.rgba_mut(at).copy_from_slice(&[0, 255, 0, 255]);
+            }
+        }
+        app.model_view.paint = true;
+        app.model_view.note_damage(true, &Default::default());
+        for _ in 0..6 {
+            frame(&mut app, &ctx);
+        }
+        let (_, painted) = app.model_view.texture.clone().unwrap();
+        let wears = |material: u16| {
+            painted
+                .parts
+                .iter()
+                .find(|(m, _)| *m == material)
+                .map(|(_, t)| [t.texel(4, 4), t.texel(4, 28)])
+        };
+        let shared = [painted.base.texel(4, 4), painted.base.texel(4, 28)];
+        assert_eq!(
+            shared,
+            [[255, 255, 255, 255], [0, 255, 0, 255]],
+            "no folder's paint"
+        );
+        assert_eq!(wears(0), Some([[255, 0, 0, 255], [0, 255, 0, 255]]));
+        assert_eq!(wears(1), Some([[0, 0, 255, 255], [0, 255, 0, 255]]));
+        // Painting in a part's folder dims the others and shows its layout.
+        assert_eq!(
+            app.model_view.focus,
+            Some(0),
+            "the top folder's layer is active"
+        );
+        assert_eq!(app.model_view.key([32, 32], [10, 10], false).focus, Some(0));
+        app.select_layer_target(0);
+        frame(&mut app, &ctx);
+        assert_eq!(app.model_view.focus, None);
+        app.select_layer_target(other - 1);
+        frame(&mut app, &ctx);
+        assert_eq!(app.model_view.focus, Some(1));
+        app.model_view.no_highlight = true;
+        assert_eq!(app.model_view.key([32, 32], [10, 10], false).focus, None);
+        // Making the folders undoes in one step.
+        app.undo();
+        assert!(
+            app.doc.layers.iter().all(|l| !l.folder),
+            "{:?}",
+            app.doc.layers.len()
+        );
     }
 
     #[test]
@@ -867,7 +1186,11 @@ mod tests {
         assert_eq!(idle.samples, 2);
         // A fine texture is not replaced by a coarser one of the same canvas.
         let texture = Texture::new([1, 1], vec![255; 4]).unwrap();
-        app.model_view.texture = Some(((app.model_view.stamp, 2), Arc::new(texture)));
+        let painted = Painted {
+            base: Arc::new(texture),
+            parts: Vec::new(),
+        };
+        app.model_view.texture = Some(((app.model_view.stamp, 2), Arc::new(painted)));
         app.model_view.changed = Some(Instant::now());
         let again = app.model_view.key(canvas, [100, 100], false);
         assert_eq!(again.paint.unwrap().0.1, 2);

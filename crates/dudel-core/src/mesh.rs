@@ -45,6 +45,11 @@ impl Texture {
     pub fn size(&self) -> [usize; 2] {
         self.levels[0].0
     }
+    /// The full-size pixel at `x`, `y`, straight RGBA.
+    pub fn texel(&self, x: usize, y: usize) -> [u8; 4] {
+        let ([w, _], data) = &self.levels[0];
+        data[(y * w + x) * 4..][..4].try_into().unwrap()
+    }
     /// The level where one pixel covers about `texels` square texels.
     pub(crate) fn level(&self, texels: f32) -> usize {
         if !texels.is_finite() || texels <= 1.0 {

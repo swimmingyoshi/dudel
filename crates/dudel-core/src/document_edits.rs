@@ -100,6 +100,8 @@ pub enum Edit {
         settings: crate::adjustment::Settings,
     },
     NewFolder,
+    /// Folders with these names at the top, each holding an empty layer.
+    NewFolders(Vec<String>),
     /// A new, empty vector layer above the target, with this identity.
     NewVector(crate::document::LayerId),
     /// A new text layer above the target, with this identity.
@@ -716,6 +718,7 @@ impl Edit {
                 layer.adjustment = Some(adjustment);
             }
             Self::NewFolder => doc.add_folder()?,
+            Self::NewFolders(names) => doc.add_named_folders(names)?,
             Self::NewVector(id) => {
                 if doc.layers.iter().any(|layer| layer.id == *id) {
                     return Err("Layer identity is already present".into());
