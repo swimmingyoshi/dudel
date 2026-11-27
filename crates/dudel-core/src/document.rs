@@ -4,6 +4,16 @@ use serde::{Deserialize, Serialize};
 /// Shared by live dabs and rebuilding a finalized prefix under a tapered tail.
 /// The share of what is there a clear-water dab lifts at full strength.
 pub const WATER_LIFT: f32 = 0.06;
+/// A brush carrying at least this much pigment lays paint and lifts none.
+const LIFTING_LOAD: f32 = 0.3;
+
+/// The share of what is there a wet dab lifts, at `strength` (0 to 1) with
+/// `load` pigment. Only nearly clear water lifts: a loaded brush lifting the
+/// paint under it would leave a pale rim wherever its edge passes.
+pub fn water_lift(strength: f32, load: f32) -> f32 {
+    let clear = (1.0 - load / LIFTING_LOAD).clamp(0.0, 1.0);
+    strength.clamp(0.0, 1.0) * clear * WATER_LIFT
+}
 
 /// Lay paint over paint that is still wet, mixing the two as pigments.
 pub fn paint_pigment(pixel: &mut [u8], a: f32, color: [u8; 3], alpha_locked: bool) {

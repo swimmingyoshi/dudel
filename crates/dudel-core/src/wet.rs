@@ -285,10 +285,21 @@ pub fn plan(inputs: Inputs) -> Plan {
                         // amount from both sides, so paint is conserved.
                         let gap = w - wn;
                         // Capped so a pixel never sends out more than half
-                        // its paint in one step.
-                        let flow = (weight * gap.abs() * (carry + push * gap.abs())).min(0.12);
+                        // its paint in one step, and to what the receiver
+                        // has room for (shared by its four neighbors): paint
+                        // past full coverage would be lost, thinning paint
+                        // under a wash until the canvas showed as a pale rim.
+                        let (from, receiver) = if gap > 0.0 {
+                            (&here, &there)
+                        } else {
+                            (&there, &here)
+                        };
+                        let mut flow = (weight * gap.abs() * (carry + push * gap.abs())).min(0.12);
+                        let room = (255.0 - receiver[3]).max(0.0) / 4.0;
+                        if flow * from[3] > room {
+                            flow = room / from[3];
+                        }
                         if flow > 0.0 {
-                            let from = if gap > 0.0 { &here } else { &there };
                             let sign = if gap > 0.0 { -1.0 } else { 1.0 };
                             for c in 0..4 {
                                 moved[c] += sign * flow * from[c];

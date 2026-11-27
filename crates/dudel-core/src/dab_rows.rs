@@ -14,7 +14,7 @@
 
 use crate::brush::Brush;
 use crate::dab_bands::Drawn;
-use crate::document::{DabRaster, Document, Layer, WATER_LIFT, paint_pigment, paint_pixel};
+use crate::document::{DabRaster, Document, Layer, paint_pigment, paint_pixel, water_lift};
 use crate::material::Kind;
 use crate::paint_target::Target;
 use crate::stroke_buffer::StrokeBuffer;
@@ -505,7 +505,7 @@ fn blend_rows(
                     );
                 }
                 if load < 1.0 && !alpha_locked {
-                    let lift = strength.min(1.0) * (1.0 - load) * WATER_LIFT;
+                    let lift = water_lift(strength, load);
                     pixel[3] = (f32::from(pixel[3]) * (1.0 - lift)).round() as u8;
                 }
                 if pigment && damp > 0.0 && pixel[3] > 0 {
@@ -561,7 +561,7 @@ fn blend_rows(
                     // Clear water lifts a little of what is there.
                     let load = raster.pigment;
                     if load < 1.0 && !alpha_locked {
-                        let lift = strength.min(1.0) * (1.0 - load) * WATER_LIFT;
+                        let lift = water_lift(strength, load);
                         pixel[3] = (f32::from(pixel[3]) * (1.0 - lift)).round() as u8;
                     }
                     if pigment && damp > 0.0 && pixel[3] > 0 {

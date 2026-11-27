@@ -1655,6 +1655,24 @@ mod tests {
     }
 
     #[test]
+    fn a_loaded_wet_brush_over_paint_leaves_no_pale_rim() {
+        // Gray filled in, then a wet stroke carrying paint across it: the
+        // gray must stay opaque, so the canvas never shows through.
+        let mut doc = Document::new(160, 60);
+        doc.layers[0].material = Some(Material::new(Settings::new(Kind::Watercolor)));
+        doc.layers[0].pixels = [165u8, 165, 165, 255].repeat(160 * 60).into();
+        for y in [26.0, 30.0, 34.0] {
+            paint(&mut doc, &wet(0.37, 0.37), [230, 180, 90], y, false);
+        }
+        crate::wet::settle(&mut doc);
+        let thinnest = (0..160 * 60)
+            .map(|i| doc.layers[0].pixels.rgba(i)[3])
+            .min()
+            .unwrap();
+        assert_eq!(thinnest, 255, "paint was lifted to show the canvas");
+    }
+
+    #[test]
     fn smudging_thick_paint_carries_its_relief() {
         let mut doc = Document::new(160, 100);
         doc.layers[0].material = Some(Material::new(Settings::new(Kind::Paint)));

@@ -26,6 +26,10 @@ what changed after an update. Projects and file formats are unchanged from
 - **Movable dialogs:** Welcome, Updates, What's new, questions and the other
   small windows can be dragged by their title. They open centered each time.
 
+- **No pale rims on wet paint:** a wet brush carrying paint no longer lifts
+  the paint under it, and drying washes no longer thin the paint beneath
+  them, so washes over a filled or painted area keep it opaque instead of
+  showing the canvas as a white halo. Only nearly clear water lifts paint.
 - **A clearer Timelapse window:** what is being recorded and the next step
   first, labelled speed and length, MP4 as the main export, and a list of
   your recent recordings, each with a picture of its last frame, to view or
