@@ -15,14 +15,15 @@ what changed after an update. Projects and file formats are unchanged from
   its perspective** keeps a perspective ruler matched to the view, so lines
   around the model share its vanishing points; turning it off removes the
   ruler.
-- **Texture preview:** **Show this canvas on the model** shows the canvas as
-  the model's texture and updates while you paint; **Show the layout on the
-  canvas** draws the model's UV layout over it, in a color you choose.
-- **Parts and folders:** for a model with several materials, **Make folders
-  for the parts** adds a folder for each part, named after it. A folder
-  named after a part paints only that part, and layers outside the parts'
-  folders paint them all. While you paint in a part's folder, the other
-  parts are dimmed and only its layout is shown.
+- **Texture preview:** **Canvas on the model** shows the canvas as the
+  model's texture and updates while you paint; **Layout on the canvas** draws
+  the model's UV layout over it, in a color you choose. The model sits beside
+  its controls when the window is wide enough.
+- **Parts:** for a model with several materials, pick a part under
+  **Painting**, or click it on the model, to paint it alone: it gets a
+  folder of its name in Layers, and what is in that folder paints only that
+  part. **Whole model** goes back to the layers that paint every part. While
+  one part is painted, the others are dimmed and only its layout is shown.
 - **Color sphere:** under the color wheel, the current color on a lit ball.
   Click or drag on it to pick a shade, from the highlight to the core shadow,
   with warm light and cool shadows or plain light.

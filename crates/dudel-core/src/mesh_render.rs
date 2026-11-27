@@ -534,6 +534,40 @@ pub fn render(
     Ok(out)
 }
 
+/// The material seen at `at` in a picture of `size`, if any.
+pub fn pick(mesh: &Mesh, camera: &Camera, size: [usize; 2], at: [f32; 2]) -> Option<u16> {
+    if size[0] == 0 || size[1] == 0 || mesh.triangles.is_empty() {
+        return None;
+    }
+    let look = Look::default();
+    let scene = Scene {
+        mesh,
+        look: &look,
+        camera: *camera,
+        axes: camera.axes(),
+        focal: camera.focal(size),
+        size,
+        light: [0.0, 0.0, 1.0],
+        samples: 1,
+    };
+    let mut best: Option<(f32, u16)> = None;
+    for piece in scene.pieces(0..mesh.triangles.len()) {
+        let [a, b, c] = piece.at;
+        let weight = |p: [f32; 2], q: [f32; 2]| {
+            ((q[0] - p[0]) * (at[1] - p[1]) - (q[1] - p[1]) * (at[0] - p[0])) / piece.area
+        };
+        let weight = [weight(b, c), weight(c, a), weight(a, b)];
+        if weight.iter().any(|w| *w < -1e-5) {
+            continue;
+        }
+        let near = dot(weight, piece.depth);
+        if best.is_none_or(|(depth, _)| near > depth) {
+            best = Some((near, piece.material));
+        }
+    }
+    best.map(|(_, material)| material)
+}
+
 /// The texture layout as thin lines on a transparent picture of `size`.
 pub fn draw_layout(edges: &[[[f32; 2]; 2]], size: [usize; 2], color: [u8; 4]) -> Vec<u8> {
     let mut out = vec![0u8; size[0] * size[1] * 4];
@@ -716,6 +750,15 @@ mod tests {
         let image = draw(&squares(), &front(), &look, [64, 64], 1);
         assert!(at(&image, 64, 32, 32)[1] < 100, "dimmed");
         assert_eq!(at(&image, 64, 16, 16), [0, 0, 255, 255], "in focus");
+    }
+
+    #[test]
+    fn picking_finds_the_nearest_material_under_the_point() {
+        let mesh = squares();
+        // The small square is nearer and covers the middle.
+        assert_eq!(pick(&mesh, &front(), [64, 64], [32.0, 32.0]), Some(0));
+        assert_eq!(pick(&mesh, &front(), [64, 64], [16.0, 16.0]), Some(1));
+        assert_eq!(pick(&mesh, &front(), [64, 64], [-5.0, 32.0]), None);
     }
 
     #[test]

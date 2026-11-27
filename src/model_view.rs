@@ -134,9 +134,8 @@ pub(crate) struct ModelView {
     camera: Camera,
     look: Look,
     drag: Drag,
-    /// Show the canvas as the model's texture, on one material or on all.
+    /// Show the canvas as the model's texture.
     paint: bool,
-    material: Option<u16>,
     /// Keep whole pixels; by the canvas size until chosen.
     sharp: Option<bool>,
     show_layout: bool,
@@ -350,7 +349,7 @@ impl ModelView {
                 }
                 _ => wanted,
             };
-            (shown, self.material)
+            (shown, None)
         });
         ViewKey {
             camera: self.camera,
@@ -364,6 +363,347 @@ impl ModelView {
             samples: if moving || (busy && self.paint) { 1 } else { 2 },
         }
     }
+}
+
+/// Width of the controls beside the picture.
+const PANEL: f32 = 340.0;
+
+/// What the window asked for, done once it is closed over.
+#[derive(Default)]
+struct Asked {
+    open: bool,
+    place: bool,
+    ruler: Option<bool>,
+    /// Paint this part, or the whole model.
+    part: Option<Option<u16>>,
+}
+
+/// A model with parts that can each have a folder.
+fn has_parts(mesh: &Mesh) -> bool {
+    mesh.has_uv && mesh.materials.len() > 1
+}
+
+fn heading(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(text).strong());
+}
+
+fn controls_ui(
+    view: &mut ModelView,
+    ui: &mut egui::Ui,
+    mesh: &Mesh,
+    canvas: [usize; 2],
+    asked: &mut Asked,
+) {
+    heading(ui, "View");
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Dragging");
+        for (drag, label, hint) in [
+            (Drag::Turn, "turns it", "Dragging on the picture turns the model around"),
+            (Drag::Move, "moves it", "Dragging on the picture slides the model; the middle button always does"),
+            (Drag::Light, "moves the light", "Dragging on the picture moves where the light comes from; the right button always does"),
+        ] {
+            ui.selectable_value(&mut view.drag, drag, label).on_hover_text(hint);
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        let quarter = std::f32::consts::FRAC_PI_2;
+        for (label, yaw, pitch) in [
+            ("Front", 0.0, 0.0),
+            ("Side", quarter, 0.0),
+            ("Top", 0.0, 1.55),
+        ] {
+            if ui
+                .button(label)
+                .on_hover_text(format!("See the model from the {}", label.to_lowercase()))
+                .clicked()
+            {
+                view.camera.yaw = yaw;
+                view.camera.pitch = pitch;
+            }
+        }
+        if ui
+            .button("Reset")
+            .on_hover_text("The view as it was at first")
+            .clicked()
+        {
+            view.camera = Camera {
+                flat: view.camera.flat,
+                ..Camera::default()
+            };
+        }
+    });
+    // A slider for pens, which have no wheel.
+    let mut near = 3.6 / view.camera.distance;
+    let zoom = egui::Slider::new(&mut near, 0.1..=20.0).logarithmic(true);
+    if ui.add(zoom.show_value(false).text("Zoom")).changed() {
+        view.camera.distance = (3.6 / near).clamp(0.05, 40.0);
+    }
+    egui::CollapsingHeader::new("Perspective and shading").show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            egui::ComboBox::from_id_salt("model shading")
+                .selected_text(view.look.shading.name())
+                .show_ui(ui, |ui| {
+                    for shading in Shading::ALL {
+                        ui.selectable_value(&mut view.look.shading, shading, shading.name());
+                    }
+                });
+            ui.checkbox(&mut view.look.clay, "Plain gray")
+                .on_hover_text("Without the model's own colors and textures");
+        });
+        ui.checkbox(&mut view.camera.flat, "No perspective");
+        if !view.camera.flat {
+            let mut degrees = view.camera.field.to_degrees();
+            let field = egui::Slider::new(&mut degrees, 10.0..=100.0)
+                .integer()
+                .suffix("°");
+            if ui
+                .add(field.text("Field of view"))
+                .on_hover_text("Wide exaggerates perspective, narrow flattens it")
+                .changed()
+            {
+                // The model keeps its size while the perspective changes.
+                let field = degrees.to_radians();
+                let ratio = (view.camera.field / 2.0).tan() / (field / 2.0).tan();
+                view.camera.distance = (view.camera.distance * ratio).clamp(0.05, 40.0);
+                view.camera.field = field;
+            }
+        }
+    });
+
+    heading(ui, "Texture");
+    if !mesh.has_uv {
+        ui.weak("This model has no texture coordinates, so the canvas cannot go on it.");
+    }
+    ui.add_enabled_ui(mesh.has_uv, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut view.paint, "Canvas on the model")
+                .on_hover_text("The canvas as the model's texture, updated while you paint");
+            if view.paint {
+                let mut sharp = view.sharp(canvas);
+                if ui.checkbox(&mut sharp, "Sharp pixels").changed() {
+                    view.sharp = Some(sharp);
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut view.show_layout, "Layout on the canvas")
+                .on_hover_text(
+                    "The model's UV layout as lines over the canvas; never part of the artwork",
+                );
+        });
+        if view.show_layout {
+            ui.horizontal_wrapped(|ui| {
+                ui.add_space(ui.spacing().icon_width + ui.spacing().icon_spacing);
+                ui.label("Lines");
+                let current = view.layout_color.unwrap_or(LAYOUT_COLOR);
+                for (name, [r, g, b]) in LAYOUT_COLORS {
+                    let color = egui::Color32::from_rgba_unmultiplied(r, g, b, current.a());
+                    let chosen = current == color;
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                    ui.painter().rect_filled(
+                        rect.shrink(2.0),
+                        3.0,
+                        egui::Color32::from_rgb(r, g, b),
+                    );
+                    let outline = if chosen {
+                        ui.visuals().selection.stroke
+                    } else {
+                        ui.visuals().widgets.inactive.bg_stroke
+                    };
+                    ui.painter().rect_stroke(
+                        rect.shrink(1.0),
+                        4.0,
+                        outline,
+                        egui::StrokeKind::Inside,
+                    );
+                    if response.on_hover_text(format!("{name} lines")).clicked() {
+                        view.layout_color = Some(color);
+                    }
+                }
+                let mut color = current;
+                if ui
+                    .color_edit_button_srgba(&mut color)
+                    .on_hover_text("Any color and how strong the lines are")
+                    .changed()
+                {
+                    view.layout_color = Some(color);
+                }
+            });
+        }
+    });
+    if has_parts(mesh) {
+        parts_ui(view, ui, mesh, asked);
+    }
+
+    heading(ui, "Draw from it");
+    ui.horizontal_wrapped(|ui| {
+        asked.place = ui
+            .add_enabled(view.place.is_none(), egui::Button::new("Place as layer"))
+            .on_hover_text("Draws this view on a new layer, framed as here")
+            .clicked();
+        let mut follow = view.follow_ruler;
+        if ui
+            .add_enabled(
+                !view.camera.flat,
+                egui::Checkbox::new(&mut follow, "Draw in its perspective"),
+            )
+            .on_hover_text(
+                "A perspective ruler that matches this view while it is on, so lines \
+                 you draw around the model (a floor, a room, a building) share its \
+                 vanishing points. Turn it off to remove the ruler.",
+            )
+            .on_disabled_hover_text("Needs perspective: turn off No perspective")
+            .changed()
+        {
+            asked.ruler = Some(follow);
+        }
+    });
+}
+
+/// Which part is being painted: the whole model, or one part alone in a
+/// folder of its name.
+fn parts_ui(view: &mut ModelView, ui: &mut egui::Ui, mesh: &Mesh, asked: &mut Asked) {
+    heading(ui, "Painting");
+    // Full-width rows, names at the left.
+    let list = egui::Layout::top_down_justified(egui::Align::Min);
+    ui.with_layout(list, |ui| {
+        if ui
+            .selectable_label(view.focus.is_none(), "Whole model")
+            .on_hover_text("Layers outside the parts' folders paint every part")
+            .clicked()
+        {
+            asked.part = Some(None);
+        }
+        for material in 0..mesh.materials.len() as u16 {
+            let name = part_name(mesh, material);
+            let linked = view.links.iter().any(|(m, _)| *m == material);
+            let hint = if linked {
+                format!("Selects the \"{name}\" folder in Layers: what is in it paints only this part")
+            } else {
+                format!(
+                    "Makes a folder named \"{name}\" in Layers and selects it: what is in it paints only this part"
+                )
+            };
+            let text = if linked {
+                egui::RichText::new(name)
+            } else {
+                egui::RichText::new(format!("{name}  (no folder yet)"))
+            };
+            if ui
+                .selectable_label(view.focus == Some(material), text)
+                .on_hover_text(hint)
+                .clicked()
+            {
+                asked.part = Some(Some(material));
+            }
+        }
+    });
+    let mut dim = !view.no_highlight;
+    if ui
+        .checkbox(&mut dim, "Dim the other parts")
+        .on_hover_text("While one part is painted, the rest step back and only its layout is shown")
+        .changed()
+    {
+        view.no_highlight = !dim;
+    }
+    ui.label(
+        egui::RichText::new(
+            "Or click a part on the model. Each part paints from a folder of its name.",
+        )
+        .small()
+        .weak(),
+    );
+}
+
+/// The model, in the canvas's shape within `area`: exactly what Place as
+/// layer draws. Gives the picture's size in pixels, and whether it is moving.
+fn picture_ui(
+    view: &mut ModelView,
+    ui: &mut egui::Ui,
+    mesh: &Mesh,
+    canvas: [usize; 2],
+    area: egui::Vec2,
+    asked: &mut Asked,
+) -> ([usize; 2], bool) {
+    let shape = egui::vec2(canvas[0] as f32, canvas[1] as f32);
+    let fit = (area.x / shape.x).min(area.y / shape.y);
+    let (whole, response) = ui.allocate_exact_size(area, egui::Sense::click_and_drag());
+    let rect =
+        egui::Rect::from_center_size(whole.center(), (shape * fit).max(egui::vec2(1.0, 1.0)));
+    ui.painter()
+        .rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
+    let pixels = rect.size() * ui.ctx().pixels_per_point();
+    let scale = (MAX_PICTURE / pixels.max_elem()).min(1.0);
+    let size = [pixels.x, pixels.y].map(|v| ((v * scale).round() as usize).max(1));
+    if let Some((_, texture)) = &view.picture {
+        let all = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
+        ui.painter()
+            .image(texture.id(), rect, all, egui::Color32::WHITE);
+    }
+    let by = response.drag_delta();
+    if by != egui::Vec2::ZERO {
+        let drag = if response.dragged_by(egui::PointerButton::Middle) {
+            Drag::Move
+        } else if response.dragged_by(egui::PointerButton::Secondary) {
+            Drag::Light
+        } else {
+            view.drag
+        };
+        // Across the picture is half a turn.
+        let turn = std::f32::consts::PI / rect.size().min_elem().max(1.0);
+        match drag {
+            Drag::Turn => view.camera.orbit([by.x * turn, by.y * turn]),
+            Drag::Move => view.camera.pan(
+                [by.x, by.y],
+                [
+                    rect.width().max(1.0) as usize,
+                    rect.height().max(1.0) as usize,
+                ],
+            ),
+            Drag::Light => {
+                let [yaw, pitch] = &mut view.look.light;
+                *yaw = (*yaw + by.x * turn).rem_euclid(std::f32::consts::TAU);
+                *pitch = (*pitch - by.y * turn).clamp(-1.55, 1.55);
+            }
+        }
+    }
+    let parts = has_parts(mesh);
+    // A click picks the part under it to paint.
+    if parts
+        && response.clicked()
+        && let Some(at) = response.interact_pointer_pos()
+    {
+        let at = at - rect.min;
+        let size = [
+            rect.width().max(1.0) as usize,
+            rect.height().max(1.0) as usize,
+        ];
+        if let Some(part) = mesh_render::pick(mesh, &view.camera, size, [at.x, at.y]) {
+            asked.part = Some(Some(part));
+        }
+    }
+    if response.hovered() {
+        let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+        let factor = (scroll * 0.004).exp() * pinch;
+        if factor != 1.0 && factor.is_finite() && factor > 0.0 {
+            view.camera.zoom(factor);
+        }
+    }
+    let hint = if parts {
+        "Click a part to paint it\nMiddle button: move · right button: light · scroll or pinch: zoom"
+    } else {
+        "Middle button: move · right button: light · scroll or pinch: zoom"
+    };
+    ui.painter().text(
+        rect.left_bottom() + egui::vec2(6.0, -6.0),
+        egui::Align2::LEFT_BOTTOM,
+        hint,
+        egui::FontId::proportional(11.0),
+        ui.visuals().weak_text_color(),
+    );
+    (size, response.dragged())
 }
 
 impl Dudel {
@@ -486,34 +826,50 @@ impl Dudel {
         view.focus = focus;
     }
 
-    /// Folders at the top for the parts that have none.
-    fn make_part_folders(&mut self) {
+    /// Paint one part alone, in its folder (made when it has none), or the
+    /// whole model, on the topmost layer outside the parts' folders.
+    fn paint_part(&mut self, part: Option<u16>) {
         let Some(model) = &self.model_view.model else {
             return;
         };
         let mesh = model.mesh.clone();
-        let linked = part_folders(&self.doc, &mesh);
-        let mut names: Vec<String> = (0..mesh.materials.len() as u16)
-            .filter(|m| !linked.iter().any(|(linked, _)| linked == m))
-            .map(|m| part_name(&mesh, m))
-            .collect();
-        // Parts sharing a name share a folder.
-        let mut seen = std::collections::HashSet::new();
-        names.retain(|name| seen.insert(name.to_lowercase()));
-        // The first part ends on top.
-        names.reverse();
-        if names.is_empty() {
-            self.status = "Every part has a folder".into();
+        let links = part_folders(&self.doc, &mesh);
+        let Some(part) = part else {
+            let all = folders(&links);
+            let outside = |index: usize| {
+                let mut at = Some(index);
+                while let Some(index) = at {
+                    if all.contains(&index) {
+                        return false;
+                    }
+                    at = self.doc.parent(index);
+                }
+                true
+            };
+            match (0..self.doc.layers.len())
+                .rev()
+                .find(|&i| !self.doc.layers[i].folder && outside(i))
+            {
+                Some(index) => {
+                    self.select_layer_target(index);
+                }
+                None => self.status = "Every layer is in a part's folder".into(),
+            }
+            return;
+        };
+        if let Some((_, folder)) = links.iter().find(|(m, _)| *m == part) {
+            self.select_layer_target(*folder);
             return;
         }
         if self.render_queue.busy() {
-            self.status = "Wait for the canvas to finish, then make the folders".into();
+            self.status = "Wait for the canvas to finish, then pick the part again".into();
             return;
         }
+        let name = part_name(&mesh, part);
         self.dispatch_document_edit(
-            crate::document_edits::Edit::NewFolders(names),
-            "Folders made for the model's parts",
-            "No folders made",
+            crate::document_edits::Edit::NewFolders(vec![name]),
+            "Folder made for the part",
+            "No folder made",
         );
     }
 
@@ -547,7 +903,7 @@ impl Dudel {
     }
 
     fn pump_layout(&mut self, ctx: &egui::Context) {
-        let part = self.model_view.focus().or(self.model_view.material);
+        let part = self.model_view.focus();
         let key = (part, [self.doc.width, self.doc.height]);
         let view = &mut self.model_view;
         if view.show_layout
@@ -688,22 +1044,18 @@ impl Dudel {
             return;
         }
         let mut open = true;
-        let mut ask = false;
-        let mut place = false;
-        let mut ruler = None;
-        let mut make_folders = false;
-        let mut go_to = None;
+        let mut asked = Asked::default();
         let canvas = [self.doc.width, self.doc.height];
         let mut picture = None;
         egui::Window::new("3D model")
             .open(&mut open)
-            .default_width(430.0)
-            .default_height(620.0)
+            .default_width(780.0)
+            .default_height(560.0)
             .min_width(300.0)
             .show(ctx, |ui| {
                 let view = &mut self.model_view;
                 ui.horizontal_wrapped(|ui| {
-                    ask = ui
+                    asked.open = ui
                         .button("Open model…")
                         .on_hover_text("A .glb or .obj file")
                         .clicked();
@@ -724,286 +1076,61 @@ impl Dudel {
                     return;
                 };
                 let mesh = model.mesh.clone();
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Dragging");
-                    for (drag, label, hint) in [
-                        (Drag::Turn, "turns the model", "Dragging on the picture turns the model around"),
-                        (Drag::Move, "moves the model", "Dragging on the picture slides the model; the middle button always does"),
-                        (Drag::Light, "moves the light", "Dragging on the picture moves where the light comes from; the right button always does"),
-                    ] {
-                        ui.selectable_value(&mut view.drag, drag, label).on_hover_text(hint);
-                    }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("View from");
-                    let quarter = std::f32::consts::FRAC_PI_2;
-                    for (label, yaw, pitch) in [
-                        ("Front", 0.0, 0.0),
-                        ("Side", quarter, 0.0),
-                        ("Top", 0.0, 1.55),
-                    ] {
-                        if ui.button(label).clicked() {
-                            view.camera.yaw = yaw;
-                            view.camera.pitch = pitch;
-                        }
-                    }
-                    if ui.button("Reset").on_hover_text("The view as it was at first").clicked() {
-                        view.camera = Camera {
-                            flat: view.camera.flat,
-                            ..Camera::default()
-                        };
-                    }
-                });
-                // A slider for pens, which have no wheel.
-                let mut near = 3.6 / view.camera.distance;
-                let zoom = egui::Slider::new(&mut near, 0.1..=20.0).logarithmic(true);
-                if ui.add(zoom.show_value(false).text("Zoom")).changed() {
-                    view.camera.distance = (3.6 / near).clamp(0.05, 40.0);
-                }
-                egui::CollapsingHeader::new("Perspective and shading").show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    egui::ComboBox::from_id_salt("model shading")
-                        .selected_text(view.look.shading.name())
-                        .show_ui(ui, |ui| {
-                            for shading in Shading::ALL {
-                                ui.selectable_value(&mut view.look.shading, shading, shading.name());
-                            }
+                // The picture beside the controls when there is room, else
+                // below them.
+                let wide = ui.available_width() >= PANEL + 220.0;
+                if wide {
+                    let height = ui.available_height().max(240.0);
+                    ui.horizontal_top(|ui| {
+                        let across = ui.available_width() - PANEL - ui.spacing().item_spacing.x;
+                        picture = Some(picture_ui(view, ui, &mesh, canvas, egui::vec2(across, height), &mut asked));
+                        ui.vertical(|ui| {
+                            ui.set_width(PANEL);
+                            egui::ScrollArea::vertical()
+                                .max_height(height)
+                                .auto_shrink([false, true])
+                                .show(ui, |ui| controls_ui(view, ui, &mesh, canvas, &mut asked));
                         });
-                    ui.checkbox(&mut view.look.clay, "Plain gray")
-                        .on_hover_text("Without the model's own colors and textures");
-                    ui.checkbox(&mut view.camera.flat, "No perspective");
-                });
-                if !view.camera.flat {
-                    let mut degrees = view.camera.field.to_degrees();
-                    let field = egui::Slider::new(&mut degrees, 10.0..=100.0).integer().suffix("°");
-                    if ui
-                        .add(field.text("Field of view"))
-                        .on_hover_text("Wide exaggerates perspective, narrow flattens it")
-                        .changed()
-                    {
-                        // The model keeps its size while the perspective changes.
-                        let field = degrees.to_radians();
-                        let ratio = (view.camera.field / 2.0).tan() / (field / 2.0).tan();
-                        view.camera.distance = (view.camera.distance * ratio).clamp(0.05, 40.0);
-                        view.camera.field = field;
-                    }
-                }
-                });
-                ui.add_enabled_ui(mesh.has_uv, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.checkbox(&mut view.paint, "Show this canvas on the model")
-                            .on_hover_text("The canvas as the model's texture, updated while you paint")
-                            .on_disabled_hover_text("This model has no texture coordinates");
-                        if view.paint {
-                            let mut sharp = view.sharp(canvas);
-                            if ui.checkbox(&mut sharp, "Sharp pixels").changed() {
-                                view.sharp = Some(sharp);
-                            }
-                        }
                     });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.checkbox(&mut view.show_layout, "Show the layout on the canvas")
-                            .on_hover_text("The model's UV layout as lines over the canvas; never part of the artwork");
-                        if view.show_layout {
-                            let current = view.layout_color.unwrap_or(LAYOUT_COLOR);
-                            for (name, [r, g, b]) in LAYOUT_COLORS {
-                                let color = egui::Color32::from_rgba_unmultiplied(r, g, b, current.a());
-                                let chosen = current == color;
-                                let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-                                ui.painter().rect_filled(rect.shrink(2.0), 3.0, egui::Color32::from_rgb(r, g, b));
-                                let outline = if chosen { ui.visuals().selection.stroke } else { ui.visuals().widgets.inactive.bg_stroke };
-                                ui.painter().rect_stroke(rect.shrink(1.0), 4.0, outline, egui::StrokeKind::Inside);
-                                if response.on_hover_text(format!("{name} lines")).clicked() {
-                                    view.layout_color = Some(color);
-                                }
-                            }
-                            let mut color = current;
-                            if ui.color_edit_button_srgba(&mut color).on_hover_text("Any color and how strong the lines are").changed() {
-                                view.layout_color = Some(color);
-                            }
-                        }
-                        if mesh.materials.len() > 1 && (view.paint || view.show_layout) {
-                            let name = |m: Option<u16>| {
-                                m.and_then(|m| mesh.materials.get(m as usize))
-                                    .map_or("All materials", |m| m.name.as_str())
-                            };
-                            egui::ComboBox::from_id_salt("model material")
-                                .selected_text(name(view.material))
-                                .truncate()
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut view.material, None, "All materials");
-                                    for index in 0..mesh.materials.len() as u16 {
-                                        ui.selectable_value(&mut view.material, Some(index), name(Some(index)));
-                                    }
-                                });
-                        }
-                    });
-                });
-                if mesh.has_uv && mesh.materials.len() > 1 {
-                    egui::CollapsingHeader::new(format!("Parts ({})", mesh.materials.len()))
-                        .id_salt("model parts")
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(
-                                    "A folder named after a part paints only that part; layers outside \
-                                     the parts' folders paint them all.",
-                                )
-                                .small()
-                                .weak(),
-                            );
-                            for material in 0..mesh.materials.len() as u16 {
-                                let folder = view.links.iter().find(|(m, _)| *m == material).map(|(_, f)| *f);
-                                ui.horizontal(|ui| {
-                                    let name = part_name(&mesh, material);
-                                    let painting = view.focus == Some(material);
-                                    let text = egui::RichText::new(&name);
-                                    ui.label(if painting { text.strong() } else { text });
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        match folder {
-                                            Some(_) if painting => {
-                                                ui.weak("Painting");
-                                            }
-                                            Some(folder) => {
-                                                if ui
-                                                    .small_button("Paint it")
-                                                    .on_hover_text("Select its folder in the Layers panel")
-                                                    .clicked()
-                                                {
-                                                    go_to = Some(folder);
-                                                }
-                                            }
-                                            None => {
-                                                ui.weak("No folder");
-                                            }
-                                        }
-                                    });
-                                });
-                            }
-                            ui.horizontal_wrapped(|ui| {
-                                let missing = view.links.len() < mesh.materials.len();
-                                make_folders = ui
-                                    .add_enabled(missing, egui::Button::new("Make folders for the parts"))
-                                    .on_hover_text(
-                                        "A folder for each part without one, at the top of the layers, \
-                                         each with a layer to paint on",
-                                    )
-                                    .clicked();
-                                let mut highlight = !view.no_highlight;
-                                if ui
-                                    .checkbox(&mut highlight, "Dim the other parts")
-                                    .on_hover_text(
-                                        "While a part's folder is selected, the other parts are dimmed \
-                                         and only its layout is shown",
-                                    )
-                                    .changed()
-                                {
-                                    view.no_highlight = !highlight;
-                                }
-                            });
-                        });
+                } else {
+                    controls_ui(view, ui, &mesh, canvas, &mut asked);
+                    let area = ui.available_size().max(egui::vec2(120.0, 160.0));
+                    picture = Some(picture_ui(view, ui, &mesh, canvas, area, &mut asked));
                 }
-                ui.horizontal_wrapped(|ui| {
-                    place = ui
-                        .add_enabled(view.place.is_none(), egui::Button::new("Place as layer"))
-                        .on_hover_text("Draws this view on a new layer, framed as here")
-                        .clicked();
-                    let mut follow = view.follow_ruler;
-                    if ui
-                        .add_enabled(!view.camera.flat, egui::Checkbox::new(&mut follow, "Draw in its perspective"))
-                        .on_hover_text(
-                            "A perspective ruler that matches this view while it is on, so lines \
-                             you draw around the model (a floor, a room, a building) share its \
-                             vanishing points. Turn it off to remove the ruler.",
-                        )
-                        .on_disabled_hover_text("Needs perspective: turn off No perspective")
-                        .changed()
-                    {
-                        ruler = Some(follow);
-                    }
-                });
-                // The picture has the canvas's shape: it shows exactly what
-                // Place as layer draws.
-                let area = ui.available_size().max(egui::vec2(120.0, 160.0));
-                let shape = egui::vec2(canvas[0] as f32, canvas[1] as f32);
-                let fit = (area.x / shape.x).min(area.y / shape.y);
-                let (whole, response) = ui.allocate_exact_size(area, egui::Sense::click_and_drag());
-                let rect = egui::Rect::from_center_size(whole.center(), (shape * fit).max(egui::vec2(1.0, 1.0)));
-                ui.painter().rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
-                let pixels = rect.size() * ui.ctx().pixels_per_point();
-                let scale = (MAX_PICTURE / pixels.max_elem()).min(1.0);
-                let size = [pixels.x, pixels.y].map(|v| ((v * scale).round() as usize).max(1));
-                if let Some((_, texture)) = &view.picture {
-                    let all = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
-                    ui.painter().image(texture.id(), rect, all, egui::Color32::WHITE);
-                }
-                let by = response.drag_delta();
-                if by != egui::Vec2::ZERO {
-                    let drag = if response.dragged_by(egui::PointerButton::Middle) {
-                        Drag::Move
-                    } else if response.dragged_by(egui::PointerButton::Secondary) {
-                        Drag::Light
-                    } else {
-                        view.drag
-                    };
-                    // Across the picture is half a turn.
-                    let turn = std::f32::consts::PI / rect.size().min_elem().max(1.0);
-                    match drag {
-                        Drag::Turn => view.camera.orbit([by.x * turn, by.y * turn]),
-                        Drag::Move => view.camera.pan(
-                            [by.x, by.y],
-                            [rect.width().max(1.0) as usize, rect.height().max(1.0) as usize],
-                        ),
-                        Drag::Light => {
-                            let [yaw, pitch] = &mut view.look.light;
-                            *yaw = (*yaw + by.x * turn).rem_euclid(std::f32::consts::TAU);
-                            *pitch = (*pitch - by.y * turn).clamp(-1.55, 1.55);
-                        }
-                    }
-                }
-                if response.hovered() {
-                    let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
-                    let factor = (scroll * 0.004).exp() * pinch;
-                    if factor != 1.0 && factor.is_finite() && factor > 0.0 {
-                        view.camera.zoom(factor);
-                    }
-                }
-                ui.painter().text(
-                    rect.left_bottom() + egui::vec2(6.0, -6.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    "Middle button: move · right button: light · scroll or pinch: zoom",
-                    egui::FontId::proportional(11.0),
-                    ui.visuals().weak_text_color(),
-                );
-                picture = Some((size, response.dragged()));
             });
         self.model_view.open = open;
         if let Some((size, moving)) = picture {
             self.pump_model(ctx, size, moving);
             self.pump_layout(ctx);
         }
-        if ask {
+        if asked.open {
             self.ask_for_model();
         }
-        if place {
+        if asked.place {
             self.place_model();
         }
-        if make_folders {
-            self.make_part_folders();
+        if let Some(part) = asked.part {
+            self.paint_part(part);
         }
-        if let Some(folder) = go_to {
-            self.select_layer_target(folder);
-        }
-        if let Some(on) = ruler {
+        if let Some(on) = asked.ruler {
             self.set_model_ruler(on);
         } else if self.model_view.open {
             self.follow_model_ruler();
         }
     }
 
-    /// A ball wearing the canvas, for screenshots.
+    /// A ball in two parts wearing the canvas, for screenshots.
     pub(crate) fn model_capture_fixture(&mut self) {
         self.model_view.wait = true;
-        self.model_view.show("ball.glb".into(), mesh::sphere(24));
+        let mut ball = mesh::sphere(24);
+        ball.materials[0].name = "Body".into();
+        ball.materials.push(mesh::Material::plain("Band"));
+        for (index, triangle) in ball.triangles.clone().iter().enumerate() {
+            if ball.vertices[triangle[0] as usize].at[1].abs() < 0.25 {
+                ball.material[index] = 1;
+            }
+        }
+        self.model_view.show("ball.glb".into(), ball);
         self.model_view.paint = true;
         self.model_view.show_layout = true;
         self.model_view.camera.yaw = std::f32::consts::PI;
@@ -1093,7 +1220,9 @@ mod tests {
     fn each_part_wears_its_own_folder_and_every_part_the_rest() {
         let mut app = with_parts();
         let ctx = egui::Context::default();
-        app.make_part_folders();
+        // Picking a part without a folder makes one for it.
+        app.paint_part(Some(1));
+        app.paint_part(Some(0));
         let names: Vec<_> = app
             .doc
             .layers
@@ -1101,10 +1230,10 @@ mod tests {
             .filter(|l| l.folder)
             .map(|l| l.name.clone())
             .collect();
-        assert_eq!(names, ["Part 2", "Body"], "the first part on top");
-        // Making them again makes none.
+        assert_eq!(names, ["Part 2", "Body"], "the newest on top");
+        // Picking it again makes none.
         let layers = app.doc.layers.len();
-        app.make_part_folders();
+        app.paint_part(Some(0));
         assert_eq!(app.doc.layers.len(), layers);
         // Red in Body's folder, blue in the unnamed part's, green outside.
         let fill = |app: &mut Dudel, index: usize, color: [u8; 4]| {
@@ -1154,15 +1283,17 @@ mod tests {
             "the top folder's layer is active"
         );
         assert_eq!(app.model_view.key([32, 32], [10, 10], false).focus, Some(0));
-        app.select_layer_target(0);
+        app.paint_part(None);
         frame(&mut app, &ctx);
+        assert_eq!(app.doc.active, 0, "the whole model: a layer outside");
         assert_eq!(app.model_view.focus, None);
-        app.select_layer_target(other - 1);
+        app.paint_part(Some(1));
         frame(&mut app, &ctx);
         assert_eq!(app.model_view.focus, Some(1));
         app.model_view.no_highlight = true;
         assert_eq!(app.model_view.key([32, 32], [10, 10], false).focus, None);
-        // Making the folders undoes in one step.
+        // Each folder made undoes in one step.
+        app.undo();
         app.undo();
         assert!(
             app.doc.layers.iter().all(|l| !l.folder),
