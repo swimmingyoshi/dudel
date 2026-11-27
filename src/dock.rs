@@ -794,14 +794,15 @@ impl Dudel {
         }
     }
 
-    /// The canvas. A docked canvas's tab names what a stroke edits, so the
-    /// strip above it only appears when it has something to act on (a locked
-    /// layer, a selection, a mask); Float, without a tab, keeps the strip.
+    /// The canvas. A docked canvas's tab names what a stroke edits, so what
+    /// would go in a strip above it (a locked layer, a selection, a mask)
+    /// floats over its top instead, and the view never moves when it comes
+    /// and goes; Float, without a tab, keeps the strip.
     fn canvas_tab_ui(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, packets: &[input::Packet]) {
         let tabbed = !canvas_outside(self.interface.layout);
-        if !tabbed || self.editing_target_has_actions() {
+        if !tabbed {
             egui::TopBottomPanel::top("editing target")
-                .show_inside(ui, |ui| self.editing_target_strip(ui, !tabbed));
+                .show_inside(ui, |ui| self.editing_target_strip(ui, true));
         }
         let rect = ui.available_rect_before_wrap();
         ui.painter().rect_filled(
@@ -810,6 +811,33 @@ impl Dudel {
             crate::color_wheel::color32(self.canvas_background()),
         );
         self.canvas_ui(ctx, ui, packets);
+        if tabbed && self.editing_target_has_actions() {
+            self.editing_target_notice(ctx, rect);
+        }
+    }
+
+    /// The editing target's warnings and actions, floating at the top of
+    /// the canvas: its own layer, so clicks on it never reach the canvas.
+    fn editing_target_notice(&mut self, ctx: &egui::Context, canvas: egui::Rect) {
+        let below_ruler = if self.show_rulers {
+            crate::guides::RULER
+        } else {
+            0.0
+        };
+        let top = canvas.center_top() + egui::vec2(0.0, below_ruler + 8.0);
+        egui::Area::new(egui::Id::new("editing target notice"))
+            .order(egui::Order::Middle)
+            .pivot(egui::Align2::CENTER_TOP)
+            .fixed_pos(top)
+            .constrain_to(canvas)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style())
+                    .inner_margin(egui::Margin::symmetric(10, 4))
+                    .show(ui, |ui| {
+                        ui.set_max_width((canvas.width() - 32.0).max(120.0));
+                        self.editing_target_strip(ui, false);
+                    });
+            });
     }
 }
 
