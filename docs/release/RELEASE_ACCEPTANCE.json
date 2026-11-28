@@ -1,20 +1,20 @@
 {
-  "version": "0.6.2",
+  "version": "0.7.0",
   "status": "ready_for_publication",
-  "decision_date": "2026-11-23",
+  "decision_date": "2026-11-27",
   "decision": "RELEASE_DECISION.md",
   "scope": "Windows x64 pre-release for outside testers, with the recorded evidence and disclosed support limits",
-  "application_source": "this repository's source at commit be2ef23; later commits change documents only, and the v0.6.2 tag names the final release-records commit",
-  "changes_since_previous_acceptance": "0.6.2: Restart now reopens Dudel when nothing is unsaved. Evidence: local Verify Full, both packaging gates and a packaged startup; the fix in Windows Sandbox on a patched 0.6.0; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.6.1 binaries: dudel.exe 97852B79...BEFE3981, dudel_thumbnails.dll BD947B1C...7D29A3FE.",
+  "application_source": "this repository's source at commit c4106d7; later commits change documents only, and the v0.7.0 tag names the final release-records commit",
+  "changes_since_previous_acceptance": "0.7.0: 3D models (view, texture preview, parts painted from folders, perspective ruler, place as layer), Liquify, the Color sphere, What's new, an icon, movable dialogs, a clearer Timelapse window with recent recordings, the wet-paint rim fix and the welcome and setup design pass. Evidence: local Verify Full, both packaging gates and a packaged startup; hosted Windows and Linux CI on the records commit before the tag. See RELEASE_DECISION.md. Previous accepted 0.6.2 binaries: dudel.exe C4CDF172...880D6A49, dudel_thumbnails.dll 7F40782A...B25824DF.",
   "public_release_published": false,
   "artifacts": [
     {
       "path": "dudel.exe",
-      "sha256": "C4CDF1723B52E2CA4003C53FFFE119B2C951FD8DE3254EB7E0C82545880D6A49"
+      "sha256": "93D39AFE59D6A87C8039191AB681603F02F10B28BD8C2D261AC9FF2F1CEB3A77"
     },
     {
       "path": "dudel_thumbnails.dll",
-      "sha256": "7F40782A8121E792CA2EA7FADC5061D573E7992056138E6CB1BD5126B25824DF"
+      "sha256": "13EDFEED34FB0AF98384753552AEEFCA87872B97FAD493B6B5D0173ECFF4B115"
     }
   ]
 }

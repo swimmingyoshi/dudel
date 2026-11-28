@@ -1,8 +1,50 @@
-# Windows 0.6.2 release decision — 2026-11-23
+# Windows 0.7.0 release decision — 2026-11-27
 
 > This is the maintainers' acceptance record for the packaged release. The
 > measurement files and audits it names were moved to the project's archive on
 > 2026-11-09; their names are kept so each claim stays traceable.
+
+**Release preparation for 0.7.0 is accepted as a pre-release for outside
+testers,** at the owner's request on 2026-11-27. The earlier decisions that
+follow remain the record for the evidence carried over.
+
+**Application source:** commit `c4106d7`; later commits change documents only.
+[RELEASE_ACCEPTANCE.json](RELEASE_ACCEPTANCE.json) pins the binaries, EXE
+`93D39AFE...1CEB3A77` and DLL `13EDFEED...4FF4B115`, and release packaging refuses
+different bytes.
+
+**What changed since 0.6.2** (see [release notes](../../RELEASE_NOTES.md)):
+3D models to draw from and to preview textures on, with parts painted from
+folders of their names; Liquify; the Color sphere; What's new after updates;
+an application icon; movable dialogs; a clearer Timelapse window; no pale
+rims on wet paint; canvas notices over the canvas; and a design pass on the
+welcome window and first-time setup.
+
+**Evidence on this build:**
+
+- Local `scripts/Verify.ps1 -Mode Full -SkipReleaseBuild` on `7895e9d` (the
+  following commit changes the quick start only): the full suite with the
+  diagnostic-feature and DLL tests, formatting, Clippy, the Python tests and
+  the public-tree check. Packaging made the release builds.
+- Candidate `dudel-0.7.0-candidate-20261128-042632-225`: `Package.ps1` ran end
+  to end, with 0 public-tree problems in the package and its source ZIP. The
+  package matches its file list, and its executable started.
+- Master at `f9d829b` (all 0.7 work but Liquify and the design pass) passed
+  hosted Windows and Linux CI.
+- The owner tried the 3D window, its parts and the Timelapse thumbnails with
+  a pen during development.
+- Hosted Windows and Linux CI must pass on the release-records commit before
+  the `v0.7.0` tag is made; the tag is the record that they did.
+
+**Not run on this build:** an update to it (possible once published), Liquify
+with a pen, an N edition of Windows, an offline rebuild of the source ZIP,
+the private CSP corpus comparison, the resource and two-hour studies, and a
+launch of the Linux build.
+
+**Known limits** are listed under "Limits of 3D models" and "Known limits" in
+the release notes.
+
+# Windows 0.6.2 release decision — 2026-11-23
 
 **Release preparation for 0.6.2 is accepted as a pre-release for outside
 testers,** at the owner's request on 2026-11-23. The earlier decisions that
