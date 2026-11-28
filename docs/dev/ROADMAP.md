@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-26, after 0.6.2. This replaces the earlier plan
+Updated 2026-11-27, with 0.7.0. This replaces the earlier plan
 files; their history is kept in the project's archive.
 
 ## Direction
@@ -182,7 +182,8 @@ planned as 0.6.3 ship with it.
 - [x] Color sphere; Timelapse thumbnails; canvas notices float over the
       canvas (2026-11-27).
 - [ ] The owner's pen pass on 3D models.
-- [ ] The design pass on windows and dialogs (below).
+- [x] A light design pass: welcome and first-time setup (2026-11-27); the
+      rest of the windows below.
 
 0.8: 3D layers (editable camera, saved in the project). Painting directly on
 the model is decided after that; posable figures are not planned.

@@ -4,11 +4,23 @@ Windows x64 is the supported platform; Linux builds are experimental. Each
 release is a portable ZIP: extract it and run `dudel.exe` (see the
 [README](README.md#download-and-install)).
 
-## Unreleased
+## 0.7.0 (2026-11-27)
 
-3D models to draw from and to preview textures on, and a window that shows
-what changed after an update. Projects and file formats are unchanged from
-0.6.2.
+3D models to draw from and to paint textures for, Liquify, a Color sphere,
+and a window that shows what changed after an update. Projects and file
+formats are unchanged from 0.6.2.
+
+### Highlights
+
+- **3D models:** open a GLB or OBJ file to turn, light and draw from, see the
+  canvas on it as its texture while you paint, and give each part of the
+  model a folder of its own.
+- **Liquify:** push, twirl, pinch and swell pixels with a brush.
+- **Color sphere:** pick shades of a color from a lit ball.
+- **What's new** after every update, an icon, movable dialogs and a clearer
+  Timelapse window.
+
+### 3D models
 
 - **3D models:** **View > 3D model** opens a GLB or OBJ file to turn, light and
   draw from. **Place as layer** draws the view on a new layer, and **Draw in
@@ -24,6 +36,9 @@ what changed after an update. Projects and file formats are unchanged from
   folder of its name in Layers, and what is in that folder paints only that
   part. **Whole model** goes back to the layers that paint every part. While
   one part is painted, the others are dimmed and only its layout is shown.
+
+### Painting
+
 - **Liquify:** a new brush mode beside Smudge and Blur, and a **Liquify**
   brush in the Brush tool. **Push** moves the pixels along with the stroke;
   **Twirl right** and **Twirl left** turn them around the brush (circle over
@@ -33,15 +48,27 @@ what changed after an update. Projects and file formats are unchanged from
 - **Color sphere:** under the color wheel, the current color on a lit ball.
   Click or drag on it to pick a shade, from the highlight to the core shadow,
   with warm light and cool shadows or plain light.
-- **An icon:** Dudel's window, shortcuts and `.dudel` files have an icon of
-  their own. Windows may show the old one until it refreshes its icon cache.
-- **Movable dialogs:** Welcome, Updates, What's new, questions and the other
-  small windows can be dragged by their title. They open centered each time.
-
 - **No pale rims on wet paint:** a wet brush carrying paint no longer lifts
   the paint under it, and drying washes no longer thin the paint beneath
   them, so washes over a filled or painted area keep it opaque instead of
   showing the canvas as a white halo. Only nearly clear water lifts paint.
+
+### Windows and timelapse
+
+- **What's new:** the first start after an update lists what changed in every
+  version since the one you had, so skipped versions are not missed. **Help >
+  What's new** shows it any time, for every version, without a connection.
+- **Check for updates** shows the notes of every version you would skip, not
+  only the newest, and formats them.
+- **An icon:** Dudel's window, shortcuts and `.dudel` files have an icon of
+  their own. Windows may show the old one until it refreshes its icon cache.
+- **Movable dialogs:** Welcome, Updates, What's new, questions and the other
+  small windows can be dragged by their title. They open centered each time.
+- **Canvas notices** (a hidden or locked layer, an active selection) float
+  over the top of the canvas instead of pushing it down, so the view stays
+  still when they come and go.
+- **Welcome and first-time setup** have a clearer layout: the icon, quieter
+  section headings, shortcuts shown as keys, and numbered setup steps.
 - **A clearer Timelapse window:** what is being recorded and the next step
   first, labelled speed and length, MP4 as the main export, and a list of
   your recent recordings, each with a picture of its last frame, to view or
@@ -52,6 +79,9 @@ what changed after an update. Projects and file formats are unchanged from
   **Continue on this canvas**, after opening an earlier recording in the
   Timelapse window, picks up any recording of the canvas's size by hand,
   such as one lost in a crash before this version.
+
+### Fixes
+
 - **Minimizing:** minimizing Dudel squeezed the palette columns, which stayed
   squeezed after restoring, and could close Dudel at the next pen stroke. The
   window now keeps its layout while minimized. An arrangement already squeezed
@@ -59,12 +89,6 @@ what changed after an update. Projects and file formats are unchanged from
 - **Fewer crashes:** should any part of the window still be laid out at an
   impossible position, Dudel repairs it and writes a problem report instead
   of closing.
-
-- **What's new:** the first start after an update lists what changed in every
-  version since the one you had, so skipped versions are not missed. **Help >
-  What's new** shows it any time, for every version, without a connection.
-- **Check for updates** shows the notes of every version you would skip, not
-  only the newest, and formats them.
 
 ### Limits of 3D models
 
