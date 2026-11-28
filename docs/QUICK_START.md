@@ -28,16 +28,21 @@ when you ask.
 
 ## Draw from a 3D model
 
-Open **View > 3D model**, or drop a `.glb` or `.obj` file on the window. Drag to
-turn the model; **Move** and **Light** change what dragging does (the middle and
-right buttons do the same), and Zoom or the wheel brings it nearer. The picture
-has the canvas's shape: **Place as layer** draws exactly that on a new layer.
-**Perspective ruler** makes strokes follow the model's perspective; press it
-again after turning the model to move the ruler.
+Open **View > 3D model**, or drop a `.glb` or `.obj` file on the window. The
+model sits beside its controls. **Dragging** turns it, moves it or moves the
+light (the middle and right buttons always move it and the light), and Zoom
+or the wheel brings it nearer; **Front**, **Side** and **Top** turn it to face
+you. The picture has the canvas's shape: **Place as layer** draws exactly that
+on a new layer. **Draw in its perspective** keeps a perspective ruler matched
+to the view, so strokes around the model follow its perspective; turn it off
+to remove the ruler.
 
-To paint a texture, turn on **Show this canvas on the model**. The model updates
-as you paint, and **Show the layout on the canvas** shows where each part of it
-is. Choose a material if the canvas is the texture of only one.
+To paint a texture, turn on **Canvas on the model**. The model updates as you
+paint, and **Layout on the canvas** shows where each part of it is, in a line
+color you choose. A model with several parts lists them under **Painting**:
+pick one, or click it on the model, and it gets a folder of its name in
+Layers; what you paint in that folder goes only on that part. **Whole model**
+goes back to the layers outside the parts' folders, which paint every part.
 
 ## Find actions and keep track of your target
 
@@ -484,8 +489,9 @@ section instead.
 The tool property's **Basic** page keeps Mode, Size, Opacity, Stabilizer and
 Follow visible. **Mode** turns any brush into a **Smudge** brush, which drags the
 paint under it along the stroke like a finger, or a **Blur** brush, which softens
-it; Opacity sets how strongly. The built-in **Smudge** and **Blur** presets are
-ready-made ones. Both work on the layer's own paint, honor selections and Lock
+it, or a **Liquify** brush, which pushes, twirls, pinches or swells the pixels
+under it (choose under **Warp**); Opacity sets how strongly. The built-in
+**Smudge**, **Blur** and **Liquify** presets are ready-made ones. Both work on the layer's own paint, honor selections and Lock
 transparency, and ignore Taper out; the pen's eraser end still erases. Expand **Paint & pressure** for Flow, Hardness and pressure controls;
 use **Tip**, **Texture** and **Advanced** for detailed tuning.
 
