@@ -448,6 +448,7 @@ fn blend_rows(
         );
     }
     let layer_id = layer.id;
+    let liquify = brush.blend == crate::brush::Blend::Liquify;
     // Dry media stays dry.
     let watering = wet && target.is_raster() && kind != Some(crate::material::Kind::Dry);
     let span = (right - left + 1) as usize;
@@ -484,6 +485,12 @@ fn blend_rows(
             |px, py, a, ceiling, entry, pixel| {
                 if entry.1 < 0.0 {
                     *entry = ((&*pixel).try_into().unwrap(), 0.0);
+                }
+                if liquify {
+                    let source =
+                        scratch.warped(brush.warp, raster.position, raster.smear, a, px, py);
+                    crate::blend_brush::mix(pixel, source, 1.0, alpha_locked, false);
+                    return 0.0;
                 }
                 let source = scratch.source(brush.blend, raster.smear, px, py);
                 if !wet {
@@ -539,7 +546,12 @@ fn blend_rows(
             };
             let column = (px - left) as usize;
             let (px, py) = (px as usize, py as usize);
-            let source = scratch.source(brush.blend, raster.smear, px, py);
+            let (source, amount) = if liquify {
+                let warped = scratch.warped(brush.warp, raster.position, raster.smear, a, px, py);
+                (warped, 1.0)
+            } else {
+                (scratch.source(brush.blend, raster.smear, px, py), a)
+            };
             writer.edit(px, py, |pixel| {
                 if let Some(buffer) = buffer.as_deref_mut() {
                     buffer.remember_at(active, px, py, pixel);
@@ -573,7 +585,15 @@ fn blend_rows(
                         water[column] = strength.min(1.0) * raster.wetness;
                     }
                 } else {
-                    crate::blend_brush::mix(pixel, source, a, alpha_locked, pigment);
+                    // Liquify takes its source outright, as paint and not
+                    // as a pigment mix.
+                    crate::blend_brush::mix(
+                        pixel,
+                        source,
+                        amount,
+                        alpha_locked,
+                        pigment && !liquify,
+                    );
                 }
             });
         }

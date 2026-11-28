@@ -2596,6 +2596,20 @@ pub fn default_brushes() -> Vec<Brush> {
             ..Brush::default()
         },
         Brush {
+            name: "Liquify".into(),
+            group: Some(BrushGroup::Brush),
+            tags: "liquify, warp, push, twirl, pinch, swell".into(),
+            size: 80.0,
+            opacity: 0.7,
+            hardness: 0.0,
+            spacing: 0.1,
+            pressure_size: false,
+            pressure_opacity: true,
+            softness_profile: crate::brush::SoftnessProfile::Eased,
+            blend: crate::brush::Blend::Liquify,
+            ..Brush::default()
+        },
+        Brush {
             name: "Blending wash".into(),
             group: Some(BrushGroup::Brush),
             tags: "paint, blending, soft".into(),

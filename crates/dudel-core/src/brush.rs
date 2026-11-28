@@ -222,6 +222,9 @@ pub struct Brush {
     /// Paint with the color, or smudge or blur what is already there.
     #[serde(default, skip_serializing_if = "Blend::is_paint")]
     pub blend: Blend,
+    /// What a Liquify brush does.
+    #[serde(default, skip_serializing_if = "Warp::is_push")]
+    pub warp: Warp,
     /// Pixel art: each dab covers whole pixels with no soft edge, dabs land
     /// on every pixel the stroke crosses, and a one-pixel line drops the
     /// doubled pixel at each corner (`stroke::PixelPath`).
@@ -242,12 +245,20 @@ pub enum Blend {
     /// Paint with water: blends into paint that is still wet, and keeps
     /// spreading until it dries.
     Wet,
+    /// Push, twirl, pinch or swell the pixels under the tip (`Warp`).
+    Liquify,
 }
 impl Blend {
-    pub const ALL: [Blend; 4] = [Self::Paint, Self::Wet, Self::Smudge, Self::Blur];
-    /// Smudge and blur move paint that is already there.
+    pub const ALL: [Blend; 5] = [
+        Self::Paint,
+        Self::Wet,
+        Self::Smudge,
+        Self::Blur,
+        Self::Liquify,
+    ];
+    /// Smudge, blur and liquify move paint that is already there.
     pub fn moves_paint(&self) -> bool {
-        matches!(self, Self::Smudge | Self::Blur)
+        matches!(self, Self::Smudge | Self::Blur | Self::Liquify)
     }
     pub fn is_paint(&self) -> bool {
         *self == Self::Paint
@@ -258,6 +269,7 @@ impl Blend {
             Self::Smudge => "Smudge",
             Self::Blur => "Blur",
             Self::Wet => "Wet",
+            Self::Liquify => "Liquify",
         }
     }
     pub fn hint(self) -> &'static str {
@@ -272,6 +284,59 @@ impl Blend {
             Self::Wet => {
                 "Paint with water: blends into paint that is still wet and keeps spreading until it dries · flow sets how fast paint builds · taper out does not apply"
             }
+            Self::Liquify => {
+                "Push, twirl, pinch or swell the pixels under the brush · opacity sets the strength · taper out does not apply"
+            }
+        }
+    }
+}
+
+/// How a Liquify brush moves the pixels under it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Warp {
+    /// Along with the stroke.
+    #[default]
+    Push,
+    /// Around the tip's center, clockwise.
+    TwirlRight,
+    /// Around the tip's center, counterclockwise.
+    TwirlLeft,
+    /// Toward the tip's center, making what is there smaller.
+    Pinch,
+    /// Away from the tip's center, making what is there larger.
+    Swell,
+}
+impl Warp {
+    pub const ALL: [Warp; 5] = [
+        Self::Push,
+        Self::TwirlRight,
+        Self::TwirlLeft,
+        Self::Pinch,
+        Self::Swell,
+    ];
+    pub fn is_push(&self) -> bool {
+        *self == Self::Push
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Push => "Push",
+            Self::TwirlRight => "Twirl right",
+            Self::TwirlLeft => "Twirl left",
+            Self::Pinch => "Pinch",
+            Self::Swell => "Swell",
+        }
+    }
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::Push => "Pushes the pixels along with the stroke",
+            Self::TwirlRight => {
+                "Turns the pixels clockwise around the brush; circle over a spot to turn it further"
+            }
+            Self::TwirlLeft => {
+                "Turns the pixels counterclockwise around the brush; circle over a spot to turn it further"
+            }
+            Self::Pinch => "Draws the pixels in toward the brush, making what is there smaller",
+            Self::Swell => "Spreads the pixels out from the brush, making what is there larger",
         }
     }
 }
@@ -381,6 +446,7 @@ impl Default for Brush {
             thickness: 0.5,
             pigment: 1.0,
             blend: Blend::Paint,
+            warp: Warp::Push,
             pixel: false,
         }
     }

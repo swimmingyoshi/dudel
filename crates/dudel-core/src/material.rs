@@ -326,6 +326,10 @@ pub fn touch_relief(
     touch: &Touch,
     coverage: &(impl Fn(i32, i32) -> Option<(f32, f32)> + Sync),
 ) {
+    // Liquify leaves the relief as it is.
+    if !touch.erase && touch.blend == crate::brush::Blend::Liquify {
+        return;
+    }
     let smearing = !touch.erase && touch.blend.moves_paint();
     if !(touch.erase || smearing || touch.thickness > 0.0) {
         return;
@@ -503,6 +507,10 @@ pub fn touch_relief_by_pixel(
     touch: &Touch,
     coverage: &impl Fn(i32, i32) -> Option<(f32, f32)>,
 ) {
+    // Liquify leaves the relief as it is.
+    if !touch.erase && touch.blend == crate::brush::Blend::Liquify {
+        return;
+    }
     let smearing = !touch.erase && touch.blend.moves_paint();
     if !(touch.erase || smearing || touch.thickness > 0.0) {
         return;

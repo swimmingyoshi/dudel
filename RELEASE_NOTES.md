@@ -24,6 +24,12 @@ what changed after an update. Projects and file formats are unchanged from
   folder of its name in Layers, and what is in that folder paints only that
   part. **Whole model** goes back to the layers that paint every part. While
   one part is painted, the others are dimmed and only its layout is shown.
+- **Liquify:** a new brush mode beside Smudge and Blur, and a **Liquify**
+  brush in the Brush tool. **Push** moves the pixels along with the stroke;
+  **Twirl right** and **Twirl left** turn them around the brush (circle over
+  a spot to turn it further); **Pinch** and **Swell** make what is under the
+  brush smaller or larger. Opacity sets the strength, and a stroke undoes in
+  one step.
 - **Color sphere:** under the color wheel, the current color on a lit ball.
   Click or drag on it to pick a shade, from the highlight to the core shadow,
   with warm light and cool shadows or plain light.

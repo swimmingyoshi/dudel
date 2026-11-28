@@ -857,6 +857,15 @@ impl Dudel {
                     .on_hover_text(blend.hint());
             }
         });
+        if self.brush.blend == crate::brush::Blend::Liquify {
+            choice_row(ui, |ui| {
+                ui.label("Warp");
+                for warp in crate::brush::Warp::ALL {
+                    ui.selectable_value(&mut self.brush.warp, warp, warp.name())
+                        .on_hover_text(warp.hint());
+                }
+            });
+        }
     }
 
     /// Water and pigment for Wet brushes.

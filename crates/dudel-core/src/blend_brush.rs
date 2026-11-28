@@ -8,10 +8,13 @@
 //! - **Smudge** reads the layer where the previous dab was, so paint is
 //!   carried along the stroke.
 //! - **Blur** reads a box-blurred copy of the area around the dab.
+//! - **Liquify** reads where the dab's warp sends each pixel (`warped`),
+//!   smoothly between pixels, and takes that outright: the warp fades with
+//!   the tip, so a soft tip bends the image without a seam.
 //!
 //! The stroke buffer records each pixel's original before it first changes,
 //! so cancel and undo work as for painting.
-use crate::brush::Blend;
+use crate::brush::{Blend, Warp};
 
 /// Premultiplied RGBA in 0..=1 for one dab's readable area.
 #[derive(Default)]
@@ -123,6 +126,7 @@ pub fn capture(
     let reach = match blend {
         Blend::Smudge => smear[0].abs().max(smear[1].abs()).ceil() as i32 + 2,
         Blend::Blur | Blend::Wet => blur_radius(radius) as i32,
+        Blend::Liquify => liquify_reach(smear, radius),
         Blend::Paint => 0,
     };
     let clamp = |v: i32, limit: usize| v.clamp(0, limit as i32) as usize;
@@ -408,6 +412,104 @@ impl Scratch {
     }
 }
 
+/// Turn per Liquify dab at full strength, in radians.
+const TWIRL: f32 = 0.2;
+/// Scale per Pinch or Swell dab at full strength.
+const PINCH: f32 = 0.1;
+
+/// How far a Liquify dab can read from the pixel it changes.
+fn liquify_reach(smear: [f32; 2], radius: f32) -> i32 {
+    let push = smear[0].hypot(smear[1]);
+    // A twirl moves a pixel at most its distance times the angle, a pinch
+    // its distance times the scale.
+    (push + radius * TWIRL.max(PINCH) * 1.2).ceil() as i32 + 3
+}
+
+/// Where a Liquify dab centered at `center` sends the pixel centered at
+/// `at` for its look, by `amount` of the full warp.
+pub fn warp_source(
+    warp: Warp,
+    center: [f32; 2],
+    smear: [f32; 2],
+    amount: f32,
+    at: [f32; 2],
+) -> [f32; 2] {
+    let rel = [at[0] - center[0], at[1] - center[1]];
+    let turn = |angle: f32| {
+        // A pixel shows what was `angle` back around the center; y runs
+        // down, so a positive angle turns the picture clockwise.
+        let (sin, cos) = (-angle).sin_cos();
+        [
+            center[0] + rel[0] * cos - rel[1] * sin,
+            center[1] + rel[0] * sin + rel[1] * cos,
+        ]
+    };
+    let scale = |by: f32| [center[0] + rel[0] * by, center[1] + rel[1] * by];
+    match warp {
+        Warp::Push => [at[0] - smear[0] * amount, at[1] - smear[1] * amount],
+        Warp::TwirlRight => turn(TWIRL * amount),
+        Warp::TwirlLeft => turn(-TWIRL * amount),
+        Warp::Pinch => scale(1.0 + PINCH * amount),
+        Warp::Swell => scale(1.0 / (1.0 + PINCH * amount)),
+    }
+}
+
+/// Catmull-Rom weights for the four samples around a point `t` past the
+/// second.
+fn cubic_weights(t: f32) -> [f32; 4] {
+    let (t2, t3) = (t * t, t * t * t);
+    [
+        0.5 * (-t3 + 2.0 * t2 - t),
+        0.5 * (3.0 * t3 - 5.0 * t2 + 2.0),
+        0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+        0.5 * (t3 - t2),
+    ]
+}
+
+impl Scratch {
+    /// Liquify: what the pixel at (`x`, `y`) shows after the dab's warp,
+    /// read with a cubic (sharper than between-pixels reading, so the
+    /// many small warps of a stroke soften the image less), held inside
+    /// the copy.
+    pub fn warped(
+        &self,
+        warp: Warp,
+        center: [f32; 2],
+        smear: [f32; 2],
+        amount: f32,
+        x: usize,
+        y: usize,
+    ) -> [f32; 4] {
+        let at = [x as f32 + 0.5, y as f32 + 0.5];
+        let [sx, sy] = warp_source(warp, center, smear, amount, at);
+        let (fx, fy) = (sx - 0.5, sy - 0.5);
+        let (x0, y0) = (fx.floor(), fy.floor());
+        let (wx, wy) = (cubic_weights(fx - x0), cubic_weights(fy - y0));
+        let clamp = |v: f32, low: usize, high: usize| {
+            (v as i64).clamp(low as i64, high as i64 - 1) as usize
+        };
+        let mut out = [0.0f32; 4];
+        for (j, wy) in wy.iter().enumerate() {
+            let py = clamp(y0 + j as f32 - 1.0, self.rect[1], self.rect[3]);
+            for (i, wx) in wx.iter().enumerate() {
+                let px = clamp(x0 + i as f32 - 1.0, self.rect[0], self.rect[2]);
+                let value = self.at(px, py);
+                let w = wx * wy;
+                for c in 0..4 {
+                    out[c] += value[c] * w;
+                }
+            }
+        }
+        // The cubic overshoots at hard edges: keep a valid premultiplied
+        // color.
+        out[3] = out[3].clamp(0.0, 1.0);
+        for c in 0..3 {
+            out[c] = out[c].clamp(0.0, out[3]);
+        }
+        out
+    }
+}
+
 /// Move `pixel` toward premultiplied `source` by `amount`. Lock transparency
 /// keeps the pixel's alpha and changes only its color. With `pigment`, the
 /// colors mix as paint does (`pigment::mix`).
@@ -686,8 +788,92 @@ mod tests {
     }
 
     #[test]
+    fn warps_move_pixels_the_way_their_names_say() {
+        let center = [50.0, 50.0];
+        let at = [60.0, 50.0];
+        let distance = |p: [f32; 2]| (p[0] - center[0]).hypot(p[1] - center[1]);
+        for warp in Warp::ALL {
+            assert_eq!(
+                warp_source(warp, center, [3.0, 0.0], 0.0, at),
+                at,
+                "{warp:?} at no strength"
+            );
+        }
+        // Push: a pixel shows what was behind it along the stroke.
+        assert_eq!(
+            warp_source(Warp::Push, center, [4.0, -2.0], 0.5, at),
+            [58.0, 51.0]
+        );
+        // Twirls keep the distance; right turns the picture clockwise, so the
+        // pixel right of the center shows what was above it (y runs down).
+        for (warp, above) in [(Warp::TwirlRight, true), (Warp::TwirlLeft, false)] {
+            let from = warp_source(warp, center, [0.0; 2], 1.0, at);
+            assert!((distance(from) - 10.0).abs() < 1e-3, "{warp:?}");
+            assert_eq!(from[1] < 50.0, above, "{warp:?} {from:?}");
+        }
+        // Pinch reads from farther out (things shrink), swell from nearer.
+        assert!(distance(warp_source(Warp::Pinch, center, [0.0; 2], 1.0, at)) > 10.0);
+        assert!(distance(warp_source(Warp::Swell, center, [0.0; 2], 1.0, at)) < 10.0);
+    }
+
+    #[test]
+    fn liquify_pushes_stripes_along_without_painting_and_cancel_restores_them() {
+        let original = striped();
+        let settings = settings(Blend::Liquify);
+        let mut doc = original.clone();
+        let buffer = paint(&mut doc, &settings);
+        // Along the stroke the stripes are pushed out of place.
+        let moved = (0..120)
+            .filter(|&x| {
+                let (now, was) = (
+                    doc.layers[0].pixels.rgba(30 * 120 + x),
+                    original.layers[0].pixels.rgba(30 * 120 + x),
+                );
+                now[3].abs_diff(was[3]) > 60
+            })
+            .count();
+        assert!(moved > 30, "{moved}");
+        // Only the stripes' red moves: nothing turns the brush's blue.
+        for at in 0..120 * 60 {
+            let pixel = doc.layers[0].pixels.rgba(at);
+            assert!(pixel[3] == 0 || pixel[2] < 60, "{at}: {pixel:?}");
+        }
+        // Far from the stroke, nothing changes.
+        assert_eq!(
+            doc.layers[0].pixels.rgba(2 * 120 + 31),
+            original.layers[0].pixels.rgba(2 * 120 + 31)
+        );
+        buffer.restore(&mut doc);
+        assert!(doc.layers[0].pixels == original.layers[0].pixels);
+    }
+
+    #[test]
+    fn a_twirl_turns_a_stripe_and_keeps_it_sharp() {
+        let original = striped();
+        let mut settings = settings(Blend::Liquify);
+        settings.brush.warp = Warp::TwirlRight;
+        settings.brush.size = 40.0;
+        settings.brush.hardness = 0.0;
+        let mut doc = original.clone();
+        paint(&mut doc, &settings);
+        let changed = (0..120 * 60)
+            .filter(|&at| doc.layers[0].pixels.rgba(at) != original.layers[0].pixels.rgba(at))
+            .count();
+        assert!(changed > 300, "{changed}");
+        // The cubic keeps most pixels solid or clear rather than smearing
+        // every edge into half-covered ones.
+        let half = (0..120 * 60)
+            .filter(|&at| (40..216).contains(&doc.layers[0].pixels.rgba(at)[3]))
+            .count();
+        assert!(
+            half * 3 < changed,
+            "{half} half-covered of {changed} changed"
+        );
+    }
+
+    #[test]
     fn blur_softens_edges_and_live_slices_match_whole_dabs() {
-        for blend in [Blend::Blur, Blend::Smudge] {
+        for blend in [Blend::Blur, Blend::Smudge, Blend::Liquify] {
             let settings = settings(blend);
             let mut whole = striped();
             paint(&mut whole, &settings);

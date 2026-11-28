@@ -173,8 +173,14 @@ planned as 0.6.3 ship with it.
       with smooth edges; 980,000 triangles take 79 and 90 ms.
 - [x] Dialogs that can be dragged out of the way (owner's report).
 - [x] An application icon (below).
-- [ ] **Liquify** (owner, 2026-11-26): a brush that pushes, twirls, pinches
-      and swells pixels, as in Procreate and Clip Studio Paint.
+- [x] **Liquify** (owner, 2026-11-26): a brush mode that pushes, twirls,
+      pinches and swells pixels (`blend_brush::warped`, 2026-11-27). Each
+      dab warps what is there, read with a cubic; twirl and pinch act only
+      while the pen moves.
+- [x] Model parts paint from folders of their names; the 3D window puts the
+      model beside its controls (2026-11-27).
+- [x] Color sphere; Timelapse thumbnails; canvas notices float over the
+      canvas (2026-11-27).
 - [ ] The owner's pen pass on 3D models.
 - [ ] The design pass on windows and dialogs (below).
 
