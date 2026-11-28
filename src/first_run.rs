@@ -69,21 +69,12 @@ impl Dudel {
             .max_width(WIDTH)
             .show(ctx, |ui| {
                 ui.set_width(WIDTH);
-                ui.horizontal(|ui| {
-                    for (index, each) in Page::ALL.into_iter().enumerate() {
-                        if index > 0 {
-                            ui.weak("›");
-                        }
-                        let label = format!("{} {}", index + 1, each.name());
-                        if each == page {
-                            ui.strong(label);
-                        } else {
-                            ui.weak(label);
-                        }
-                    }
-                });
-                ui.separator();
+                ui.add_space(2.0);
+                let names = Page::ALL.map(Page::name);
+                crate::dialogs::steps(ui, &names, page.index());
                 ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(6.0);
                 // A page is at least as tall as the tallest one shown, so
                 // the buttons stay put when going back and forth.
                 let height = ui

@@ -59,15 +59,19 @@ impl Dudel {
             .min_width(560.0)
             .max_width(560.0)
             .show(ctx, |ui| {
-                ui.label(format!(
-                    "Version {} · a drawing app made for pen tablets",
-                    env!("CARGO_PKG_VERSION")
-                ));
-                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    crate::dialogs::app_mark(ui, 44.0);
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("A drawing app made for pen tablets").size(16.0).strong());
+                        ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                    });
+                });
+                ui.add_space(10.0);
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
                         ui.set_width(200.0);
-                        ui.strong("Start");
+                        crate::dialogs::section_label(ui, "Start");
                         let wide = egui::vec2(200.0, 0.0);
                         if ui
                             .add(crate::workspace::primary_button(ui, "New canvas…").min_size(wide))
@@ -85,8 +89,8 @@ impl Dudel {
                             close = true;
                         }
                         if !self.recent.is_empty() {
-                            ui.add_space(6.0);
-                            ui.weak("Recent");
+                            ui.add_space(8.0);
+                            crate::dialogs::section_label(ui, "Recent");
                             for path in self.recent.iter().take(5) {
                                 let name = path
                                     .file_name()
@@ -102,9 +106,9 @@ impl Dudel {
                             }
                         }
                     });
-                    ui.add_space(12.0);
+                    ui.add_space(16.0);
                     ui.vertical(|ui| {
-                        ui.strong("Basics");
+                        crate::dialogs::section_label(ui, "Basics");
                         for (keys, what) in &basics {
                             ui.horizontal_top(|ui| {
                                 ui.allocate_ui_with_layout(
@@ -112,7 +116,7 @@ impl Dudel {
                                     egui::Layout::top_down(egui::Align::Min),
                                     |ui| {
                                         ui.set_width(120.0);
-                                        ui.label(egui::RichText::new(keys).strong());
+                                        crate::dialogs::key_cap(ui, keys);
                                     },
                                 );
                                 ui.add(egui::Label::new(*what).wrap());
@@ -120,7 +124,7 @@ impl Dudel {
                         }
                     });
                 });
-                ui.add_space(4.0);
+                ui.add_space(8.0);
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
                     ui.hyperlink_to("Quick start guide", GUIDE);

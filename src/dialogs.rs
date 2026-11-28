@@ -55,6 +55,103 @@ pub(crate) fn dialog_title(ui: &mut egui::Ui, title: &str) -> bool {
     close
 }
 
+/// A small heading over a group in a dialog: quieter than the content, so
+/// it orders a window without competing with it.
+pub(crate) fn section_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text.to_uppercase())
+            .size(11.0)
+            .extra_letter_spacing(0.8)
+            .color(ui.visuals().weak_text_color()),
+    );
+}
+
+/// A key or key combination drawn as a key cap.
+pub(crate) fn key_cap(ui: &mut egui::Ui, keys: &str) -> egui::Response {
+    let visuals = ui.visuals();
+    egui::Frame::new()
+        .fill(visuals.faint_bg_color.gamma_multiply(2.0))
+        .stroke(visuals.widgets.noninteractive.bg_stroke)
+        .corner_radius(4.0)
+        .inner_margin(egui::Margin::symmetric(6, 1))
+        .show(ui, |ui| ui.label(egui::RichText::new(keys).size(12.5)))
+        .response
+}
+
+/// Numbered steps in a row: the finished ones and the current one filled,
+/// joined by a line, the current name strong.
+pub(crate) fn steps(ui: &mut egui::Ui, names: &[&str], current: usize) {
+    let accent = ui.visuals().selection.bg_fill;
+    let weak = ui.visuals().weak_text_color();
+    let line = ui.visuals().widgets.noninteractive.bg_stroke.color;
+    ui.horizontal(|ui| {
+        for (index, name) in names.iter().enumerate() {
+            if index > 0 {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(28.0, 18.0), egui::Sense::hover());
+                let color = if index <= current { accent } else { line };
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.center().y,
+                    egui::Stroke::new(2.0_f32, color),
+                );
+            }
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+            let reached = index <= current;
+            if reached {
+                ui.painter().circle_filled(rect.center(), 10.0, accent);
+            } else {
+                ui.painter()
+                    .circle_stroke(rect.center(), 9.0, egui::Stroke::new(1.5_f32, line));
+            }
+            let number = if index < current {
+                "✓".to_string()
+            } else {
+                (index + 1).to_string()
+            };
+            let on_accent = ui.visuals().selection.stroke.color;
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                number,
+                egui::FontId::proportional(12.0),
+                if reached { on_accent } else { weak },
+            );
+            let text = egui::RichText::new(*name);
+            ui.label(if index == current {
+                text.strong()
+            } else {
+                text.color(weak)
+            });
+        }
+    });
+}
+
+/// Dudel's icon at `size` points.
+pub(crate) fn app_mark(ui: &mut egui::Ui, size: f32) -> egui::Response {
+    let id = egui::Id::new("dudel app mark");
+    let texture = ui.ctx().data(|d| d.get_temp::<egui::TextureHandle>(id));
+    let texture = texture.or_else(|| {
+        let image = image::load_from_memory(include_bytes!("app_icon/dudel.png"))
+            .ok()?
+            .to_rgba8();
+        let size = [image.width() as usize, image.height() as usize];
+        let image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+        let texture = ui
+            .ctx()
+            .load_texture("dudel app mark", image, egui::TextureOptions::LINEAR);
+        ui.ctx().data_mut(|d| d.insert_temp(id, texture.clone()));
+        Some(texture)
+    });
+    match texture {
+        Some(texture) => ui.add(egui::Image::new((texture.id(), egui::vec2(size, size)))),
+        None => {
+            ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover())
+                .1
+        }
+    }
+}
+
 /// How far a dialog has been dragged, and the frame it was last shown in.
 type Moved = (egui::Vec2, u64);
 
